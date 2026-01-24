@@ -204,52 +204,33 @@ impl BoardState {
         // No special scoring for exhaustive draw in Bloody Battle
         let deltas = [0; 4];
 
-        let mut has_nagashi_mangan = false;
-        self.can_nagashi_mangan
+        // Bloody Battle: No nagashi mangan (流局满贯)
+        // Just check tenpai for scoring
+        let tenpai_actors: ArrayVec<[_; 4]> = self
+            .player_states
             .iter()
             .enumerate()
-            .filter(|&(_, &b)| b)
+            .filter(|&(_, s)| s.shanten() == 0)
             .map(|(i, _)| i)
-            .for_each(|i| {
-                has_nagashi_mangan = true;
-                if i as u8 == self.oya {
-                    let mut dod = [-4000; 4];
-                    dod[i] = 12000;
-                    vec_add_assign(&mut deltas, &dod);
-                } else {
-                    let mut dod = [-2000; 4];
-                    dod[i] = 8000;
-                    dod[self.oya as usize] = -4000;
-                    vec_add_assign(&mut deltas, &dod);
-                };
-            });
+            .collect();
 
-        if !has_nagashi_mangan {
-            let tenpai_actors: ArrayVec<[_; 4]> = self
-                .player_states
-                .iter()
-                .enumerate()
-                .filter(|&(_, s)| s.shanten() == 0)
-                .map(|(i, _)| i)
-                .collect();
-
-            let (plus, minus) = match tenpai_actors.len() {
-                1 => (3000, -1000),
-                2 => (1500, -1500),
-                3 => (1000, -3000),
-                // 0 | 4
-                _ => (0, 0),
-            };
-            if plus > 0 {
-                let mut dod = [minus; 4];
-                tenpai_actors.into_iter().for_each(|i| dod[i] = plus);
-                vec_add_assign(&mut deltas, &dod);
-            }
+        let (plus, minus) = match tenpai_actors.len() {
+            1 => (3000, -1000),
+            2 => (1500, -1500),
+            3 => (1000, -3000),
+            // 0 | 4
+            _ => (0, 0),
+        };
+        let mut final_deltas = deltas;
+        if plus > 0 {
+            let mut dod = [minus; 4];
+            tenpai_actors.into_iter().for_each(|i| dod[i] = plus);
+            vec_add_assign(&mut final_deltas, &dod);
         }
 
-        vec_add_assign(&mut self.kyoku_deltas, &deltas);
+        vec_add_assign(&mut self.kyoku_deltas, &final_deltas);
         let ryukyoku = Event::Ryukyoku {
-            deltas: Some(deltas),
+            deltas: Some(final_deltas),
         };
         self.add_log_no_meta(ryukyoku);
         // no need to broadcast
@@ -456,11 +437,7 @@ impl BoardState {
                 self.kans += 1;
             }
 
-            Event::Reach { actor } => {
-                self.broadcast(&ev.event);
-                self.add_log(ev.clone());
-                self.riichi_to_be_accepted = Some(actor);
-            }
+            // Event::Reach removed - Bloody Battle Mahjong does not have riichi
 
             Event::Hora { actor, target, .. } => {
                 self.handle_hora(actor, target, reactions)?;

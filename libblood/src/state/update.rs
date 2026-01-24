@@ -568,33 +568,7 @@ impl PlayerState {
     /// Updates `dora_indicators`, witness the dora indicator itself and
     /// recounts doras (`doras_seen` and `doras_owned`) based on all the seen
     /// tiles.
-    // Bloody Battle: No dora, this function is removed
     // Bloody Battle: No dora, this function is completely removed
-    #[allow(dead_code)]
-    pub(super) fn add_dora_indicator_removed(&mut self, _tile: Tile) -> Result<()> {
-        // Bloody Battle: No dora implementation
-        Ok(())
-        self.dora_factor[next.as_usize()] += 1;
-
-        // Count new dora in my tehai
-        self.doras_owned[0] += self.tehai[next.as_usize()];
-
-        // Count new dora in everyone's fuuro
-        for i in 0..4 {
-            self.doras_owned[i] += self.fuuro_overview[i]
-                .iter()
-                .flatten()
-                .filter(|t| t.deaka() == next)
-                .count() as u8;
-            if self.ankan_overview[i].contains(&next) {
-                self.doras_owned[i] += 4;
-            }
-        }
-
-        // Add `doras_seen` based on `tiles_seen`
-        self.doras_seen += self.tiles_seen[next.as_usize()];
-        Ok(())
-    }
 
     pub(super) fn pad_kawa_for_pon_or_daiminkan(&mut self, abs_actor: u8, abs_target: u8) {
         let mut i = (abs_target + 1) % 4;

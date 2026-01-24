@@ -99,7 +99,7 @@ pub struct PlayerState {
     pub(super) ankans: ArrayVec<[u8; 4]>,
 
     /// Bloody Battle Mahjong specific fields
-    pub(super) has_agari: bool,
+    pub has_agari: bool,
     pub(super) ding_que: Option<crate::mjai::Suit>,
     pub(super) other_ding_que: [Option<crate::mjai::Suit>; 3],
 

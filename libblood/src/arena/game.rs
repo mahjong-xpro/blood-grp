@@ -37,8 +37,7 @@ struct Game {
 
     board: BoardState,
     kyoku: u8,
-    honba: u8,
-    kyotaku: u8,
+    // Bloody Battle: No honba or kyotaku
     scores: [i32; 4],
     game_log: Vec<Vec<EventExt>>,
 
@@ -75,10 +74,9 @@ impl Game {
                 return Ok(());
             }
 
+            // Bloody Battle: No honba or kyotaku
             let mut next_board = Board {
                 kyoku: self.kyoku,
-                honba: self.honba,
-                kyotaku: self.kyotaku,
                 scores: self.scores,
                 ..Default::default()
             };
@@ -120,7 +118,7 @@ impl Game {
                 }
 
                 let kyoku_result = self.board.end();
-                self.kyotaku = kyoku_result.kyotaku_left;
+                // Bloody Battle: No kyotaku
                 self.scores = kyoku_result.scores;
 
                 let logs = self.board.take_log();
@@ -132,18 +130,9 @@ impl Game {
                     return Ok(());
                 }
 
-                if kyoku_result.has_abortive_ryukyoku {
-                    self.honba += 1;
-                    return self.poll(agents);
-                }
-
+                // Bloody Battle: No honba or renchan
                 if !kyoku_result.can_renchan {
                     self.kyoku += 1;
-                    if kyoku_result.has_hora {
-                        self.honba = 0;
-                    } else {
-                        self.honba += 1;
-                    }
                     return self.poll(agents);
                 }
 
@@ -169,7 +158,7 @@ impl Game {
 
                 // renchan
                 self.in_renchan = true;
-                self.honba += 1;
+                // Bloody Battle: No honba
                 return self.poll(agents);
             }
         };
@@ -179,9 +168,7 @@ impl Game {
 
     fn commit(&mut self, agents: &mut [Box<dyn BatchAgent>]) -> Result<Option<GameResult>> {
         if self.ended {
-            if self.kyotaku > 0 {
-                *self.scores.iter_mut().min_by_key(|s| -**s).unwrap() += self.kyotaku as i32 * 1000;
-            }
+            // Bloody Battle: No kyotaku
 
             let names = array::from_fn(|i| agents[self.indexes[i].agent_idx].name());
             let game_result = GameResult {
