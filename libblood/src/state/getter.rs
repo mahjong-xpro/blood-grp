@@ -17,18 +17,7 @@ impl PlayerState {
     pub const fn kyoku(&self) -> u8 {
         self.kyoku
     }
-    #[getter]
-    #[inline]
-    #[must_use]
-    pub const fn honba(&self) -> u8 {
-        self.honba
-    }
-    #[getter]
-    #[inline]
-    #[must_use]
-    pub const fn kyotaku(&self) -> u8 {
-        self.kyotaku
-    }
+    // Bloody Battle: No honba or kyotaku, these getters are removed
     #[getter]
     #[inline]
     #[must_use]
@@ -39,22 +28,10 @@ impl PlayerState {
     #[getter]
     #[inline]
     #[must_use]
-    pub const fn tehai(&self) -> [u8; 34] {
+    pub const fn tehai(&self) -> [u8; 27] {
         self.tehai
     }
-    #[getter]
-    #[inline]
-    #[must_use]
-    pub const fn akas_in_hand(&self) -> [bool; 3] {
-        self.akas_in_hand
-    }
-
-    #[getter]
-    #[inline]
-    #[must_use]
-    pub fn chis(&self) -> &[u8] {
-        &self.chis
-    }
+    // Bloody Battle: No akas_in_hand or chis, these getters are removed
     #[getter]
     #[inline]
     #[must_use]
@@ -89,7 +66,7 @@ impl PlayerState {
     #[getter]
     #[inline]
     #[must_use]
-    pub const fn waits(&self) -> [bool; 34] {
+    pub const fn waits(&self) -> [bool; 27] {
         self.waits
     }
 
@@ -128,24 +105,7 @@ impl PlayerState {
             .collect()
     }
 
-    #[getter]
-    #[inline]
-    #[must_use]
-    pub const fn can_w_riichi(&self) -> bool {
-        self.can_w_riichi
-    }
-    #[getter]
-    #[inline]
-    #[must_use]
-    pub const fn self_riichi_declared(&self) -> bool {
-        self.riichi_declared[0]
-    }
-    #[getter]
-    #[inline]
-    #[must_use]
-    pub const fn self_riichi_accepted(&self) -> bool {
-        self.riichi_accepted[0]
-    }
+    // Bloody Battle: No riichi, these getters are removed
 
     #[getter]
     #[inline]

@@ -61,24 +61,18 @@ impl PlayerState {
 
         match *event {
             Event::StartKyoku {
-                bakaze,
-                dora_marker,
                 kyoku,
-                honba,
-                kyotaku,
                 oya,
                 scores,
                 tehais,
             } => self.start_kyoku(
-                bakaze,
-                dora_marker,
                 kyoku,
-                honba,
-                kyotaku,
                 oya,
                 scores,
                 tehais,
             )?,
+            
+            Event::DingQue { actor, suit } => self.ding_que(actor, suit)?,
 
             Event::Tsumo { actor, pai } => self.tsumo(actor, pai)?,
             Event::Dahai {
@@ -87,12 +81,7 @@ impl PlayerState {
                 tsumogiri,
             } => self.dahai(actor, pai, tsumogiri)?,
 
-            Event::Chi {
-                actor,
-                pai,
-                consumed,
-                ..
-            } => self.chi(actor, pai, consumed)?,
+            // Event::Chi removed - Bloody Battle Mahjong does not have chi
 
             Event::Pon {
                 actor,
@@ -110,10 +99,8 @@ impl PlayerState {
 
             Event::Kakan { actor, pai, .. } => self.kakan(actor, pai)?,
             Event::Ankan { actor, consumed } => self.ankan(actor, consumed)?,
-            Event::Dora { dora_marker } => self.add_dora_indicator(dora_marker)?,
-
-            Event::Reach { actor } => self.reach(actor),
-            Event::ReachAccepted { actor } => self.reach_accepted(actor),
+            // Event::Dora removed - Bloody Battle Mahjong does not have dora
+            // Event::Reach and Event::ReachAccepted removed - Bloody Battle Mahjong does not have riichi
 
             _ => (),
         };
@@ -121,51 +108,61 @@ impl PlayerState {
         Ok(self.last_cans)
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn start_kyoku(
         &mut self,
-        bakaze: Tile,
-        dora_marker: Tile,
         kyoku: u8,
-        honba: u8,
-        kyotaku: u8,
         oya: u8,
         scores: [i32; 4],
         tehais: [[Tile; 13]; 4],
     ) -> Result<()> {
+        // Bloody Battle Mahjong: Initialize player state
         self.tehai.fill(0);
         self.waits.fill(false);
-        self.dora_factor.fill(0);
         self.tiles_seen.fill(0);
-        self.akas_seen.fill(false);
         self.keep_shanten_discards.fill(false);
         self.next_shanten_discards.fill(false);
         self.forbidden_tiles.fill(false);
         self.discarded_tiles.fill(false);
 
-        self.bakaze = bakaze;
-        self.honba = honba;
-        self.kyotaku = kyotaku;
         self.oya = self.rel(oya) as u8;
-        self.jikaze = must_tile!(tu8!(E) + (4 - self.oya) % 4);
         self.kyoku = kyoku - 1;
-        self.is_all_last = match self.bakaze.as_u8() {
-            tu8!(E) => false,
-            tu8!(S) => self.kyoku == 3,
-            _ => true,
-        };
 
         self.scores = scores;
         self.scores.rotate_left(self.player_id as usize);
 
-        self.dora_indicators.clear();
-        self.doras_owned.fill(0);
-        self.doras_seen = 0;
-        self.akas_in_hand.fill(false);
+        // Bloody Battle: Initialize ding_que
+        self.ding_que = None;
+        self.other_ding_que.fill(None);
+        self.has_agari = false;
 
         self.ankan_candidates.clear();
         self.kakan_candidates.clear();
         self.chankan_chance = None;
+        
+        // Initialize tehai from tehais
+        for &tile in &tehais[self.player_id as usize] {
+            let tid = tile.deaka().as_usize();
+            self.tehai[tid] += 1;
+        }
+        
+        self.tehai_len_div3 = (self.tehai.iter().sum::<u8>() % 3) as u8;
+        self.update_shanten();
+        
+        Ok(())
+    }
+    
+    /// Handle DingQue event (定缺) for Bloody Battle Mahjong
+    fn ding_que(&mut self, actor: u8, suit: crate::mjai::Suit) -> Result<()> {
+        if actor == self.player_id {
+            self.ding_que = Some(suit);
+        } else {
+            let actor_rel = self.rel(actor);
+            if actor_rel < 3 {
+                self.other_ding_que[actor_rel] = Some(suit);
+            }
+        }
+        Ok(())
+    }
 
         self.at_ippatsu = false;
         self.at_rinshan = false;
@@ -175,7 +172,7 @@ impl PlayerState {
         self.is_menzen = true;
         self.can_w_riichi = true;
         self.is_w_riichi = false;
-        self.chis.clear();
+        // Bloody Battle: No chis
         self.pons.clear();
         self.minkans.clear();
         self.ankans.clear();
@@ -426,7 +423,9 @@ impl PlayerState {
         Ok(())
     }
 
-    fn chi(&mut self, actor: u8, pai: Tile, consumed: [Tile; 2]) -> Result<()> {
+    // Bloody Battle: No chi, this function is removed
+    #[allow(dead_code)]
+    fn chi_removed(&mut self, _actor: u8, _pai: Tile, _consumed: [Tile; 2]) -> Result<()> {
         let actor_rel = self.rel(actor);
         let full_set = consumed.into_iter().chain(iter::once(pai)).collect();
         self.fuuro_overview[actor_rel].push(full_set);
@@ -662,7 +661,9 @@ impl PlayerState {
         Ok(())
     }
 
-    const fn reach(&mut self, actor: u8) {
+    // Bloody Battle: No riichi, this function is removed
+    #[allow(dead_code)]
+    const fn reach_removed(&mut self, _actor: u8) {
         let actor_rel = self.rel(actor);
         self.riichi_declared[actor_rel] = true;
         if actor_rel == 0 {
@@ -674,7 +675,9 @@ impl PlayerState {
         }
     }
 
-    fn reach_accepted(&mut self, actor: u8) {
+    // Bloody Battle: No riichi, this function is removed
+    #[allow(dead_code)]
+    fn reach_accepted_removed(&mut self, _actor: u8) {
         let actor_rel = self.rel(actor);
         self.riichi_accepted[actor_rel] = true;
         self.scores[actor_rel] -= 1000;
@@ -777,7 +780,9 @@ impl PlayerState {
     /// Updates `dora_indicators`, witness the dora indicator itself and
     /// recounts doras (`doras_seen` and `doras_owned`) based on all the seen
     /// tiles.
-    pub(super) fn add_dora_indicator(&mut self, tile: Tile) -> Result<()> {
+    // Bloody Battle: No dora, this function is removed
+    #[allow(dead_code)]
+    pub(super) fn add_dora_indicator_removed(&mut self, _tile: Tile) -> Result<()> {
         self.dora_indicators.push(tile);
 
         // Witness the tile so it can be added to `tiles_seen`, possibly also to
