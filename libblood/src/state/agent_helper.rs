@@ -245,7 +245,6 @@ impl PlayerState {
         }
 
         // Calculate the max theoretical score we can achieve through this agari.
-        // Bloody Battle: No riichi
         // Bloody Battle: No riichi, calculate max win point directly
         let max_win_point = {
             let mut tehai_full = self.tehai;
@@ -253,18 +252,9 @@ impl PlayerState {
                 tehai_full[t.as_usize()] += 4;
             }
 
-            let mut tehai_ordered_by_count: Vec<_> = tehai_full
-                .iter()
-                .enumerate()
-                .filter(|&(_, &c)| c > 0)
-                .collect();
-            tehai_ordered_by_count.sort_unstable_by(|(_, l), (_, r)| r.cmp(l));
-
             // Bloody Battle: No uradora calculation
             // Just calculate agari points directly
-            self.agari_points(is_ron, &[]).unwrap()
-        } else {
-            // ditto
+            // TODO: This is a simplified calculation, may need improvement
             self.agari_points(is_ron, &[]).unwrap()
         };
 
@@ -273,22 +263,18 @@ impl PlayerState {
         if is_ron {
             // Bloody Battle: No kyotaku or honba
             exp_scores[0] += max_win_point.ron;
-            exp_scores[target_rel] -= max_win_point.ron + self.honba as i32 * 300;
+            exp_scores[target_rel] -= max_win_point.ron;
         } else {
-            // The player must be ko here.
-            exp_scores[0] += max_win_point.tsumo_total(false)
-                + self.kyotaku as i32 * 1000
-                + self.honba as i32 * 300;
+            // Bloody Battle: No kyotaku or honba, no oya advantage
+            let tsumo_total = max_win_point.tsumo_total(false);
+            exp_scores[0] += tsumo_total;
             exp_scores
                 .iter_mut()
                 .enumerate()
                 .skip(1)
                 .for_each(|(idx, s)| {
-                    if idx as u8 == self.oya {
-                        *s -= max_win_point.tsumo_oya + self.honba as i32 * 100;
-                    } else {
-                        *s -= max_win_point.tsumo_ko + self.honba as i32 * 100;
-                    }
+                    // Bloody Battle: All players pay the same (no oya advantage)
+                    *s -= max_win_point.tsumo_ko;
                 });
         }
 
