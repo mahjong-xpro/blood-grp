@@ -313,75 +313,7 @@ impl PlayerState {
         Ok(())
     }
 
-    // Bloody Battle: No chi, this function is removed
-    #[allow(dead_code)]
-    fn chi_removed(&mut self, _actor: u8, _pai: Tile, _consumed: [Tile; 2]) -> Result<()> {
-        let actor_rel = self.rel(actor);
-        let full_set = consumed.into_iter().chain(iter::once(pai)).collect();
-        self.fuuro_overview[actor_rel].push(full_set);
-        self.intermediate_chi_pon = Some(ChiPon {
-            consumed,
-            target_tile: pai,
-        });
-
-        if actor_rel != 0 {
-            for t in consumed {
-                self.witness_tile(t)?;
-            }
-            for t in full_set {
-                // Bloody Battle: No dora
-            }
-            self.can_w_riichi = false;
-            self.at_ippatsu = false;
-            return Ok(());
-        }
-
-        self.last_cans.can_discard = true;
-        self.is_menzen = false;
-        self.tehai_len_div3 -= 1;
-        // Marked explicitly as `None` to let `Agent` impls set
-        // `tsumogiri` to false in the Dahai after Chi
-        self.last_self_tsumo = None;
-
-        // Bloody Battle: No dora
-        for t in consumed {
-            self.move_tile(t, MoveType::FuuroConsume)?;
-        }
-
-        let a = consumed[0].deaka().as_usize();
-        let b = consumed[1].deaka().as_usize();
-        let min = a.min(b);
-        let max = a.max(b);
-        let deaka_tile_id = pai.deaka().as_usize();
-        self.chis.push(min.min(deaka_tile_id) as u8);
-
-        // Forbid 喰い替え
-        if self.tehai[deaka_tile_id] > 0 {
-            self.forbidden_tiles[deaka_tile_id] = true;
-        }
-        if deaka_tile_id < min {
-            if max % 9 < 8 {
-                // Like 56s chi 4s, then 7s is not allowed to discard
-                let bigger = max + 1;
-                if self.tehai[bigger] > 0 {
-                    self.forbidden_tiles[bigger] = true;
-                }
-            }
-        } else if deaka_tile_id > max && !min.is_multiple_of(9) {
-            // Like 56s chi 7s, then 4s is not allowed to discard
-            let smaller = min - 1;
-            if self.tehai[smaller] > 0 {
-                self.forbidden_tiles[smaller] = true;
-            }
-        }
-
-        // NOTES: this is 3n+2
-        // The shanten can change after chi, for example 1235578 chi 4.
-        self.update_shanten();
-        self.update_shanten_discards();
-
-        Ok(())
-    }
+    // Bloody Battle: No chi, this function is completely removed
 
     fn pon(&mut self, actor: u8, target: u8, pai: Tile, consumed: [Tile; 2]) -> Result<()> {
         let actor_rel = self.rel(actor);
@@ -550,9 +482,10 @@ impl PlayerState {
     }
 
     // Bloody Battle: No riichi, this function is removed
+    // Bloody Battle: No riichi, this function is completely removed
     #[allow(dead_code)]
     const fn reach_removed(&mut self, _actor: u8) {
-        let actor_rel = self.rel(actor);
+        let actor_rel = self.rel(_actor);
         self.riichi_declared[actor_rel] = true;
         if actor_rel == 0 {
             // `self.is_w_riichi` should not be set at ReachAccepted as
@@ -636,15 +569,11 @@ impl PlayerState {
     /// recounts doras (`doras_seen` and `doras_owned`) based on all the seen
     /// tiles.
     // Bloody Battle: No dora, this function is removed
+    // Bloody Battle: No dora, this function is completely removed
     #[allow(dead_code)]
     pub(super) fn add_dora_indicator_removed(&mut self, _tile: Tile) -> Result<()> {
-        self.dora_indicators.push(tile);
-
-        // Witness the tile so it can be added to `tiles_seen`, possibly also to
-        // `doras_seen`. This must be done before adding `dora_factor`.
-        self.witness_tile(tile)?;
-
-        let next = tile.next();
+        // Bloody Battle: No dora implementation
+        Ok(())
         self.dora_factor[next.as_usize()] += 1;
 
         // Count new dora in my tehai

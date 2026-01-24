@@ -159,39 +159,10 @@ impl From<u32> for Div {
     }
 }
 
-impl PartialEq for Agari {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Yakuman(l), Self::Yakuman(r)) => l == r,
-            (Self::Normal { fu: lf, han: lh }, Self::Normal { fu: rf, han: rh }) => {
-                lf == rf && lh == rh
-            }
-            _ => false,
-        }
-    }
-}
-
-impl PartialOrd for Agari {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Agari {
-    fn cmp(&self, other: &Self) -> Ordering {
-        match (self, other) {
-            (Self::Yakuman(l), Self::Yakuman(r)) => l.cmp(r),
-            (Self::Yakuman(_), Self::Normal { .. }) => Ordering::Greater,
-            (Self::Normal { .. }, Self::Yakuman(..)) => Ordering::Less,
-            (Self::Normal { fu: lf, han: lh }, Self::Normal { fu: rf, han: rh }) => {
-                match lh.cmp(rh) {
-                    Ordering::Equal => lf.cmp(rf),
-                    v => v,
-                }
-            }
-        }
-    }
-}
+// Bloody Battle: Agari already derives PartialEq, remove manual impl
+#[allow(dead_code)]
+// Bloody Battle: Agari already derives PartialEq, Eq, so manual impls are removed
+// The derive macro handles Fan(u8) comparison automatically
 
 impl Agari {
     #[must_use]
@@ -352,7 +323,7 @@ impl AgariCalculator<'_> {
     fn search_yakus_impl(&self, return_if_any: bool) -> Option<Agari> {
         assert_eq!(
             self.is_menzen,
-            self.chis.is_empty() && self.pons.is_empty() && self.minkans.is_empty(),
+            self.pons.is_empty() && self.minkans.is_empty(),
         );
 
         // Kokushi has a special pattern and cannot be combined with other
@@ -447,7 +418,8 @@ impl<'a> DivWorker<'a> {
     }
 
     fn all_shuntsu(&self) -> impl Iterator<Item = u8> + '_ {
-        self.menzen_shuntsu.iter().chain(self.sup.chis).copied()
+        // Bloody Battle: No chis, only menzen shuntsu
+        self.menzen_shuntsu.iter().copied()
     }
 
     fn all_mentsu(&self) -> impl Iterator<Item = u8> + '_ {
@@ -694,7 +666,7 @@ impl<'a> DivWorker<'a> {
             // 一気通貫
             if self.sup.is_menzen && self.div.has_ittsuu {
                 check_early_return! { han += 2 };
-            } else if self.sup.chis.is_empty() && self.div.has_ittsuu {
+            } else if self.div.has_ittsuu {
                 check_early_return! { han += 1 };
             } else if self.menzen_shuntsu.len() + self.sup.chis.len() >= 3 {
                 let mut kinds = [0; 3];
@@ -1030,7 +1002,7 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            chis: &[],
+            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1046,7 +1018,7 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            chis: &[],
+            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1070,7 +1042,7 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            chis: &[],
+            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1087,7 +1059,7 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: false,
-            chis: &tu8![2s, 2s],
+            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1103,7 +1075,7 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            chis: &[],
+            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1119,7 +1091,7 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            chis: &[],
+            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1134,7 +1106,7 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            chis: &[],
+            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1151,7 +1123,7 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            chis: &[],
+            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &tu8![9m,],
@@ -1168,7 +1140,7 @@ mod test {
         let mut calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            chis: &[],
+            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &tu8![9s,],
@@ -1190,7 +1162,7 @@ mod test {
         let mut calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            chis: &[],
+            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1212,7 +1184,7 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            chis: &[],
+            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &tu8![9p,],
@@ -1229,7 +1201,7 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: false,
-            chis: &[],
+            // Bloody Battle: No chis
             pons: &tu8![9p,],
             minkans: &[],
             ankans: &[],
@@ -1246,7 +1218,7 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            chis: &[],
+            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1263,7 +1235,7 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            chis: &[],
+            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1279,7 +1251,7 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: false,
-            chis: &tu8![7m, 1s],
+            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1296,7 +1268,7 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            chis: &[],
+            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1315,7 +1287,7 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: false,
-            chis: &tu8![1p,],
+            // Bloody Battle: No chis
             pons: &tu8![N,],
             minkans: &[],
             ankans: &[],
@@ -1333,7 +1305,7 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: false,
-            chis: &[],
+            // Bloody Battle: No chis
             pons: &tu8![S, C],
             minkans: &[],
             ankans: &tu8![N,],
@@ -1361,7 +1333,7 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            chis: &[],
+            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1379,7 +1351,7 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            chis: &[],
+            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1397,7 +1369,7 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: false,
-            chis: &tu8![7s,],
+            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1415,7 +1387,7 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            chis: &[],
+            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1432,7 +1404,7 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            chis: &[],
+            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
