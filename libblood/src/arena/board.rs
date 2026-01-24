@@ -17,71 +17,48 @@ use rand_chacha::ChaCha12Rng;
 use sha3::{Digest, Sha3_256};
 use tinyvec::ArrayVec;
 
-/// The fields are all pub on purpose so the caller will be able to set the
-/// yama, doras, scores directly.
+/// Bloody Battle Mahjong Board
 ///
-/// Other than what is mentioned below, everything else is identical to Tenhou's
-/// Rule.
-///
-/// 1. No triple-ron ryukyoku.
-/// 2. Tenhou (the yaku) and chihou do not accumulate with other yakus; they are
-///    always 1x yakuman.
+/// Game ends when 3 players have agari (和牌) or when tiles are exhausted (流局).
 #[derive(Debug, Default)]
 pub struct Board {
-    /// Counts from 0
+    /// Counts from 0 (for recording only, no game flow impact)
     pub kyoku: u8,
-    pub honba: u8,
-    /// Does not effect the kyoku seed
-    pub kyotaku: u8,
     /// [25000; 4]
     pub scores: [i32; 4],
 
     pub haipai: [[Tile; 13]; 4],
     /// Goes backward (pop)
     pub yama: Vec<Tile>,
-    /// Goes backward (pop)
-    pub rinshan: Vec<Tile>,
-    /// Goes backward (pop)
-    pub dora_indicators: Vec<Tile>,
-    /// Goes forward (iter)
-    pub ura_indicators: Vec<Tile>,
 }
 
 #[derive(Derivative)]
 #[derivative(Default)]
 pub struct BoardState {
     board: Board,
-    // Absolute seat, with the oya of E1 always being 0
+    // Absolute seat, with the oya always being 0
     oya: u8,
     player_states: [PlayerState; 4],
 
-    can_renchan: bool,
-    has_hora: bool,
+    /// Bloody Battle Mahjong: track which players have agari
+    #[derivative(Default(value = "[false; 4]"))]
+    players_agari: [bool; 4],
+    /// Bloody Battle Mahjong: count of players who have agari
+    agari_count: u8,
+    
     has_abortive_ryukyoku: bool,
     kyoku_deltas: [i32; 4],
 
-    #[derivative(Default(value = "70"))]
+    #[derivative(Default(value = "56"))]
     tiles_left: u8,
     tsumo_actor: u8,
     // Just a fancy bool
     deal_from_rinshan: Option<()>,
-    need_new_dora_at_discard: Option<()>,
-    need_new_dora_at_tsumo: Option<()>,
-    riichi_to_be_accepted: Option<u8>,
-    #[derivative(Default(value = "[true; 4]"))]
-    can_nagashi_mangan: [bool; 4],
-    #[derivative(Default(value = "true"))]
-    can_four_wind: bool,
-    four_wind_tile: Option<Tile>,
-    accepted_riichis: u8,
     kans: u8,
     check_four_kan: bool,
     paos: [Option<u8>; 4],
 
     log: Vec<EventExt>,
-
-    // For oracle_obs only
-    dora_indicators_full: Vec<Tile>,
 }
 
 pub struct AgentContext<'a> {
@@ -98,39 +75,34 @@ pub enum Poll {
 impl Board {
     pub fn init_from_seed(&mut self, game_seed: (u64, u64)) {
         let (nonce, key) = game_seed;
+        // Bloody Battle Mahjong: no honba, use only kyoku for seed
         let kyoku_seed = Sha3_256::new()
             .chain_update(nonce.to_le_bytes())
             .chain_update(key.to_le_bytes())
-            .chain_update([self.kyoku, self.honba])
+            .chain_update([self.kyoku, 0]) // honba always 0 in Bloody Battle
             .finalize()
             .into();
         let mut rng = ChaCha12Rng::from_seed(kyoku_seed);
         let mut seq = UNSHUFFLED;
         seq.shuffle(&mut rng);
 
+        // Deal 13 tiles to each of 4 players
         self.haipai = array::from_fn(|i| seq[i * 13..(i + 1) * 13].try_into().unwrap());
         let mut idx = 13 * 4;
 
-        self.rinshan = seq[idx..idx + 4].to_vec();
-        idx += 4;
-        self.dora_indicators = seq[idx..idx + 5].to_vec();
-        idx += 5;
-        self.ura_indicators = seq[idx..idx + 5].to_vec();
-        idx += 5;
-        self.yama = seq[idx..idx + 70].to_vec();
-        idx += 70;
-        assert_eq!(idx, seq.len());
+        // Remaining tiles go to yama (108 - 52 = 56 tiles)
+        self.yama = seq[idx..].to_vec();
+        assert_eq!(self.yama.len(), 56);
     }
 
     pub fn into_state(self) -> BoardState {
         let oya = self.kyoku % 4;
-        let dora_indicators_full = self.dora_indicators.clone();
 
         BoardState {
             board: self,
             oya,
             player_states: array::from_fn(|i| PlayerState::new(i as u8)),
-            dora_indicators_full,
+            agari_count: 0,
             ..Default::default()
         }
     }
@@ -150,9 +122,7 @@ impl BoardState {
                 Poll::End => {
                     self.add_log_no_meta(Event::EndKyoku);
                     vec_add_assign(&mut self.board.scores, &self.kyoku_deltas);
-                    if self.has_abortive_ryukyoku {
-                        self.can_renchan = true;
-                    }
+                    // Bloody Battle: No renchan
                     return Ok(poll);
                 }
             };
@@ -172,11 +142,10 @@ impl BoardState {
     pub const fn end(&self) -> KyokuResult {
         KyokuResult {
             kyoku: self.board.kyoku,
-            // honba: self.board.honba,
-            can_renchan: self.can_renchan,
-            has_hora: self.has_hora,
+            can_renchan: false, // Bloody Battle: no renchan
+            has_hora: self.agari_count > 0,
             has_abortive_ryukyoku: self.has_abortive_ryukyoku,
-            kyotaku_left: self.board.kyotaku,
+            kyotaku_left: 0, // Bloody Battle: no kyotaku
             scores: self.board.scores,
         }
     }
@@ -204,17 +173,9 @@ impl BoardState {
     }
 
     fn haipai(&mut self) -> Result<()> {
-        let bakaze = must_tile!(tu8!(E) + self.board.kyoku / 4);
+        // Bloody Battle Mahjong: StartKyoku without bakaze, dora_marker, honba, kyotaku
         let start_kyoku = Event::StartKyoku {
-            bakaze,
-            dora_marker: self
-                .board
-                .dora_indicators
-                .pop()
-                .context("insufficient dora indicators")?,
             kyoku: self.oya + 1,
-            honba: self.board.honba,
-            kyotaku: self.board.kyotaku,
             oya: self.oya,
             scores: self.board.scores,
             tehais: self.board.haipai,
@@ -239,8 +200,9 @@ impl BoardState {
     }
 
     fn exhaustive_ryukyoku(&mut self) {
-        let mut deltas = [0; 4];
-        self.can_renchan = self.player_states[self.oya as usize].shanten() == 0;
+        // Bloody Battle Mahjong: Exhaustive draw (流局)
+        // No special scoring for exhaustive draw in Bloody Battle
+        let deltas = [0; 4];
 
         let mut has_nagashi_mangan = false;
         self.can_nagashi_mangan
@@ -293,75 +255,8 @@ impl BoardState {
         // no need to broadcast
     }
 
-    const fn update_nagashi_mangan_and_four_wind(&mut self, ev: &Event) {
-        match *ev {
-            Event::Dahai { actor, pai, .. } if !pai.is_yaokyuu() => {
-                self.can_nagashi_mangan[actor as usize] = false;
-            }
-            Event::Chi { target, .. }
-            | Event::Pon { target, .. }
-            | Event::Daiminkan { target, .. } => {
-                self.can_nagashi_mangan[target as usize] = false;
-                self.can_four_wind = false;
-            }
-            Event::Ankan { .. } => {
-                self.can_four_wind = false;
-            }
-            _ => (),
-        };
-    }
-
-    fn check_four_wind(&mut self, pai: Tile) -> Result<bool> {
-        if !matches_tu8!(pai.as_u8(), E | S | W | N) {
-            self.can_four_wind = false;
-        } else if self.player_states[self.tsumo_actor as usize].can_w_riichi() {
-            if let Some(tile) = self.four_wind_tile {
-                // compare if the tile is equal to the first
-                // wind
-                self.can_four_wind = tile == pai;
-            } else {
-                // the very first discard and it is a wind,
-                // record the wind
-                self.four_wind_tile = Some(pai);
-            }
-        } else if let Some(tile) = self.four_wind_tile {
-            // check if the first jun is just over and the last
-            // discarded wind is still the same as the previous
-            if tile == pai {
-                return Ok(true);
-            }
-            // do not bother checking it again
-            self.can_four_wind = false;
-        } else {
-            bail!("unexpected state when calculating 四風連打");
-        }
-
-        Ok(false)
-    }
-
-    fn check_riichi_accepted(&mut self) {
-        if let Some(actor) = self.riichi_to_be_accepted.take() {
-            let riichi_accepted = Event::ReachAccepted { actor };
-            self.broadcast(&riichi_accepted);
-            self.add_log_no_meta(riichi_accepted);
-            self.board.scores[actor as usize] -= 1000;
-            self.board.kyotaku += 1;
-            self.accepted_riichis += 1;
-        }
-    }
-
-    fn add_new_dora(&mut self) -> Result<()> {
-        let dora = self
-            .board
-            .dora_indicators
-            .pop()
-            .context("illegal kan: already 4 kans and this is the 5th")?;
-        let dora_ev = Event::Dora { dora_marker: dora };
-        self.broadcast(&dora_ev);
-        self.add_log_no_meta(dora_ev);
-
-        Ok(())
-    }
+    // Bloody Battle Mahjong: No nagashi mangan, four wind, riichi, or dora
+    // These functions are removed
 
     fn handle_hora(
         &mut self,
@@ -369,102 +264,62 @@ impl BoardState {
         single_target: u8,
         reactions: &[EventExt; 4],
     ) -> Result<()> {
-        self.has_hora = true;
-
         let is_ron = single_actor != single_target;
-        let mut honba_left = self.board.honba as i32; // mut in case of multi-ron
-        let mut kyotaku_point = self.board.kyotaku as i32 * 1000; // ditto
-        self.board.kyotaku = 0; // Unlike honba, kyotaku in self will be cleared
+        
+        // Bloody Battle Mahjong: Mark player as agari
+        if !self.players_agari[single_actor as usize] {
+            self.players_agari[single_actor as usize] = true;
+            self.agari_count += 1;
+            self.player_states[single_actor as usize].has_agari = true;
+        }
 
-        // Let the states get their agari points provided with our ura
-        // indicators.
-        let ura_indicators =
-            self.board.ura_indicators[..5 - self.board.dora_indicators.len()].to_vec();
+        // TODO: Calculate points using Bloody Battle scoring system
+        // For now, use placeholder calculation
+        // This will be replaced when we rewrite the scoring system
         let points = reactions
             .iter()
             .map(|ev| match ev.event {
                 Event::Hora { actor, .. } => {
-                    self.can_renchan |= actor == self.oya;
-                    let point =
-                        self.player_states[actor as usize].agari_points(is_ron, &ura_indicators);
-                    Some(point).transpose()
+                    // TODO: Replace with Bloody Battle agari_points calculation
+                    // For now, return placeholder
+                    Ok(Some(crate::algo::point::Point {
+                        ron: 1000,
+                        tsumo_ko: 500,
+                        tsumo_oya: 500,
+                    }))
                 }
                 _ => Ok(None),
             })
             .collect::<Result<Vec<_>>>()?;
 
-        if is_ron {
-            // Multi-ron will be handled
-            points
-                .into_iter()
-                .enumerate()
-                .cycle()
-                .skip(single_target as usize + 1)
-                .take(3)
-                .filter_map(|(actor, v)| v.map(|point| (actor, point)))
-                .for_each(|(actor, point)| {
-                    let mut deltas = [0; 4];
-                    if let Some(pao_target) = self.paos[actor] {
-                        // As per [Tenhou's rule](https://tenhou.net/man/#RULE):
-                        //
-                        // > 複合役満を含む得点を、ツモ＝全額・ロン＝折半で支払
-                        // > う。積み棒は包。
-                        deltas[pao_target as usize] = -point.ron / 2 - honba_left * 300;
-                        deltas[single_target as usize] -= point.ron / 2; // they may be the same person
-                    } else {
-                        deltas[single_target as usize] = -point.ron - honba_left * 300;
-                    }
-                    deltas[actor] = point.ron + kyotaku_point + honba_left * 300;
-
-                    kyotaku_point = 0;
-                    honba_left = 0;
-
-                    vec_add_assign(&mut self.kyoku_deltas, &deltas);
-                    let ura_markers = if self.player_states[actor].self_riichi_accepted() {
-                        ura_indicators.clone()
-                    } else {
-                        Default::default()
-                    };
-
-                    let hora = Event::Hora {
-                        actor: actor as u8,
-                        target: single_target,
-                        deltas: Some(deltas),
-                        ura_markers: Some(ura_markers),
-                    };
-                    self.add_log_no_meta(hora);
-                    // No need to broadcast
-                });
-            return Ok(());
-        }
-
+        // TODO: Implement Bloody Battle scoring system
+        // For now, use placeholder calculation
+        // Bloody Battle: 点数 = 1000 × 2^(番数-1), 5番封顶 = 16000点
+        // Bloody Battle: No oya advantage in scoring
+        
         let point = points[single_actor as usize].unwrap();
         let mut deltas = [0; 4];
-        if let Some(pao_target) = self.paos[single_actor as usize] {
-            // For pao to happen, the agari must have at least 1 yakuman so ron
-            // point and sum of tsumo point should be equal.
-            deltas[pao_target as usize] = -point.ron - honba_left * 300;
+        
+        if is_ron {
+            // Ron: target pays full amount
+            deltas[single_target as usize] = -point.ron;
+            deltas[single_actor as usize] = point.ron;
         } else {
-            deltas.fill(-point.tsumo_ko - honba_left * 100);
-            if single_actor != self.oya {
-                deltas[self.oya as usize] = -point.tsumo_oya - honba_left * 100;
+            // Tsumo: all other players pay (no oya advantage)
+            for i in 0..4 {
+                if i != single_actor as usize {
+                    deltas[i] = -point.tsumo_ko;
+                }
             }
-        };
-        deltas[single_actor as usize] =
-            point.tsumo_total(single_actor == self.oya) + kyotaku_point + honba_left * 300;
+            deltas[single_actor as usize] = point.tsumo_ko * 3;
+        }
 
         vec_add_assign(&mut self.kyoku_deltas, &deltas);
-        let ura_markers = if self.player_states[single_actor as usize].self_riichi_accepted() {
-            ura_indicators
-        } else {
-            Default::default()
-        };
 
         let hora = Event::Hora {
             actor: single_actor,
             target: single_target,
             deltas: Some(deltas),
-            ura_markers: Some(ura_markers),
         };
         self.add_log_no_meta(hora);
         // No need to broadcast
@@ -472,33 +327,7 @@ impl BoardState {
         Ok(())
     }
 
-    fn update_paos(&mut self, ev: &Event) {
-        match *ev {
-            Event::Pon {
-                target, actor, pai, ..
-            }
-            | Event::Daiminkan {
-                target, actor, pai, ..
-            } if pai.is_jihai() => {
-                let mut jihais = 0_u8;
-                self.player_states[actor as usize]
-                    .pons()
-                    .iter()
-                    .chain(self.player_states[actor as usize].minkans())
-                    .copied()
-                    .filter(|&t| t >= tu8!(E))
-                    .for_each(|t| jihais |= 1 << (t - tu8!(E)));
-                let daisanein_confirmed = (jihais & 0b1110000) == 0b1110000;
-                let daisuushi_confirmed = (jihais & 0b0001111) == 0b0001111;
-                if daisanein_confirmed && matches_tu8!(pai.as_u8(), P | F | C)
-                    || daisuushi_confirmed && matches_tu8!(pai.as_u8(), E | S | W | N)
-                {
-                    self.paos[actor as usize] = Some(target);
-                }
-            }
-            _ => (),
-        }
-    }
+    // Bloody Battle: No pao (no jihai), this function is removed
 
     #[inline]
     fn abortive_ryukyoku(&mut self) {
@@ -511,60 +340,66 @@ impl BoardState {
     }
 
     fn step(&mut self, reactions: &[EventExt; 4]) -> Result<Poll> {
-        if self.tiles_left == 70 {
+        // Bloody Battle Mahjong: Check if 3 players have agari
+        if self.agari_count >= 3 {
+            return Ok(Poll::End);
+        }
+
+        if self.tiles_left == 56 {
             self.haipai()?;
             return Ok(Poll::InGame);
         }
 
-        if self.accepted_riichis == 4 {
-            // 四家立直
-            self.abortive_ryukyoku();
-            return Ok(Poll::End);
-        }
-
-        // Validate reactions
+        // Validate reactions (only for players who haven't agari)
         for (actor, ev) in reactions.iter().enumerate() {
-            self.player_states[actor]
-                .validate_reaction(&ev.event)
-                .with_context(|| {
-                    format!(
-                        "invalid action: {ev:?}\nstate:\n{}",
-                        self.player_states[actor].brief_info(),
-                    )
-                })?;
+            if !self.players_agari[actor] {
+                self.player_states[actor]
+                    .validate_reaction(&ev.event)
+                    .with_context(|| {
+                        format!(
+                            "invalid action: {ev:?}\nstate:\n{}",
+                            self.player_states[actor].brief_info(),
+                        )
+                    })?;
+            }
         }
 
         let ev = reactions
             .iter()
+            .enumerate()
+            .filter(|(actor, _)| !self.players_agari[*actor]) // Skip players who have agari
+            .map(|(_, ev)| ev)
             .min_by_key(|ev| match ev.event {
                 Event::Hora { .. } => 0,
                 Event::Daiminkan { .. } | Event::Pon { .. } => 1,
                 Event::None => 3,
                 _ => 2,
             })
-            .unwrap(); // Unwrap is safe because it is proven non-empty
+            .unwrap(); // Unwrap is safe because at least one player hasn't agari
 
         if self.check_four_kan && !matches!(ev.event, Event::Hora { .. }) {
-            // 四槓散了
+            // 四槓散了 (still applies in Bloody Battle)
             self.abortive_ryukyoku();
             return Ok(Poll::End);
         }
 
-        self.update_nagashi_mangan_and_four_wind(&ev.event);
-
         match ev.event {
             Event::None => {
+                // Bloody Battle Mahjong: Check for exhaustive draw (流局)
                 if self.tiles_left == 0 {
                     self.exhaustive_ryukyoku();
                     return Ok(Poll::End);
                 }
-                self.check_riichi_accepted();
+
+                // Skip players who have agari
+                while self.players_agari[self.tsumo_actor as usize] {
+                    self.tsumo_actor = (self.tsumo_actor + 1) % 4;
+                }
 
                 let tile = if self.deal_from_rinshan.take().is_some() {
-                    self.board
-                        .rinshan
-                        .pop()
-                        .context("illegal kan: already 4 kans and this is the 5th")?
+                    // Bloody Battle: kan draws from yama (no rinshan)
+                    // This should not happen, but handle it gracefully
+                    self.board.yama.pop().context("illegal kan: yama is empty")?
                 } else {
                     self.board.yama.pop().with_context(|| {
                         format!("tiles left > 0 ({}) but yama is empty", self.tiles_left)
@@ -576,76 +411,48 @@ impl BoardState {
                     pai: tile,
                 };
 
-                // This is for Kakan only because chankan is possible until an
-                // actual tsumo.
-                if self.need_new_dora_at_tsumo.take().is_some() {
-                    self.add_new_dora()?;
-                }
-
                 self.broadcast(&tsumo);
                 self.add_log_no_meta(tsumo);
             }
 
             Event::Dahai { actor, pai, .. } => {
-                if self.need_new_dora_at_discard.take().is_some() {
-                    self.add_new_dora()?;
-                }
-
                 self.broadcast(&ev.event);
                 self.add_log(ev.clone());
-                self.tsumo_actor = (actor + 1) % 4;
-
-                // 四風連打
-                if self.can_four_wind && self.check_four_wind(pai)? {
-                    self.abortive_ryukyoku();
-                    return Ok(Poll::End);
+                
+                // Bloody Battle: Skip players who have agari when rotating
+                let mut next_actor = (actor + 1) % 4;
+                while self.players_agari[next_actor as usize] {
+                    next_actor = (next_actor + 1) % 4;
                 }
+                self.tsumo_actor = next_actor;
 
                 if self.kans == 4 && self.player_states.iter().all(|s| s.kans_count() < 4) {
-                    // 四槓散了
+                    // 四槓散了 (still applies in Bloody Battle)
                     self.check_four_kan = true;
                 }
             }
 
-            Event::Chi { .. } | Event::Pon { .. } => {
-                self.check_riichi_accepted();
+            Event::Pon { .. } => {
                 self.broadcast(&ev.event);
                 self.add_log(ev.clone());
             }
 
             Event::Ankan { actor, .. } => {
-                // For continuous kan
-                if self.need_new_dora_at_discard.take().is_some() {
-                    self.add_new_dora()?;
-                }
-
                 self.broadcast(&ev.event);
                 self.add_log(ev.clone());
 
-                // Immediately add new dora
-                self.add_new_dora()?;
-
+                // Bloody Battle: kan draws from yama (no rinshan, no new dora)
                 self.tsumo_actor = actor;
-                self.deal_from_rinshan = Some(());
+                self.deal_from_rinshan = Some(()); // Mark that next draw is after kan
                 self.kans += 1;
             }
 
             Event::Daiminkan { actor, .. } | Event::Kakan { actor, .. } => {
-                // For Kakan only, do not `.take()` it.
-                if self.need_new_dora_at_discard.is_some() {
-                    self.need_new_dora_at_tsumo = Some(());
-                }
-
-                // For Daiminkan only
-                self.check_riichi_accepted();
-
                 self.broadcast(&ev.event);
                 self.add_log(ev.clone());
 
-                self.need_new_dora_at_discard = Some(());
-
                 self.tsumo_actor = actor;
-                self.deal_from_rinshan = Some(());
+                self.deal_from_rinshan = Some(()); // Mark that next draw is after kan
                 self.kans += 1;
             }
 
@@ -671,10 +478,7 @@ impl BoardState {
             }
         };
 
-        // The pao check cannot be done before the current event (Pon or
-        // Daiminkan) gets processed because it requires to read `.pons()` and
-        // `.minkans()`.
-        self.update_paos(&ev.event);
+        // Bloody Battle: No pao (no jihai), removed update_paos call
 
         Ok(Poll::InGame)
     }
@@ -700,13 +504,8 @@ impl BoardState {
                     });
                 idx += 4;
 
-                state
-                    .akas_in_hand()
-                    .iter()
-                    .enumerate()
-                    .filter(|&(_, &has_it)| has_it)
-                    .for_each(|(i, _)| arr.fill(idx + i, 1.));
-                idx += 3;
+                // Bloody Battle: No red 5s, skip akas_in_hand encoding
+                idx += 3; // Keep same index offset for compatibility
 
                 let n = state.shanten() as usize;
                 match version {
@@ -742,9 +541,7 @@ impl BoardState {
         let mut encode_tile = |idx: usize, tile: Tile| {
             let tile_id = tile.deaka().as_usize();
             arr.assign(idx, tile_id, 1.);
-            if tile.is_aka() {
-                arr.fill(idx + 1, 1.);
-            }
+            // Bloody Battle: No red 5s, skip is_aka check
         };
 
         self.board
@@ -759,25 +556,14 @@ impl BoardState {
             });
         idx += (69 - self.tiles_left as usize) * 2;
 
-        self.board.rinshan.iter().copied().rev().for_each(|tile| {
-            encode_tile(idx, tile);
-            idx += 2;
-        });
-        idx += (4 - self.board.rinshan.len()) * 2;
+        // Bloody Battle: No rinshan, skip encoding
+        idx += 4 * 2;
 
-        self.dora_indicators_full
-            .iter()
-            .copied()
-            .rev()
-            .for_each(|tile| {
-                encode_tile(idx, tile);
-                idx += 2;
-            });
+        // Bloody Battle: No dora indicators, skip encoding
+        idx += 5 * 2;
 
-        self.board.ura_indicators.iter().copied().for_each(|tile| {
-            encode_tile(idx, tile);
-            idx += 2;
-        });
+        // Bloody Battle: No ura indicators, skip encoding
+        idx += 5 * 2;
 
         assert_eq!(idx, shape.0);
         arr.build()
@@ -785,42 +571,36 @@ impl BoardState {
 }
 
 #[rustfmt::skip]
-const UNSHUFFLED: [Tile; 136] = [
-    t!(1m),  t!(1m), t!(1m), t!(1m),
-    t!(2m),  t!(2m), t!(2m), t!(2m),
-    t!(3m),  t!(3m), t!(3m), t!(3m),
-    t!(4m),  t!(4m), t!(4m), t!(4m),
-    t!(5mr), t!(5m), t!(5m), t!(5m),
-    t!(6m),  t!(6m), t!(6m), t!(6m),
-    t!(7m),  t!(7m), t!(7m), t!(7m),
-    t!(8m),  t!(8m), t!(8m), t!(8m),
-    t!(9m),  t!(9m), t!(9m), t!(9m),
+// Bloody Battle Mahjong: 108 tiles (3 suits × 9 numbers × 4 copies)
+// No jihai (wind/dragon tiles), no red 5s
+const UNSHUFFLED: [Tile; 108] = [
+    t!(1m), t!(1m), t!(1m), t!(1m),
+    t!(2m), t!(2m), t!(2m), t!(2m),
+    t!(3m), t!(3m), t!(3m), t!(3m),
+    t!(4m), t!(4m), t!(4m), t!(4m),
+    t!(5m), t!(5m), t!(5m), t!(5m),
+    t!(6m), t!(6m), t!(6m), t!(6m),
+    t!(7m), t!(7m), t!(7m), t!(7m),
+    t!(8m), t!(8m), t!(8m), t!(8m),
+    t!(9m), t!(9m), t!(9m), t!(9m),
 
-    t!(1p),  t!(1p), t!(1p), t!(1p),
-    t!(2p),  t!(2p), t!(2p), t!(2p),
-    t!(3p),  t!(3p), t!(3p), t!(3p),
-    t!(4p),  t!(4p), t!(4p), t!(4p),
-    t!(5pr), t!(5p), t!(5p), t!(5p),
-    t!(6p),  t!(6p), t!(6p), t!(6p),
-    t!(7p),  t!(7p), t!(7p), t!(7p),
-    t!(8p),  t!(8p), t!(8p), t!(8p),
-    t!(9p),  t!(9p), t!(9p), t!(9p),
+    t!(1p), t!(1p), t!(1p), t!(1p),
+    t!(2p), t!(2p), t!(2p), t!(2p),
+    t!(3p), t!(3p), t!(3p), t!(3p),
+    t!(4p), t!(4p), t!(4p), t!(4p),
+    t!(5p), t!(5p), t!(5p), t!(5p),
+    t!(6p), t!(6p), t!(6p), t!(6p),
+    t!(7p), t!(7p), t!(7p), t!(7p),
+    t!(8p), t!(8p), t!(8p), t!(8p),
+    t!(9p), t!(9p), t!(9p), t!(9p),
 
-    t!(1s),  t!(1s), t!(1s), t!(1s),
-    t!(2s),  t!(2s), t!(2s), t!(2s),
-    t!(3s),  t!(3s), t!(3s), t!(3s),
-    t!(4s),  t!(4s), t!(4s), t!(4s),
-    t!(5sr), t!(5s), t!(5s), t!(5s),
-    t!(6s),  t!(6s), t!(6s), t!(6s),
-    t!(7s),  t!(7s), t!(7s), t!(7s),
-    t!(8s),  t!(8s), t!(8s), t!(8s),
-    t!(9s),  t!(9s), t!(9s), t!(9s),
-
-    t!(E), t!(E), t!(E), t!(E),
-    t!(S), t!(S), t!(S), t!(S),
-    t!(W), t!(W), t!(W), t!(W),
-    t!(N), t!(N), t!(N), t!(N),
-    t!(P), t!(P), t!(P), t!(P),
-    t!(F), t!(F), t!(F), t!(F),
-    t!(C), t!(C), t!(C), t!(C),
+    t!(1s), t!(1s), t!(1s), t!(1s),
+    t!(2s), t!(2s), t!(2s), t!(2s),
+    t!(3s), t!(3s), t!(3s), t!(3s),
+    t!(4s), t!(4s), t!(4s), t!(4s),
+    t!(5s), t!(5s), t!(5s), t!(5s),
+    t!(6s), t!(6s), t!(6s), t!(6s),
+    t!(7s), t!(7s), t!(7s), t!(7s),
+    t!(8s), t!(8s), t!(8s), t!(8s),
+    t!(9s), t!(9s), t!(9s), t!(9s),
 ];
