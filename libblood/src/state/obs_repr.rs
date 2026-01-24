@@ -343,40 +343,22 @@ impl<'a> ObsEncoderContext<'a> {
                     if tile.is_aka() {
                         self.arr.fill(self.idx + 1, 1.);
                     }
-                    if sutehai.is_dora {
-                        self.arr.fill(self.idx + 2, 1.);
-                    }
+                    // Bloody Battle: No dora
                 }
                 self.idx += 3;
             }
-            for &player_riichi_sutehai in &state.riichi_sutehais[1..] {
-                if let Some(sutehai) = player_riichi_sutehai {
-                    let tile = sutehai.tile;
-                    let tile_id = tile.deaka().as_usize();
-
-                    self.arr.assign(self.idx, tile_id, 1.);
-                    if tile.is_aka() {
-                        self.arr.fill(self.idx + 1, 1.);
-                    }
-                    if sutehai.is_dora {
-                        self.arr.fill(self.idx + 2, 1.);
-                    }
-                }
+            // Bloody Battle: No riichi_sutehais
+            // Keep offset for compatibility (3 channels per player)
+            for _ in 1..4 {
                 self.idx += 3;
             }
         }
 
-        state.riichi_declared[1..]
-            .iter()
-            .enumerate()
-            .filter(|&(_, &b)| b)
-            .for_each(|(i, _)| self.arr.fill(self.idx + i, 1.));
+        // Bloody Battle: No riichi_declared
+        // Keep offset for compatibility
         self.idx += 3;
-        state.riichi_accepted[1..]
-            .iter()
-            .enumerate()
-            .filter(|&(_, &b)| b)
-            .for_each(|(i, _)| self.arr.fill(self.idx + i, 1.));
+        // Bloody Battle: No riichi_accepted
+        // Keep offset for compatibility
         self.idx += 3;
 
         state
@@ -387,17 +369,15 @@ impl<'a> ObsEncoderContext<'a> {
             .for_each(|(t, _)| self.arr.assign(self.idx, t, 1.));
         self.idx += 1;
 
-        if state.at_furiten {
-            self.arr.fill(self.idx, 1.);
-        }
+        // Bloody Battle: No furiten
+        // Keep offset for compatibility
         self.idx += 1;
 
         let n = state.shanten as usize;
         IntegerEncoder::new(n, 6).one_hot(true).encode(&mut self);
 
-        if state.riichi_accepted[0] {
-            self.arr.fill(self.idx, 1.);
-        }
+        // Bloody Battle: No riichi_accepted
+        // Keep offset for compatibility
         self.idx += 1;
 
         if self.at_kan_select {
@@ -415,9 +395,7 @@ impl<'a> ObsEncoderContext<'a> {
             if tile.is_aka() {
                 self.arr.fill(self.idx + 1, 1.);
             }
-            if state.dora_factor[tile.deaka().as_usize()] > 0 {
-                self.arr.fill(self.idx + 2, 1.);
-            }
+            // Bloody Battle: No dora_factor
 
             // pass
             if !self.at_kan_select {
@@ -469,9 +447,7 @@ impl<'a> ObsEncoderContext<'a> {
                     .for_each(|(t, _)| self.arr.assign(self.idx + 3, t, 1.));
             }
 
-            if state.riichi_declared[0] {
-                self.arr.fill(self.idx + 4, 1.);
-            }
+            // Bloody Battle: No riichi_declared
         }
         self.idx += 5;
 
