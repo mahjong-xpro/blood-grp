@@ -237,15 +237,10 @@ impl PlayerState {
             return true;
         }
 
-        if self.bakaze == t!(W) {
-            // Agari if we are in the west round but it is not yet the real
-            // all-last (W4).
-            if self.kyoku < 3 {
-                return true;
-            }
-        } else if self.scores.iter().all(|&s| s < 30000) {
-            // Agari if 西入 is possible. Note that this condition is sound but
-            // not complete.
+        // Bloody Battle: No bakaze, simplified agari logic
+        // (This logic may need adjustment based on actual game flow)
+        if self.scores.iter().all(|&s| s < 30000) {
+            // Simplified agari condition
             return true;
         }
 
@@ -297,8 +292,7 @@ impl PlayerState {
                 });
         }
 
-        // The prerequisite `!(self.bakaze == t!(W) && self.kyoku == 3)` has
-        // already been checked at the beginning.
+        // Bloody Battle: No bakaze, simplified logic
         //
         // Agari if 西入 or keeping 西入 is possible. This condition is sound
         // and complete.
@@ -425,9 +419,6 @@ impl PlayerState {
         };
         ensure!(tsumos_left >= 1, "need at least one more tsumo");
 
-        let num_doras_in_fuuro = if self.is_menzen && self.ankan_overview[0].is_empty() {
-            0
-        };
         // Bloody Battle: No dora, riichi, or akas
         let num_doras_in_fuuro = 0;
         let prefer_riichi = false;
