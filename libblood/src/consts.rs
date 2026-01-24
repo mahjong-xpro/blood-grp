@@ -18,11 +18,13 @@ pub const GRP_SIZE: usize = 5;
 #[pyfunction]
 #[inline]
 pub const fn obs_shape(version: u32) -> (usize, usize) {
+    // Bloody Battle: 27 tile kinds (no jihai, no red 5s)
+    // TODO: Recalculate actual dimensions after removing dora, riichi, etc.
     match version {
-        1 => (938, 34),
-        2 => (942, 34),
-        3 => (934, 34),
-        4 => (1012, 34),
+        1 => (938, 27), // Placeholder - needs recalculation
+        2 => (942, 27), // Placeholder - needs recalculation
+        3 => (934, 27), // Placeholder - needs recalculation
+        4 => (1012, 27), // Placeholder - needs recalculation
         _ => unreachable!(),
     }
 }

@@ -17,7 +17,7 @@ const MAX_NUM_TURNS: usize = 17; // aka the actual practical `MAX_TSUMOS_LEFT`
 
 struct ObsEncoderContext<'a> {
     state: &'a PlayerState,
-    arr: Simple2DArray<34, f32>,
+    arr: Simple2DArray<27, f32>, // Bloody Battle: 27 tile kinds
     mask: Array1<bool>,
     idx: usize,
     at_kan_select: bool,
@@ -138,12 +138,8 @@ impl<'a> ObsEncoderContext<'a> {
             });
         self.idx += 4;
 
-        state
-            .akas_in_hand
-            .into_iter()
-            .enumerate()
-            .filter(|&(_, has_it)| has_it)
-            .for_each(|(i, _)| self.arr.fill(self.idx + i, 1.));
+        // Bloody Battle: No akas_in_hand
+        // Keep the same offset for compatibility
         self.idx += 3;
 
         for &score in &state.scores {
@@ -177,34 +173,37 @@ impl<'a> ObsEncoderContext<'a> {
         }
         self.idx += 4;
 
+        // Bloody Battle: No honba or kyotaku
+        // Keep the same offset for compatibility
         let cap = match self.version {
             1 | 4 => 10,
             2 | 3 => 6,
             _ => unreachable!(),
         };
-        let n = state.honba as usize;
-        IntegerEncoder::new(n, cap)
+        IntegerEncoder::new(0, cap)
             .rescale(self.version == 4)
             .rbf_intervals(3)
             .encode(&mut self);
-        let n = state.kyotaku as usize;
-        IntegerEncoder::new(n, cap)
+        IntegerEncoder::new(0, cap)
             .rescale(self.version == 4)
             .rbf_intervals(3)
             .encode(&mut self);
 
-        self.arr.assign(self.idx, state.bakaze.as_usize(), 1.);
-        self.arr.assign(self.idx + 1, state.jikaze.as_usize(), 1.);
+        // Bloody Battle: No bakaze or jikaze
+        // Keep the same offset for compatibility
         self.idx += 2;
 
         if matches!(self.version, 2 | 3 | 4) {
-            let n = (state.bakaze.as_u8() - tu8!(E)).min(1) * 4 + state.kyoku;
+            // Bloody Battle: Simplified kyoku encoding (no bakaze)
+            let n = state.kyoku;
             IntegerEncoder::new(n as usize, 7)
                 .rescale(true)
                 .encode(&mut self);
         }
 
-        self.encode_tile_set(state.dora_indicators);
+        // Bloody Battle: No dora_indicators
+        // Keep the same offset for compatibility
+        self.encode_tile_set(&[]);
 
         state.kawa[0]
             .iter()
@@ -723,30 +722,19 @@ impl<'a> ObsEncoderContext<'a> {
             let sutehai = k.sutehai;
             let tile_id = sutehai.tile.deaka().as_usize();
             self.arr.assign(self.idx + 1, tile_id, 1.);
-            if sutehai.tile.is_aka() {
-                self.arr.fill(self.idx + 2, 1.);
-            }
-            if sutehai.is_dora {
-                self.arr.fill(self.idx + 3, 1.);
-            }
+            // Bloody Battle: No akas or dora
+            // Keep offset for compatibility
+            self.idx += 2;
         }
         self.idx += SELF_KAWA_ITEM_CHANNELS;
     }
 
     fn encode_kawa(&mut self, item: Option<&KawaItem>) {
         if let Some(k) = item {
-            if let Some(cp) = &k.chi_pon {
-                // Aka info of the chi/pon is not encoded in the kawa detail;
-                // they are included in fuuro_overview instead.
-                //
-                // This is one-hot.
-                let a = cp.consumed[0].deaka().as_usize();
-                let b = cp.consumed[1].deaka().as_usize();
-                let min = a.min(b);
-                let max = a.max(b);
-                self.arr.assign(self.idx, min, 1.);
-                self.arr.assign(self.idx + 1, max, 1.);
-            }
+            // Bloody Battle: No chi (only pon)
+            // Chi/pon info is included in fuuro_overview instead
+            // Keep offset for compatibility
+            self.idx += 2;
 
             for kan in k.kan {
                 let tile_id = kan.deaka().as_usize();
@@ -756,18 +744,9 @@ impl<'a> ObsEncoderContext<'a> {
             let sutehai = k.sutehai;
             let tile_id = sutehai.tile.deaka().as_usize();
             self.arr.assign(self.idx + 3, tile_id, 1.);
-            if sutehai.tile.is_aka() {
-                self.arr.fill(self.idx + 4, 1.);
-            }
-            if sutehai.is_dora {
-                self.arr.fill(self.idx + 5, 1.);
-            }
-            if sutehai.is_tedashi {
-                self.arr.fill(self.idx + 6, 1.);
-            }
-            if sutehai.is_riichi {
-                self.arr.fill(self.idx + 7, 1.);
-            }
+            // Bloody Battle: No akas, dora, tedashi, or riichi
+            // Keep offset for compatibility
+            self.idx += 4;
         }
         self.idx += KAWA_ITEM_CHANNELS;
     }
