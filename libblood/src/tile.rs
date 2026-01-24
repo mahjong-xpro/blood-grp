@@ -8,21 +8,17 @@ use std::sync::LazyLock;
 use ahash::AHashMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-const MJAI_PAI_STRINGS_LEN: usize = 3 * 9 + 4 + 3 + 3 + 1;
+const MJAI_PAI_STRINGS_LEN: usize = 3 * 9 + 1; // 27 tiles + 1 unknown
 const MJAI_PAI_STRINGS: [&str; MJAI_PAI_STRINGS_LEN] = [
     "1m", "2m", "3m", "4m", "5m", "6m", "7m", "8m", "9m", // m
     "1p", "2p", "3p", "4p", "5p", "6p", "7p", "8p", "9p", // p
     "1s", "2s", "3s", "4s", "5s", "6s", "7s", "8s", "9s", // s
-    "E", "S", "W", "N", "P", "F", "C", // z
-    "5mr", "5pr", "5sr", // aka
     "?",   // unknown
 ];
-const DISCARD_PRIORITIES: [u8; 38] = [
+const DISCARD_PRIORITIES: [u8; 28] = [
     6, 5, 4, 3, 2, 3, 4, 5, 6, // m
     6, 5, 4, 3, 2, 3, 4, 5, 6, // p
     6, 5, 4, 3, 2, 3, 4, 5, 6, // s
-    7, 7, 7, 7, 7, 7, 7, // z
-    1, 1, 1, // aka
     0, // unknown
 ];
 
@@ -66,44 +62,36 @@ impl Tile {
     #[inline]
     #[must_use]
     pub const fn deaka(self) -> Self {
-        match self.0 {
-            tu8!(5mr) => t!(5m),
-            tu8!(5pr) => t!(5p),
-            tu8!(5sr) => t!(5s),
-            _ => self,
-        }
+        // Bloody Battle Mahjong has no red 5s, so deaka() just returns self
+        self
     }
 
     #[inline]
     #[must_use]
     pub const fn akaize(self) -> Self {
-        match self.0 {
-            tu8!(5m) => t!(5mr),
-            tu8!(5p) => t!(5pr),
-            tu8!(5s) => t!(5sr),
-            _ => self,
-        }
+        // Bloody Battle Mahjong has no red 5s, so akaize() just returns self
+        self
     }
 
     #[inline]
     #[must_use]
     pub const fn is_aka(self) -> bool {
-        matches_tu8!(self.0, 5mr | 5pr | 5sr)
+        // Bloody Battle Mahjong has no red 5s
+        false
     }
 
     #[inline]
     #[must_use]
     pub const fn is_jihai(self) -> bool {
-        matches_tu8!(self.0, E | S | W | N | P | F | C)
+        // Bloody Battle Mahjong has no jihai (wind/dragon tiles)
+        false
     }
 
     #[inline]
     #[must_use]
     pub const fn is_yaokyuu(self) -> bool {
-        matches_tu8!(
-            self.0,
-            1m | 9m | 1p | 9p | 1s | 9s | E | S | W | N | P | F | C
-        )
+        // Bloody Battle Mahjong: only terminal tiles (1 and 9)
+        matches_tu8!(self.0, 1m | 9m | 1p | 9p | 1s | 9s)
     }
 
     #[inline]
@@ -122,12 +110,12 @@ impl Tile {
         let kind = tile.0 / 9;
         let num = tile.0 % 9;
 
+        // Bloody Battle Mahjong: only number tiles (0-2 for m, p, s)
         if kind < 3 {
             Self(kind * 9 + (num + 1) % 9)
-        } else if num < 4 {
-            Self(3 * 9 + (num + 1) % 4)
         } else {
-            Self(3 * 9 + 4 + (num - 4 + 1) % 3)
+            // Unknown tile, return as is
+            self
         }
     }
 
@@ -140,12 +128,12 @@ impl Tile {
         let tile = self.deaka();
         let kind = tile.0 / 9;
         let num = tile.0 % 9;
+        // Bloody Battle Mahjong: only number tiles (0-2 for m, p, s)
         if kind < 3 {
             Self(kind * 9 + (num + 9 - 1) % 9)
-        } else if num < 4 {
-            Self(3 * 9 + (num + 4 - 1) % 4)
         } else {
-            Self(3 * 9 + 4 + (num - 4 + 3 - 1) % 3)
+            // Unknown tile, return as is
+            self
         }
     }
 
@@ -158,12 +146,11 @@ impl Tile {
         let tile = self.deaka();
         let tid = tile.0;
         let kind = tid / 9;
-        let ret = match kind {
-            0 => Self(tid + 9),
-            1 => Self(tid - 9),
-            _ => tile,
-        };
-        if self.is_aka() { ret.akaize() } else { ret }
+        match kind {
+            0 => Self(tid + 9), // m -> p
+            1 => Self(tid - 9), // p -> m
+            _ => tile,          // s or unknown
+        }
     }
 
     /// `Ordering::Equal` iff `self == other`
@@ -267,23 +254,23 @@ mod test {
 
     #[test]
     fn convert() {
-        "E".parse::<Tile>().unwrap();
-        "5mr".parse::<Tile>().unwrap();
+        "1m".parse::<Tile>().unwrap();
+        "9s".parse::<Tile>().unwrap();
         "?".parse::<Tile>().unwrap();
         Tile::try_from(0_u8).unwrap();
-        Tile::try_from(36_u8).unwrap();
-        Tile::try_from(37_u8).unwrap();
+        Tile::try_from(26_u8).unwrap();
+        Tile::try_from(27_u8).unwrap();
 
         "".parse::<Tile>().unwrap_err();
         "0s".parse::<Tile>().unwrap_err();
         "!".parse::<Tile>().unwrap_err();
-        Tile::try_from(38_u8).unwrap_err();
+        Tile::try_from(28_u8).unwrap_err();
         Tile::try_from(u8::MAX).unwrap_err();
     }
 
     #[test]
     fn next_prev() {
-        MJAI_PAI_STRINGS.iter().take(37).for_each(|&s| {
+        MJAI_PAI_STRINGS.iter().take(27).for_each(|&s| {
             let tile: Tile = s.parse().unwrap();
             assert_eq!(tile.prev().next(), tile.deaka());
             assert_eq!(tile.next().prev(), tile.deaka());

@@ -1,9 +1,9 @@
 /// Used for making const tile IDs in u8.
 ///
 /// ```
-/// use riichi::tu8;
+/// use blood::tu8;
 ///
-/// assert_eq!(tu8!(E), 27u8);
+/// assert_eq!(tu8!(1m), 0u8);
 /// ```
 #[macro_export]
 macro_rules! tu8 {
@@ -91,40 +91,8 @@ macro_rules! tu8 {
         26_u8
     };
 
-    (E) => {
-        27_u8
-    };
-    (S) => {
-        28_u8
-    };
-    (W) => {
-        29_u8
-    };
-    (N) => {
-        30_u8
-    };
-    (P) => {
-        31_u8
-    };
-    (F) => {
-        32_u8
-    };
-    (C) => {
-        33_u8
-    };
-
-    (5mr) => {
-        34_u8
-    };
-    (5pr) => {
-        35_u8
-    };
-    (5sr) => {
-        36_u8
-    };
-
     (?) => {
-        37_u8
+        27_u8
     };
 
     ($first:tt, $($left:tt),*) => {
@@ -173,7 +141,7 @@ macro_rules! matches_tu8 {
 /// Panics if the input is not a valid tile.
 ///
 /// ```rust,should_panic
-/// use riichi::{must_tile, tu8};
+/// use blood::{must_tile, tu8};
 ///
 /// let t = must_tile!(tu8!(?) + 1);
 /// ```
@@ -200,19 +168,17 @@ mod test {
     #[test]
     fn syntax() {
         assert_eq!(t!(3s).as_usize(), tuz!(3s));
-        assert_eq!(t!(5sr).as_u8(), tu8!(5sr));
-        assert_eq!(t!(5m).akaize().as_u8(), tu8!(5mr));
 
         assert_eq!(tu8![8m,], [tu8!(8m)]);
-        assert_eq!(tuz![P,], [tuz!(P)]);
-        assert_eq!(t![N,], [t!(N)]);
+        assert_eq!(tuz![6m,], [tuz!(6m)]);
+        assert_eq!(t![1m,], [t!(1m)]);
 
-        assert_eq!(tu8![2p, 5pr, S], [tu8!(2p), tu8!(5pr), tu8!(S)]);
-        assert_eq!(tuz![E, 6m, ?], [tuz!(E), tuz!(6m), tuz!(?)]);
+        assert_eq!(tu8![2p, 6m], [tu8!(2p), tu8!(6m)]);
+        assert_eq!(tuz![6m, ?], [tuz!(6m), tuz!(?)]);
         assert_eq!(t![1m, 2p, 9s], [t!(1m), t!(2p), t!(9s)]);
 
-        assert!(matches_tu8!(t!(E).as_u8(), 1m | E | ? | 5mr));
-        assert!(!matches_tu8!(t!(3m).as_u8(), 1s | 7p | P));
+        assert!(matches_tu8!(t!(1m).as_u8(), 1m | 2m | ?));
+        assert!(!matches_tu8!(t!(3m).as_u8(), 1s | 7p));
     }
 
     #[test]
@@ -246,18 +212,6 @@ mod test {
         assert_eq!(t!(7s).to_string(), "7s");
         assert_eq!(t!(8s).to_string(), "8s");
         assert_eq!(t!(9s).to_string(), "9s");
-
-        assert_eq!(t!(E).to_string(), "E");
-        assert_eq!(t!(S).to_string(), "S");
-        assert_eq!(t!(W).to_string(), "W");
-        assert_eq!(t!(N).to_string(), "N");
-        assert_eq!(t!(P).to_string(), "P");
-        assert_eq!(t!(F).to_string(), "F");
-        assert_eq!(t!(C).to_string(), "C");
-
-        assert_eq!(t!(5mr).to_string(), "5mr");
-        assert_eq!(t!(5pr).to_string(), "5pr");
-        assert_eq!(t!(5sr).to_string(), "5sr");
 
         assert_eq!(t!(?).to_string(), "?");
     }

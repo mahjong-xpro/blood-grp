@@ -1,6 +1,5 @@
-use riichi::chi_type::ChiType;
-use riichi::mjai::Event;
-use riichi::state::{ActionCandidate, PlayerState};
+use blood::mjai::Event;
+use blood::state::{ActionCandidate, PlayerState};
 use std::convert::identity;
 use std::env;
 use std::fs::File;
@@ -97,46 +96,7 @@ fn process_path(path: &Path) -> Result<()> {
                     states[*actor as usize].brief_info(),
                 );
             }
-            Event::Chi {
-                actor,
-                consumed,
-                pai,
-                target,
-            } => {
-                ensure!(
-                    (target + 1) % 4 == *actor,
-                    "chi from non-kamicha at line {}\naction: {ev:?}\nstate:\n{}",
-                    line,
-                    states[*actor as usize].brief_info(),
-                );
-
-                match ChiType::new(*consumed, *pai) {
-                    ChiType::Low => {
-                        ensure!(
-                            cans[*actor as usize].can_chi_low,
-                            "fails can_chi_low at line {}\naction: {ev:?}\nstate:\n{}",
-                            line,
-                            states[*actor as usize].brief_info(),
-                        );
-                    }
-                    ChiType::Mid => {
-                        ensure!(
-                            cans[*actor as usize].can_chi_mid,
-                            "fails can_chi_mid at line {}\naction: {ev:?}\nstate:\n{}",
-                            line,
-                            states[*actor as usize].brief_info(),
-                        );
-                    }
-                    ChiType::High => {
-                        ensure!(
-                            cans[*actor as usize].can_chi_high,
-                            "fails can_chi_high at line {}\naction: {ev:?}\nstate:\n{}",
-                            line,
-                            states[*actor as usize].brief_info(),
-                        );
-                    }
-                }
-            }
+            // Chi event removed - Bloody Battle Mahjong does not have chi
             Event::Pon { actor, .. } => {
                 ensure!(
                     cans[*actor as usize].can_pon,
@@ -179,13 +139,7 @@ fn process_path(path: &Path) -> Result<()> {
                     states[*actor as usize].brief_info(),
                 );
             }
-            Event::Reach { actor } => {
-                ensure!(
-                    cans[*actor as usize].can_riichi,
-                    "fails can_riichi at line {line}\naction: {ev:?}\nstate:\n{}",
-                    states[*actor as usize].brief_info(),
-                );
-            }
+            // Reach event removed - Bloody Battle Mahjong does not have riichi
             Event::Hora {
                 actor,
                 target,

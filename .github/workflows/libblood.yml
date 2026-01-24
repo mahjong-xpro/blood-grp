@@ -1,18 +1,18 @@
-name: build-libriichi
+name: build-libblood
 
 on:
   push:
     branches: [main]
     paths:
-      - .github/workflows/libriichi.yml
+      - .github/workflows/libblood.yml
       - Cargo*
-      - libriichi/**
+      - libblood/**
       - exe-wrapper/**
   pull_request:
     paths:
-      - .github/workflows/libriichi.yml
+      - .github/workflows/libblood.yml
       - Cargo*
-      - libriichi/**
+      - libblood/**
       - exe-wrapper/**
 
 jobs:
@@ -68,16 +68,16 @@ jobs:
         run: |
           cargo test --workspace --no-default-features --features flate2/zlib -- --nocapture
           cargo test --workspace --no-default-features --features flate2/zlib,sp_reproduce_cpp_ver -- --nocapture
-          cargo test -p libriichi --no-default-features --benches
+          cargo test -p libblood --no-default-features --benches
 
       - name: Run build
         run: |
-          cargo build -p libriichi --lib
-          cargo build -p libriichi --bins --no-default-features
+          cargo build -p libblood --lib
+          cargo build -p libblood --bins --no-default-features
           cargo build -p exe-wrapper
 
       - name: Check artifact
         run: |
           cd target/debug
-          ldd libriichi.so stat validate_logs exe-wrapper
-          python -c 'import libriichi'
+          ldd libblood.so stat validate_logs exe-wrapper
+          python -c 'import libblood'

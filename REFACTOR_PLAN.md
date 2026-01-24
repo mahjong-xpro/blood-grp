@@ -9,7 +9,7 @@
 ## 🎯 改造目标
 
 1. **完全移除日本麻将规则**：立直、宝牌、本场数、供托、流局、吃牌、役种等
-2. **实现血战到底规则**：定缺、新番数系统、3人和牌结束条件等
+2. **实现血战到底规则**：定缺、新番数系统、3人和牌结束条件（4人游戏，3人和牌结束）等
 3. **修改牌组**：从136张（含字牌）改为108张（无字牌）
 4. **修改计分系统**：从符数+番数改为纯番数系统（5番封顶）
 5. **重命名所有模块**：从riichi相关改为blood相关
@@ -1625,15 +1625,16 @@ impl Point {
 
 **重要**：血战到底的"七对"和"碰碰胡"需要重新实现，不能直接使用日本麻将的逻辑。
 
-### Python代码中的4玩家硬编码
+### Python代码中的玩家相关修改（保持4玩家）
 
 1. **`mortal/model.py`**：
-   - 第246行：`permutations(range(4))` → `permutations(range(3))`
-   - 第272行：`for player in range(4):` → `for player in range(3):`
-   - 第251行注释：更新为3玩家版本
+   - **保持** `permutations(range(4))`（4玩家排列，24种）
+   - **保持** `for player in range(4):`（4玩家循环）
+   - **修改** 注释：更新为血战到底规则（4人游戏，3人和牌结束）
 
 2. **`mortal/config.example.toml`**：
-   - 第50行：`pts = [6.0, 4.0, 2.0, 0.0]` → `pts = [4.0, 2.0, 0.0]`（3玩家排名奖励）
+   - **保持** `pts = [6.0, 4.0, 2.0, 0.0]`（4玩家排名奖励）
+   - **注意**：第4名（未和牌玩家）的奖励为0.0
 
 3. **`mortal/reward_calculator.py`**：
    - 第27行：`torch.zeros((1, 4), ...)` → `torch.zeros((1, 3), ...)`
@@ -1702,107 +1703,57 @@ impl Point {
 - 需要改为：`GRP_SIZE = 4`，包含 `[[score[i] / 10000]]`（3个玩家分数）
 - 删除 `grand_kyoku`, `honba`, `kyotaku` 编码
 
-### 3玩家相关硬编码修改
+### 游戏结束条件修改（保持4玩家结构）
 
-**重要**：所有4玩家相关的数组、循环、逻辑都需要改为3玩家。
+**重要**：血战到底是**4人游戏**，但游戏结束条件是**3人和牌**或**流局**。因此：
+- **保持所有4玩家数组结构**：`[i32; 4]`、`for i in 0..4`、`% 4` 等保持不变
+- **修改游戏结束条件**：从"4人和牌结束"改为"3人和牌结束"或"流局结束"
+- **添加和牌后玩家状态管理**：和牌后的玩家不再摸牌、打牌，但继续计分
 
-1. **`libriichi/src/rankings.rs`**：
-   - `player_by_rank: [u8; 4]` → `[u8; 3]`
-   - `rank_by_player: [u8; 4]` → `[u8; 3]`
-   - `new(scores: [i32; 4])` → `new(scores: [i32; 3])`
-   - 所有测试用例中的4玩家数组改为3玩家
+1. **`libriichi/src/arena/board.rs`**：
+   - **保持** `scores: [i32; 4]`、`haipai: [[Tile; 13]; 4]`、`player_states: [PlayerState; 4]` 等4玩家结构
+   - **添加** `players_agari: [bool; 4]` - 记录哪些玩家已和牌
+   - **添加** `agari_count: u8` - 和牌玩家数量
+   - **修改** 游戏结束条件：检查 `agari_count >= 3` 而不是所有玩家和牌
+   - **修改** 玩家轮转逻辑：跳过已和牌的玩家（`players_agari[actor] == true`）
+   - **添加** 流局结束条件：牌墙摸完且未达到3人和牌
+   - **删除** `can_nagashi_mangan: [bool; 4]`（日本麻将流局满贯，血战到底不需要）
 
-2. **`libriichi/src/stat.rs`**：
-   - 删除 `rank_4: i64` 字段
-   - 删除 `4th (rate)` 显示
-   - `total_pt(pts: [i64; 4])` → `total_pt(pts: [i64; 3])`
-   - `avg_pt(pts: [i64; 4])` → `avg_pt(pts: [i64; 3])`
-   - 所有调用处更新为3玩家版本
+2. **`libriichi/src/state/player_state.rs`**：
+   - **保持** `scores: [i32; 4]`、`kawa: [TinyVec<...>; 4]` 等4玩家结构
+   - **删除** `riichi_sutehais: [Option<Sutehai>; 4]`（无立直）
+   - **删除** `riichi_declared: [bool; 4]`、`riichi_accepted: [bool; 4]`（无立直）
+   - **删除** `doras_owned: [u8; 4]`（无宝牌）
+   - **添加** `has_agari: bool` - 当前玩家是否已和牌
+   - **添加** `ding_que: Option<Suit>` - 当前玩家的定缺
+   - **添加** `other_ding_que: [Option<Suit>; 3]` - 其他3个玩家的定缺
 
-3. **`libriichi/src/state/player_state.rs`**：
-   - `scores: [i32; 4]` → `[i32; 3]`
-   - `kawa: [TinyVec<...>; 4]` → `[TinyVec<...>; 3]`
-   - `last_tedashis: [Option<Sutehai>; 4]` → `[Option<Sutehai>; 3]`
-   - `riichi_sutehais: [Option<Sutehai>; 4]` → 删除（无立直）
-   - `kawa_overview: [ArrayVec<...>; 4]` → `[ArrayVec<...>; 3]`
-   - `fuuro_overview: [ArrayVec<...>; 4]` → `[ArrayVec<...>; 3]`
-   - `ankan_overview: [ArrayVec<...>; 4]` → `[ArrayVec<...>; 3]`
-   - `riichi_declared: [bool; 4]` → 删除
-   - `riichi_accepted: [bool; 4]` → 删除
-   - `doras_owned: [u8; 4]` → 删除
-   - 添加 `ding_que: Option<Suit>`
-   - 添加 `other_ding_que: [Option<Suit>; 3]`（其他3个玩家的定缺）
-   - 添加 `has_agari: bool`（是否已和牌）
+3. **`libriichi/src/arena/game.rs`**：
+   - **保持** `scores: [i32; 4]`、`indexes: [Index; 4]` 等4玩家结构
+   - **修改** 游戏结束条件：删除日本麻将的局数、本场数、连庄等逻辑
+   - **修改** 游戏结束条件：改为3人和牌或流局
 
-4. **`libriichi/src/state/update.rs`**：
-   - `scores: [i32; 4]` → `[i32; 3]`
-   - `tehais: [[Tile; 13]; 4]` → `[[Tile; 13]; 3]`
-   - `for i in 0..4` → `for i in 0..3`
-   - 所有4玩家循环改为3玩家
+4. **`libriichi/src/mjai/event.rs`**：
+   - **保持** `names: [String; 4]`、`scores: [i32; 4]`、`tehais: [[Tile; 13]; 4]` 等4玩家结构
+   - **保持** `deltas: Option<[i32; 4]>`（4个玩家的分数变化）
+   - **添加** `DingQue` 事件
 
-5. **`libriichi/src/mjai/event.rs`**：
-   - `names: [String; 4]` → `[String; 3]`
-   - `scores: [i32; 4]` → `[i32; 3]`
-   - `tehais: [[Tile; 13]; 4]` → `[[Tile; 13]; 3]`
-   - `deltas: Option<[i32; 4]>` → `Option<[i32; 3]>`
-   - `consumed: [Tile; 4]`（暗杠）保持不变（4张牌）
+5. **`libriichi/src/dataset/grp.rs`**：
+   - **保持** `rank_by_player: [u8; 4]`、`final_scores: [i32; 4]` 等4玩家结构
+   - **修改** GRP_SIZE：从7改为4（删除grand_kyoku、honba、kyotaku，保留4个玩家分数）
 
-6. **`libriichi/src/arena/board.rs`**：
-   - `scores: [i32; 4]` → `[i32; 3]`
-   - `haipai: [[Tile; 13]; 4]` → `[[Tile; 13]; 3]`
-   - `player_states: [PlayerState; 4]` → `[PlayerState; 3]`
-   - `kyoku_deltas: [i32; 4]` → `[i32; 3]`
-   - `can_nagashi_mangan: [bool; 4]` → 删除（无流局）
-   - `paos: [Option<u8>; 4]` → `[Option<u8>; 3]`
-   - `reactions: [EventExt; 4]` → `[EventExt; 3]`
-   - `deltas = [0; 4]` → `[0; 3]`
-   - 所有4玩家相关逻辑改为3玩家
+6. **`libriichi/src/state/update.rs`**：
+   - **保持** `scores: [i32; 4]`、`tehais: [[Tile; 13]; 4]` 等4玩家结构
+   - **保持** `for i in 0..4` 循环
+   - **修改** 玩家轮转逻辑：`(actor + 1) % 4` 需要跳过已和牌玩家
 
-7. **`libriichi/src/arena/game.rs`**：
-   - `init_scores: [i32; 4]` → `[i32; 3]`
-   - `scores: [i32; 4]` → `[i32; 3]`
-   - `indexes: [Index; 4]` → `[Index; 3]`
-   - `oracle_obs_versions: [Option<u32>; 4]` → `[Option<u32>; 3]`
-   - `invisible_state_cache: [Option<Array2<f32>>; 4]` → `[Option<Array2<f32>>; 3]`
-   - `last_reactions: [EventExt; 4]` → `[EventExt; 3]`
-   - `init_scores: [25000; 4]` → `[25000; 3]`
+7. **`libriichi/src/state/obs_repr.rs`**：
+   - **保持** `(0..4)` 循环，但只处理未和牌的玩家
+   - **修改** 观察编码：跳过已和牌玩家的状态
 
-8. **`libriichi/src/arena/result.rs`**：
-   - `scores: [i32; 4]` → `[i32; 3]`
-   - `names: [String; 4]` → `[String; 3]`
-
-9. **`libriichi/src/arena/one_vs_three.rs`**：
-   - 虽然名字是1v3，但代码中仍使用4玩家逻辑，需要完全重写为3玩家
-   - `(0..4).cycle()` → `(0..3).cycle()`
-   - `seed_count * 4` → `seed_count * 3`
-   - `champion_player_ids_per_seed` 从4个split改为3个split
-   - `agent_idxs_per_seed` 从4个split改为3个split
-
-10. **`libriichi/src/dataset/grp.rs`**：
-    - `rank_by_player: [u8; 4]` → `[u8; 3]`
-    - `final_scores: [i32; 4]` → `[i32; 3]`
-    - `final_deltas = [0; 4]` → `[0; 3]`
-    - `final_scores = [0; 4]` → `[0; 3]`
-    - `grp_feature[:, 3 + player_id]` → `grp_feature[:, 2 + player_id]`（GRP_SIZE调整后）
-
-11. **`libriichi/src/dataset/gameplay.rs`**：
-    - `wnd: &[Event; 4]` → `&[Event; 3]`
-    - 所有4玩家窗口逻辑改为3玩家
-
-12. **`libriichi/src/state/agent_helper.rs`**：
-    - `scores = [-3000 - ...; 4]` → `[-3000 - ...; 3]`
-    - 所有4玩家相关计算改为3玩家
-
-13. **`libriichi/src/state/obs_repr.rs`**：
-    - `(0..4)` → `(0..3)`
-    - 所有4玩家循环改为3玩家
-
-14. **`libriichi/src/algo/sp/calc.rs`**：
-    - `Scores([f32; 4])` → `Scores([f32; 3])`
-    - `tsumo_prob_table: &'a [[f32; MAX_TSUMO]; 4]` → `[[f32; MAX_TSUMO]; 3]`
-    - `build_tsumo_prob_table` 返回类型改为 `[[f32; MAX_TSUMO]; 3]`
-    - `get_score` 返回 `[f32; 3]` 而不是 `[f32; 4]`
-    - `scores = [0.; 4]` → `[0.; 3]`
+8. **`libriichi/src/algo/sp/calc.rs`**：
+   - **保持** `Scores([f32; 4])`、`tsumo_prob_table: &'a [[f32; MAX_TSUMO]; 4]` 等4玩家结构
+   - **修改** 计算逻辑：考虑已和牌玩家不再参与游戏
 
 15. **`libriichi/src/bin/validate_logs.rs`**：
     - `cans = [ActionCandidate::default(); 4]` → `[ActionCandidate::default(); 3]`

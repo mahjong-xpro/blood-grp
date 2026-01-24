@@ -102,7 +102,6 @@ mod rankings;
 mod vec_ops;
 
 // pub for bins
-pub mod chi_type;
 pub mod mjai;
 pub mod stat;
 pub mod state;
@@ -121,19 +120,19 @@ use pyo3::prelude::*;
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-/// This module provides implementations of the riichi mahjong including the
+/// This module provides implementations of the bloody battle mahjong including the
 /// following features:
 ///
 /// - The core feature - player state maintenance driven by mjai events (via
 ///   `state.PlayerState`).
 /// - Read mjai logs and produce a batch of instances for training (via
 ///   `dataset`).
-/// - Self-play under standard Tenhou rules (via `arena`).
+/// - Self-play under Bloody Battle rules (via `arena`).
 /// - Definitions of observation and action space for Mortal (via `consts`).
 /// - Statistical works on mjai logs (via `stat.Stat`).
 /// - mjai interface (via `mjai.Bot`).
 #[pymodule]
-fn libriichi(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn libblood(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     pyo3_log::init();
     algo::shanten::ensure_init();
     algo::agari::ensure_init();

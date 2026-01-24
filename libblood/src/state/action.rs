@@ -1,5 +1,4 @@
 use super::PlayerState;
-use crate::chi_type::ChiType;
 use crate::mjai::Event;
 use crate::tile::Tile;
 use crate::tuz;
@@ -131,25 +130,7 @@ impl PlayerState {
                 ensure!(cans.can_riichi, "cannot riichi");
             }
 
-            Event::Chi {
-                actor,
-                target,
-                pai,
-                consumed,
-            } => {
-                ensure!((target + 1) % 4 == actor, "chi from non-kamicha");
-                ensure!(
-                    matches!(self.last_kawa_tile, Some(tile) if tile == pai),
-                    "chi target is not the last kawa tile",
-                );
-                self.ensure_tiles_in_hand(&consumed)?;
-
-                match ChiType::new(consumed, pai) {
-                    ChiType::Low => ensure!(cans.can_chi_low, "cannot chi low"),
-                    ChiType::Mid => ensure!(cans.can_chi_mid, "cannot chi mid"),
-                    ChiType::High => ensure!(cans.can_chi_high, "cannot chi high"),
-                }
-            }
+            // Chi event removed - Bloody Battle Mahjong does not have chi
             Event::Pon {
                 actor,
                 target,

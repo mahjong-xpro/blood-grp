@@ -1,5 +1,5 @@
 use super::action::ActionCandidate;
-use super::item::{ChiPon, KawaItem, Sutehai};
+use super::item::{KawaItem, Sutehai};
 use crate::algo::sp::Candidate;
 use crate::hand::tiles_to_string;
 use crate::must_tile;
@@ -24,62 +24,44 @@ use tinyvec::{ArrayVec, TinyVec};
 pub struct PlayerState {
     pub(super) player_id: u8,
 
-    /// Does not include aka.
-    #[derivative(Default(value = "[0; 34]"))]
-    pub(super) tehai: [u8; 34],
+    /// Bloody Battle Mahjong: 27 tile kinds (no jihai, no red 5s)
+    #[derivative(Default(value = "[0; 27]"))]
+    pub(super) tehai: [u8; 27],
 
     /// Does not consider yakunashi, but does consider other kinds of
     /// furiten.
-    #[derivative(Default(value = "[false; 34]"))]
-    pub(super) waits: [bool; 34],
+    #[derivative(Default(value = "[false; 27]"))]
+    pub(super) waits: [bool; 27],
 
-    #[derivative(Default(value = "[0; 34]"))]
-    pub(super) dora_factor: [u8; 34],
+    /// For calculating `waits`, also for SPCalculator.
+    #[derivative(Default(value = "[0; 27]"))]
+    pub(super) tiles_seen: [u8; 27],
 
-    /// For calculating `waits` and `doras_seen`, also for SPCalculator.
-    #[derivative(Default(value = "[0; 34]"))]
-    pub(super) tiles_seen: [u8; 34],
+    #[derivative(Default(value = "[false; 27]"))]
+    pub(super) keep_shanten_discards: [bool; 27],
 
-    /// For SPCalculator.
-    pub(super) akas_seen: [bool; 3],
+    #[derivative(Default(value = "[false; 27]"))]
+    pub(super) next_shanten_discards: [bool; 27],
 
-    #[derivative(Default(value = "[false; 34]"))]
-    pub(super) keep_shanten_discards: [bool; 34],
-
-    #[derivative(Default(value = "[false; 34]"))]
-    pub(super) next_shanten_discards: [bool; 34],
-
-    #[derivative(Default(value = "[false; 34]"))]
-    pub(super) forbidden_tiles: [bool; 34],
+    #[derivative(Default(value = "[false; 27]"))]
+    pub(super) forbidden_tiles: [bool; 27],
 
     /// Used for furiten check.
-    #[derivative(Default(value = "[false; 34]"))]
-    pub(super) discarded_tiles: [bool; 34],
+    #[derivative(Default(value = "[false; 27]"))]
+    pub(super) discarded_tiles: [bool; 27],
 
-    pub(super) bakaze: Tile,
-    pub(super) jikaze: Tile,
     /// Counts from 0 unlike mjai.
     pub(super) kyoku: u8,
-    pub(super) honba: u8,
-    pub(super) kyotaku: u8,
     /// Rotated to be relative, so `scores[0]` is the score of the player.
     pub(super) scores: [i32; 4],
     pub(super) rank: u8,
     /// Relative to `player_id`.
     pub(super) oya: u8,
-    /// Including 西入 sudden death.
-    pub(super) is_all_last: bool,
-    pub(super) dora_indicators: ArrayVec<[Tile; 5]>,
-
     /// 24 is the theoretical max size of kawa, however, since None is included
     /// in the kawa, in some very rare cases (about one in a million hanchans),
     /// the size can exceed 24.
-    ///
-    /// Reference:
-    /// <https://detail.chiebukuro.yahoo.co.jp/qa/question_detail/q1020002370>
     pub(super) kawa: [TinyVec<[Option<KawaItem>; 24]>; 4],
     pub(super) last_tedashis: [Option<Sutehai>; 4],
-    pub(super) riichi_sutehais: [Option<Sutehai>; 4],
 
     /// Using 34-D arrays here may be more efficient, but I don't want to mess up
     /// with aka doras.
@@ -88,13 +70,9 @@ pub struct PlayerState {
     /// In this field all `Tile` are deaka'd.
     pub(super) ankan_overview: [ArrayVec<[Tile; 4]>; 4],
 
-    pub(super) riichi_declared: [bool; 4],
-    pub(super) riichi_accepted: [bool; 4],
-
     pub(super) at_turn: u8,
     pub(super) tiles_left: u8,
     pub(super) intermediate_kan: ArrayVec<[Tile; 4]>,
-    pub(super) intermediate_chi_pon: Option<ChiPon>,
 
     pub(super) shanten: i8,
 
@@ -107,10 +85,7 @@ pub struct PlayerState {
     pub(super) kakan_candidates: ArrayVec<[Tile; 3]>,
     pub(super) chankan_chance: Option<()>,
 
-    pub(super) can_w_riichi: bool,
-    pub(super) is_w_riichi: bool,
     pub(super) at_rinshan: bool,
-    pub(super) at_ippatsu: bool,
     pub(super) at_furiten: bool,
     pub(super) to_mark_same_cycle_furiten: Option<()>,
 
@@ -119,17 +94,14 @@ pub struct PlayerState {
 
     pub(super) is_menzen: bool,
     /// For agari calc, all deaka'd.
-    pub(super) chis: ArrayVec<[u8; 4]>,
     pub(super) pons: ArrayVec<[u8; 4]>,
     pub(super) minkans: ArrayVec<[u8; 4]>,
     pub(super) ankans: ArrayVec<[u8; 4]>,
 
-    /// Including aka, originally for agari calc usage but also encoded as a
-    /// feature to the obs.
-    pub(super) doras_owned: [u8; 4],
-    pub(super) doras_seen: u8,
-
-    pub(super) akas_in_hand: [bool; 3],
+    /// Bloody Battle Mahjong specific fields
+    pub(super) has_agari: bool,
+    pub(super) ding_que: Option<crate::mjai::Suit>,
+    pub(super) other_ding_que: [Option<crate::mjai::Suit>; 3],
 
     /// For shanten calc.
     pub(super) tehai_len_div3: u8,

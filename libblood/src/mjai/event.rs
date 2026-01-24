@@ -6,6 +6,15 @@ use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use serde_with::{TryFromInto, serde_as, skip_serializing_none};
 
+/// Suit for Ding Que (定缺) in Bloody Battle Mahjong
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Suit {
+    Man,  // 万子
+    Pin,  // 筒子
+    Sou,  // 条子
+}
+
 /// Describes an event in mjai format.
 ///
 /// Mjai protocol was originally defined in
@@ -29,13 +38,9 @@ pub enum Event {
         seed: Option<(u64, u64)>,
     },
     StartKyoku {
-        bakaze: Tile,
-        dora_marker: Tile,
-        /// Counts from 1
+        /// Counts from 1 (for recording only, no game flow impact)
         #[serde_as(deserialize_as = "TryFromInto<BoundedU8<1, 4>>")]
         kyoku: u8,
-        honba: u8,
-        kyotaku: u8,
         #[serde_as(deserialize_as = "TryFromInto<Actor>")]
         oya: u8,
         scores: [i32; 4],
@@ -54,14 +59,7 @@ pub enum Event {
         tsumogiri: bool,
     },
 
-    Chi {
-        #[serde_as(deserialize_as = "TryFromInto<Actor>")]
-        actor: u8,
-        #[serde_as(deserialize_as = "TryFromInto<Actor>")]
-        target: u8,
-        pai: Tile,
-        consumed: [Tile; 2],
-    },
+    // Chi event removed - Bloody Battle Mahjong does not have chi
     Pon {
         #[serde_as(deserialize_as = "TryFromInto<Actor>")]
         actor: u8,
@@ -89,17 +87,13 @@ pub enum Event {
         actor: u8,
         consumed: [Tile; 4],
     },
-    Dora {
-        dora_marker: Tile,
-    },
+    // Dora event removed - Bloody Battle Mahjong does not have dora
+    // Reach and ReachAccepted events removed - Bloody Battle Mahjong does not have riichi
 
-    Reach {
+    DingQue {
         #[serde_as(deserialize_as = "TryFromInto<Actor>")]
         actor: u8,
-    },
-    ReachAccepted {
-        #[serde_as(deserialize_as = "TryFromInto<Actor>")]
-        actor: u8,
+        suit: Suit,
     },
 
     Hora {
@@ -109,7 +103,7 @@ pub enum Event {
         target: u8,
 
         deltas: Option<[i32; 4]>,
-        ura_markers: Option<Vec<Tile>>,
+        // ura_markers removed - Bloody Battle Mahjong does not have ura dora
     },
     Ryukyoku {
         deltas: Option<[i32; 4]>,
@@ -163,13 +157,11 @@ impl Event {
         match *self {
             Self::Tsumo { actor, .. }
             | Self::Dahai { actor, .. }
-            | Self::Chi { actor, .. }
             | Self::Pon { actor, .. }
             | Self::Daiminkan { actor, .. }
             | Self::Kakan { actor, .. }
             | Self::Ankan { actor, .. }
-            | Self::Reach { actor, .. }
-            | Self::ReachAccepted { actor, .. }
+            | Self::DingQue { actor, .. }
             | Self::Hora { actor, .. } => Some(actor),
             _ => None,
         }
@@ -178,10 +170,7 @@ impl Event {
     #[inline]
     #[must_use]
     pub const fn is_in_game_announce(&self) -> bool {
-        matches!(
-            self,
-            Self::ReachAccepted { .. } | Self::Dora { .. } | Self::Hora { .. }
-        )
+        matches!(self, Self::Hora { .. })
     }
 
     pub fn augment(&mut self) {
@@ -190,18 +179,11 @@ impl Event {
         }
 
         match self {
-            Self::StartKyoku {
-                bakaze,
-                dora_marker,
-                tehais,
-                ..
-            } => {
-                swap_tile(bakaze);
-                swap_tile(dora_marker);
+            Self::StartKyoku { tehais, .. } => {
                 tehais.iter_mut().flatten().for_each(swap_tile);
             }
             Self::Tsumo { pai, .. } | Self::Dahai { pai, .. } => swap_tile(pai),
-            Self::Chi { pai, consumed, .. } | Self::Pon { pai, consumed, .. } => {
+            Self::Pon { pai, consumed, .. } => {
                 swap_tile(pai);
                 consumed.iter_mut().for_each(swap_tile);
             }
@@ -210,8 +192,9 @@ impl Event {
                 consumed.iter_mut().for_each(swap_tile);
             }
             Self::Ankan { consumed, .. } => consumed.iter_mut().for_each(swap_tile),
-            Self::Dora { dora_marker } => swap_tile(dora_marker),
-            Self::Hora { ura_markers, .. } => ura_markers.iter_mut().flatten().for_each(swap_tile),
+            Self::Hora { .. } => {
+                // No ura_markers in Bloody Battle Mahjong
+            }
             _ => (),
         }
     }
@@ -262,18 +245,18 @@ mod test {
         let lines = r#"
             {"type":"none"}
             {"type":"start_game","names":["Equim","Mortal","akochan","NoName"],"seed":[123,456]}
-            {"type":"start_kyoku","bakaze":"E","dora_marker":"5s","kyoku":1,"honba":0,"kyotaku":0,"oya":0,"scores":[25000,25000,25000,25000],"tehais":[["N","3p","W","W","7m","N","S","C","7m","P","8p","2m","5m"],["7p","1p","2m","3m","4m","C","7s","7s","9s","9p","1m","C","1s"],["3s","E","5m","P","5m","F","7p","6m","5s","9p","1s","S","N"],["2p","4s","4p","E","5p","F","3p","1s","8p","6s","8s","7s","5p"]]}
+            {"type":"start_kyoku","kyoku":1,"oya":0,"scores":[25000,25000,25000,25000],"tehais":[["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"],["1p","2p","3p","4p","5p","6p","7p","8p","9p","1s","2s","3s","4s"],["1s","2s","3s","4s","5s","6s","7s","8s","9s","1m","2m","3m","4m"],["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"]]}
+            {"type":"ding_que","actor":0,"suit":"man"}
+            {"type":"ding_que","actor":1,"suit":"pin"}
+            {"type":"ding_que","actor":2,"suit":"sou"}
+            {"type":"ding_que","actor":3,"suit":"man"}
             {"type":"tsumo","actor":0,"pai":"1m"}
             {"type":"dahai","actor":0,"pai":"2m","tsumogiri":true}
-            {"type":"chi","actor":1,"target":0,"pai":"6s","consumed":["5sr","7s"]}
-            {"type":"pon","actor":1,"target":0,"pai":"C","consumed":["C","C"]}
-            {"type":"daiminkan","actor":2,"target":0,"pai":"5p","consumed":["5pr","5p","5p"]}
-            {"type":"kakan","actor":3,"pai":"S","consumed":["S","S","S"]}
+            {"type":"pon","actor":1,"target":0,"pai":"5p","consumed":["5p","5p"]}
+            {"type":"daiminkan","actor":2,"target":0,"pai":"5s","consumed":["5s","5s","5s"]}
+            {"type":"kakan","actor":3,"pai":"9m","consumed":["9m","9m","9m"]}
             {"type":"ankan","actor":0,"consumed":["9m","9m","9m","9m"]}
-            {"type":"dora","dora_marker":"3s"}
-            {"type":"reach","actor":1}
-            {"type":"reach_accepted","actor":2}
-            {"type":"hora","actor":3,"target":1,"deltas":[0,-8000,0,9000],"ura_markers":["4p"]}
+            {"type":"hora","actor":3,"target":1,"deltas":[0,-8000,0,8000]}
             {"type":"hora","actor":3,"target":1}
             {"type":"ryukyoku","deltas":[0,1500,0,-1500]}
             {"type":"ryukyoku"}
@@ -296,8 +279,9 @@ mod test {
     #[test]
     fn bound_check() {
         let value = json! ({
-            "type": "reach",
+            "type": "ding_que",
             "actor": 4,
+            "suit": "man",
         });
         json::from_value::<Event>(value).unwrap_err();
 
@@ -310,18 +294,14 @@ mod test {
 
         let value = json!({
             "type": "start_kyoku",
-            "bakaze": "E",
-            "dora_marker": "5s",
             "kyoku": 1,
-            "honba": 0,
-            "kyotaku": 0,
             "oya": 0,
             "scores": [25000, 25000, 25000, 25000],
             "tehais": [
-                ["N","3p","W","W","7m","N","S","C","7m","P","8p","2m","5m"],
-                ["7p","1p","2m","3m","4m","C","7s","7s","9s","9p","1m","C","1s"],
-                ["3s","E","5m","P","5m","F","7p","6m","5s","9p","1s","S","N"],
-                ["2p","4s","4p","E","5p","F","3p","1s","8p","6s","8s","7s","5p"],
+                ["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"],
+                ["1p","2p","3p","4p","5p","6p","7p","8p","9p","1s","2s","3s","4s"],
+                ["1s","2s","3s","4s","5s","6s","7s","8s","9s","1m","2m","3m","4m"],
+                ["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"],
             ],
         });
         let obj: Map<String, Value> = json::from_value(value).unwrap();

@@ -1,7 +1,7 @@
 use std::env;
 
 use anyhow::{Context, Result};
-use riichi::stat::Stat;
+use blood::stat::Stat;
 
 const USAGE: &str = "Usage: stat <DIR> <PLAYER_NAME>";
 
