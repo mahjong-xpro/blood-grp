@@ -174,8 +174,10 @@ impl PlayerState {
         // Bloody Battle: No bakaze, simplified ryukyoku logic
         // (This logic may need adjustment based on actual game flow)
 
-        if self.is_all_last {
-            // Ryukyoku if it is all-last and we are oya or we are not the last,
+        // Bloody Battle: No all_last concept (game ends when 3 players win or draw)
+        // Simplified logic: allow ryukyoku if we are oya or we are not the last
+        {
+            // Ryukyoku if we are oya or we are not the last,
             // because it is hard to decide whether it is appropriate to not
             // ryukyoku.
             if self.oya == 0 || self.rank < 3 {
@@ -219,9 +221,9 @@ impl PlayerState {
     }
 
     fn rule_based_agari_slow(&self, is_ron: bool, target_rel: usize) -> bool {
-        // Agari if it is not yet all-last, or we are oya ourselves, or we are
-        // not the last place at all.
-        if !self.is_all_last || self.oya == 0 || self.rank < 3 {
+        // Bloody Battle: No all_last concept
+        // Agari if we are oya ourselves, or we are not the last place at all.
+        if self.oya == 0 || self.rank < 3 {
             return true;
         }
 

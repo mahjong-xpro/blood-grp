@@ -85,7 +85,8 @@ fn sum_tiles(tiles: &[u8]) -> usize {
 
 /// `len_div3` must be within [0, 4].
 #[must_use]
-pub fn calc_normal(tiles: &[u8; 34], len_div3: u8) -> i8 {
+// Bloody Battle: 27 tile kinds (no jihai)
+pub fn calc_normal(tiles: &[u8; 27], len_div3: u8) -> i8 {
     let len_div3 = len_div3 as usize;
 
     let mut ret = SUHAI_TABLE
@@ -94,13 +95,14 @@ pub fn calc_normal(tiles: &[u8; 34], len_div3: u8) -> i8 {
         .unwrap_or_default();
     add_suhai(&mut ret, sum_tiles(&tiles[9..2 * 9]), len_div3);
     add_suhai(&mut ret, sum_tiles(&tiles[2 * 9..3 * 9]), len_div3);
-    add_jihai(&mut ret, sum_tiles(&tiles[3 * 9..]), len_div3);
+    // Bloody Battle: No jihai, so no add_jihai call
 
     (ret[5 + len_div3] as i8) - 1
 }
 
 #[must_use]
-pub fn calc_chitoi(tiles: &[u8; 34]) -> i8 {
+// Bloody Battle: 27 tile kinds (no jihai)
+pub fn calc_chitoi(tiles: &[u8; 27]) -> i8 {
     let mut pairs = 0;
     let mut kinds = 0;
     tiles.iter().filter(|&&c| c > 0).for_each(|&c| {
@@ -115,38 +117,23 @@ pub fn calc_chitoi(tiles: &[u8; 34]) -> i8 {
 }
 
 #[must_use]
-pub fn calc_kokushi(tiles: &[u8; 34]) -> i8 {
-    let mut pairs = 0;
-    let mut kinds = 0;
-
-    tuz![1m, 9m, 1p, 9p, 1s, 9s, E, S, W, N, P, F, C]
-        .iter()
-        .map(|&i| tiles[i])
-        .filter(|&c| c > 0)
-        .for_each(|c| {
-            kinds += 1;
-            if c >= 2 {
-                pairs += 1;
-            }
-        });
-
-    let redunct = (pairs > 0) as i8;
-    14 - kinds - redunct - 1
+// Bloody Battle: No kokushi (requires jihai)
+pub fn calc_kokushi(_tiles: &[u8; 27]) -> i8 {
+    // Bloody Battle: Kokushi is not possible without jihai
+    i8::MAX // Return max value to indicate impossible
 }
 
 #[must_use]
-pub fn calc_all(tiles: &[u8; 34], len_div3: u8) -> i8 {
+// Bloody Battle: 27 tile kinds (no jihai)
+pub fn calc_all(tiles: &[u8; 27], len_div3: u8) -> i8 {
     let mut shanten = calc_normal(tiles, len_div3);
     if shanten <= 0 || len_div3 < 4 {
         return shanten;
     }
 
     shanten = shanten.min(calc_chitoi(tiles));
-    if shanten > 0 {
-        shanten.min(calc_kokushi(tiles))
-    } else {
-        shanten
-    }
+    // Bloody Battle: No kokushi (requires jihai)
+    shanten
 }
 
 #[cfg(test)]
