@@ -301,8 +301,6 @@ impl Stat {
             }
 
             // Event::Reach and Event::ReachAccepted removed - Bloody Battle Mahjong does not have riichi
-                }
-            }
 
             Event::Hora {
                 actor,
@@ -314,7 +312,8 @@ impl Stat {
                 vec_add_assign(&mut cur_scores, &deltas);
 
                 if actor == player_id {
-                    let point = deltas[player_id as usize] as i64 - riichi_accepted as i64 * 1000;
+                    // Bloody Battle: No riichi, so no 1000 point deduction
+                    let point = deltas[player_id as usize] as i64;
                     stat.agari += 1;
                     stat.agari_jun += jun;
                     if cur_oya == player_id {
@@ -324,12 +323,8 @@ impl Stat {
                         stat.agari_point_ko += point;
                     }
 
-                    if riichi_accepted {
-                        stat.riichi_agari += 1;
-                        stat.riichi_agari_jun += jun;
-                        stat.riichi_agari_point += point;
-                        stat.riichi_point += point;
-                    } else if fuuro_num > 0 {
+                    // Bloody Battle: No riichi_agari tracking
+                    if fuuro_num > 0 {
                         stat.fuuro_agari += 1;
                         stat.fuuro_agari_jun += jun;
                         stat.fuuro_agari_point += point;
@@ -340,7 +335,8 @@ impl Stat {
                         stat.dama_agari_point += point;
                     }
 
-                    if point >= Point::yakuman(cur_oya == player_id, 1).ron as i64 {
+                    // Bloody Battle: No yakuman (5番封顶 = 16000点)
+                    if point >= 16000 {
                         stat.yakuman += 1;
                     }
                 } else if target == player_id {
@@ -354,10 +350,8 @@ impl Stat {
                         stat.houjuu_point_to_ko += point;
                     }
 
-                    if riichi_declared {
-                        stat.riichi_houjuu += 1;
-                        stat.riichi_point += point;
-                    } else if fuuro_num > 0 {
+                    // Bloody Battle: No riichi_declared
+                    if fuuro_num > 0 {
                         stat.fuuro_houjuu += 1;
                         stat.fuuro_point += point;
                     }
@@ -371,10 +365,8 @@ impl Stat {
                 let point = deltas[player_id as usize] as i64;
                 stat.ryukyoku += 1;
                 stat.ryukyoku_point += point;
-                if riichi_accepted {
-                    stat.riichi_ryukyoku += 1;
-                    stat.riichi_point += point - 1000;
-                } else if fuuro_num > 0 {
+                // Bloody Battle: No riichi_accepted
+                if fuuro_num > 0 {
                     stat.fuuro_point += point;
                 }
 
