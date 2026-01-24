@@ -313,7 +313,8 @@ impl BatchAgent for MortalBatchAgent {
         let kan_select_idx = sync_fields.kan_action_idxs[index].take();
 
         let actor = self.player_ids[index];
-        let akas_in_hand = state.akas_in_hand();
+        // Bloody Battle: No akas_in_hand
+        let akas_in_hand = [false; 3]; // Placeholder
         let cans = state.last_cans();
 
         let orig_action = self.actions[action_idx];
@@ -336,7 +337,8 @@ impl BatchAgent for MortalBatchAgent {
             };
 
         let event = match action {
-            0..=36 => {
+            // Bloody Battle: 0-26 = discard (27 tile kinds)
+            0..=26 => {
                 ensure!(
                     cans.can_discard,
                     "failed discard check: {}",
@@ -352,124 +354,16 @@ impl BatchAgent for MortalBatchAgent {
                 }
             }
 
-            37 => {
-                ensure!(
-                    cans.can_riichi,
-                    "failed riichi check: {}",
-                    state.brief_info()
-                );
-
-                Event::Reach { actor }
-            }
-
-            38 => {
-                ensure!(
-                    cans.can_chi_low,
-                    "failed chi low check: {}",
-                    state.brief_info()
-                );
-
-                let pai = state
-                    .last_kawa_tile()
-                    .context("invalid state: no last kawa tile")?;
-                let first = pai.next();
-
-                let can_akaize_consumed = match pai.as_u8() {
-                    tu8!(3m) | tu8!(4m) => akas_in_hand[0],
-                    tu8!(3p) | tu8!(4p) => akas_in_hand[1],
-                    tu8!(3s) | tu8!(4s) => akas_in_hand[2],
-                    _ => false,
-                };
-                let consumed = if can_akaize_consumed {
-                    [first.akaize(), first.next().akaize()]
-                } else {
-                    [first, first.next()]
-                };
-                Event::Chi {
-                    actor,
-                    target: cans.target_actor,
-                    pai,
-                    consumed,
-                }
-            }
-            39 => {
-                ensure!(
-                    cans.can_chi_mid,
-                    "failed chi mid check: {}",
-                    state.brief_info()
-                );
-
-                let pai = state
-                    .last_kawa_tile()
-                    .context("invalid state: no last kawa tile")?;
-
-                let can_akaize_consumed = match pai.as_u8() {
-                    tu8!(4m) | tu8!(6m) => akas_in_hand[0],
-                    tu8!(4p) | tu8!(6p) => akas_in_hand[1],
-                    tu8!(4s) | tu8!(6s) => akas_in_hand[2],
-                    _ => false,
-                };
-                let consumed = if can_akaize_consumed {
-                    [pai.prev().akaize(), pai.next().akaize()]
-                } else {
-                    [pai.prev(), pai.next()]
-                };
-                Event::Chi {
-                    actor,
-                    target: cans.target_actor,
-                    pai,
-                    consumed,
-                }
-            }
-            40 => {
-                ensure!(
-                    cans.can_chi_high,
-                    "failed chi high check: {}",
-                    state.brief_info()
-                );
-
-                let pai = state
-                    .last_kawa_tile()
-                    .context("invalid state: no last kawa tile")?;
-                let last = pai.prev();
-
-                let can_akaize_consumed = match pai.as_u8() {
-                    tu8!(6m) | tu8!(7m) => akas_in_hand[0],
-                    tu8!(6p) | tu8!(7p) => akas_in_hand[1],
-                    tu8!(6s) | tu8!(7s) => akas_in_hand[2],
-                    _ => false,
-                };
-                let consumed = if can_akaize_consumed {
-                    [last.prev().akaize(), last.akaize()]
-                } else {
-                    [last.prev(), last]
-                };
-                Event::Chi {
-                    actor,
-                    target: cans.target_actor,
-                    pai,
-                    consumed,
-                }
-            }
-
-            41 => {
+            // Bloody Battle: 27 = pon
+            27 => {
                 ensure!(cans.can_pon, "failed pon check: {}", state.brief_info());
 
                 let pai = state
                     .last_kawa_tile()
                     .context("invalid state: no last kawa tile")?;
 
-                let can_akaize_consumed = match pai.as_u8() {
-                    tu8!(5m) => akas_in_hand[0],
-                    tu8!(5p) => akas_in_hand[1],
-                    tu8!(5s) => akas_in_hand[2],
-                    _ => false,
-                };
-                let consumed = if can_akaize_consumed {
-                    [pai.akaize(), pai.deaka()]
-                } else {
-                    [pai.deaka(); 2]
-                };
+                // Bloody Battle: No akas
+                let consumed = [pai.deaka(); 2];
                 Event::Pon {
                     actor,
                     target: cans.target_actor,
@@ -478,72 +372,70 @@ impl BatchAgent for MortalBatchAgent {
                 }
             }
 
-            42 => {
+            // Bloody Battle: 28 = kan (decide)
+            28 => {
                 ensure!(
                     cans.can_daiminkan || cans.can_ankan || cans.can_kakan,
                     "failed kan check: {}",
                     state.brief_info()
                 );
 
-                let ankan_candidates = state.ankan_candidates();
-                let kakan_candidates = state.kakan_candidates();
-
-                let tile = if let Some(kan_idx) = kan_select_idx {
-                    let tile = must_tile!(self.actions[kan_idx]);
-                    ensure!(
-                        ankan_candidates.contains(&tile) || kakan_candidates.contains(&tile),
-                        "kan choice not in kan candidates: {}",
-                        state.brief_info()
-                    );
-                    tile
-                } else if cans.can_daiminkan {
-                    state
-                        .last_kawa_tile()
-                        .context("invalid state: no last kawa tile")?
-                } else if cans.can_ankan {
-                    ankan_candidates[0]
-                } else {
-                    kakan_candidates[0]
-                };
-
                 if cans.can_daiminkan {
-                    let consumed = if tile.is_aka() {
-                        [tile.deaka(); 3]
-                    } else {
-                        [tile.akaize(), tile, tile]
-                    };
+                    // Bloody Battle: No akas
+                    let tile = state
+                        .last_kawa_tile()
+                        .context("invalid state: no last kawa tile")?;
+                    let consumed = [tile.deaka(); 3];
                     Event::Daiminkan {
                         actor,
                         target: cans.target_actor,
                         pai: tile,
                         consumed,
                     }
-                } else if cans.can_ankan && ankan_candidates.contains(&tile.deaka()) {
+                } else if cans.can_ankan {
+                    let ankan_candidates = state.ankan_candidates();
+                    let tile = if let Some(kan_idx) = kan_select_idx {
+                        let tile = must_tile!(self.actions[kan_idx]);
+                        ensure!(
+                            ankan_candidates.contains(&tile),
+                            "kan choice not in ankan candidates: {}",
+                            state.brief_info()
+                        );
+                        tile
+                    } else {
+                        ankan_candidates[0]
+                    };
+                    // Bloody Battle: No akas
                     Event::Ankan {
                         actor,
-                        consumed: [tile.akaize(), tile, tile, tile],
+                        consumed: [tile.deaka(); 4],
                     }
-                } else {
-                    let can_akaize_target = match tile.as_u8() {
-                        tu8!(5m) => akas_in_hand[0],
-                        tu8!(5p) => akas_in_hand[1],
-                        tu8!(5s) => akas_in_hand[2],
-                        _ => false,
-                    };
-                    let (pai, consumed) = if can_akaize_target {
-                        (tile.akaize(), [tile.deaka(); 3])
+                } else if cans.can_kakan {
+                    let kakan_candidates = state.kakan_candidates();
+                    let tile = if let Some(kan_idx) = kan_select_idx {
+                        let tile = must_tile!(self.actions[kan_idx]);
+                        ensure!(
+                            kakan_candidates.contains(&tile),
+                            "kan choice not in kakan candidates: {}",
+                            state.brief_info()
+                        );
+                        tile
                     } else {
-                        (tile.deaka(), [tile.akaize(), tile.deaka(), tile.deaka()])
+                        kakan_candidates[0]
                     };
+                    // Bloody Battle: No akas
                     Event::Kakan {
                         actor,
-                        pai,
-                        consumed,
+                        pai: tile.deaka(),
+                        consumed: [tile.deaka(); 3],
                     }
+                } else {
+                    bail!("no kan action available: {}", state.brief_info())
                 }
             }
 
-            43 => {
+            // Bloody Battle: 29 = agari
+            29 => {
                 ensure!(
                     cans.can_agari(),
                     "failed hora check: {}",
@@ -554,11 +446,11 @@ impl BatchAgent for MortalBatchAgent {
                     actor,
                     target: cans.target_actor,
                     deltas: None,
-                    ura_markers: None,
                 }
             }
 
-            44 => {
+            // Bloody Battle: 30 = ryukyoku
+            30 => {
                 ensure!(
                     cans.can_ryukyoku,
                     "failed ryukyoku check: {}",
@@ -568,8 +460,10 @@ impl BatchAgent for MortalBatchAgent {
                 Event::Ryukyoku { deltas: None }
             }
 
-            // 45
-            _ => Event::None,
+            // Bloody Battle: 31 = pass
+            31 => Event::None,
+
+            _ => bail!("invalid action: {} (ACTION_SPACE = {})", action, ACTION_SPACE),
         };
 
         let mut meta = self.gen_meta(state, action_idx);
