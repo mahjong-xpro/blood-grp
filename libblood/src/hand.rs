@@ -94,7 +94,9 @@ pub fn tile34_to_vec(tiles: &[u8; 34]) -> Vec<Tile> {
 }
 
 #[must_use]
-pub fn tiles_to_string(tiles: &[u8; 34], aka: [bool; 3]) -> String {
+// Bloody Battle: 27 tile kinds (no jihai, no red 5s)
+pub fn tiles_to_string(tiles: &[u8; 27], _aka: [bool; 3]) -> String {
+    // Bloody Battle: No jihai, only suhai (3 * 9 = 27)
     let suhai = tiles[..3 * 9]
         .chunks_exact(9)
         .enumerate()
@@ -131,18 +133,8 @@ pub fn tiles_to_string(tiles: &[u8; 34], aka: [bool; 3]) -> String {
         .collect::<Vec<_>>()
         .join(" ");
 
-    let jihai: String = tiles[3 * 9..]
-        .iter()
-        .enumerate()
-        .filter(|&(_, &count)| count > 0)
-        .map(|(num, &count)| (num + 1).to_string().repeat(count as usize))
-        .collect();
-
-    if jihai.is_empty() {
-        suhai
-    } else {
-        format!("{suhai} {jihai}z")
-    }
+    // Bloody Battle: No jihai
+    suhai
 }
 
 #[cfg(test)]

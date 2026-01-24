@@ -246,9 +246,10 @@ impl PlayerState {
             tile: pai,
             is_tedashi: !tsumogiri,
         };
+        // Bloody Battle: No chi, only pon (chi_pon field kept for compatibility)
         let kawa_item = KawaItem {
             kan: mem::take(&mut self.intermediate_kan),
-            chi_pon: self.intermediate_chi_pon.take(), // TODO: Rename to pon_info
+            chi_pon: None, // Bloody Battle: No chi, pon info is in fuuro_overview
             sutehai,
         };
         self.kawa[actor_rel].push(Some(kawa_item));
@@ -287,13 +288,13 @@ impl PlayerState {
                     tehai: &tehai_with_winning_tile,
                     is_menzen: self.is_menzen,
                     pons: &self.pons,
-                    pons: &self.pons,
                     minkans: &self.minkans,
                     ankans: &self.ankans,
-                    bakaze: self.bakaze.as_u8(),
-                    jikaze: self.jikaze.as_u8(),
                     winning_tile: pai.deaka().as_u8(),
                     is_ron: true,
+                    ding_que: self.ding_que,
+                    is_after_kan: self.at_rinshan,
+                    is_kan_discard: false,
                 };
                 self.last_cans.can_ron_agari = agari_calc.has_yaku();
             }
@@ -319,10 +320,8 @@ impl PlayerState {
         let actor_rel = self.rel(actor);
         let full_set = consumed.into_iter().chain(iter::once(pai)).collect();
         self.fuuro_overview[actor_rel].push(full_set);
-        self.intermediate_chi_pon = Some(ChiPon {
-            consumed,
-            target_tile: pai,
-        });
+        // Bloody Battle: No chi, only pon
+        // Chi/pon info is stored in fuuro_overview, not intermediate_chi_pon
         self.pad_kawa_for_pon_or_daiminkan(actor, target);
 
         if actor_rel != 0 {
