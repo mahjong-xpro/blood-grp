@@ -596,7 +596,7 @@ impl<'a> DivWorker<'a> {
         }
 
         let has_toitoi =
-            !self.div.has_chitoi && self.menzen_shuntsu.is_empty() && self.sup.chis.is_empty();
+            !self.div.has_chitoi && self.menzen_shuntsu.is_empty();
         if has_toitoi {
             // 対々和
             check_early_return! { han += 2 };
@@ -668,7 +668,7 @@ impl<'a> DivWorker<'a> {
                 check_early_return! { han += 2 };
             } else if self.div.has_ittsuu {
                 check_early_return! { han += 1 };
-            } else if self.menzen_shuntsu.len() + self.sup.chis.len() >= 3 {
+            } else if self.menzen_shuntsu.len() >= 3 {
                 let mut kinds = [0; 3];
                 for s in self.all_shuntsu() {
                     let kind = s as usize / 9;

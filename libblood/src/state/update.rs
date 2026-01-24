@@ -499,7 +499,7 @@ impl PlayerState {
     // Bloody Battle: No riichi, this function is removed
     #[allow(dead_code)]
     fn reach_accepted_removed(&mut self, _actor: u8) {
-        let actor_rel = self.rel(actor);
+        let actor_rel = self.rel(_actor);
         self.riichi_accepted[actor_rel] = true;
         self.scores[actor_rel] -= 1000;
         self.kyotaku += 1;
