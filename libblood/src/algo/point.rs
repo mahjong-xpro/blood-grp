@@ -1,154 +1,97 @@
+/// Bloody Battle Mahjong Point Calculation
+/// 
+/// Formula: 点数 = 1000 × 2^(番数-1)
+/// Cap: 5番封顶 = 16000点
+/// No oya advantage in scoring
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Point {
     pub ron: i32,
     pub tsumo_ko: i32,
-    pub tsumo_oya: i32,
+    pub tsumo_oya: i32, // Kept for compatibility, but equals tsumo_ko in Bloody Battle
 }
 
 impl Point {
-    /// Panics if the combinition is not possible.
-    ///
-    /// If `is_oya` holds, the `tsumo_oya` of the return value will always be `0`.
+    /// Calculate points based on fan (番数) in Bloody Battle Mahjong
+    /// 
+    /// Formula: 点数 = 1000 × 2^(番数-1)
+    /// Cap: 5番封顶 = 16000点
+    /// 
+    /// # Arguments
+    /// * `fan` - 番数 (1-5, capped at 5)
+    /// 
+    /// # Returns
+    /// Point with ron and tsumo values (no oya distinction)
     #[must_use]
-    pub fn calc(is_oya: bool, fu: u8, han: u8) -> Self {
-        let (ron, tsumo_ko, tsumo_oya) = if is_oya {
-            match (fu, han) {
-                (20, 2) | (40, 1) => (2000, 700, 0),
-                (20, 3) | (40, 2) | (80, 1) => (3900, 1300, 0),
-                (20, 4) | (40, 3) | (80, 2) => (7700, 2600, 0),
-                // ---
-                (25, 2) | (50, 1) => (2400, 800, 0),
-                (25, 3) | (50, 2) | (100, 1) => (4800, 1600, 0),
-                (25, 4) | (50, 3) | (100, 2) => (9600, 3200, 0),
-                // ---
-                (30, 1) => (1500, 500, 0),
-                (30, 2) | (60, 1) => (2900, 1000, 0),
-                (30, 3) | (60, 2) => (5800, 2000, 0),
-                (30, 4) | (60, 3) => (11600, 3900, 0),
-                // ---
-                (70, 1) => (3400, 1200, 0),
-                (70, 2) => (6800, 2300, 0),
-                // ---
-                (90, 1) => (4400, 1500, 0),
-                (90, 2) => (8700, 2900, 0),
-                // ---
-                // theoretical value, since 110/1 tsumo is not possible
-                (110, 1) => (5300, 1800, 0),
-                (110, 2) => (10600, 3600, 0),
-                // ---
-                (_, 5) | (40.., 4) | (70.., 3) => (12000, 4000, 0),
-                (_, 6..=7) => (18000, 6000, 0),
-                (_, 8..=10) => (24000, 8000, 0),
-                (_, 11..=12) => (36000, 12000, 0),
-                (_, 13..) => (48000, 16000, 0),
-                _ => panic!("impossible combinition of {fu} fu and {han} han"),
-            }
+    pub fn calc_from_fan(fan: u8) -> Self {
+        let fan = fan.min(5); // 5番封顶
+        let base_points = if fan == 0 {
+            0
         } else {
-            match (fu, han) {
-                (20, 2) | (40, 1) => (1300, 400, 700),
-                (20, 3) | (40, 2) | (80, 1) => (2600, 700, 1300),
-                (20, 4) | (40, 3) | (80, 2) => (5200, 1300, 2600),
-                // ---
-                (25, 2) | (50, 1) => (1600, 400, 800),
-                (25, 3) | (50, 2) | (100, 1) => (3200, 800, 1600),
-                (25, 4) | (50, 3) | (100, 2) => (6400, 1600, 3200),
-                // ---
-                (30, 1) => (1000, 300, 500),
-                (30, 2) | (60, 1) => (2000, 500, 1000),
-                (30, 3) | (60, 2) => (3900, 1000, 2000),
-                (30, 4) | (60, 3) => (7700, 2000, 3900),
-                // ---
-                (70, 1) => (2300, 600, 1200),
-                (70, 2) => (4500, 1200, 2300),
-                // ---
-                (90, 1) => (2900, 800, 1500),
-                (90, 2) => (5800, 1500, 2900),
-                // ---
-                // theoretical value, since 110/1 tsumo is not possible
-                (110, 1) => (3600, 900, 1800),
-                (110, 2) => (7100, 1800, 3600),
-                // ---
-                (_, 5) | (40.., 4) | (70.., 3) => (8000, 2000, 4000),
-                (_, 6..=7) => (12000, 3000, 6000),
-                (_, 8..=10) => (16000, 4000, 8000),
-                (_, 11..=12) => (24000, 6000, 12000),
-                (_, 13..) => (32000, 8000, 16000),
-                _ => panic!("impossible combinition of {fu} fu and {han} han"),
-            }
+            1000 * 2_i32.pow((fan - 1) as u32)
         };
+        
+        // Bloody Battle: No oya advantage, all players pay the same
         Self {
-            ron,
-            tsumo_ko,
-            tsumo_oya,
+            ron: base_points,
+            tsumo_ko: base_points,
+            tsumo_oya: base_points, // Same as tsumo_ko
         }
     }
 
-    #[inline]
+    /// Legacy method for compatibility - calculates from fu and han (Japanese Mahjong)
+    /// This should not be used in Bloody Battle, use calc_from_fan instead
+    #[deprecated(note = "Use calc_from_fan for Bloody Battle Mahjong")]
     #[must_use]
-    pub const fn yakuman(is_oya: bool, count: i32) -> Self {
-        if is_oya {
-            Self {
-                ron: 48000 * count,
-                tsumo_ko: 16000 * count,
-                tsumo_oya: 0,
-            }
-        } else {
-            Self {
-                ron: 32000 * count,
-                tsumo_ko: 8000 * count,
-                tsumo_oya: 16000 * count,
-            }
+    pub fn calc(_is_oya: bool, _fu: u8, han: u8) -> Self {
+        // Convert han to fan (they're the same concept in Bloody Battle)
+        Self::calc_from_fan(han)
+    }
+
+    /// Legacy method - not used in Bloody Battle (no yakuman)
+    #[deprecated(note = "Bloody Battle Mahjong has no yakuman")]
+    #[must_use]
+    pub const fn yakuman(_is_oya: bool, _count: i32) -> Self {
+        // Return max points (5番封顶)
+        Self {
+            ron: 16000,
+            tsumo_ko: 16000,
+            tsumo_oya: 16000,
         }
     }
 
+    /// Calculate total points for tsumo
+    /// 
+    /// Bloody Battle: All 3 other players pay the same amount (no oya advantage)
     #[inline]
     #[must_use]
-    pub const fn tsumo_total(self, is_oya: bool) -> i32 {
-        if is_oya {
-            self.tsumo_ko * 3
-        } else {
-            self.tsumo_ko * 2 + self.tsumo_oya
-        }
+    pub const fn tsumo_total(self, _is_oya: bool) -> i32 {
+        // Bloody Battle: No oya advantage, all players pay tsumo_ko
+        self.tsumo_ko * 3
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::iter::once;
 
     #[test]
-    fn table() {
-        for fu in (20..=110).step_by(10).chain(once(25)) {
-            for han in 1..=14 {
-                if han == 1 && fu < 30 {
-                    continue;
-                }
+    fn bloody_battle_scoring() {
+        // Test Bloody Battle scoring formula: 点数 = 1000 × 2^(番数-1)
+        assert_eq!(Point::calc_from_fan(1).ron, 1000);  // 1番 = 1000点
+        assert_eq!(Point::calc_from_fan(2).ron, 2000);  // 2番 = 2000点
+        assert_eq!(Point::calc_from_fan(3).ron, 4000);  // 3番 = 4000点
+        assert_eq!(Point::calc_from_fan(4).ron, 8000);  // 4番 = 8000点
+        assert_eq!(Point::calc_from_fan(5).ron, 16000); // 5番 = 16000点（封顶）
+        assert_eq!(Point::calc_from_fan(6).ron, 16000); // 6番 = 16000点（封顶）
+        assert_eq!(Point::calc_from_fan(10).ron, 16000); // 10番 = 16000点（封顶）
 
-                let base_points = if han >= 13 {
-                    8000
-                } else if han >= 11 {
-                    6000
-                } else if han >= 8 {
-                    4000
-                } else if han >= 6 {
-                    3000
-                } else if han >= 5 {
-                    2000
-                } else {
-                    (fu * 2_i32.pow(2 + han)).min(2000)
-                };
-                let get_points = |mult| (base_points * mult + 99) / 100 * 100;
-
-                let points_ko = Point::calc(false, fu as u8, han as u8);
-                assert_eq!(points_ko.tsumo_ko, get_points(1), "{fu}/{han}");
-                assert_eq!(points_ko.tsumo_oya, get_points(2), "{fu}/{han}");
-                assert_eq!(points_ko.ron, get_points(4), "{fu}/{han}");
-
-                let points_oya = Point::calc(true, fu as u8, han as u8);
-                assert_eq!(points_oya.tsumo_ko, get_points(2), "{fu}/{han}");
-                assert_eq!(points_oya.ron, get_points(6), "{fu}/{han}");
-            }
-        }
+        // Test no oya advantage
+        let point = Point::calc_from_fan(3);
+        assert_eq!(point.ron, point.tsumo_ko);
+        assert_eq!(point.tsumo_ko, point.tsumo_oya);
+        
+        // Test tsumo_total
+        assert_eq!(point.tsumo_total(false), 4000 * 3); // 3 players pay
+        assert_eq!(point.tsumo_total(true), 4000 * 3);  // Same for oya
     }
 }

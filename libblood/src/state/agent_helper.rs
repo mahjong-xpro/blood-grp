@@ -167,14 +167,14 @@ impl PlayerState {
                     let agari_calc = AgariCalculator {
                         tehai: &tehai_3n2,
                         is_menzen: self.is_menzen,
-                        chis: &self.chis,
                         pons: &self.pons,
                         minkans: &self.minkans,
                         ankans: &self.ankans,
-                        bakaze: self.bakaze.as_u8(),
-                        jikaze: self.jikaze.as_u8(),
                         winning_tile: tsumo as u8,
                         is_ron: true,
+                        ding_que: self.ding_que,
+                        is_after_kan: false,
+                        is_kan_discard: false,
                     };
                     ret[discard] = agari_calc.has_yaku();
                 }
@@ -372,19 +372,14 @@ impl PlayerState {
     ///
     /// This function should be called immediately, otherwise the state may
     /// change.
-    ///
-    /// `ura_indicators` is used only when the actor has an accepted riichi.
-    pub fn agari_points(&self, is_ron: bool, ura_indicators: &[Tile]) -> Result<Point> {
+    /// Calculate agari points for Bloody Battle Mahjong
+    /// 
+    /// Bloody Battle: No ura_indicators, no riichi, no dora
+    pub fn agari_points(&self, is_ron: bool, _ura_indicators: &[Tile]) -> Result<Point> {
         ensure!(
             is_ron && self.last_cans.can_ron_agari || self.last_cans.can_tsumo_agari,
             "cannot agari"
         );
-
-        // Here, 天和 and 地和 are handled individually as special cases, and
-        // there is no multi yakuman for these two.
-        if !is_ron && self.can_w_riichi {
-            return Ok(Point::yakuman(self.oya == 0, 1));
-        }
 
         let winning_tile = if is_ron {
             self.last_kawa_tile
@@ -393,72 +388,32 @@ impl PlayerState {
         }
         .context("cannot find the winning tile")?;
 
-        let additional_hans = if is_ron {
-            [
-                self.riichi_accepted[0],       // 立直
-                self.is_w_riichi,              // 両立直
-                self.at_ippatsu,               // 一发
-                self.tiles_left == 0,          // 河底撈魚
-                self.chankan_chance.is_some(), // 槍槓
-            ]
-            .iter()
-            .filter(|&&b| b)
-            .count() as u8
-        } else {
-            [
-                self.riichi_accepted[0],                  // 立直
-                self.is_w_riichi,                         // 両立直
-                self.at_ippatsu,                          // 一发
-                self.is_menzen,                           // 門前清自摸和
-                self.tiles_left == 0 && !self.at_rinshan, // 海底摸月
-                self.at_rinshan,                          // 嶺上開花
-            ]
-            .iter()
-            .filter(|&&b| b)
-            .count() as u8
-        };
-
+        // Add winning tile to tehai for agari calculation
         let mut tehai = self.tehai;
-        let mut final_doras_owned = self.doras_owned[0];
         if is_ron {
             let tid = winning_tile.deaka().as_usize();
             tehai[tid] += 1;
-            final_doras_owned += self.dora_factor[tid];
-            if winning_tile.is_aka() {
-                final_doras_owned += 1;
-            };
-        }
-        if self.riichi_accepted[0] {
-            final_doras_owned += ura_indicators
-                .iter()
-                .map(|&ura| {
-                    let next = ura.next();
-                    let mut count = tehai[next.as_usize()];
-                    if self.ankan_overview[0].contains(&next) {
-                        count += 4;
-                    }
-                    count
-                })
-                .sum::<u8>();
         }
 
+        // TODO: Determine is_after_kan and is_kan_discard from game state
         let agari_calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: self.is_menzen,
-            chis: &self.chis,
             pons: &self.pons,
             minkans: &self.minkans,
             ankans: &self.ankans,
-            bakaze: self.bakaze.as_u8(),
-            jikaze: self.jikaze.as_u8(),
             winning_tile: winning_tile.deaka().as_u8(),
             is_ron,
+            ding_que: self.ding_que,
+            is_after_kan: self.at_rinshan, // TODO: Properly track kan state
+            is_kan_discard: false, // TODO: Properly track kan discard state
         };
         let agari = agari_calc
-            .agari(additional_hans, final_doras_owned)
+            .agari()
             .context("not a hora hand")?;
 
-        Ok(agari.point(self.oya == 0))
+        // Bloody Battle: No oya advantage
+        Ok(agari.point(false))
     }
 
     /// Calculate the actual shanten at this point. Unlike `self.shanten`, this

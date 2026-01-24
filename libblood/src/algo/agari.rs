@@ -63,36 +63,39 @@ struct Div {
     has_ipeikou: bool,
 }
 
-#[derive(Debug, Clone, Copy, Eq)]
+/// Bloody Battle Mahjong Agari Result
+/// 
+/// Only fan (番数) is used, no fu (符数)
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum Agari {
-    /// `fu` may be 0 if `han` is greater than 4.
-    Normal {
-        fu: u8,
-        han: u8,
-    },
-    Yakuman(u8),
+    /// Fan count (1-5, capped at 5)
+    Fan(u8),
 }
 
+/// Bloody Battle Mahjong Agari Calculator
 #[derive(Debug)]
 pub struct AgariCalculator<'a> {
     /// Must include the winning tile (i.e. must be 3n+2)
-    pub tehai: &'a [u8; 34],
-    /// `self.chis.is_empty() && self.pons.is_empty() && self.minkans.is_empty()`
+    /// Bloody Battle: 27 tile kinds (no jihai, no red 5s)
+    pub tehai: &'a [u8; 27],
+    /// `self.pons.is_empty() && self.minkans.is_empty() && self.ankans.is_empty()`
     pub is_menzen: bool,
-    pub chis: &'a [u8],
     pub pons: &'a [u8],
     pub minkans: &'a [u8],
     pub ankans: &'a [u8],
 
-    pub bakaze: u8,
-    pub jikaze: u8,
-
     /// Must be deakaized
     pub winning_tile: u8,
-    /// For consistency reasons, `is_ron` is only used to calculate fu and check
-    /// ankou/ankan-related yakus like 三/四暗刻. It will not be used to
-    /// determine 門前清自摸和.
+    /// True for ron (荣和), false for tsumo (自摸)
     pub is_ron: bool,
+    
+    /// Bloody Battle specific: Ding Que suit (定缺)
+    pub ding_que: Option<crate::mjai::Suit>,
+    
+    /// Bloody Battle specific: Was this agari after a kan? (for 杠上花/杠上炮)
+    pub is_after_kan: bool,
+    /// Bloody Battle specific: Was this agari from a tile discarded after kan? (for 杠上炮)
+    pub is_kan_discard: bool,
 }
 
 struct DivWorker<'a> {
@@ -201,57 +204,149 @@ impl Agari {
 }
 
 impl AgariCalculator<'_> {
+    /// Check if the hand can agari (和牌)
+    /// 
+    /// Bloody Battle: All valid hand structures can agari (no yaku requirement)
     #[inline]
     #[must_use]
     pub fn has_yaku(&self) -> bool {
-        self.search_yakus_impl(true).is_some()
+        // Bloody Battle: Check if hand structure is valid (can be divided into groups)
+        let (_, key) = get_tile14_and_key(self.tehai);
+        AGARI_TABLE.get(&key).is_some()
     }
 
+    /// Search for yaku (not used in Bloody Battle, kept for compatibility)
     #[inline]
     #[must_use]
     pub fn search_yakus(&self) -> Option<Agari> {
-        self.search_yakus_impl(false)
+        // Bloody Battle: All valid hands can agari, use agari() instead
+        self.agari()
     }
 
-    /// `additional_hans` includes 門前清自摸和, (両)立直, 槍槓, 嶺上開花, 海底
-    /// 摸月 and 河底撈魚. 天和 and 地和 are supposed to be checked somewhere
-    /// else other than here.
-    ///
-    /// `None` is returned iff `!self.has_yaku() && additional_hans == 0` holds.
-    ///
-    /// This function is only supposed to be called by callers who have the
-    /// knowledge of the ura doras.
+    /// Calculate fan (番数) for Bloody Battle Mahjong
+    /// 
+    /// Returns the total fan count (1-5, capped at 5)
+    /// 
+    /// # Bloody Battle Fan Types:
+    /// 1. 平胡（PingHu）：+1番（基础，必须）
+    /// 2. 自摸（Tsumo）：+1番（if !is_ron）
+    /// 3. 七对（QiDui）：+2番
+    /// 4. 碰碰胡（ToiToi）：+1番
+    /// 5. 金钩钓（JinGouDiao）：+2番
+    /// 6. 清一色（QingYiSe）：+2番
+    /// 7. 带幺九（DaiYaoJiu）：+3番
+    /// 8. 四归一（SiGuiYi / 根）：+1番/根
+    /// 9. 杠上花（GangShangHua）：+1番（if is_after_kan && !is_ron）
+    /// 10. 杠上炮（GangShangPao）：+1番（if is_kan_discard && is_ron）
     #[must_use]
-    pub fn agari(&self, additional_hans: u8, doras: u8) -> Option<Agari> {
-        if let Some(agari) = self.search_yakus() {
-            Some(match agari {
-                Agari::Normal { fu, han } => Agari::Normal {
-                    fu,
-                    han: han + additional_hans + doras,
-                },
-                _ => agari,
-            })
-        } else if additional_hans == 0 {
-            None
-        } else if additional_hans + doras >= 5 {
-            Some(Agari::Normal {
-                fu: 0,
-                han: additional_hans + doras,
-            })
-        } else {
-            let (tile14, key) = get_tile14_and_key(self.tehai);
-            let divs = AGARI_TABLE.get(&key)?;
-
-            let fu = divs
-                .iter()
-                .map(|div| DivWorker::new(self, &tile14, div))
-                .map(|w| w.calc_fu(false))
-                .max()?;
-            Some(Agari::Normal {
-                fu,
-                han: additional_hans + doras,
-            })
+    pub fn agari(&self) -> Option<Agari> {
+        // Bloody Battle: Always has 平胡1番 (base fan)
+        let mut fan = 1;
+        
+        // 2. 自摸（Tsumo）：+1番
+        if !self.is_ron {
+            fan += 1;
         }
+        
+        // Check hand structure
+        let (tile14, key) = get_tile14_and_key(self.tehai);
+        let divs = AGARI_TABLE.get(&key)?;
+        
+        // Find the best division for fan calculation
+        let mut max_fan = 0;
+        for div in divs.iter() {
+            let mut div_fan = 0;
+            
+            // 3. 七对（QiDui）：+2番
+            if div.has_chitoi {
+                div_fan += 2;
+                // 七对与碰碰胡、金钩钓互斥，跳过其他检查
+                max_fan = max_fan.max(div_fan);
+                continue;
+            }
+            
+            // 4. 碰碰胡（ToiToi）：+1番 (4 kotsu + 1 pair, no shuntsu)
+            if div.shuntsu_idxs.is_empty() && div.kotsu_idxs.len() == 4 {
+                div_fan += 1;
+            }
+            
+            // 5. 金钩钓（JinGouDiao）：+2番 (4 fuuro + single wait)
+            let fuuro_count = self.pons.len() + self.minkans.len() + self.ankans.len();
+            if fuuro_count == 4 {
+                // TODO: Check if single wait (tanki)
+                div_fan += 2;
+            }
+            
+            // 6. 清一色（QingYiSe）：+2番
+            // Check if all tiles are same suit
+            let mut suit_kind: Option<u8> = None;
+            let mut is_qingyise = true;
+            for &tile_id in &tile14 {
+                if tile_id >= 27 {
+                    continue; // Skip invalid tiles
+                }
+                let kind = tile_id / 9;
+                if let Some(prev_kind) = suit_kind {
+                    if prev_kind != kind {
+                        is_qingyise = false;
+                        break;
+                    }
+                } else {
+                    suit_kind = Some(kind);
+                }
+            }
+            if is_qingyise && suit_kind.is_some() {
+                div_fan += 2;
+            }
+            
+            // 7. 带幺九（DaiYaoJiu）：+3番
+            // Check if all groups contain 1 or 9
+            let mut is_daiyaojiu = true;
+            for &tile_id in &tile14 {
+                if tile_id >= 27 {
+                    continue;
+                }
+                let kind = tile_id / 9;
+                let num = tile_id % 9;
+                // Check if tile is 1 or 9
+                if kind < 3 && num != 0 && num != 8 {
+                    is_daiyaojiu = false;
+                    break;
+                }
+            }
+            if is_daiyaojiu {
+                div_fan += 3;
+            }
+            
+            // 8. 四归一（SiGuiYi / 根）：+1番/根
+            // Count how many tiles appear 4 times
+            let mut gen_count = 0;
+            for count in self.tehai.iter() {
+                if *count == 4 {
+                    gen_count += 1;
+                }
+            }
+            div_fan += gen_count;
+            
+            max_fan = max_fan.max(div_fan);
+        }
+        
+        fan += max_fan;
+        
+        // 9. 杠上花（GangShangHua）：+1番
+        if self.is_after_kan && !self.is_ron {
+            fan += 1;
+        }
+        
+        // 10. 杠上炮（GangShangPao）：+1番
+        if self.is_kan_discard && self.is_ron {
+            fan += 1;
+        }
+        
+        // 5番封顶
+        fan = fan.min(5);
+        
+        Some(Agari::Fan(fan))
     }
 
     fn search_yakus_impl(&self, return_if_any: bool) -> Option<Agari> {
@@ -764,7 +859,8 @@ pub fn ensure_init() {
     assert_eq!(AGARI_TABLE.len(), AGARI_TABLE_SIZE);
 }
 
-fn get_tile14_and_key(tiles: &[u8; 34]) -> ([u8; 14], u32) {
+/// Bloody Battle Mahjong: 27 tile kinds (no jihai)
+fn get_tile14_and_key(tiles: &[u8; 27]) -> ([u8; 14], u32) {
     let mut tile14 = [0; 14];
     let mut tile14_iter = tile14.iter_mut();
     let mut key = 0;
@@ -805,35 +901,7 @@ fn get_tile14_and_key(tiles: &[u8; 34]) -> ([u8; 14], u32) {
         }
     }
 
-    tiles
-        .iter()
-        .enumerate()
-        .skip(3 * 9)
-        .filter(|&(_, &c)| c > 0)
-        .for_each(|(tile_id, &c)| {
-            *tile14_iter.next().unwrap() = tile_id as u8;
-            bit_idx += 1;
-
-            match c {
-                2 => {
-                    key |= 0b11 << bit_idx;
-                    bit_idx += 2;
-                }
-                3 => {
-                    key |= 0b1111 << bit_idx;
-                    bit_idx += 4;
-                }
-                4 => {
-                    key |= 0b11_1111 << bit_idx;
-                    bit_idx += 6;
-                }
-                // 1
-                _ => (),
-            }
-            key |= 0b1 << bit_idx;
-            bit_idx += 1;
-        });
-
+    // Bloody Battle: No jihai, so we're done after processing 3 suits
     (tile14, key)
 }
 
