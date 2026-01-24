@@ -20,14 +20,9 @@ impl PlayerState {
 
     /// Used by `Agent` impls, must be called at 3n+2.
     #[must_use]
-    pub fn discard_candidates(&self) -> [bool; 34] {
-        let full = self.discard_candidates_aka();
-        let mut ret = [false; 34];
-        ret.copy_from_slice(&full[..34]);
-        ret[tuz!(5m)] |= full[tuz!(5mr)];
-        ret[tuz!(5s)] |= full[tuz!(5sr)];
-        ret[tuz!(5p)] |= full[tuz!(5pr)];
-        ret
+    pub fn discard_candidates(&self) -> [bool; 27] {
+        // Bloody Battle: No akas, just return the aka version directly
+        self.discard_candidates_aka()
     }
 
     /// Aka dora covered version of `discard_candidates`.
@@ -58,22 +53,18 @@ impl PlayerState {
     /// and furiten considered, without depending on any incidental yaku, and is
     /// not affected by the riichi status of the player.
     #[must_use]
-    pub fn discard_candidates_with_unconditional_tenpai(&self) -> [bool; 34] {
-        let full = self.discard_candidates_with_unconditional_tenpai_aka();
-        let mut ret = [false; 34];
-        ret.copy_from_slice(&full[..34]);
-        ret[tuz!(5m)] |= full[tuz!(5mr)];
-        ret[tuz!(5s)] |= full[tuz!(5sr)];
-        ret[tuz!(5p)] |= full[tuz!(5pr)];
-        ret
+    pub fn discard_candidates_with_unconditional_tenpai(&self) -> [bool; 27] {
+        // Bloody Battle: No akas, just return the aka version directly
+        self.discard_candidates_with_unconditional_tenpai_aka()
     }
 
     /// Aka dora covered version of `discard_candidates_with_unconditional_tenpai`.
     #[must_use]
-    pub fn discard_candidates_with_unconditional_tenpai_aka(&self) -> [bool; 37] {
+    pub fn discard_candidates_with_unconditional_tenpai_aka(&self) -> [bool; 27] {
         assert!(self.last_cans.can_discard, "tehai is not 3n+2");
 
-        let mut ret = [false; 37];
+        // Bloody Battle: 27 tile kinds (no jihai, no red 5s)
+        let mut ret = [false; 27];
 
         if self.tiles_left == 0 // haitei
             || self.shanten > 1 // impossible to discard-to-tenpai
@@ -88,12 +79,9 @@ impl PlayerState {
                 return ret;
             }
             // Bloody Battle: No riichi or furiten
-            {
-                // All valid waits can agari
-                    ret[last_self_tsumo.as_usize()] = true;
-                }
-                return ret;
-            }
+            // All valid waits can agari
+            ret[last_self_tsumo.as_usize()] = true;
+            return ret;
         } else if shanten::calc_all(&self.tehai, self.tehai_len_div3) == -1 {
             // Ditto but for discard after chi/pon
             return ret;
