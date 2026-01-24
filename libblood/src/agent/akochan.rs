@@ -97,10 +97,10 @@ impl Agent for AkochanAgent {
         if let Some(dahai) = self.naki_tx.take() {
             let last = events.last().context("events is empty")?;
             match last.event {
-                Event::Chi { actor, .. }
-                | Event::Pon { actor, .. }
+                // Event::Chi removed - Bloody Battle Mahjong does not have chi
+                Event::Pon { actor, .. }
                 | Event::Daiminkan { actor, .. }
-                | Event::Reach { actor, .. }
+                // Event::Reach removed - Bloody Battle Mahjong does not have riichi
                     if actor == self.player_id =>
                 {
                     return Ok(EventExt::no_meta(dahai));

@@ -478,27 +478,19 @@ impl PlayerState {
         Ok(())
     }
 
-    // Bloody Battle: No riichi, this function is removed
-    // Bloody Battle: No riichi, this function is completely removed
+    // Bloody Battle: No riichi, these functions are completely removed
+    // They are kept as dead code stubs for compatibility
     #[allow(dead_code)]
     const fn reach_removed(&mut self, _actor: u8) {
-        let actor_rel = self.rel(_actor);
-        self.riichi_declared[actor_rel] = true;
-        if actor_rel == 0 {
-            // Bloody Battle: No riichi
-            self.last_cans.can_discard = true;
-        }
+        // Bloody Battle: No riichi
+        // This function should not be called
     }
 
-    // Bloody Battle: No riichi, this function is removed
     #[allow(dead_code)]
-    fn reach_accepted_removed(&mut self, _actor: u8) {
-        let actor_rel = self.rel(_actor);
-        self.riichi_accepted[actor_rel] = true;
-        self.scores[actor_rel] -= 1000;
-        self.kyotaku += 1;
-        self.update_rank();
-        // Bloody Battle: No ippatsu
+    fn reach_accepted_removed(&mut self, _actor: u8) -> Result<()> {
+        // Bloody Battle: No riichi
+        // This function should not be called
+        Ok(())
     }
 
     pub(super) const fn rel(&self, actor: u8) -> usize {
