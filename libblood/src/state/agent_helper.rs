@@ -32,49 +32,22 @@ impl PlayerState {
 
     /// Aka dora covered version of `discard_candidates`.
     #[must_use]
-    pub fn discard_candidates_aka(&self) -> [bool; 37] {
+    pub fn discard_candidates_aka(&self) -> [bool; 27] {
         assert!(self.last_cans.can_discard, "tehai is not 3n+2");
 
-        let mut ret = [false; 37];
+        // Bloody Battle: 27 tile kinds (no jihai, no red 5s)
+        let mut ret = [false; 27];
 
-        if self.riichi_accepted[0] {
-            let last_self_tsumo = self
-                .last_self_tsumo
-                .expect("riichi accepted without last self tsumo");
-            ret[last_self_tsumo.as_usize()] = true;
-            return ret;
-        }
-
+        // Bloody Battle: No riichi
         for (i, count) in self.tehai.iter().copied().enumerate() {
             if count == 0 {
                 continue;
             }
 
-            ret[i] = if self.riichi_declared[0] {
-                if self.shanten == 1 {
-                    self.next_shanten_discards[i]
-                } else {
-                    // shanten must be 0 here according to the rule
-                    self.keep_shanten_discards[i]
-                }
-            } else {
-                !self.forbidden_tiles[i]
-            };
+            ret[i] = !self.forbidden_tiles[i];
         }
 
-        if ret[tuz!(5m)] && self.akas_in_hand[0] {
-            ret[tuz!(5mr)] = true;
-            ret[tuz!(5m)] = self.tehai[tuz!(5m)] > 1;
-        }
-        if ret[tuz!(5p)] && self.akas_in_hand[1] {
-            ret[tuz!(5pr)] = true;
-            ret[tuz!(5p)] = self.tehai[tuz!(5p)] > 1;
-        }
-        if ret[tuz!(5s)] && self.akas_in_hand[2] {
-            ret[tuz!(5sr)] = true;
-            ret[tuz!(5s)] = self.tehai[tuz!(5s)] > 1;
-        }
-
+        // Bloody Battle: No akas
         ret
     }
 
@@ -114,9 +87,9 @@ impl PlayerState {
                 // already agari and any discard will result in furiten
                 return ret;
             }
-            if self.riichi_accepted[0] {
-                if !self.at_furiten {
-                    // already riichi and is not furiten (which is forever)
+            // Bloody Battle: No riichi or furiten
+            {
+                // All valid waits can agari
                     ret[last_self_tsumo.as_usize()] = true;
                 }
                 return ret;
@@ -180,18 +153,7 @@ impl PlayerState {
                 }
             });
 
-        if ret[tuz!(5m)] && self.akas_in_hand[0] {
-            ret[tuz!(5mr)] = true;
-            ret[tuz!(5m)] = self.tehai[tuz!(5m)] > 1;
-        }
-        if ret[tuz!(5p)] && self.akas_in_hand[1] {
-            ret[tuz!(5pr)] = true;
-            ret[tuz!(5p)] = self.tehai[tuz!(5p)] > 1;
-        }
-        if ret[tuz!(5s)] && self.akas_in_hand[2] {
-            ret[tuz!(5sr)] = true;
-            ret[tuz!(5s)] = self.tehai[tuz!(5s)] > 1;
-        }
+        // Bloody Battle: No akas
 
         ret
     }
@@ -199,7 +161,8 @@ impl PlayerState {
     #[inline]
     #[must_use]
     pub fn yaokyuu_kind_count(&self) -> u8 {
-        tuz![1m, 9m, 1p, 9p, 1s, 9s, E, S, W, N, P, F, C]
+        // Bloody Battle: Only 1m, 9m, 1p, 9p, 1s, 9s (no jihai)
+        tuz![1m, 9m, 1p, 9p, 1s, 9s]
             .iter()
             .map(|&i| self.tehai[i].min(1))
             .sum()
@@ -220,11 +183,8 @@ impl PlayerState {
             return false;
         }
 
-        // Ryukyoku if we are in the west round, because we usually don't need a
-        // big hand to win.
-        if self.bakaze == t!(W) {
-            return true;
-        }
+        // Bloody Battle: No bakaze, simplified ryukyoku logic
+        // (This logic may need adjustment based on actual game flow)
 
         if self.is_all_last {
             // Ryukyoku if it is all-last and we are oya or we are not the last,
@@ -236,9 +196,10 @@ impl PlayerState {
 
             // At all-last, we are the last and we are not oya. If even a
             // haneman tsumo cannot let us avoid the last, then do not ryukyoku.
-            let mut scores = [-3000 - self.honba as i32 * 300; 4];
-            scores[0] = 12000 + self.kyotaku as i32 * 1000 + self.honba as i32 * 300;
-            scores[self.oya as usize] = -6000 - self.honba as i32 * 300;
+            // Bloody Battle: No honba or kyotaku
+            let mut scores = [-3000; 4];
+            scores[0] = 12000;
+            scores[self.oya as usize] = -6000;
             vec_add_assign(&mut scores, &self.scores);
             return self.get_rank(scores) < 3;
         }
@@ -289,7 +250,9 @@ impl PlayerState {
         }
 
         // Calculate the max theoretical score we can achieve through this agari.
-        let max_win_point = if self.riichi_accepted[0] {
+        // Bloody Battle: No riichi
+        // Bloody Battle: No riichi, calculate max win point directly
+        let max_win_point = {
             let mut tehai_full = self.tehai;
             for t in &self.ankan_overview[0] {
                 tehai_full[t.as_usize()] += 4;
@@ -302,28 +265,9 @@ impl PlayerState {
                 .collect();
             tehai_ordered_by_count.sort_unstable_by(|(_, l), (_, r)| r.cmp(l));
 
-            // Try possible uradoras one by one, starting from the most valuable one
-            let mut tiles_seen = self.tiles_seen;
-            let mut ura_indicators = array_vec!([_; 5]);
-            'outer: for (t, _) in tehai_ordered_by_count {
-                let ura_ind = must_tile!(t).prev();
-                loop {
-                    if ura_indicators.len() >= self.dora_indicators.len() {
-                        // Break out of all loops.
-                        break 'outer;
-                    }
-                    if tiles_seen[ura_ind.as_usize()] >= 4 {
-                        // Try the next most-valuable possible uradora.
-                        continue 'outer;
-                    }
-                    ura_indicators.push(ura_ind);
-                    tiles_seen[ura_ind.as_usize()] += 1;
-                }
-            }
-
-            // `unwrap` is safe because there is a condition guard in
-            // `rule_based_agari`.
-            self.agari_points(is_ron, &ura_indicators).unwrap()
+            // Bloody Battle: No uradora calculation
+            // Just calculate agari points directly
+            self.agari_points(is_ron, &[]).unwrap()
         } else {
             // ditto
             self.agari_points(is_ron, &[]).unwrap()
@@ -332,8 +276,8 @@ impl PlayerState {
         // Calculate the best post-hora situation for us.
         let mut exp_scores = self.scores;
         if is_ron {
-            exp_scores[0] +=
-                max_win_point.ron + self.kyotaku as i32 * 1000 + self.honba as i32 * 300;
+            // Bloody Battle: No kyotaku or honba
+            exp_scores[0] += max_win_point.ron;
             exp_scores[target_rel] -= max_win_point.ron + self.honba as i32 * 300;
         } else {
             // The player must be ko here.
@@ -483,56 +427,38 @@ impl PlayerState {
 
         let num_doras_in_fuuro = if self.is_menzen && self.ankan_overview[0].is_empty() {
             0
-        } else {
-            let num_doras_in_tehai: u8 = self
-                .dora_indicators
-                .iter()
-                .map(|ind| self.tehai[ind.next().as_usize()])
-                .sum();
-            let num_akas = self.akas_in_hand.iter().filter(|&&b| b).count() as u8;
-            self.doras_owned[0] - num_doras_in_tehai - num_akas
         };
-        let prefer_riichi = self.scores[0] >= 1000;
-        let calc_double_riichi = can_discard && self.can_w_riichi;
+        // Bloody Battle: No dora, riichi, or akas
+        let num_doras_in_fuuro = 0;
+        let prefer_riichi = false;
+        let calc_double_riichi = false;
 
-        // If the player has an accepted riichi and has just dealt a tile
-        // (can_discard) that can't win (cur_shanten >= 0), treat the hand as if
-        // the tile has been discarded.
-        let mut tehai = self.tehai;
-        let mut akas_in_hand = self.akas_in_hand;
-        let is_discard_after_riichi = can_discard && self.riichi_accepted[0];
-        if is_discard_after_riichi {
-            let last_tsumo = self.last_self_tsumo.unwrap();
-            tehai[last_tsumo.deaka().as_usize()] -= 1;
-            match last_tsumo.as_u8() {
-                tu8!(5mr) => akas_in_hand[0] = false,
-                tu8!(5pr) => akas_in_hand[1] = false,
-                tu8!(5sr) => akas_in_hand[2] = false,
-                _ => (),
-            }
-            can_discard = false;
-        }
+        // Bloody Battle: No riichi, so no special discard handling
+        let tehai = self.tehai;
 
+        // TODO: SPCalculator needs to be updated for Bloody Battle
+        // For now, return empty table as placeholder
+        // This will need to be fixed when we update SPCalculator
         let init_state = InitState {
             tehai,
-            akas_in_hand,
+            akas_in_hand: [false; 3], // Bloody Battle: No akas
             tiles_seen: self.tiles_seen,
-            akas_seen: self.akas_seen,
+            akas_seen: [false; 3], // Bloody Battle: No akas
         };
         let sp_calc = SPCalculator {
             tehai_len_div3: self.tehai_len_div3,
             is_menzen: self.is_menzen,
-            chis: &self.chis,
+            chis: &[], // Bloody Battle: No chis
             pons: &self.pons,
             minkans: &self.minkans,
             ankans: &self.ankans,
-            bakaze: self.bakaze.as_u8(),
-            jikaze: self.jikaze.as_u8(),
+            bakaze: 0, // Bloody Battle: No bakaze
+            jikaze: 0, // Bloody Battle: No jikaze
             num_doras_in_fuuro,
             prefer_riichi,
-            dora_indicators: &self.dora_indicators,
+            dora_indicators: &[], // Bloody Battle: No dora
             calc_double_riichi,
-            calc_haitei,
+            calc_haitei: false, // Bloody Battle: No haitei
             sort_result: true,
             maximize_win_prob: false,
             calc_tegawari: false,
@@ -540,9 +466,7 @@ impl PlayerState {
         };
 
         let mut max_ev_table = sp_calc.calc(init_state, can_discard, tsumos_left, cur_shanten)?;
-        if is_discard_after_riichi {
-            max_ev_table[0].tile = self.last_self_tsumo.unwrap();
-        }
+        // Bloody Battle: No riichi discard handling
 
         Ok(SinglePlayerTables { max_ev_table })
     }

@@ -195,12 +195,7 @@ impl PlayerState {
                 self.tehai[tile.deaka().as_usize()] > 0,
                 "{tile} is not in hand",
             );
-            if tile.is_aka() {
-                ensure!(
-                    self.akas_in_hand[tile.as_usize() - tuz!(5mr)],
-                    "{tile} is not in hand",
-                );
-            }
+            // Bloody Battle: No akas
         }
         Ok(())
     }
