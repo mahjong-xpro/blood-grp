@@ -170,9 +170,7 @@ impl PlayerState {
         self.to_mark_same_cycle_furiten = None;
 
         self.is_menzen = true;
-        self.can_w_riichi = true;
-        self.is_w_riichi = false;
-        // Bloody Battle: No chis
+        // Bloody Battle: No chis, no riichi
         self.pons.clear();
         self.minkans.clear();
         self.ankans.clear();
@@ -180,7 +178,7 @@ impl PlayerState {
         self.kans_on_board = 0;
         self.tehai_len_div3 = 4;
         self.has_next_shanten_discard = false;
-        self.tiles_left = 70;
+        self.tiles_left = 56; // Bloody Battle: 108 - 52 = 56 tiles in yama
         self.at_turn = 0;
 
         self.kawa.iter_mut().for_each(|k| k.clear());
@@ -189,11 +187,6 @@ impl PlayerState {
         self.fuuro_overview.iter_mut().for_each(|k| k.clear());
         self.ankan_overview.iter_mut().for_each(|k| k.clear());
         self.intermediate_kan.clear();
-        self.intermediate_chi_pon = None;
-
-        self.riichi_declared.fill(false);
-        self.riichi_accepted.fill(false);
-        self.riichi_sutehais.fill(None);
 
         self.last_self_tsumo = None;
         self.last_kawa_tile = None;
@@ -439,7 +432,7 @@ impl PlayerState {
                 self.witness_tile(t)?;
             }
             for t in full_set {
-                self.update_doras_owned(actor_rel, t);
+                // Bloody Battle: No dora
             }
             self.can_w_riichi = false;
             self.at_ippatsu = false;
@@ -453,7 +446,7 @@ impl PlayerState {
         // `tsumogiri` to false in the Dahai after Chi
         self.last_self_tsumo = None;
 
-        self.update_doras_owned(0, pai);
+        // Bloody Battle: No dora
         for t in consumed {
             self.move_tile(t, MoveType::FuuroConsume)?;
         }
@@ -508,7 +501,7 @@ impl PlayerState {
                 self.witness_tile(t)?;
             }
             for t in full_set {
-                self.update_doras_owned(actor_rel, t);
+                // Bloody Battle: No dora
             }
             self.can_w_riichi = false;
             self.at_ippatsu = false;
@@ -522,7 +515,7 @@ impl PlayerState {
         // `tsumogiri` to false in the Dahai after Pon
         self.last_self_tsumo = None;
 
-        self.update_doras_owned(0, pai);
+        // Bloody Battle: No dora
         for t in consumed {
             self.move_tile(t, MoveType::FuuroConsume)?;
         }
@@ -553,7 +546,7 @@ impl PlayerState {
                 self.witness_tile(t)?;
             }
             for t in full_set {
-                self.update_doras_owned(actor_rel, t);
+                // Bloody Battle: No dora
             }
             self.can_w_riichi = false;
             self.at_ippatsu = false;
@@ -564,7 +557,7 @@ impl PlayerState {
         self.is_menzen = false;
         self.tehai_len_div3 -= 1;
 
-        self.update_doras_owned(0, pai);
+        // Bloody Battle: No dora
         for t in consumed {
             self.move_tile(t, MoveType::FuuroConsume)?;
         }
@@ -593,7 +586,7 @@ impl PlayerState {
 
         if actor_rel != 0 {
             self.witness_tile(pai)?;
-            self.update_doras_owned(actor_rel, pai);
+            // Bloody Battle: No dora
             self.last_kawa_tile = Some(pai); // for getting winning tile in self.agari
 
             // 槍槓
@@ -639,7 +632,7 @@ impl PlayerState {
         if actor_rel != 0 {
             for t in consumed {
                 self.witness_tile(t)?;
-                self.update_doras_owned(actor_rel, t);
+                // Bloody Battle: No dora
             }
             return Ok(());
         }
@@ -957,12 +950,7 @@ impl PlayerState {
         }
     }
 
-    pub(super) const fn update_doras_owned(&mut self, actor_rel: usize, tile: Tile) {
-        self.doras_owned[actor_rel] += self.dora_factor[tile.deaka().as_usize()];
-        if tile.is_aka() {
-            self.doras_owned[actor_rel] += 1;
-        }
-    }
+    // Bloody Battle: No dora, this function is removed
 
     pub(super) fn update_rank(&mut self) {
         self.rank = self.get_rank(self.scores);
