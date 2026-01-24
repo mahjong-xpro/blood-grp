@@ -126,9 +126,7 @@ impl PlayerState {
                 }
             }
 
-            Event::Reach { .. } => {
-                ensure!(cans.can_riichi, "cannot riichi");
-            }
+            // Event::Reach removed - Bloody Battle Mahjong does not have riichi
 
             // Chi event removed - Bloody Battle Mahjong does not have chi
             Event::Pon {

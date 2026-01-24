@@ -56,14 +56,13 @@ impl Invisible {
                         board.init_from_seed(seed);
 
                         cur.yama = board.yama;
-                        cur.rinshan = board.rinshan;
-                        cur.dora_indicators = board.dora_indicators;
-                        cur.ura_indicators = board.ura_indicators;
+                        // Bloody Battle: No rinshan, dora_indicators, or ura_indicators in Board
+                        cur.rinshan.clear();
+                        cur.dora_indicators.clear();
+                        cur.ura_indicators.clear();
 
                         // reverse because of the way Board pops tiles
                         cur.yama.reverse();
-                        cur.rinshan.reverse();
-                        cur.dora_indicators.reverse();
 
                         ret.push(mem::take(&mut cur));
                         continue;
@@ -184,7 +183,7 @@ impl Invisible {
             idx += 1; // Keep same offset for compatibility
         }
 
-        let mut encode_tile = |idx: usize, tile: Tile| {
+        let encode_tile = |idx: usize, tile: Tile| -> usize {
             let tile_id = tile.deaka().as_usize();
             arr.assign(idx, tile_id, 1.);
             // Bloody Battle: No akas, so only use 1 dimension per tile

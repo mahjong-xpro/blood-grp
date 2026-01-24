@@ -292,36 +292,15 @@ impl Stat {
                 jun += 1;
             }
 
-            Event::Chi { actor, .. }
-            | Event::Pon { actor, .. }
+            // Event::Chi removed - Bloody Battle Mahjong does not have chi
+            Event::Pon { actor, .. }
             | Event::Daiminkan { actor, .. }
                 if actor == player_id =>
             {
                 fuuro_num += 1;
             }
 
-            Event::Reach { actor } => {
-                if actor == player_id {
-                    riichi_declared = true;
-                    stat.riichi += 1;
-                    stat.riichi_jun += jun;
-                    if cur_oya == player_id {
-                        stat.riichi_as_oya += 1;
-                    }
-                    if others_riichi_declared {
-                        stat.chasing_riichi += 1;
-                    }
-                } else if riichi_declared {
-                    stat.riichi_got_chased += 1;
-                } else {
-                    others_riichi_declared = true;
-                }
-            }
-
-            Event::ReachAccepted { actor } => {
-                cur_scores[actor as usize] -= 1000;
-                if actor == player_id {
-                    riichi_accepted = true;
+            // Event::Reach and Event::ReachAccepted removed - Bloody Battle Mahjong does not have riichi
                 }
             }
 
