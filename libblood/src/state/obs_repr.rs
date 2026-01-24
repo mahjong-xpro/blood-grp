@@ -203,7 +203,7 @@ impl<'a> ObsEncoderContext<'a> {
 
         // Bloody Battle: No dora_indicators
         // Keep the same offset for compatibility
-        self.encode_tile_set(&[]);
+        self.encode_tile_set(std::iter::empty());
 
         state.kawa[0]
             .iter()
@@ -267,9 +267,7 @@ impl<'a> ObsEncoderContext<'a> {
                             if sutehai.is_tedashi {
                                 self.arr.assign(self.idx + 1, tid, v);
                             }
-                            if sutehai.is_riichi {
-                                self.arr.assign(self.idx + 2, tid, v);
-                            }
+                            // Bloody Battle: No riichi
                         }
                     }
                     self.idx += 3;
@@ -278,18 +276,20 @@ impl<'a> ObsEncoderContext<'a> {
             }
         }
 
-        let v = state.tiles_left as f32 / 69.;
+        // Bloody Battle: 56 tiles in yama (108 - 52 = 56)
+        let v = state.tiles_left as f32 / 56.;
         self.arr.fill(self.idx, v);
         self.idx += 1;
 
-        for count in state.doras_owned {
-            IntegerEncoder::new(count as usize, 12)
+        // Bloody Battle: No dora
+        for _ in 0..4 {
+            IntegerEncoder::new(0, 12)
                 .rescale(true)
                 .rbf_intervals(3)
                 .encode(&mut self);
         }
 
-        let doras_unseen = state.dora_indicators.len() as u8 * 4 + 3 - state.doras_seen;
+        let doras_unseen = 0;
         IntegerEncoder::new(doras_unseen as usize, 5 * 4 + 3)
             .rescale(true)
             .rbf_intervals(4)
@@ -307,12 +307,7 @@ impl<'a> ObsEncoderContext<'a> {
                         .find(|&i| self.arr.get(self.idx + i, tile_id) == 0.)
                         .unwrap();
                     self.arr.assign(self.idx + i, tile_id, 1.);
-                    // It is not possible to have more than one aka in a fuuro
-                    // set, at least in tenhou rule, so we simply use one
-                    // channel here.
-                    if tile.is_aka() {
-                        self.arr.fill(self.idx + 4, 1.);
-                    }
+                    // Bloody Battle: No akas
                 }
                 self.idx += 5;
             }
@@ -320,16 +315,22 @@ impl<'a> ObsEncoderContext<'a> {
         }
 
         for player_ankan in &state.ankan_overview {
+            // Bloody Battle: 27 tile kinds
             for tile in player_ankan {
                 let tile_id = tile.as_usize();
-                self.arr.assign(self.idx, tile_id, 1.);
+                if tile_id < 27 {
+                    self.arr.assign(self.idx, tile_id, 1.);
+                }
             }
             self.idx += 1;
         }
 
         if matches!(self.version, 2 | 3 | 4) {
+            // Bloody Battle: 27 tile kinds
             for (tid, count) in state.tiles_seen.iter().copied().enumerate() {
-                self.arr.assign(self.idx, tid, count as f32 / 4.);
+                if tid < 27 {
+                    self.arr.assign(self.idx, tid, count as f32 / 4.);
+                }
             }
             self.idx += 1;
 
@@ -694,18 +695,19 @@ impl<'a> ObsEncoderContext<'a> {
     where
         I: IntoIterator<Item = Tile>,
     {
-        let mut counts = [0; 34];
+        // Bloody Battle: 27 tile kinds
+        let mut counts = [0; 27];
         for tile in tiles {
             let tile_id = tile.deaka().as_usize();
+            if tile_id >= 27 {
+                continue;
+            }
 
             let i = &mut counts[tile_id];
             self.arr.assign(self.idx + *i, tile_id, 1.);
             *i += 1;
 
-            if tile.is_aka() {
-                let i = tile.as_usize() - tuz!(5mr);
-                self.arr.fill(self.idx + 4 + i, 1.);
-            }
+            // Bloody Battle: No akas
         }
         self.idx += 7;
     }
