@@ -20,7 +20,7 @@ use tinyvec::array_vec;
 #[pyclass]
 #[derive(Clone, Default)]
 pub struct Grp {
-    // [grand_kyoku, honba, kyotaku, [score[i] / 10000]] where i is player_id
+    // Bloody Battle: [kyoku, [score[i] / 10000]] where i is player_id (no grand_kyoku, honba, kyotaku)
     pub feature: Array2<f64>,
     pub rank_by_player: [u8; 4],
     pub final_scores: [i32; 4],
@@ -103,16 +103,9 @@ impl Grp {
                         vec_add_assign(&mut final_deltas, &ds);
                     }
                 }
-                Event::ReachAccepted { actor } => {
-                    if rank_by_player_opt.is_none() {
-                        final_deltas[actor as usize] -= 1000;
-                    }
-                }
+                // Event::ReachAccepted removed - Bloody Battle Mahjong does not have riichi
                 Event::StartKyoku {
-                    bakaze,
                     kyoku,
-                    honba,
-                    kyotaku,
                     scores,
                     ..
                 } => {
@@ -131,16 +124,10 @@ impl Grp {
                         rank_by_player_opt = Some(rk.rank_by_player);
                     }
 
+                    // Bloody Battle Mahjong: GRP feature is [kyoku, [score[i] / 10000]]
+                    // No grand_kyoku, honba, or kyotaku
                     let mut kyoku_info = array_vec!([_; GRP_SIZE]);
-                    let grand_kyoku = match bakaze.as_u8() {
-                        tu8!(E) => kyoku - 1,
-                        tu8!(S) => 3 + kyoku,
-                        _ => 7 + kyoku,
-                    };
-                    kyoku_info.push(grand_kyoku as f64);
-                    kyoku_info.push(honba as f64);
-                    kyoku_info.push(kyotaku as f64);
-                    // assume player 0 is the oya at E1
+                    kyoku_info.push(kyoku as f64);
                     kyoku_info.extend(scores.iter().map(|&score| score as f64 / 10000.));
                     assert_eq!(kyoku_info.len(), GRP_SIZE);
 

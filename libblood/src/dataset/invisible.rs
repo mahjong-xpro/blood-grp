@@ -41,17 +41,14 @@ impl Invisible {
                 }
 
                 Event::StartKyoku {
-                    bakaze,
                     kyoku,
-                    honba,
-                    dora_marker,
                     tehais,
                     ..
                 } => {
                     if let Some(seed) = seed {
+                        // Bloody Battle: No bakaze, honba, or dora_marker
                         let mut board = Board {
-                            kyoku: 4 * (bakaze.as_u8() - tu8!(E)) + kyoku - 1,
-                            honba: *honba,
+                            kyoku: kyoku - 1,
                             ..Default::default()
                         };
                         board.init_from_seed(seed);

@@ -4,16 +4,16 @@ use pyo3::prelude::*;
 
 pub const MAX_VERSION: u32 = 4;
 
-pub const ACTION_SPACE: usize = 37 // discard | kan (choice)
-                              + 1  // riichi
-                              + 3  // chi
+// Bloody Battle Mahjong: ACTION_SPACE
+pub const ACTION_SPACE: usize = 27 // discard (27 tile kinds)
                               + 1  // pon
                               + 1  // kan (decide)
                               + 1  // agari
                               + 1  // ryukyoku
                               + 1; // pass
-// = 46
-pub const GRP_SIZE: usize = 7;
+// = 32 (no riichi, no chi)
+// Bloody Battle Mahjong: GRP_SIZE = [kyoku, [score[i] / 10000]] = 1 + 4 = 5
+pub const GRP_SIZE: usize = 5;
 
 #[pyfunction]
 #[inline]

@@ -291,11 +291,8 @@ impl Gameplay {
         } = ctx;
 
         let cur = &wnd[0];
-        let next = if matches!(wnd[1], Event::ReachAccepted { .. } | Event::Dora { .. }) {
-            &wnd[2]
-        } else {
-            &wnd[1]
-        };
+        // Bloody Battle: No ReachAccepted or Dora events
+        let next = &wnd[1];
 
         match cur {
             Event::StartGame { names, .. } => {
@@ -339,8 +336,7 @@ impl Gameplay {
         let mut kan_select = None;
         let label_opt = match *next {
             Event::Dahai { pai, .. } => Some(pai.as_usize()),
-            Event::Reach { .. } => Some(37),
-            // Chi event removed - Bloody Battle Mahjong does not have chi
+            // Bloody Battle: No Reach or Chi events
             Event::Pon { actor, .. } if actor == self.player_id => Some(41),
             Event::Daiminkan { actor, pai, .. } if actor == self.player_id => {
                 if config.always_include_kan_select {
