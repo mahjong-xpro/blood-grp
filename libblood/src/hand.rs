@@ -109,12 +109,8 @@ pub fn tiles_to_string(tiles: &[u8; 27], _aka: [bool; 3]) -> String {
                 .filter(|&(_, &count)| count > 0)
                 .for_each(|(num, &count)| {
                     let literal_num = num + 1;
-                    if literal_num == 5 && aka[kind] {
-                        partial.push('0');
-                        partial += &literal_num.to_string().repeat(count as usize - 1);
-                    } else {
-                        partial += &literal_num.to_string().repeat(count as usize);
-                    }
+                    // Bloody Battle: No red 5s (aka)
+                    partial += &literal_num.to_string().repeat(count as usize);
                     not_empty = true;
                 });
 

@@ -187,20 +187,15 @@ impl PlayerState {
         format!(
             r#"player (abs): {}
 oya (rel): {}
-kyoku: {}{}-{}
+kyoku: {}-{}
 turn: {}
-jikaze: {}
 score (rel): {:?}
 tehai: {}
 fuuro: {:?}
 ankan: {:?}
 tehai len: {}
 shanten: {} (actual: {})
-furiten: {}
 waits: {waits:?}
-dora indicators: {:?}
-doras owned: {:?}
-doras seen: {}
 action candidates: {:#?}
 last self tsumo: {:?}
 last kawa tile: {:?}
@@ -211,14 +206,8 @@ single player table (max EV):
 {sp_tables}"#,
             self.player_id,
             self.oya,
-            // Bloody Battle: No bakaze
-            0, // Placeholder for bakaze
             self.kyoku + 1,
-            // Bloody Battle: No honba
-            0, // Placeholder for honba
             self.at_turn,
-            // Bloody Battle: No jikaze
-            0, // Placeholder for jikaze
             self.scores,
             // Bloody Battle: No akas_in_hand
             tiles_to_string(&self.tehai, [false; 3]),
@@ -227,11 +216,6 @@ single player table (max EV):
             self.tehai_len_div3,
             self.shanten,
             self.real_time_shanten(),
-            self.at_furiten,
-            // Bloody Battle: No dora
-            &[], // Placeholder for dora_indicators
-            [0; 4], // Placeholder for doras_owned
-            0, // Placeholder for doras_seen
             self.last_cans,
             self.last_self_tsumo,
             self.last_kawa_tile,

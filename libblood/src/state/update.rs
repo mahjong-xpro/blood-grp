@@ -331,8 +331,7 @@ impl PlayerState {
             for t in full_set {
                 // Bloody Battle: No dora
             }
-            self.can_w_riichi = false;
-            self.at_ippatsu = false;
+            // Bloody Battle: No riichi
             return Ok(());
         }
 
@@ -376,8 +375,7 @@ impl PlayerState {
             for t in full_set {
                 // Bloody Battle: No dora
             }
-            self.can_w_riichi = false;
-            self.at_ippatsu = false;
+            // Bloody Battle: No riichi
             return Ok(());
         }
 
@@ -423,7 +421,7 @@ impl PlayerState {
                 self.to_mark_same_cycle_furiten = Some(());
                 self.chankan_chance = Some(());
             } else {
-                self.at_ippatsu = false;
+                // Bloody Battle: No ippatsu
             }
 
             return Ok(());
@@ -487,10 +485,7 @@ impl PlayerState {
         let actor_rel = self.rel(_actor);
         self.riichi_declared[actor_rel] = true;
         if actor_rel == 0 {
-            // `self.is_w_riichi` should not be set at ReachAccepted as
-            // `self.can_w_riichi` will be set to `false` right after
-            // the Dahai.
-            self.is_w_riichi = self.can_w_riichi;
+            // Bloody Battle: No riichi
             self.last_cans.can_discard = true;
         }
     }
@@ -503,9 +498,7 @@ impl PlayerState {
         self.scores[actor_rel] -= 1000;
         self.kyotaku += 1;
         self.update_rank();
-        if actor_rel == 0 {
-            self.at_ippatsu = true;
-        }
+        // Bloody Battle: No ippatsu
     }
 
     pub(super) const fn rel(&self, actor: u8) -> usize {
