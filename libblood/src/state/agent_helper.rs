@@ -207,12 +207,6 @@ impl PlayerState {
             return self.get_rank(scores) < 3;
         }
 
-        // Do not ryukyoku if we have >= 10 yaokyuu tiles.
-        // Note: This code may be unreachable due to the logic above, but kept for completeness
-        if self.yaokyuu_kind_count() >= 10 {
-            return false;
-        }
-
         // Original check: if we have all the jihai kinds, do not ryukyoku
 
         // Ryukyoku otherwise.

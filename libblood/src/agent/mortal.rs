@@ -322,7 +322,7 @@ impl BatchAgent for MortalBatchAgent {
                 // The engine wants agari, but the rule-based engine is against
                 // it. In rule-based agari guard mode, it will force to execute
                 // the best alternative option other than agari.
-                let mut q_values = self.q_values[action_idx];
+                let q_values = self.q_values[action_idx];
                 q_values
                     .iter()
                     .enumerate()
