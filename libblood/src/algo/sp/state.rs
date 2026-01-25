@@ -24,6 +24,10 @@ pub struct InitState {
 
     // global
     pub tiles_seen: [u8; 27],
+    
+    // tiles_left is the authoritative count of tiles remaining in the wall
+    // Used to validate and correct tiles_in_wall calculation
+    pub tiles_left: u8,
 }
 
 impl From<InitState> for State {
@@ -31,10 +35,63 @@ impl From<InitState> for State {
         InitState {
             tehai,
             tiles_seen,
+            tiles_left,
         }: InitState,
     ) -> Self {
         let mut tiles_in_wall = tiles_seen;
         tiles_in_wall.iter_mut().for_each(|v| *v = 4 - *v);
+        
+        // 基础规则验证：tiles_in_wall 的总和必须等于 tiles_left
+        // 如果 tiles_seen 不完整（缺少其他玩家的手牌），计算出的 tiles_in_wall 总和会超过 tiles_left
+        // 此时需要按比例缩放 tiles_in_wall 以匹配 tiles_left
+        let calculated_sum: u8 = tiles_in_wall.iter().sum();
+        if calculated_sum != tiles_left {
+            // tiles_seen 不完整，需要修正 tiles_in_wall
+            // 按比例缩放每个 tile 类型的 tiles_in_wall，使总和等于 tiles_left
+            if calculated_sum > 0 {
+                let scale_factor = tiles_left as f32 / calculated_sum as f32;
+                for count in tiles_in_wall.iter_mut() {
+                    *count = (*count as f32 * scale_factor).round() as u8;
+                }
+                // 由于浮点舍入，总和可能不完全等于 tiles_left，需要微调
+                let adjusted_sum: u8 = tiles_in_wall.iter().sum();
+                if adjusted_sum != tiles_left {
+                    let diff = tiles_left as i16 - adjusted_sum as i16;
+                    // 将差值分配到 tiles_in_wall 中值最大的几个位置
+                    let mut remaining_diff = diff;
+                    let mut indices: Vec<usize> = (0..27).collect();
+                    indices.sort_by_key(|&i| std::cmp::Reverse(tiles_in_wall[i]));
+                    for &i in indices.iter() {
+                        if remaining_diff == 0 {
+                            break;
+                        }
+                        if remaining_diff > 0 && tiles_in_wall[i] < 4 {
+                            tiles_in_wall[i] += 1;
+                            remaining_diff -= 1;
+                        } else if remaining_diff < 0 && tiles_in_wall[i] > 0 {
+                            tiles_in_wall[i] -= 1;
+                            remaining_diff += 1;
+                        }
+                    }
+                }
+            } else {
+                // calculated_sum == 0 是异常情况，不应该发生
+                // 如果发生，将所有 tiles_in_wall 设为 0（虽然这不合理）
+                tiles_in_wall.fill(0);
+            }
+        }
+        
+        // 最终验证：修正后的总和必须等于 tiles_left
+        let final_sum: u8 = tiles_in_wall.iter().sum();
+        assert!(
+            final_sum == tiles_left,
+            "After correction, sum_left_tiles() = {} != tiles_left = {}. This indicates a fundamental bug in tiles_in_wall calculation. tiles_in_wall: {:?}, tiles_seen: {:?}",
+            final_sum,
+            tiles_left,
+            tiles_in_wall,
+            tiles_seen
+        );
+        
         Self {
             tehai,
             tiles_in_wall,
@@ -149,6 +206,7 @@ impl State {
         let sum: u8 = self.tiles_in_wall.iter().sum();
         // 血战到底基础规则：初始108张牌，发牌后剩余56张
         // 如果计算出的值超过56，说明 tiles_in_wall 的计算有严重错误，必须panic
+        // 注意：这个检查在 From<InitState> 中已经通过 tiles_left 验证和修正，这里只是双重检查
         assert!(
             sum <= 56,
             "sum_left_tiles() = {} exceeds maximum 56. This indicates a fundamental bug in tiles_in_wall calculation. tiles_in_wall: {:?}",

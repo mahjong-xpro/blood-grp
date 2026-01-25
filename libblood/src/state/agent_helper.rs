@@ -552,6 +552,7 @@ impl PlayerState {
         let init_state = InitState {
             tehai,
             tiles_seen,
+            tiles_left: self.tiles_left,
         };
         let sp_calc = SPCalculator {
             tehai_len_div3: self.tehai_len_div3,
