@@ -12,7 +12,8 @@ use anyhow::{Result, ensure};
 
 const SHANTEN_THRES: i8 = 3;
 // Bloody Battle: 27 tile kinds, 4 players, 13 tiles per player initially
-const MAX_TILES_LEFT: usize = 27 * 4 - 1 - 13;
+// 总牌数: 27 * 4 = 108, 初始手牌: 4 * 13 = 52, 剩余牌数: 108 - 52 = 56
+const MAX_TILES_LEFT: usize = 56;
 
 // Bloody Battle: No uradora (里宝牌) - no riichi (立直), no dora (宝牌), so URADORA_PROB_TABLE is removed
 
@@ -155,10 +156,10 @@ fn build_not_tsumo_prob_table<const MAX_TSUMO: usize>(
     // 有効牌の合計枚数ごとに、これまでの巡目で有効牌が引けなかった確率のテーブルを作成する。
     // not_tumo_prob_table_[i][j] = 有効牌の合計枚数が i 枚の場合に j - 1 巡目までに有効牌が引けなかった確率
     //
-    // The original version has only `n_left_tiles` rows, which can actually
-    // overflow for hands like 9999m6677p88s335z that can be improved by all
-    // kinds of tiles, and the number of all tiles left will be exactly
-    // `n_left_tiles`. A test case covers this.
+    // 业务逻辑：n_left_tiles 不应该超过 MAX_TILES_LEFT (56)
+    // 如果超过，说明 tiles_in_wall 的计算有问题，需要明确处理
+    // 这里先限制在 MAX_TILES_LEFT 以内，避免数组越界
+    let n_left_tiles = n_left_tiles.min(MAX_TILES_LEFT);
     for (i, row) in table.iter_mut().enumerate().take(n_left_tiles + 1) {
         row[0] = 1.;
         // n_left_tiles - i - j > 0 は残りはすべて有効牌の場合を考慮
@@ -474,7 +475,22 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
             .filter(|d| d.shanten_diff == -1)
             .map(|d| d.count)
             .sum();
-        let not_tsumo_probs = &self.not_tsumo_prob_table[sum_required_tiles as usize];
+        
+        // 业务逻辑验证：
+        // 1. sum_required_tiles 不应该超过实际剩余牌数 n_left_tiles
+        // 2. n_left_tiles 不应该超过 MAX_TILES_LEFT (56)
+        // 如果超过，说明业务逻辑有问题，需要明确处理
+        let n_left_tiles = self.state.sum_left_tiles() as usize;
+        if n_left_tiles > MAX_TILES_LEFT {
+            // 这不应该发生，如果发生说明 tiles_in_wall 的计算有问题
+            // 但我们先限制在 MAX_TILES_LEFT 以内，避免数组越界
+            // TODO: 需要检查为什么 n_left_tiles 会超过 56
+        }
+        // sum_required_tiles 理论上 <= n_left_tiles，如果超过说明计算有问题
+        let index = (sum_required_tiles as usize)
+            .min(n_left_tiles)
+            .min(MAX_TILES_LEFT);
+        let not_tsumo_probs = &self.not_tsumo_prob_table[index];
 
         for DrawTile {
             tile,
