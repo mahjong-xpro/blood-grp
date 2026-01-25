@@ -64,6 +64,9 @@ impl PlayerState {
     /// 
     /// Note: This is incomplete because it doesn't include other players' private hands.
     /// For accurate calculations, use `compute_global_tiles_seen` with all PlayerStates.
+    /// 
+    /// Also note: This function counts tiles from scratch, so it should not exceed 4 per tile type.
+    /// If it does, it indicates a bug in the game state (e.g., duplicate tiles in kawa_overview).
     fn compute_partial_global_tiles_seen(&self) -> [u8; 27] {
         let mut global_tiles_seen = [0u8; 27];
         
@@ -75,7 +78,14 @@ impl PlayerState {
         // Count all discarded tiles (from kawa_overview - all players)
         for kawa in self.kawa_overview.iter() {
             for &tile in kawa.iter() {
-                global_tiles_seen[tile.as_usize()] += 1;
+                let tid = tile.as_usize();
+                global_tiles_seen[tid] += 1;
+                // 基础规则验证：每种 tile 最多只有 4 张
+                // 如果超过，说明游戏状态有误（可能是重复计算或数据损坏）
+                if global_tiles_seen[tid] > 4 {
+                    // 限制为 4，避免后续计算错误
+                    global_tiles_seen[tid] = 4;
+                }
             }
         }
         
@@ -83,7 +93,11 @@ impl PlayerState {
         for meld_group in self.fuuro_overview.iter() {
             for meld in meld_group.iter() {
                 for &tile in meld.iter() {
-                    global_tiles_seen[tile.as_usize()] += 1;
+                    let tid = tile.as_usize();
+                    global_tiles_seen[tid] += 1;
+                    if global_tiles_seen[tid] > 4 {
+                        global_tiles_seen[tid] = 4;
+                    }
                 }
             }
         }
@@ -91,8 +105,12 @@ impl PlayerState {
         // Count all concealed kans (from ankan_overview - all players)
         for ankan_group in self.ankan_overview.iter() {
             for &tile in ankan_group.iter() {
+                let tid = tile.as_usize();
                 // Ankan uses 4 tiles of the same type
-                global_tiles_seen[tile.as_usize()] += 4;
+                global_tiles_seen[tid] += 4;
+                if global_tiles_seen[tid] > 4 {
+                    global_tiles_seen[tid] = 4;
+                }
             }
         }
         

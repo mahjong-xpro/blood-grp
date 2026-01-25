@@ -38,8 +38,17 @@ impl From<InitState> for State {
             tiles_left,
         }: InitState,
     ) -> Self {
-        let mut tiles_in_wall = tiles_seen;
-        tiles_in_wall.iter_mut().for_each(|v| *v = 4 - *v);
+        // 基础规则验证：每种 tile 最多只有 4 张，所以 tiles_seen 的每个值不应该超过 4
+        // 如果超过，说明计算有误（可能是重复计算），需要修正
+        let mut corrected_tiles_seen = tiles_seen;
+        for count in corrected_tiles_seen.iter_mut() {
+            *count = (*count).min(4);
+        }
+        
+        // 计算 tiles_in_wall = 4 - tiles_seen
+        // 注意：如果 tiles_seen 不完整（缺少其他玩家的手牌），tiles_in_wall 会偏高
+        let mut tiles_in_wall = corrected_tiles_seen;
+        tiles_in_wall.iter_mut().for_each(|v| *v = 4u8.saturating_sub(*v));
         
         // 基础规则验证：tiles_in_wall 的总和必须等于 tiles_left
         // 如果 tiles_seen 不完整（缺少其他玩家的手牌），计算出的 tiles_in_wall 总和会超过 tiles_left
@@ -48,16 +57,18 @@ impl From<InitState> for State {
         if calculated_sum != tiles_left {
             // tiles_seen 不完整，需要修正 tiles_in_wall
             // 按比例缩放每个 tile 类型的 tiles_in_wall，使总和等于 tiles_left
-            if calculated_sum > 0 {
+            // 同时确保每个值不超过 4（每种 tile 最多 4 张）
+            if calculated_sum > 0 && calculated_sum > tiles_left {
+                // tiles_in_wall 总和过高，需要缩小
                 let scale_factor = tiles_left as f32 / calculated_sum as f32;
                 for count in tiles_in_wall.iter_mut() {
-                    *count = (*count as f32 * scale_factor).round() as u8;
+                    *count = ((*count as f32 * scale_factor).round() as u8).min(4);
                 }
-                // 由于浮点舍入，总和可能不完全等于 tiles_left，需要微调
+                // 由于浮点舍入和 min(4) 限制，总和可能不完全等于 tiles_left，需要微调
                 let adjusted_sum: u8 = tiles_in_wall.iter().sum();
                 if adjusted_sum != tiles_left {
                     let diff = tiles_left as i16 - adjusted_sum as i16;
-                    // 将差值分配到 tiles_in_wall 中值最大的几个位置
+                    // 将差值分配到 tiles_in_wall 中值最大的几个位置（但不超过 4）
                     let mut remaining_diff = diff;
                     let mut indices: Vec<usize> = (0..27).collect();
                     indices.sort_by_key(|&i| std::cmp::Reverse(tiles_in_wall[i]));
@@ -74,22 +85,58 @@ impl From<InitState> for State {
                         }
                     }
                 }
-            } else {
-                // calculated_sum == 0 是异常情况，不应该发生
-                // 如果发生，将所有 tiles_in_wall 设为 0（虽然这不合理）
-                tiles_in_wall.fill(0);
+            } else if calculated_sum < tiles_left {
+                // tiles_in_wall 总和过低，需要增加
+                // 这种情况不应该发生（因为 tiles_seen 不完整会导致 tiles_in_wall 偏高）
+                // 但如果发生了，按比例增加（但不超过 4）
+                let scale_factor = tiles_left as f32 / calculated_sum as f32;
+                for count in tiles_in_wall.iter_mut() {
+                    *count = ((*count as f32 * scale_factor).round() as u8).min(4);
+                }
+                // 微调
+                let adjusted_sum: u8 = tiles_in_wall.iter().sum();
+                if adjusted_sum != tiles_left {
+                    let diff = tiles_left as i16 - adjusted_sum as i16;
+                    let mut remaining_diff = diff;
+                    let mut indices: Vec<usize> = (0..27).collect();
+                    indices.sort_by_key(|&i| std::cmp::Reverse(tiles_in_wall[i]));
+                    for &i in indices.iter() {
+                        if remaining_diff == 0 {
+                            break;
+                        }
+                        if remaining_diff > 0 && tiles_in_wall[i] < 4 {
+                            tiles_in_wall[i] += 1;
+                            remaining_diff -= 1;
+                        } else if remaining_diff < 0 && tiles_in_wall[i] > 0 {
+                            tiles_in_wall[i] -= 1;
+                            remaining_diff += 1;
+                        }
+                    }
+                }
             }
         }
         
-        // 最终验证：修正后的总和必须等于 tiles_left
+        // 最终验证：每个 tiles_in_wall 值不应该超过 4，总和必须等于 tiles_left
+        for (i, &count) in tiles_in_wall.iter().enumerate() {
+            assert!(
+                count <= 4,
+                "tiles_in_wall[{}] = {} exceeds maximum 4. This indicates a fundamental bug. tiles_in_wall: {:?}, tiles_seen: {:?}, corrected_tiles_seen: {:?}",
+                i,
+                count,
+                tiles_in_wall,
+                tiles_seen,
+                corrected_tiles_seen
+            );
+        }
         let final_sum: u8 = tiles_in_wall.iter().sum();
         assert!(
             final_sum == tiles_left,
-            "After correction, sum_left_tiles() = {} != tiles_left = {}. This indicates a fundamental bug in tiles_in_wall calculation. tiles_in_wall: {:?}, tiles_seen: {:?}",
+            "After correction, sum_left_tiles() = {} != tiles_left = {}. This indicates a fundamental bug in tiles_in_wall calculation. tiles_in_wall: {:?}, tiles_seen: {:?}, corrected_tiles_seen: {:?}",
             final_sum,
             tiles_left,
             tiles_in_wall,
-            tiles_seen
+            tiles_seen,
+            corrected_tiles_seen
         );
         
         Self {
