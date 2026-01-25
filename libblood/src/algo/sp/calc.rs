@@ -718,7 +718,7 @@ mod test {
         // ---
 
         let tehai = hand("3667m 23489p 34688s").unwrap();
-        let mut tiles_seen = tehai;
+        let tiles_seen = tehai;
         let state = InitState {
             tehai,
             tiles_seen,

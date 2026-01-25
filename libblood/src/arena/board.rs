@@ -674,8 +674,7 @@ const UNSHUFFLED: [Tile; 108] = [
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::hand::{hand, tile27_to_vec};
-    use crate::mjai::{Event, Suit};
+    use crate::mjai::Suit;
     use crate::t;
 
     /// Test exhaustive_ryukyoku with 查花猪 (huazhu) logic

@@ -979,51 +979,56 @@ mod test {
         // 自摸 + 平胡 + 清一色 + 碰碰胡 = 1 + 1 + 2 + 1 = 5番（封顶）
         assert_eq!(agari, Agari::Fan(5));
         
-        return; // Keep old tests below commented out
-        let tehai = hand("2234455m 234p 234s 3m").unwrap();
-        let calc = AgariCalculator {
-            tehai: &tehai,
-            is_menzen: true,
-            pons: &[],
-            minkans: &[],
-            ankans: &[],
-            winning_tile: tu8!(3m),
-            is_ron: true,
-            ding_que: None,
-            is_after_kan: false,
-            is_kan_discard: false,
-            is_chankan: false,
-            exclude_gen_tile: None,
-        };
-        let yaku = calc.agari().unwrap();
-        assert!(matches!(yaku, Agari::Fan(_)));
+        // Keep old tests below commented out
+        // These tests are intentionally unreachable to preserve them for future reference
+        #[allow(unreachable_code)]
+        {
+            return; // Early return to skip old tests
+            let _tehai = hand("2234455m 234p 234s 3m").unwrap();
+            let _calc = AgariCalculator {
+                tehai: &_tehai,
+                is_menzen: true,
+                pons: &[],
+                minkans: &[],
+                ankans: &[],
+                winning_tile: tu8!(3m),
+                is_ron: true,
+                ding_que: None,
+                is_after_kan: false,
+                is_kan_discard: false,
+                is_chankan: false,
+                exclude_gen_tile: None,
+            };
+            let _yaku = _calc.agari().unwrap();
+            assert!(matches!(_yaku, Agari::Fan(_)));
 
-        // Skipping this test for now
-        return;
-        
-        let tehai = hand("12334m 345p 22s 2m").unwrap(); // Removed jihai
-        let calc = AgariCalculator {
-            tehai: &tehai,
-            is_menzen: true,
-            pons: &[],
-            minkans: &[],
-            ankans: &[],
-            winning_tile: tu8!(3m),
-            is_ron: false,
-            ding_que: None,
-            is_after_kan: false,
-            is_kan_discard: false,
-            is_chankan: false,
-            exclude_gen_tile: None,
-        };
-        let points = calc.agari().unwrap().point(false);
-        assert_eq!(
-            points,
-            Point {
-                ron: 7700,
-                tsumo_ko: 2600
-            }
-        );
+            // Skipping this test for now
+            return;
+            
+            let _tehai2 = hand("12334m 345p 22s 2m").unwrap(); // Removed jihai
+            let _calc2 = AgariCalculator {
+                tehai: &_tehai2,
+                is_menzen: true,
+                pons: &[],
+                minkans: &[],
+                ankans: &[],
+                winning_tile: tu8!(3m),
+                is_ron: false,
+                ding_que: None,
+                is_after_kan: false,
+                is_kan_discard: false,
+                is_chankan: false,
+                exclude_gen_tile: None,
+            };
+            let _points = _calc2.agari().unwrap().point(false);
+            assert_eq!(
+                _points,
+                Point {
+                    ron: 7700,
+                    tsumo_ko: 2600
+                }
+            );
+        }
     }
 }
 

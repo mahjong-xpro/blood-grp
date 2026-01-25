@@ -29,7 +29,7 @@ fn test_stage2_completion_verification() {
         tsumogiri: false,
     });
     
-    let cans = ps.last_cans;
+    let _cans = ps.last_cans;
     
     // Test 2: Verify no riichi functionality
     // can_riichi should always be false
