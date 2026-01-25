@@ -179,7 +179,7 @@ impl PlayerState {
 
         let can_discard = self.last_cans.can_discard;
         let mut sp_tables = Candidate::csv_header(can_discard).join("\t");
-        if let Ok(tables) = self.single_player_tables() {
+        if let Ok(tables) = self.single_player_tables(None) {
             for candidate in tables.max_ev_table {
                 sp_tables.push('\n');
                 sp_tables.push_str(&candidate.csv_row(can_discard).join("\t"));

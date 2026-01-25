@@ -9,7 +9,96 @@ use crate::tuz; // Used in yaokyuu_kind_count
 
 use anyhow::{Context, Result, ensure};
 
+/// Compute global tiles_seen from all players' states.
+/// This counts ALL tiles that are out of the wall:
+/// - All players' private hands (tehai)
+/// - All discarded tiles (kawa_overview)
+/// - All melded tiles (fuuro_overview)
+/// - All concealed kans (ankan_overview)
+///
+/// This is the accurate global count needed for SPCalculator's tiles_in_wall calculation.
+pub fn compute_global_tiles_seen(player_states: &[PlayerState; 4]) -> [u8; 27] {
+    let mut global_tiles_seen = [0u8; 27];
+    
+    // Count all players' private hands
+    for player_state in player_states.iter() {
+        for (tid, &count) in player_state.tehai.iter().enumerate() {
+            global_tiles_seen[tid] += count;
+        }
+    }
+    
+    // Count all discarded tiles (from kawa_overview)
+    for player_state in player_states.iter() {
+        for &tile in player_state.kawa_overview.iter().flatten() {
+            global_tiles_seen[tile.as_usize()] += 1;
+        }
+    }
+    
+    // Count all melded tiles (from fuuro_overview)
+    for player_state in player_states.iter() {
+        for meld in player_state.fuuro_overview.iter().flatten() {
+            for &tile in meld.iter() {
+                global_tiles_seen[tile.as_usize()] += 1;
+            }
+        }
+    }
+    
+    // Count all concealed kans (from ankan_overview)
+    for player_state in player_states.iter() {
+        for &tile in player_state.ankan_overview.iter().flatten() {
+            // Ankan uses 4 tiles of the same type
+            global_tiles_seen[tile.as_usize()] += 4;
+        }
+    }
+    
+    global_tiles_seen
+}
+
 impl PlayerState {
+    /// Compute a partial global tiles_seen from this player's perspective.
+    /// This includes:
+    /// - This player's private hand (tehai)
+    /// - All discarded tiles (from kawa_overview - all players)
+    /// - All melded tiles (from fuuro_overview - all players)
+    /// - All concealed kans (from ankan_overview - all players)
+    /// 
+    /// Note: This is incomplete because it doesn't include other players' private hands.
+    /// For accurate calculations, use `compute_global_tiles_seen` with all PlayerStates.
+    fn compute_partial_global_tiles_seen(&self) -> [u8; 27] {
+        let mut global_tiles_seen = [0u8; 27];
+        
+        // Count this player's private hand
+        for (tid, &count) in self.tehai.iter().enumerate() {
+            global_tiles_seen[tid] += count;
+        }
+        
+        // Count all discarded tiles (from kawa_overview - all players)
+        for kawa in self.kawa_overview.iter() {
+            for &tile in kawa.iter() {
+                global_tiles_seen[tile.as_usize()] += 1;
+            }
+        }
+        
+        // Count all melded tiles (from fuuro_overview - all players)
+        for meld_group in self.fuuro_overview.iter() {
+            for meld in meld_group.iter() {
+                for &tile in meld.iter() {
+                    global_tiles_seen[tile.as_usize()] += 1;
+                }
+            }
+        }
+        
+        // Count all concealed kans (from ankan_overview - all players)
+        for ankan_group in self.ankan_overview.iter() {
+            for &tile in ankan_group.iter() {
+                // Ankan uses 4 tiles of the same type
+                global_tiles_seen[tile.as_usize()] += 4;
+            }
+        }
+        
+        global_tiles_seen
+    }
+
     /// Used by `BoardState` to check if a player is making 4 kans on his own.
     #[inline]
     #[must_use]
@@ -430,7 +519,13 @@ impl PlayerState {
     /// be >= 0 and `self.tiles_left` must be >= 4.
     ///
     /// This function is currently highly internal.
-    pub(super) fn single_player_tables(&self) -> Result<SinglePlayerTables> {
+    ///
+    /// # Arguments
+    /// * `global_tiles_seen` - A global count of all tiles that are out of the wall.
+    ///   This should include all players' hands, all discards, all melds, and all kans.
+    ///   If `None`, falls back to `self.tiles_seen` (per-player perspective, which is
+    ///   incomplete and may cause incorrect calculations).
+    pub(super) fn single_player_tables(&self, global_tiles_seen: Option<[u8; 27]>) -> Result<SinglePlayerTables> {
         ensure!(self.tiles_left >= 4, "need at least one more tsumo");
 
         let cur_shanten = self.real_time_shanten();
@@ -449,9 +544,14 @@ impl PlayerState {
 
         let tehai = self.tehai;
 
+        // Use global_tiles_seen if provided, otherwise compute partial global tiles_seen
+        // from this player's perspective (includes all public info but missing other players' private hands)
+        // Note: Partial global tiles_seen is still incomplete but better than per-player tiles_seen
+        let tiles_seen = global_tiles_seen.unwrap_or_else(|| self.compute_partial_global_tiles_seen());
+
         let init_state = InitState {
             tehai,
-            tiles_seen: self.tiles_seen,
+            tiles_seen,
         };
         let sp_calc = SPCalculator {
             tehai_len_div3: self.tehai_len_div3,

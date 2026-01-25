@@ -498,7 +498,7 @@ impl<'a> ObsEncoderContext<'a> {
         self.idx += 1;
 
         if self.version == 4 {
-            if let Ok(SinglePlayerTables { max_ev_table }) = state.single_player_tables() {
+            if let Ok(SinglePlayerTables { max_ev_table }) = state.single_player_tables(None) {
                 // Handle empty max_ev_table (can happen in early game or special states)
                 if max_ev_table.is_empty() {
                     // Skip encoding if table is empty, just advance idx to maintain shape
