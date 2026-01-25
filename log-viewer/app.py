@@ -24,9 +24,10 @@ CORS(app)
 PROJECT_ROOT = Path(__file__).parent.parent
 LOG_VIEWER_DIR = Path(__file__).parent
 
-# Log cache
+# Log cache - stores full log content in memory
 log_cache = {
-    'logs': [],
+    'logs': {},  # key: file path, value: {name, path, size, mtime, mtime_str, content, events, game_info}
+    'log_list': [],  # List of log entries sorted by mtime (for display)
     'last_update': None,
     'lock': threading.Lock(),
 }
@@ -39,102 +40,17 @@ def index():
     """Main page."""
     return render_template('replay.html')
 
-def scan_log_directory(log_dir, max_files=20):
-    """Scan log directory and return latest log files."""
-    if log_dir is None:
-        return []
-    log_dir = Path(log_dir)
-    if not log_dir.exists():
-        return []
-    
-    log_files = []
-    for ext in ['*.json', '*.json.gz']:
-        for file_path in log_dir.rglob(ext):
-            try:
-                stat = file_path.stat()
-                log_files.append({
-                    'name': file_path.name,
-                    'path': str(file_path),
-                    'relative_path': str(file_path.relative_to(log_dir)),
-                    'size': stat.st_size,
-                    'mtime': stat.st_mtime,
-                    'mtime_str': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
-                })
-            except (OSError, PermissionError):
-                # Skip files that can't be accessed
-                continue
-    
-    # Sort by modification time (newest first) and take top N
-    log_files.sort(key=lambda x: x['mtime'], reverse=True)
-    return log_files[:max_files]
-
-def update_log_cache():
-    """Update log cache in background."""
-    global DEFAULT_LOG_DIR
-    while True:
-        try:
-            if DEFAULT_LOG_DIR and DEFAULT_LOG_DIR.exists():
-                logs = scan_log_directory(DEFAULT_LOG_DIR, max_files=20)
-                with log_cache['lock']:
-                    log_cache['logs'] = logs
-                    log_cache['last_update'] = datetime.now().isoformat()
-                print(f"[{datetime.now()}] Updated log cache: {len(logs)} files")
-        except Exception as e:
-            print(f"[{datetime.now()}] Error updating log cache: {e}")
-        
-        time.sleep(10)  # Update every 10 seconds
-
-@app.route('/api/logs', methods=['GET'])
-def list_logs():
-    """List available log files from cache."""
-    custom_dir = request.args.get('dir')
-    
-    if custom_dir:
-        # If custom directory is specified, scan it directly
-        if not os.path.exists(custom_dir):
-            return jsonify({'error': 'Directory not found'}), 404
-        
-        log_files = scan_log_directory(custom_dir, max_files=100)
-        return jsonify({
-            'logs': log_files,
-            'cached': False,
-        })
-    
-    # Return cached logs
-    with log_cache['lock']:
-        return jsonify({
-            'logs': log_cache['logs'],
-            'last_update': log_cache['last_update'],
-            'cached': True,
-            'directory': str(DEFAULT_LOG_DIR) if DEFAULT_LOG_DIR else None,
-        })
-
-@app.route('/api/log/<path:log_path>')
-def get_log(log_path):
-    """Load and parse a log file."""
+def load_log_content(file_path):
+    """Load and parse a log file, return log data."""
     try:
-        # Try to find the log file
-        log_file = None
-        search_dirs = [
-            PROJECT_ROOT,
-            Path(log_path).parent if os.path.isabs(log_path) else PROJECT_ROOT,
-        ]
-        
-        for base_dir in search_dirs:
-            full_path = Path(base_dir) / log_path
-            if full_path.exists():
-                log_file = full_path
-                break
-        
-        if not log_file or not log_file.exists():
-            return jsonify({'error': f'Log file not found: {log_path}'}), 404
+        file_path = Path(file_path)
         
         # Read log file
-        if log_file.suffix == '.gz':
-            with gzip.open(log_file, 'rt', encoding='utf-8') as f:
+        if file_path.suffix == '.gz':
+            with gzip.open(file_path, 'rt', encoding='utf-8') as f:
                 raw_log = f.read()
         else:
-            with open(log_file, 'r', encoding='utf-8') as f:
+            with open(file_path, 'r', encoding='utf-8') as f:
                 raw_log = f.read()
         
         # Parse events
@@ -145,12 +61,12 @@ def get_log(log_path):
             try:
                 event = json.loads(line)
                 events.append(event)
-            except json.JSONDecodeError as e:
-                return jsonify({'error': f'Invalid JSON in log: {e}'}), 400
+            except json.JSONDecodeError:
+                continue  # Skip invalid lines
         
         # Extract game info
         game_info = {
-            'filename': log_file.name,
+            'filename': file_path.name,
             'total_events': len(events),
             'events': events,
         }
@@ -162,7 +78,242 @@ def get_log(log_path):
                 game_info['seed'] = event.get('seed')
                 break
         
-        return jsonify(game_info)
+        return {
+            'content': raw_log,
+            'events': events,
+            'game_info': game_info,
+        }
+    except Exception as e:
+        print(f"Error loading log {file_path}: {e}")
+        return None
+
+def scan_and_cache_logs(log_dir, max_files=20):
+    """Scan log directory and cache full log content in memory.
+    Returns True if cache was updated, False if no changes detected.
+    """
+    if log_dir is None:
+        return False
+    log_dir = Path(log_dir)
+    if not log_dir.exists():
+        return False
+    
+    new_logs = {}
+    log_files = []
+    has_new_or_updated = False
+    
+    # Scan for log files
+    for ext in ['*.json', '*.json.gz']:
+        for file_path in log_dir.rglob(ext):
+            try:
+                stat = file_path.stat()
+                file_path_str = str(file_path)
+                log_files.append({
+                    'path': file_path_str,
+                    'mtime': stat.st_mtime,
+                })
+            except (OSError, PermissionError):
+                continue
+    
+    # Sort by modification time (newest first)
+    log_files.sort(key=lambda x: x['mtime'], reverse=True)
+    
+    # Check current cache state
+    with log_cache['lock']:
+        current_cache = log_cache['logs'].copy()
+    
+    # Load and cache top N files
+    for log_file in log_files[:max_files]:
+        file_path = log_file['path']
+        try:
+            stat = Path(file_path).stat()
+            
+            # Check if we already have this file cached and it hasn't changed
+            cached = current_cache.get(file_path)
+            if cached and cached.get('mtime') == stat.st_mtime:
+                # File unchanged, keep existing cache
+                new_logs[file_path] = cached
+                continue
+            
+            # File is new or updated
+            has_new_or_updated = True
+            
+            # Load new or updated file
+            log_data = load_log_content(file_path)
+            if log_data:
+                new_logs[file_path] = {
+                    'name': Path(file_path).name,
+                    'path': file_path,
+                    'relative_path': str(Path(file_path).relative_to(log_dir)),
+                    'size': stat.st_size,
+                    'mtime': stat.st_mtime,
+                    'mtime_str': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+                    'content': log_data['content'],
+                    'events': log_data['events'],
+                    'game_info': log_data['game_info'],
+                }
+        except (OSError, PermissionError) as e:
+            print(f"Error accessing {file_path}: {e}")
+            continue
+    
+    # If no new or updated files, check if we need to clean up old cache
+    if not has_new_or_updated:
+        with log_cache['lock']:
+            # Check if we have too many cached files (including deleted ones)
+            if len(log_cache['logs']) > max_files * 2:
+                # Need to clean up, so we'll update
+                has_new_or_updated = True
+            else:
+                # No changes detected, skip update
+                return False
+    
+    # Update cache only if there are changes
+    if has_new_or_updated:
+        with log_cache['lock']:
+            # Keep files that are no longer on disk but were cached
+            # Only remove if we have too many cached files
+            all_cached = {**log_cache['logs'], **new_logs}
+            
+            # If we have more than max_files * 2, remove oldest
+            if len(all_cached) > max_files * 2:
+                sorted_logs = sorted(all_cached.items(), key=lambda x: x[1].get('mtime', 0), reverse=True)
+                all_cached = dict(sorted_logs[:max_files * 2])
+            
+            log_cache['logs'] = all_cached
+            
+            # Update sorted list for display
+            log_cache['log_list'] = sorted(
+                all_cached.values(),
+                key=lambda x: x.get('mtime', 0),
+                reverse=True
+            )[:max_files]
+            
+            log_cache['last_update'] = datetime.now().isoformat()
+        
+        return True
+    
+    return False
+
+def update_log_cache():
+    """Update log cache in background."""
+    global DEFAULT_LOG_DIR
+    while True:
+        try:
+            if DEFAULT_LOG_DIR and DEFAULT_LOG_DIR.exists():
+                updated = scan_and_cache_logs(DEFAULT_LOG_DIR, max_files=20)
+                if updated:
+                    with log_cache['lock']:
+                        count = len(log_cache['log_list'])
+                    print(f"[{datetime.now()}] Updated log cache: {count} files in memory")
+                # else: no changes, skip update silently
+        except Exception as e:
+            print(f"[{datetime.now()}] Error updating log cache: {e}")
+        
+        time.sleep(10)  # Update every 10 seconds
+
+@app.route('/api/logs', methods=['GET'])
+def list_logs():
+    """List available log files from cache."""
+    custom_dir = request.args.get('dir')
+    
+    if custom_dir:
+        # If custom directory is specified, scan it directly (without caching)
+        if not os.path.exists(custom_dir):
+            return jsonify({'error': 'Directory not found'}), 404
+        
+        log_files = []
+        for ext in ['*.json', '*.json.gz']:
+            for file_path in Path(custom_dir).rglob(ext):
+                try:
+                    stat = file_path.stat()
+                    log_files.append({
+                        'name': file_path.name,
+                        'path': str(file_path),
+                        'relative_path': str(file_path.relative_to(Path(custom_dir))),
+                        'size': stat.st_size,
+                        'mtime': stat.st_mtime,
+                        'mtime_str': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+                    })
+                except (OSError, PermissionError):
+                    continue
+        
+        log_files.sort(key=lambda x: x['mtime'], reverse=True)
+        return jsonify({
+            'logs': log_files[:100],
+            'cached': False,
+        })
+    
+    # Return cached logs (from memory)
+    with log_cache['lock']:
+        # Return display list (without full content)
+        display_logs = []
+        for log_entry in log_cache['log_list']:
+            display_logs.append({
+                'name': log_entry['name'],
+                'path': log_entry['path'],
+                'relative_path': log_entry.get('relative_path', ''),
+                'size': log_entry['size'],
+                'mtime': log_entry['mtime'],
+                'mtime_str': log_entry['mtime_str'],
+                'cached': True,  # Indicate this is cached in memory
+            })
+        
+        return jsonify({
+            'logs': display_logs,
+            'last_update': log_cache['last_update'],
+            'cached': True,
+            'directory': str(DEFAULT_LOG_DIR) if DEFAULT_LOG_DIR else None,
+            'total_cached': len(log_cache['logs']),
+        })
+
+@app.route('/api/log/<path:log_path>')
+def get_log(log_path):
+    """Load and parse a log file. Try cache first, then file system."""
+    try:
+        # First, try to get from memory cache
+        with log_cache['lock']:
+            cached_log = log_cache['logs'].get(log_path)
+            if cached_log:
+                # Return cached data
+                return jsonify(cached_log['game_info'])
+        
+        # If not in cache, try to load from file system
+        log_file = None
+        
+        # If it's an absolute path, use it directly
+        if os.path.isabs(log_path):
+            log_file = Path(log_path)
+        else:
+            # Try to find in default log directory first
+            if DEFAULT_LOG_DIR:
+                default_path = DEFAULT_LOG_DIR / log_path
+                if default_path.exists():
+                    log_file = default_path
+                else:
+                    # Try relative to project root
+                    project_path = PROJECT_ROOT / log_path
+                    if project_path.exists():
+                        log_file = project_path
+                    else:
+                        # Try as absolute path from the path string
+                        log_file = Path(log_path)
+            else:
+                # Try relative to project root
+                project_path = PROJECT_ROOT / log_path
+                if project_path.exists():
+                    log_file = project_path
+                else:
+                    # Try as absolute path from the path string
+                    log_file = Path(log_path)
+        
+        if not log_file or not log_file.exists():
+            return jsonify({'error': f'Log file not found: {log_path}'}), 404
+        
+        # Load from file
+        log_data = load_log_content(log_file)
+        if not log_data:
+            return jsonify({'error': 'Failed to load log file'}), 500
+        
+        return jsonify(log_data['game_info'])
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -217,13 +368,15 @@ if __name__ == '__main__':
         cache_thread.start()
         print(f"Started log cache updater thread (scanning: {DEFAULT_LOG_DIR})")
         
-        # Initial cache update
-        print(f"Performing initial cache update...")
-        logs = scan_log_directory(DEFAULT_LOG_DIR, max_files=20)
+        # Initial cache update (load full content into memory)
+        print(f"Performing initial cache update (loading full log content into memory)...")
+        scan_and_cache_logs(DEFAULT_LOG_DIR, max_files=20)
         with log_cache['lock']:
-            log_cache['logs'] = logs
-            log_cache['last_update'] = datetime.now().isoformat()
-        print(f"Initial cache: {len(logs)} files")
+            count = len(log_cache['log_list'])
+            total_cached = len(log_cache['logs'])
+        print(f"Initial cache: {count} files in display list, {total_cached} total cached in memory")
+        print(f"Note: Logs are cached in memory. Even if files are deleted, cached logs remain available.")
+        print(f"Cache will only update when new or modified files are detected.")
     
     print(f"Starting Mahjong Log Replay Web Service on http://{args.host}:{args.port}")
     print(f"Log directory: {DEFAULT_LOG_DIR}")

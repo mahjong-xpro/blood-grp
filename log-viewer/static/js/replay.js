@@ -402,7 +402,8 @@ async function loadLogList() {
         const infoEl = document.getElementById('log-list-info');
         if (data.cached) {
             const updateTime = data.last_update ? new Date(data.last_update).toLocaleString() : '未知';
-            infoEl.textContent = `目录: ${data.directory || '未知'} | 最后更新: ${updateTime} | 共 ${data.logs.length} 个文件`;
+            const cachedInfo = data.total_cached ? ` (内存缓存: ${data.total_cached})` : '';
+            infoEl.textContent = `目录: ${data.directory || '未知'} | 最后更新: ${updateTime} | 显示 ${data.logs.length} 个文件${cachedInfo}`;
         } else {
             infoEl.textContent = `共 ${data.logs.length} 个文件`;
         }
@@ -432,6 +433,11 @@ async function loadLogList() {
                 const path = log.path || log.relative_path || log.name;
                 document.getElementById('log-path-input').value = path;
                 loadLogFile(path);
+                
+                // Show indicator if cached
+                if (log.cached) {
+                    console.log('Loading from memory cache:', path);
+                }
             });
             
             logListEl.appendChild(item);
