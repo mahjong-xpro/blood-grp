@@ -191,7 +191,8 @@ def train():
             file_list = []
             for pat in config['dataset']['globs']:
                 file_list.extend(glob(pat, recursive=True))
-            if len(player_names_set) > 0:
+            # 如果之前有 player_names_set，需要重新过滤
+            if 'player_names_set' in locals() and len(player_names_set) > 0:
                 filtered = []
                 for filename in tqdm(file_list, unit='file'):
                     with gzip.open(filename, 'rt') as f:
