@@ -84,7 +84,7 @@ pub struct AgariCalculator<'a> {
     pub minkans: &'a [u8],
     pub ankans: &'a [u8],
 
-    /// Must be deakaized
+    /// Winning tile (must be normalized, no aka dora distinction in Bloody Battle Mahjong)
     pub winning_tile: u8,
     /// True for ron (荣和), false for tsumo (自摸)
     pub is_ron: bool,

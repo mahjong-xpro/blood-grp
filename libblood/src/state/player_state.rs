@@ -68,6 +68,7 @@ pub struct PlayerState {
     pub(super) kawa_overview: [ArrayVec<[Tile; 24]>; 4],
     pub(super) fuuro_overview: [ArrayVec<[ArrayVec<[Tile; 4]>; 4]>; 4],
     /// In this field all `Tile` are deaka'd.
+    /// In this field all `Tile` are normalized (no aka dora distinction in Bloody Battle Mahjong)
     pub(super) ankan_overview: [ArrayVec<[Tile; 4]>; 4],
 
     pub(super) at_turn: u8,
