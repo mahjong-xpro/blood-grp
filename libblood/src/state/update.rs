@@ -255,6 +255,8 @@ impl PlayerState {
             "intermediate_kan should be empty after discard, but has {} elements. This indicates a fundamental bug in kan tracking.",
             self.intermediate_kan.len()
         );
+        // kawa capacity is 55, which is the theoretical maximum (108 total tiles - 52 initial hands - 1 last draw)
+        // If this panics, it indicates invalid game log data or a bug in game logic
         self.kawa[actor_rel].push(Some(kawa_item));
         self.kawa_overview[actor_rel].push(pai);
         self.last_kawa_tile = Some(pai);
@@ -557,6 +559,8 @@ impl PlayerState {
         let mut i = (abs_target + 1) % 4;
         while i != abs_actor {
             let rel = self.rel(i);
+            // kawa capacity is 55, which is the theoretical maximum
+            // If this panics, it indicates invalid game log data or a bug in game logic
             self.kawa[rel].push(None);
             i = (i + 1) % 4;
         }

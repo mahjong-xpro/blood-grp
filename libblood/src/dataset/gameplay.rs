@@ -163,7 +163,11 @@ impl GameplayLoader {
         let [Event::StartGame { names, .. }, ..] = events else {
             bail!("empty or invalid game log");
         };
-        names
+        // names is [String; 4] by type, but validate to catch any deserialization issues
+        if names.len() != 4 {
+            bail!("invalid game log: expected exactly 4 players, found {}", names.len());
+        }
+        let player_ids: ArrayVec<[u8; 4]> = names
             .iter()
             .enumerate()
             .filter(|&(_, name)| {
@@ -176,7 +180,9 @@ impl GameplayLoader {
                 true
             })
             .map(|(i, _)| i as u8)
-            .collect::<ArrayVec<[_; 4]>>()
+            .collect();
+        
+        player_ids
             .into_par_iter()
             .map(|&player_id| {
                 Gameplay::load_events_by_player(self, events, player_id, invisibles.as_deref())
