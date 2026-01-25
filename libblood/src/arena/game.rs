@@ -194,15 +194,29 @@ impl Game {
                 // 所以这里需要检查一下，如果ding_que_phase已经是false，就进入正常流程
                 if !self.board.is_ding_que_phase() {
                     // 定缺阶段已经结束，进入正常游戏流程
+                    // 但是，invisible_state_cache 可能是空的（因为之前没有调用 set_scene）
+                    // 所以需要先调用 set_scene，然后再调用 get_reaction
                     let ctx = self.board.agent_context();
                     for (player_id, state) in ctx.player_states.iter().enumerate() {
                         if !state.last_cans().can_act() {
                             continue;
                         }
 
-                        let invisible_state = self.invisible_state_cache[player_id].take();
+                        // 确保 invisible_state_cache 已正确设置
+                        let invisible_state = self.oracle_obs_versions[player_id]
+                            .map(|ver| self.board.encode_oracle_obs(player_id as u8, ver));
+                        self.invisible_state_cache[player_id].clone_from(&invisible_state);
 
                         let idx = self.indexes[player_id];
+                        // 先调用 set_scene，确保 Agent 状态正确
+                        agents[idx.agent_idx].set_scene(
+                            idx.player_id_idx,
+                            ctx.log,
+                            state,
+                            invisible_state,
+                        )?;
+
+                        let invisible_state = self.invisible_state_cache[player_id].take();
                         self.last_reactions[player_id] = agents[idx.agent_idx].get_reaction(
                             idx.player_id_idx,
                             ctx.log,

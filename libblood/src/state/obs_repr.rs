@@ -610,6 +610,29 @@ impl<'a> ObsEncoderContext<'a> {
         // 但这种情况通常不会导致崩溃，只是浪费空间
         let arr = self.arr.build();
         debug_assert!(arr.iter().all(|&v| (0. ..=1.).contains(&v)));
+        
+        // 业务规则：mask必须至少有一个为true，否则模型无法选择动作
+        // 如果mask全为false，说明can_act()返回false，但Agent仍然被调用了
+        // 这通常发生在状态不一致的情况下
+        let mask_count = self.mask.iter().filter(|&&m| m).count();
+        assert!(
+            mask_count > 0,
+            "mask is all false: can_act()={}, can_discard={}, can_pon={}, can_kan()={}, can_agari()={}, can_ryukyoku={}, can_pass()={}. \
+            This indicates a bug: Agent was called when no actions are available. \
+            State: kyoku={}, at_turn={}, tiles_left={}, tehai_sum={}",
+            cans.can_act(),
+            cans.can_discard,
+            cans.can_pon,
+            cans.can_kan(),
+            cans.can_agari(),
+            cans.can_ryukyoku,
+            cans.can_pass(),
+            state.kyoku + 1,
+            state.at_turn,
+            state.tiles_left,
+            state.tehai.iter().sum::<u8>()
+        );
+        
         (arr, self.mask)
     }
 
