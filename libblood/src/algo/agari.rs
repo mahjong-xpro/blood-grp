@@ -213,14 +213,9 @@ impl AgariCalculator<'_> {
         let divs = match AGARI_TABLE.get(&key) {
             Some(d) => d,
             None => {
-                // Log warning for debugging
-                let tehai_total: u8 = self.tehai.iter().sum();
-                eprintln!(
-                    "WARNING: AGARI_TABLE.get(&key) returned None. key={}, tehai_total={}, winning_tile={}, is_ron={}, ding_que={:?}",
-                    key, tehai_total, self.winning_tile, self.is_ron, self.ding_que
-                );
                 // If the hand structure is invalid (not in AGARI_TABLE), return None
-                // This means the hand cannot agari, even though it has 14 tiles
+                // This is expected behavior: some hand structures with 14 tiles cannot agari
+                // (e.g., invalid tile combinations that don't form valid melds/pairs)
                 return None;
             }
         };
