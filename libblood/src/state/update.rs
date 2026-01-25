@@ -315,7 +315,10 @@ impl PlayerState {
         let full_set = consumed.into_iter().chain(iter::once(pai)).collect();
         self.fuuro_overview[actor_rel].push(full_set);
         // Pon info is stored in fuuro_overview (Bloody Battle Mahjong has no chi)
-        self.pad_kawa_for_pon_or_daiminkan(actor, target);
+        // Only pad kawa from the actor's perspective to avoid duplicate pushes when broadcast
+        if actor_rel == 0 {
+            self.pad_kawa_for_pon_or_daiminkan(actor, target);
+        }
 
         if actor_rel != 0 {
             for t in consumed {
@@ -357,7 +360,10 @@ impl PlayerState {
         // Clear any previous kan before adding new one (only track most recent kan before discard)
         self.intermediate_kan.clear();
         self.intermediate_kan.push(pai);
-        self.pad_kawa_for_pon_or_daiminkan(actor, target);
+        // Only pad kawa from the actor's perspective to avoid duplicate pushes when broadcast
+        if actor_rel == 0 {
+            self.pad_kawa_for_pon_or_daiminkan(actor, target);
+        }
         self.kans_on_board += 1;
 
         if actor_rel != 0 {
