@@ -12,7 +12,6 @@ pub struct KyokuResult {
     pub has_hora: bool,
     #[allow(dead_code)] // Kept for compatibility with result format
     pub has_abortive_ryukyoku: bool,
-    pub kyotaku_left: u8,
     pub scores: [i32; 4],
 }
 

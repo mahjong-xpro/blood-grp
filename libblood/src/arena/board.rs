@@ -52,7 +52,6 @@ pub struct BoardState {
     tsumo_actor: u8,
     kans: u8,
     check_four_kan: bool,
-    paos: [Option<u8>; 4],
 
     log: Vec<EventExt>,
 }
@@ -138,7 +137,6 @@ impl BoardState {
             can_renchan: false,
             has_hora: self.agari_count > 0,
             has_abortive_ryukyoku: self.has_abortive_ryukyoku,
-            kyotaku_left: 0,
             scores: self.board.scores,
         }
     }
