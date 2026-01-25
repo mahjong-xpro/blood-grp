@@ -135,6 +135,28 @@ class FileDatasetsIter(IterableDataset):
         return self.iterator
 
 def worker_init_fn(*args, **kwargs):
+    # Ensure libblood module is available in worker processes
+    # This is necessary when using 'spawn' multiprocessing method
+    # Import prelude to ensure libblood is properly initialized
+    try:
+        import prelude  # This will initialize libblood
+    except ImportError:
+        # Fallback: try to import libblood directly
+        import sys
+        import os
+        try:
+            import libblood_loader
+        except ImportError:
+            pass
+        try:
+            import libblood
+        except ImportError:
+            # If libblood is not found, try to add the project root to path
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if project_root not in sys.path:
+                sys.path.insert(0, project_root)
+            import libblood
+    
     worker_info = torch.utils.data.get_worker_info()
     dataset = worker_info.dataset
     per_worker = int(np.ceil(len(dataset.file_list) / worker_info.num_workers))
