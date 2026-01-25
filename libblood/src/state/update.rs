@@ -581,6 +581,7 @@ impl PlayerState {
         }
     }
 
+    #[allow(dead_code)] // Kept for compatibility, may be used in future
     pub(super) fn pad_kawa_at_start(&mut self) {
         self.kawa
             .iter_mut()
@@ -588,6 +589,7 @@ impl PlayerState {
             .for_each(|kawa| kawa.push(None));
     }
 
+    #[allow(dead_code)] // Bloody Battle: No chi (吃), kept for compatibility
     pub(super) fn set_can_chi_from_tile(&mut self, tile: Tile) {
         self.last_cans.can_chi_low = false;
         self.last_cans.can_chi_mid = false;
@@ -719,6 +721,7 @@ impl PlayerState {
 
     // Bloody Battle: No dora, this function is removed
 
+    #[allow(dead_code)] // May be used in future
     pub(super) fn update_rank(&mut self) {
         self.rank = self.get_rank(self.scores);
     }

@@ -762,8 +762,7 @@ mod test {
     use super::*;
     use crate::algo::sp::CALC_SHANTEN_FN;
     use crate::hand::hand;
-    #[cfg(test)]
-    use crate::tuz; // Used in test at line 993
+    // Bloody Battle: No tuz needed (no jihai)
 
     fn feq(a: f32, b: f32) -> bool {
         (a - b).abs() <= f32::EPSILON

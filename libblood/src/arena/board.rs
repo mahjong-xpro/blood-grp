@@ -46,6 +46,7 @@ pub struct BoardState {
     /// Bloody Battle Mahjong: count of players who have agari
     agari_count: u8,
     
+    #[allow(dead_code)] // Kept for compatibility with result format
     has_abortive_ryukyoku: bool,
     kyoku_deltas: [i32; 4],
 
@@ -56,6 +57,7 @@ pub struct BoardState {
     deal_from_rinshan: Option<()>,
     kans: u8,
     check_four_kan: bool,
+    #[allow(dead_code)] // Bloody Battle: No pao (包), kept for compatibility
     paos: [Option<u8>; 4],
 
     log: Vec<EventExt>,
@@ -88,7 +90,7 @@ impl Board {
 
         // Deal 13 tiles to each of 4 players
         self.haipai = array::from_fn(|i| seq[i * 13..(i + 1) * 13].try_into().unwrap());
-        let mut idx = 13 * 4;
+        let idx = 13 * 4;
 
         // Remaining tiles go to yama (108 - 52 = 56 tiles)
         self.yama = seq[idx..].to_vec();
@@ -199,18 +201,54 @@ impl BoardState {
         Ok(())
     }
 
-    fn exhaustive_ryukyoku(&mut self) {
+    pub(crate) fn exhaustive_ryukyoku(&mut self) {
         // Bloody Battle Mahjong: Exhaustive draw (流局)
-        // No special scoring for exhaustive draw in Bloody Battle
-        let deltas = [0; 4];
+        // Flow: 1. Check 查花猪 (huazhu), 2. Check 查大叫 (tenpai)
+        let mut final_deltas = [0; 4];
 
-        // Bloody Battle: No nagashi mangan (流局满贯)
-        // Just check tenpai for scoring
+        // Step 1: 查花猪 (Check Huazhu - players with ding_que suit tiles remaining)
+        // 花猪玩家需要向所有非花猪玩家赔付16000点（封顶点数）
+        // 每个花猪向每个非花猪支付 16000/非花猪数量
+        let huazhu_actors: ArrayVec<[_; 4]> = self
+            .player_states
+            .iter()
+            .enumerate()
+            .filter(|&(_, s)| !s.check_ding_que_complete()) // 还有定缺花色牌
+            .map(|(i, _)| i)
+            .collect();
+
+        if !huazhu_actors.is_empty() {
+            let non_huazhu_count = 4 - huazhu_actors.len();
+            if non_huazhu_count > 0 {
+                // 花猪罚分：每个花猪向每个非花猪支付 16000/非花猪数量
+                let penalty_per_huazhu_per_non_huazhu = 16000 / non_huazhu_count; // 每个花猪向每个非花猪支付
+                let total_penalty_per_huazhu = penalty_per_huazhu_per_non_huazhu * non_huazhu_count; // 每个花猪支付的总数
+                let total_reward_per_non_huazhu = penalty_per_huazhu_per_non_huazhu * huazhu_actors.len(); // 每个非花猪获得的总数
+                
+                // 计算花猪罚分
+                let mut huazhu_deltas = [0; 4];
+                for &huazhu in &huazhu_actors {
+                    huazhu_deltas[huazhu] = -(total_penalty_per_huazhu as i32);
+                }
+                for i in 0..4 {
+                    if !huazhu_actors.contains(&i) {
+                        huazhu_deltas[i] = total_reward_per_non_huazhu as i32;
+                    }
+                }
+                vec_add_assign(&mut final_deltas, &huazhu_deltas);
+            }
+        }
+
+        // Step 2: 查大叫 (Check Tenpai - exclude huazhu players)
+        // 排除花猪玩家后，未听牌玩家向听牌玩家赔付
         let tenpai_actors: ArrayVec<[_; 4]> = self
             .player_states
             .iter()
             .enumerate()
-            .filter(|&(_, s)| s.shanten() == 0)
+            .filter(|&(i, s)| {
+                // 排除花猪玩家
+                !huazhu_actors.contains(&i) && s.shanten() == 0
+            })
             .map(|(i, _)| i)
             .collect();
 
@@ -218,12 +256,18 @@ impl BoardState {
             1 => (3000, -1000),
             2 => (1500, -1500),
             3 => (1000, -3000),
-            // 0 | 4
+            // 0 | 4 (all non-huazhu players are tenpai or none are tenpai)
             _ => (0, 0),
         };
-        let mut final_deltas = deltas;
+        
         if plus > 0 {
             let mut dod = [minus; 4];
+            // 只对非花猪玩家应用查大叫规则
+            for i in 0..4 {
+                if huazhu_actors.contains(&i) {
+                    dod[i] = 0; // 花猪玩家不参与查大叫
+                }
+            }
             tenpai_actors.into_iter().for_each(|i| dod[i] = plus);
             vec_add_assign(&mut final_deltas, &dod);
         }
@@ -243,7 +287,7 @@ impl BoardState {
         &mut self,
         single_actor: u8,
         single_target: u8,
-        reactions: &[EventExt; 4],
+        _reactions: &[EventExt; 4],
     ) -> Result<()> {
         let is_ron = single_actor != single_target;
         
@@ -282,7 +326,7 @@ impl BoardState {
             if is_chankan && chankan_kakan_actor.is_some() && chankan_kakan_tile.is_some() {
                 // For chankan, recalculate the kakan player's payment excluding gen
                 // The kakan player's hand should be calculated without the kakan tile as gen
-                let kakan_player_state = &self.player_states[chankan_kakan_actor.unwrap() as usize];
+                let _kakan_player_state = &self.player_states[chankan_kakan_actor.unwrap() as usize];
                 // Note: The kakan player is not agari, so we need to calculate what they would pay
                 // But actually, in chankan, the kakan player is the target (single_target)
                 // So we need to recalculate their payment amount excluding the gen
@@ -605,3 +649,269 @@ const UNSHUFFLED: [Tile; 108] = [
     t!(8s), t!(8s), t!(8s), t!(8s),
     t!(9s), t!(9s), t!(9s), t!(9s),
 ];
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::hand::{hand, tile27_to_vec};
+    use crate::mjai::{Event, Suit};
+    use crate::t;
+
+    /// Test exhaustive_ryukyoku with 查花猪 (huazhu) logic
+    /// 
+    /// Test case 1: 1 player is huazhu (has ding_que tiles remaining)
+    /// Expected: Huazhu player pays 16000, each non-huazhu player gets 16000/3 ≈ 5333
+    #[test]
+    fn test_exhaustive_ryukyoku_one_huazhu() {
+        let mut board_state = create_test_board_state();
+        
+        // Setup: Player 0 is huazhu (has Man tiles, ding_que is Man)
+        board_state.player_states[0].ding_que = Some(Suit::Man);
+        // Add some Man tiles to player 0's hand to make them huazhu
+        board_state.player_states[0].tehai[0] = 1; // 1m
+        board_state.player_states[0].tehai[1] = 1; // 2m
+        
+        // Players 1, 2, 3 are not huazhu (no ding_que tiles)
+        board_state.player_states[1].ding_que = Some(Suit::Pin);
+        board_state.player_states[2].ding_que = Some(Suit::Sou);
+        board_state.player_states[3].ding_que = Some(Suit::Man);
+        
+        // Set tiles_left to 0 to trigger exhaustive_ryukyoku
+        board_state.tiles_left = 0;
+        
+        // Call exhaustive_ryukyoku
+        board_state.exhaustive_ryukyoku();
+        
+        // Verify: Player 0 (huazhu) pays 16000
+        // Each of players 1, 2, 3 gets 16000/3 ≈ 5333
+        let deltas = board_state.kyoku_deltas;
+        assert_eq!(deltas[0], -16000, "Huazhu player should pay 16000");
+        assert_eq!(deltas[1], 5333, "Non-huazhu player 1 should get 5333");
+        assert_eq!(deltas[2], 5333, "Non-huazhu player 2 should get 5333");
+        assert_eq!(deltas[3], 5334, "Non-huazhu player 3 should get 5334 (rounding)");
+        
+        // Verify total is 0 (conservation of points)
+        assert_eq!(deltas.iter().sum::<i32>(), 0, "Total deltas should be 0");
+    }
+
+    /// Test exhaustive_ryukyoku with 查大叫 (tenpai) logic
+    /// 
+    /// Test case 2: 1 player is tenpai (excluding huazhu)
+    /// Expected: Tenpai player gets +3000, each non-tenpai player pays -1000
+    #[test]
+    fn test_exhaustive_ryukyoku_one_tenpai() {
+        let mut board_state = create_test_board_state();
+        
+        // Setup: All players have completed ding_que (no huazhu)
+        board_state.player_states[0].ding_que = Some(Suit::Man);
+        board_state.player_states[1].ding_que = Some(Suit::Pin);
+        board_state.player_states[2].ding_que = Some(Suit::Sou);
+        board_state.player_states[3].ding_que = Some(Suit::Man);
+        
+        // Player 0 is tenpai (shanten = 0)
+        board_state.player_states[0].shanten = 0;
+        // Players 1, 2, 3 are not tenpai (shanten > 0)
+        board_state.player_states[1].shanten = 1;
+        board_state.player_states[2].shanten = 2;
+        board_state.player_states[3].shanten = 1;
+        
+        // Set tiles_left to 0 to trigger exhaustive_ryukyoku
+        board_state.tiles_left = 0;
+        
+        // Call exhaustive_ryukyoku
+        board_state.exhaustive_ryukyoku();
+        
+        // Verify: Player 0 (tenpai) gets +3000
+        // Players 1, 2, 3 (non-tenpai) each pay -1000
+        let deltas = board_state.kyoku_deltas;
+        assert_eq!(deltas[0], 3000, "Tenpai player should get +3000");
+        assert_eq!(deltas[1], -1000, "Non-tenpai player 1 should pay -1000");
+        assert_eq!(deltas[2], -1000, "Non-tenpai player 2 should pay -1000");
+        assert_eq!(deltas[3], -1000, "Non-tenpai player 3 should pay -1000");
+        
+        // Verify total is 0
+        assert_eq!(deltas.iter().sum::<i32>(), 0, "Total deltas should be 0");
+    }
+
+    /// Test exhaustive_ryukyoku with both 查花猪 and 查大叫
+    /// 
+    /// Test case 3: 1 player is huazhu, 1 player is tenpai (excluding huazhu)
+    /// Expected: 
+    /// - Huazhu player pays 16000 (distributed to 3 non-huazhu players)
+    /// - Tenpai player gets +3000, other non-huazhu non-tenpai players pay -1000
+    #[test]
+    fn test_exhaustive_ryukyoku_huazhu_and_tenpai() {
+        let mut board_state = create_test_board_state();
+        
+        // Setup: Player 0 is huazhu (has Man tiles, ding_que is Man)
+        board_state.player_states[0].ding_que = Some(Suit::Man);
+        board_state.player_states[0].tehai[0] = 1; // 1m (huazhu)
+        
+        // Player 1 is tenpai (no huazhu)
+        board_state.player_states[1].ding_que = Some(Suit::Pin);
+        board_state.player_states[1].shanten = 0;
+        
+        // Players 2, 3 are not huazhu and not tenpai
+        board_state.player_states[2].ding_que = Some(Suit::Sou);
+        board_state.player_states[2].shanten = 1;
+        board_state.player_states[3].ding_que = Some(Suit::Man);
+        board_state.player_states[3].shanten = 1;
+        
+        // Set tiles_left to 0 to trigger exhaustive_ryukyoku
+        board_state.tiles_left = 0;
+        
+        // Call exhaustive_ryukyoku
+        board_state.exhaustive_ryukyoku();
+        
+        // Verify: 
+        // - Player 0 (huazhu) pays 16000
+        // - Player 1 (tenpai, non-huazhu) gets 5333 (from huazhu) + 3000 (from tenpai) = 8333
+        // - Player 2 (non-huazhu, non-tenpai) gets 5333 (from huazhu) - 1000 (to tenpai) = 4333
+        // - Player 3 (non-huazhu, non-tenpai) gets 5334 (from huazhu, rounding) - 1000 (to tenpai) = 4334
+        let deltas = board_state.kyoku_deltas;
+        assert_eq!(deltas[0], -16000, "Huazhu player should pay 16000");
+        assert_eq!(deltas[1], 8333, "Tenpai non-huazhu player should get 5333+3000");
+        assert_eq!(deltas[2], 4333, "Non-tenpai non-huazhu player should get 5333-1000");
+        assert_eq!(deltas[3], 4334, "Non-tenpai non-huazhu player should get 5334-1000");
+        
+        // Verify total is 0
+        assert_eq!(deltas.iter().sum::<i32>(), 0, "Total deltas should be 0");
+    }
+
+    /// Test exhaustive_ryukyoku with 2 players tenpai
+    /// 
+    /// Test case 4: 2 players are tenpai (no huazhu)
+    /// Expected: Each tenpai player gets +1500, each non-tenpai player pays -1500
+    #[test]
+    fn test_exhaustive_ryukyoku_two_tenpai() {
+        let mut board_state = create_test_board_state();
+        
+        // Setup: All players have completed ding_que (no huazhu)
+        board_state.player_states[0].ding_que = Some(Suit::Man);
+        board_state.player_states[1].ding_que = Some(Suit::Pin);
+        board_state.player_states[2].ding_que = Some(Suit::Sou);
+        board_state.player_states[3].ding_que = Some(Suit::Man);
+        
+        // Players 0, 1 are tenpai
+        board_state.player_states[0].shanten = 0;
+        board_state.player_states[1].shanten = 0;
+        // Players 2, 3 are not tenpai
+        board_state.player_states[2].shanten = 1;
+        board_state.player_states[3].shanten = 1;
+        
+        // Set tiles_left to 0 to trigger exhaustive_ryukyoku
+        board_state.tiles_left = 0;
+        
+        // Call exhaustive_ryukyoku
+        board_state.exhaustive_ryukyoku();
+        
+        // Verify: Players 0, 1 (tenpai) each get +1500
+        // Players 2, 3 (non-tenpai) each pay -1500
+        let deltas = board_state.kyoku_deltas;
+        assert_eq!(deltas[0], 1500, "Tenpai player 0 should get +1500");
+        assert_eq!(deltas[1], 1500, "Tenpai player 1 should get +1500");
+        assert_eq!(deltas[2], -1500, "Non-tenpai player 2 should pay -1500");
+        assert_eq!(deltas[3], -1500, "Non-tenpai player 3 should pay -1500");
+        
+        // Verify total is 0
+        assert_eq!(deltas.iter().sum::<i32>(), 0, "Total deltas should be 0");
+    }
+
+    /// Test exhaustive_ryukyoku with 3 players tenpai
+    /// 
+    /// Test case 5: 3 players are tenpai (no huazhu)
+    /// Expected: Each tenpai player gets +1000, non-tenpai player pays -3000
+    #[test]
+    fn test_exhaustive_ryukyoku_three_tenpai() {
+        let mut board_state = create_test_board_state();
+        
+        // Setup: All players have completed ding_que (no huazhu)
+        board_state.player_states[0].ding_que = Some(Suit::Man);
+        board_state.player_states[1].ding_que = Some(Suit::Pin);
+        board_state.player_states[2].ding_que = Some(Suit::Sou);
+        board_state.player_states[3].ding_que = Some(Suit::Man);
+        
+        // Players 0, 1, 2 are tenpai
+        board_state.player_states[0].shanten = 0;
+        board_state.player_states[1].shanten = 0;
+        board_state.player_states[2].shanten = 0;
+        // Player 3 is not tenpai
+        board_state.player_states[3].shanten = 1;
+        
+        // Set tiles_left to 0 to trigger exhaustive_ryukyoku
+        board_state.tiles_left = 0;
+        
+        // Call exhaustive_ryukyoku
+        board_state.exhaustive_ryukyoku();
+        
+        // Verify: Players 0, 1, 2 (tenpai) each get +1000
+        // Player 3 (non-tenpai) pays -3000
+        let deltas = board_state.kyoku_deltas;
+        assert_eq!(deltas[0], 1000, "Tenpai player 0 should get +1000");
+        assert_eq!(deltas[1], 1000, "Tenpai player 1 should get +1000");
+        assert_eq!(deltas[2], 1000, "Tenpai player 2 should get +1000");
+        assert_eq!(deltas[3], -3000, "Non-tenpai player 3 should pay -3000");
+        
+        // Verify total is 0
+        assert_eq!(deltas.iter().sum::<i32>(), 0, "Total deltas should be 0");
+    }
+
+    /// Test exhaustive_ryukyoku with 2 huazhu players
+    /// 
+    /// Test case 6: 2 players are huazhu
+    /// Expected: Each huazhu player pays 16000, each non-huazhu player gets 16000
+    #[test]
+    fn test_exhaustive_ryukyoku_two_huazhu() {
+        let mut board_state = create_test_board_state();
+        
+        // Setup: Players 0, 1 are huazhu
+        board_state.player_states[0].ding_que = Some(Suit::Man);
+        board_state.player_states[0].tehai[0] = 1; // 1m (huazhu)
+        board_state.player_states[1].ding_que = Some(Suit::Pin);
+        board_state.player_states[1].tehai[9] = 1; // 1p (huazhu)
+        
+        // Players 2, 3 are not huazhu
+        board_state.player_states[2].ding_que = Some(Suit::Sou);
+        board_state.player_states[3].ding_que = Some(Suit::Man);
+        
+        // Set tiles_left to 0 to trigger exhaustive_ryukyoku
+        board_state.tiles_left = 0;
+        
+        // Call exhaustive_ryukyoku
+        board_state.exhaustive_ryukyoku();
+        
+        // Verify: Players 0, 1 (huazhu) each pay 16000
+        // Players 2, 3 (non-huazhu) each get 16000 (from 2 huazhu players)
+        let deltas = board_state.kyoku_deltas;
+        assert_eq!(deltas[0], -16000, "Huazhu player 0 should pay 16000");
+        assert_eq!(deltas[1], -16000, "Huazhu player 1 should pay 16000");
+        assert_eq!(deltas[2], 16000, "Non-huazhu player 2 should get 16000");
+        assert_eq!(deltas[3], 16000, "Non-huazhu player 3 should get 16000");
+        
+        // Verify total is 0
+        assert_eq!(deltas.iter().sum::<i32>(), 0, "Total deltas should be 0");
+    }
+
+    /// Helper function to create a test BoardState
+    fn create_test_board_state() -> BoardState {
+        let mut board = Board::default();
+        board.kyoku = 0;
+        board.scores = [25000; 4];
+        
+        // Create simple haipai (all players have same hand for simplicity)
+        // Use a hand that doesn't have all three suits to avoid issues
+        let test_hand = [
+            t!(1m), t!(2m), t!(3m), t!(4m), t!(5m), t!(6m), t!(7m), t!(8m), t!(9m),
+            t!(1p), t!(2p), t!(3p), t!(4p),
+        ];
+        for i in 0..4 {
+            board.haipai[i] = test_hand;
+        }
+        
+        board.yama = vec![];
+        
+        let mut board_state = board.into_state();
+        board_state.kyoku_deltas = [0; 4];
+        board_state
+    }
+}

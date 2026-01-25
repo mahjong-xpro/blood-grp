@@ -29,7 +29,7 @@ impl Invisible {
         let mut cur = Self::default();
         let mut seed = None;
         let mut from_rinshan = false;
-        let mut ura_is_recorded = false;
+        // Bloody Battle: No ura_indicators, so ura_is_recorded is not needed
         let mut unknown_tiles = new_unknown_tiles();
 
         for event in game {
@@ -118,7 +118,7 @@ impl Invisible {
 
                     ret.push(mem::take(&mut cur));
                     from_rinshan = false;
-                    ura_is_recorded = false;
+                    // Bloody Battle: No ura_indicators, so ura_is_recorded is not needed
                     unknown_tiles = new_unknown_tiles();
                 }
 

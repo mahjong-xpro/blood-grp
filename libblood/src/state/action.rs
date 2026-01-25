@@ -26,6 +26,7 @@ pub struct ActionCandidate {
     pub can_kakan: bool,
     #[pyo3(get)]
     pub can_ankan: bool,
+    /// Bloody Battle: No riichi (立直), always false
     #[pyo3(get)]
     pub can_riichi: bool,
     #[pyo3(get)]

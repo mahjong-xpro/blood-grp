@@ -38,8 +38,8 @@ impl Point {
         }
     }
 
-    /// Legacy method for compatibility - calculates from fu and han (Japanese Mahjong)
-    /// This should not be used in Bloody Battle, use calc_from_fan instead
+    /// Legacy method for compatibility - calculates from fu and han (Japanese Mahjong/日本麻将)
+    /// This should not be used in Bloody Battle Mahjong, use calc_from_fan instead
     #[deprecated(note = "Use calc_from_fan for Bloody Battle Mahjong")]
     #[must_use]
     pub fn calc(_is_oya: bool, _fu: u8, han: u8) -> Self {

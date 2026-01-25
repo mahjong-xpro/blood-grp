@@ -213,7 +213,9 @@ impl BatchGame {
     }
     
     /// Legacy method name - use `standard_game` instead
+    /// Bloody Battle: This method name refers to Tenhou (天鳳) which is a Japanese Mahjong platform
     #[deprecated(note = "Use standard_game instead for Bloody Battle Mahjong")]
+    #[allow(dead_code)] // Kept for backward compatibility
     pub const fn tenhou_hanchan(disable_progress_bar: bool) -> Self {
         Self::standard_game(disable_progress_bar)
     }

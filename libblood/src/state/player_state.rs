@@ -26,7 +26,8 @@ pub struct PlayerState {
 
     /// Bloody Battle Mahjong: 27 tile kinds (no jihai, no red 5s)
     #[derivative(Default(value = "[0; 27]"))]
-    pub(super) tehai: [u8; 27],
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) tehai: [u8; 27],
 
     /// Does not consider yakunashi, but does consider other kinds of
     /// furiten.
@@ -74,7 +75,8 @@ pub struct PlayerState {
     pub(super) tiles_left: u8,
     pub(super) intermediate_kan: ArrayVec<[Tile; 4]>,
 
-    pub(super) shanten: i8,
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) shanten: i8,
 
     pub(super) last_self_tsumo: Option<Tile>,
     pub(super) last_kawa_tile: Option<Tile>,
@@ -108,7 +110,8 @@ pub struct PlayerState {
 
     /// Bloody Battle Mahjong specific fields
     pub has_agari: bool,
-    pub(super) ding_que: Option<crate::mjai::Suit>,
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) ding_que: Option<crate::mjai::Suit>,
     pub(super) other_ding_que: [Option<crate::mjai::Suit>; 3],
 
     /// For shanten calc.

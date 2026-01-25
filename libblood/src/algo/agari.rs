@@ -55,10 +55,14 @@ struct Div {
     kotsu_idxs: ArrayVec<[u8; 4]>,
     shuntsu_idxs: ArrayVec<[u8; 4]>,
     has_chitoi: bool,
+    #[allow(dead_code)] // Bloody Battle: Japanese Mahjong yaku (九莲宝灯), kept for compatibility
     has_chuuren: bool,
+    #[allow(dead_code)] // Bloody Battle: Japanese Mahjong yaku (一气通贯), kept for compatibility
     has_ittsuu: bool,
+    #[allow(dead_code)] // Bloody Battle: Japanese Mahjong yaku (二杯口), kept for compatibility
     has_ryanpeikou: bool,
     // CAUTION: it is sound but not complete, broken if there is any ankan
+    #[allow(dead_code)] // Bloody Battle: Japanese Mahjong yaku (一杯口), kept for compatibility
     has_ipeikou: bool,
 }
 
@@ -102,6 +106,7 @@ pub struct AgariCalculator<'a> {
     pub exclude_gen_tile: Option<u8>,
 }
 
+#[allow(dead_code)] // Bloody Battle: Japanese Mahjong specific, kept for compatibility
 struct DivWorker<'a> {
     sup: &'a AgariCalculator<'a>,
     tile14: &'a [u8; 14],
@@ -461,13 +466,15 @@ impl AgariCalculator<'_> {
         Some(Agari::Fan(fan))
     }
 
+    /// Bloody Battle: Japanese Mahjong specific, kept for compatibility
+    /// This method is deprecated, use agari() instead
+    #[allow(dead_code)]
     fn search_yakus_impl(&self, _return_if_any: bool) -> Option<Agari> {
-        // Bloody Battle: search_yakus_impl is deprecated, use agari() instead
-        // This method is kept for compatibility but should not be used
         self.agari()
     }
 }
 
+#[allow(dead_code)] // Bloody Battle: Japanese Mahjong specific, kept for compatibility
 impl<'a> DivWorker<'a> {
     fn new(calc: &'a AgariCalculator<'a>, tile14: &'a [u8; 14], div: &'a Div) -> Self {
         let pair_tile = tile14[div.pair_idx as usize];
@@ -636,6 +643,7 @@ impl<'a> DivWorker<'a> {
         ((fu - 1) / 10 + 1) * 10
     }
 
+    #[allow(unreachable_code)] // Bloody Battle: Early return, unreachable code below is for reference
     fn search_yakus<const RETURN_IF_ANY: bool>(&self) -> Option<Agari> {
         // Bloody Battle: search_yakus in DivWorker is deprecated
         // This method should not be used for Bloody Battle Mahjong
@@ -647,8 +655,8 @@ impl<'a> DivWorker<'a> {
         // All code after return None is unreachable, so we use #[allow] to suppress warnings
         #[allow(unreachable_code, unused_variables, unused_macros, dead_code)]
         {
-            let mut _han = 0;
-            let mut _yakuman = 0;
+            let mut han = 0;
+            let mut yakuman = 0;
             let _has_pinfu = false;
 
             macro_rules! make_return {
@@ -666,64 +674,66 @@ impl<'a> DivWorker<'a> {
             }
 
             if _has_pinfu {
-                check_early_return! { _han += 1 };
+                check_early_return! { han += 1 };
             }
             if self.div.has_chitoi {
-                check_early_return! { _han += 2 };
+                check_early_return! { han += 2 };
             }
             if self.div.has_ryanpeikou {
-                check_early_return! { _han += 3 };
+                check_early_return! { han += 3 };
             }
             if self.div.has_ittsuu {
-                check_early_return! { _han += 2 };
+                check_early_return! { han += 2 };
             }
-            if self.div.has_sanshoku {
-                check_early_return! { _han += 2 };
-            }
-            if self.div.has_sanshoku_doukou {
-                check_early_return! { _han += 2 };
-            }
-            if self.div.has_suukantsu {
-                check_early_return! { _yakuman += 1 };
-            }
-            if self.div.has_daisangen {
-                check_early_return! { _yakuman += 1 };
-            }
-            if self.div.has_shousuushii {
-                check_early_return! { _yakuman += 1 };
-            }
-            if self.div.has_daisuushii {
-                check_early_return! { _yakuman += 1 };
-            }
+            // Bloody Battle: These fields don't exist in Div struct (Japanese Mahjong only)
+            // if self.div.has_sanshoku {
+            //     check_early_return! { han += 2 };
+            // }
+            // if self.div.has_sanshoku_doukou {
+            //     check_early_return! { han += 2 };
+            // }
+            // if self.div.has_suukantsu {
+            //     check_early_return! { yakuman += 1 };
+            // }
+            // if self.div.has_daisangen {
+            //     check_early_return! { yakuman += 1 };
+            // }
+            // if self.div.has_shousuushii {
+            //     check_early_return! { yakuman += 1 };
+            // }
+            // if self.div.has_daisuushii {
+            //     check_early_return! { yakuman += 1 };
+            // }
             if self.div.has_chuuren {
-                check_early_return! { _yakuman += 1 };
+                check_early_return! { yakuman += 1 };
             }
-            if self.div.has_suukantsu {
-                check_early_return! { _yakuman += 1 };
-            }
-            if self.div.has_tsuuiisou {
-                check_early_return! { _yakuman += 1 };
-            }
-            if self.div.has_ryuuiisou {
-                check_early_return! { _yakuman += 1 };
-            }
-            if self.div.has_chinroutou {
-                check_early_return! { _yakuman += 1 };
-            }
-            if self.div.has_kokushi {
-                check_early_return! { _yakuman += 1 };
-            }
-            if self.div.has_suushiihou {
-                check_early_return! { _yakuman += 1 };
-            }
-            if _yakuman > 0 {
+            // Bloody Battle: These fields don't exist in Div struct (Japanese Mahjong only)
+            // if self.div.has_suukantsu {
+            //     check_early_return! { yakuman += 1 };
+            // }
+            // if self.div.has_tsuuiisou {
+            //     check_early_return! { yakuman += 1 };
+            // }
+            // if self.div.has_ryuuiisou {
+            //     check_early_return! { yakuman += 1 };
+            // }
+            // if self.div.has_chinroutou {
+            //     check_early_return! { yakuman += 1 };
+            // }
+            // if self.div.has_kokushi {
+            //     check_early_return! { yakuman += 1 };
+            // }
+            // if self.div.has_suushiihou {
+            //     check_early_return! { yakuman += 1 };
+            // }
+            if yakuman > 0 {
                 make_return!();
             }
-            if _han == 0 {
+            if han == 0 {
                 make_return!();
             }
             make_return!();
-        }
+        
         if self.div.has_ryanpeikou {
             // 二盃口
             check_early_return! { han += 3 };
@@ -991,9 +1001,11 @@ impl<'a> DivWorker<'a> {
                     }
                 }
             }
-            }
 
             make_return!();
+        } else {
+            make_return!();
+        }
         }
     }
 }

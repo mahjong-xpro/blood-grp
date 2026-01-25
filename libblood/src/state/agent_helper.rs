@@ -26,6 +26,7 @@ impl PlayerState {
     }
 
     /// Aka dora covered version of `discard_candidates`.
+    /// Bloody Battle: No akas (red 5s), this is kept for compatibility.
     #[must_use]
     pub fn discard_candidates_aka(&self) -> [bool; 27] {
         assert!(self.last_cans.can_discard, "tehai is not 3n+2");
@@ -193,6 +194,7 @@ impl PlayerState {
         self.rule_based_ryukyoku_slow()
     }
 
+    #[allow(unreachable_code)] // Bloody Battle: Simplified logic, some branches may be unreachable
     fn rule_based_ryukyoku_slow(&self) -> bool {
         // Do not ryukyoku if the hand is already <= 2 shanten.
         if shanten::calc_all(&self.tehai, self.tehai_len_div3) <= 2 {
@@ -223,6 +225,7 @@ impl PlayerState {
         }
 
         // Do not ryukyoku if we have >= 10 yaokyuu tiles.
+        // Note: This code may be unreachable due to the logic above, but kept for completeness
         if self.yaokyuu_kind_count() >= 10 {
             return false;
         }
@@ -471,7 +474,7 @@ impl PlayerState {
         let cur_shanten = self.real_time_shanten();
         ensure!(cur_shanten >= 0, "can't calculate an agari hand");
 
-        let mut can_discard = self.last_cans.can_discard;
+        let can_discard = self.last_cans.can_discard;
         let (tsumos_left, _calc_haitei) = if can_discard {
             (self.tiles_left / 4, self.tiles_left.is_multiple_of(4))
         } else {
@@ -524,7 +527,7 @@ impl PlayerState {
             ding_que: self.ding_que, // Bloody Battle: Pass ding_que from state
         };
 
-        let mut max_ev_table = sp_calc.calc(init_state, can_discard, tsumos_left, cur_shanten)?;
+        let max_ev_table = sp_calc.calc(init_state, can_discard, tsumos_left, cur_shanten)?;
         // Bloody Battle: No riichi (立直) discard handling
 
         Ok(SinglePlayerTables { max_ev_table })
