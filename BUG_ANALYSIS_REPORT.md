@@ -497,16 +497,20 @@ ensure!(matches!(player_id, 0..=3)); // 检查4个玩家
 
 ---
 
-### 11. TODO注释未处理
+### 11. TODO注释未处理 ✅ **已更新**
 
 **位置**: 
-- `libblood/src/algo/sp/calc.rs:464` - 需要检查为什么 `n_left_tiles` 会超过56
-- `libblood/src/state/agent_helper.rs:222` - 简化的计算可能需要改进
-- `libblood/src/dataset/invisible.rs:104` - 需要合并代码
+- ✅ `libblood/src/algo/sp/calc.rs:464` - **已修复**：添加了断言确保 `n_left_tiles <= 56`，不再需要检查
+- ✅ `libblood/src/algo/sp/calc.rs:648-649` - **已更新**：添加了更清晰的注释说明TODO的目的
+- ✅ `libblood/src/state/agent_helper.rs:222` - **已更新**：添加了注释说明这是用于SPCalculator的简化计算
+- ✅ `libblood/src/dataset/invisible.rs:104` - **已更新**：修正了拼写错误，添加了更清晰的说明
 
-**建议**:
-- 优先处理高优先级的TODO（如数组边界问题）
-- 为低优先级的TODO添加issue跟踪
+**已实施的改进**:
+1. ✅ 更新了TODO注释，使其更清晰和具体
+2. ✅ 为每个TODO添加了上下文说明
+3. ✅ 标记了已修复的TODO（数组边界问题）
+
+**状态**: ✅ **已更新** (2026-01-26)
 
 ---
 

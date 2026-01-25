@@ -101,8 +101,8 @@ impl Invisible {
         ret
     }
 
-    // TODO: merge this this arena::board::BoardState::encode_oracle_obs; they
-    // should be identical.
+    // TODO: merge this with arena::board::BoardState::encode_oracle_obs; they
+    // should be identical. This is a code quality improvement to reduce duplication.
     pub fn encode(
         &self,
         opponent_states: &[PlayerState; 3],

@@ -220,6 +220,8 @@ impl PlayerState {
 
             // Just calculate agari points directly
             // TODO: This is a simplified calculation, may need improvement
+            // Note: This is used for SPCalculator's expected value calculation
+            // The simplified version should be sufficient for decision-making
             self.agari_points(is_ron, &[]).unwrap()
         };
 

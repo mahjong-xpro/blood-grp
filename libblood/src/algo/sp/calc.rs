@@ -645,8 +645,8 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
             winning_tile: win_tile.as_u8(),
             is_ron: false,
             ding_que: self.sup.ding_que,
-            is_after_kan: false, // TODO: Track if this is after kan
-            is_kan_discard: false, // TODO: Track if this is from kan discard
+            is_after_kan: false, // TODO: Track if this is after kan (for 杠上花 calculation)
+            is_kan_discard: false, // TODO: Track if this is from kan discard (for 杠上炮 calculation)
             is_chankan: false, // SPCalculator doesn't track chankan
             exclude_gen_tile: None,
         };
