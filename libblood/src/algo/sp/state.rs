@@ -93,24 +93,70 @@ impl From<InitState> for State {
                 for count in tiles_in_wall.iter_mut() {
                     *count = ((*count as f32 * scale_factor).round() as u8).min(4);
                 }
-                // 微调
+                // 微调：确保总和完全匹配 tiles_left
                 let adjusted_sum: u8 = tiles_in_wall.iter().sum();
                 if adjusted_sum != tiles_left {
-                    let diff = tiles_left as i16 - adjusted_sum as i16;
-                    let mut remaining_diff = diff;
-                    let mut indices: Vec<usize> = (0..27).collect();
-                    indices.sort_by_key(|&i| std::cmp::Reverse(tiles_in_wall[i]));
-                    for &i in indices.iter() {
-                        if remaining_diff == 0 {
-                            break;
+                    let mut diff = tiles_left as i16 - adjusted_sum as i16;
+                    // 循环调整直到完全匹配
+                    let mut max_iterations = 100; // 防止无限循环
+                    while diff != 0 && max_iterations > 0 {
+                        max_iterations -= 1;
+                        let mut indices: Vec<usize> = (0..27).collect();
+                        if diff > 0 {
+                            // 需要增加：优先从值小的位置开始（更容易增加）
+                            indices.sort_by_key(|&i| tiles_in_wall[i]);
+                            for &i in indices.iter() {
+                                if diff <= 0 {
+                                    break;
+                                }
+                                if tiles_in_wall[i] < 4 {
+                                    let can_add = (4 - tiles_in_wall[i]).min(diff as u8);
+                                    tiles_in_wall[i] += can_add;
+                                    diff -= can_add as i16;
+                                }
+                            }
+                        } else if diff < 0 {
+                            // 需要减少：优先从值大的位置开始
+                            indices.sort_by_key(|&i| std::cmp::Reverse(tiles_in_wall[i]));
+                            for &i in indices.iter() {
+                                if diff >= 0 {
+                                    break;
+                                }
+                                if tiles_in_wall[i] > 0 {
+                                    let can_sub = tiles_in_wall[i].min((-diff) as u8);
+                                    tiles_in_wall[i] -= can_sub;
+                                    diff += can_sub as i16;
+                                }
+                            }
                         }
-                        if remaining_diff > 0 && tiles_in_wall[i] < 4 {
-                            tiles_in_wall[i] += 1;
-                            remaining_diff -= 1;
-                        } else if remaining_diff < 0 && tiles_in_wall[i] > 0 {
-                            tiles_in_wall[i] -= 1;
-                            remaining_diff += 1;
+                        // 检查是否真的改变了
+                        let new_sum: u8 = tiles_in_wall.iter().sum();
+                        let new_diff = tiles_left as i16 - new_sum as i16;
+                        if new_diff == diff {
+                            // 无法再调整，强制调整一个位置
+                            if diff > 0 {
+                                // 找到值最小的位置强制增加（可能超过4，后面会修正）
+                                let min_idx = (0..27)
+                                    .min_by_key(|&i| tiles_in_wall[i])
+                                    .unwrap_or(0);
+                                tiles_in_wall[min_idx] = (tiles_in_wall[min_idx] + diff as u8).min(255);
+                                diff = 0;
+                            } else if diff < 0 {
+                                // 找到值最大的位置强制减少
+                                let max_idx = (0..27)
+                                    .max_by_key(|&i| tiles_in_wall[i])
+                                    .unwrap_or(0);
+                                let can_sub = tiles_in_wall[max_idx].min((-diff) as u8);
+                                tiles_in_wall[max_idx] -= can_sub;
+                                diff += can_sub as i16;
+                            }
+                        } else {
+                            diff = new_diff;
                         }
+                    }
+                    // 修正任何超过4的值
+                    for count in tiles_in_wall.iter_mut() {
+                        *count = (*count).min(4);
                     }
                 }
             }

@@ -65,9 +65,11 @@ pub struct PlayerState {
 
     /// Use TinyVec instead of ArrayVec to handle rare cases where size exceeds 24
     pub(super) kawa_overview: [TinyVec<[Tile; 24]>; 4],
-    pub(super) fuuro_overview: [ArrayVec<[ArrayVec<[Tile; 4]>; 4]>; 4],
+    /// Use TinyVec to handle rare cases where a player might have more than 4 fuuro (shouldn't happen, but for safety)
+    pub(super) fuuro_overview: [TinyVec<[ArrayVec<[Tile; 4]>; 4]>; 4],
     /// In this field all `Tile` are normalized (no aka dora distinction in Bloody Battle Mahjong)
-    pub(super) ankan_overview: [ArrayVec<[Tile; 4]>; 4],
+    /// Use TinyVec to handle rare cases (shouldn't happen, but for safety)
+    pub(super) ankan_overview: [TinyVec<[Tile; 4]>; 4],
 
     pub(super) at_turn: u8,
     pub(super) tiles_left: u8,
