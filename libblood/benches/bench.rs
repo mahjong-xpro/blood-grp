@@ -47,36 +47,24 @@ fn agari(c: &mut Criterion) {
 fn sp(c: &mut Criterion) {
     let calc = SPCalculator {
         tehai_len_div3: 4,
-        chis: &[],
         pons: &[],
         minkans: &[],
         ankans: &[],
-        bakaze: tu8!(E),
-        jikaze: tu8!(E),
-        prefer_riichi: true,
         is_menzen: true,
-        num_doras_in_fuuro: 0,
-        dora_indicators: &[t!(6m)],
-        calc_double_riichi: false,
-        calc_haitei: false,
         sort_result: true,
         maximize_win_prob: true,
         calc_tegawari: true,
         calc_shanten_down: true,
+        ding_que: None,
     };
     let tehai = hand("3667m 23489p 34688s").unwrap();
-    let mut tiles_seen = tehai;
-    for ind in calc.dora_indicators {
-        tiles_seen[ind.deaka().as_usize()] += 1;
-    }
+    let tiles_seen = tehai;
     let can_discard = true;
     let cur_shanten = shanten::calc_all(&tehai, calc.tehai_len_div3);
     let tsumos_left = 12;
     let init_state = InitState {
         tehai,
-        akas_in_hand: [false; 3],
         tiles_seen,
-        akas_seen: [false; 3],
     };
     c.bench_function(&format!("sp {cur_shanten} shanten"), |b| {
         b.iter(|| {
@@ -92,36 +80,24 @@ fn sp(c: &mut Criterion) {
 
     let calc = SPCalculator {
         tehai_len_div3: 4,
-        chis: &[],
         pons: &[],
         minkans: &[],
         ankans: &[],
-        bakaze: tu8!(E),
-        jikaze: tu8!(E),
-        prefer_riichi: true,
         is_menzen: true,
-        num_doras_in_fuuro: 0,
-        dora_indicators: &[t!(6m)],
-        calc_double_riichi: false,
-        calc_haitei: false,
         sort_result: true,
         maximize_win_prob: true,
         calc_tegawari: true,
         calc_shanten_down: true,
+        ding_que: None,
     };
     let tehai = hand("45677m 456778p 248s").unwrap();
-    let mut tiles_seen = tehai;
-    for ind in calc.dora_indicators {
-        tiles_seen[ind.deaka().as_usize()] += 1;
-    }
+    let tiles_seen = tehai;
     let can_discard = true;
     let cur_shanten = shanten::calc_all(&tehai, calc.tehai_len_div3);
     let tsumos_left = 12;
     let init_state = InitState {
         tehai,
-        akas_in_hand: [false; 3],
         tiles_seen,
-        akas_seen: [false; 3],
     };
     c.bench_function(&format!("sp {cur_shanten} shanten"), |b| {
         b.iter(|| {

@@ -123,7 +123,7 @@ impl Invisible {
                 .for_each(|(tile_id, &count)| arr.assign_rows(idx, tile_id, count as usize, 1.));
             idx += 4;
 
-            idx += 3; // Keep same offset for compatibility
+            idx += 3;
 
             let n = state.shanten() as usize;
             match version {
@@ -150,7 +150,7 @@ impl Invisible {
                 .for_each(|(t, _)| arr.assign(idx, t, 1.));
             idx += 1;
 
-            idx += 1; // Keep same offset for compatibility
+            idx += 1;
         }
 
         let mut encode_tile = |idx: usize, tile: Tile| -> usize {
@@ -164,17 +164,17 @@ impl Invisible {
             idx = encode_tile(idx, tile);
         }
         // Skip remaining yama slots to maintain fixed size
-        // Original used 69 max tiles, keep same for compatibility
+        // Original used 69 max tiles
         let max_yama_tiles: usize = 69;
         let encoded_tiles = self.yama.len().saturating_sub(yama_idx);
         let remaining_yama = max_yama_tiles.saturating_sub(encoded_tiles);
         idx += remaining_yama;
 
-        idx += 4 * 1; // Keep offset but use 1 dimension
+        idx += 4 * 1;
 
-        idx += 5 * 1; // Keep offset but use 1 dimension
+        idx += 5 * 1;
 
-        idx += 5 * 1; // Keep offset but use 1 dimension
+        idx += 5 * 1;
 
         assert_eq!(idx, shape.0);
         arr.build()

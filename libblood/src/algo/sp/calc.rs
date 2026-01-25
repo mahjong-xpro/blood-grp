@@ -35,8 +35,6 @@ enum ScoresOrValues<const MAX_TSUMO: usize> {
 pub struct SPCalculator<'a> {
     // Immutable states, used in agari calculator.
     pub tehai_len_div3: u8,
-    /// Chi (吃) melds - always empty in Bloody Battle Mahjong (no chi allowed)
-    pub chis: &'a [u8],
     pub pons: &'a [u8],
     pub minkans: &'a [u8],
     pub ankans: &'a [u8],
@@ -374,7 +372,7 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
 
                 match &scores_or_values {
                     ScoresOrValues::Scores(scores) => {
-                        // Bloody Battle Mahjong: no riichi, dora, or haitei bonuses
+                        // No bonuses in Bloody Battle Mahjong
                         win_probs[i] += tump_prob;
                         exp_values[i] += tump_prob * scores[0];
                     }
@@ -515,8 +513,7 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
                     }
                     // 現在の巡目が i の場合に j 巡目に有効牌を引く確率
                     let prob = tsumo_probs[j] * n / m;
-                    let _win_haitei = 0;
-                    let han_plus = _win_haitei as usize;
+                    let han_plus = 0;
 
                     match &scores_or_values {
                         ScoresOrValues::Scores(scores) => {
@@ -686,7 +683,6 @@ mod test {
     fn nanikiru() {
         let mut calc = SPCalculator {
             tehai_len_div3: 4,
-            chis: &[],
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -695,15 +691,14 @@ mod test {
             maximize_win_prob: false,
             calc_tegawari: true,
             calc_shanten_down: true,
+            ding_que: None,
         };
 
         let tehai = hand("45678m 34789p 3344m").unwrap();
-        let mut tiles_seen = tehai;
+        let tiles_seen = tehai;
         let state = InitState {
             tehai,
-            akas_in_hand: [false; 3],
             tiles_seen,
-            akas_seen: [false; 3],
         };
         let can_discard = true;
         let tsumos_left = 8;
@@ -721,9 +716,7 @@ mod test {
         let mut tiles_seen = tehai;
         let state = InitState {
             tehai,
-            akas_in_hand: [false; 3],
             tiles_seen,
-            akas_seen: [false; 3],
         };
         let can_discard = true;
         let tsumos_left = 15;
@@ -745,7 +738,6 @@ mod test {
 
         let calc = SPCalculator {
             tehai_len_div3: 4,
-            chis: &[],
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -754,15 +746,14 @@ mod test {
             maximize_win_prob: false,
             calc_tegawari: true,
             calc_shanten_down: true,
+            ding_que: None,
         };
 
         let tehai = hand("45677m 456778p 248s").unwrap();
-        let mut tiles_seen = tehai;
+        let tiles_seen = tehai;
         let state = InitState {
             tehai,
-            akas_in_hand: [false; 3],
             tiles_seen,
-            akas_seen: [false; 3],
         };
         let can_discard = true;
         let tsumos_left = 15;
@@ -793,7 +784,6 @@ mod test {
 
         let calc = SPCalculator {
             tehai_len_div3: 4,
-            chis: &[],
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -802,14 +792,13 @@ mod test {
             maximize_win_prob: false,
             calc_tegawari: true,
             calc_shanten_down: true,
+            ding_que: None,
         };
         let tehai = hand("9999m 6677p 88s 335m 1m").unwrap();
-        let mut tiles_seen = tehai;
+        let tiles_seen = tehai;
         let state = InitState {
             tehai,
-            akas_in_hand: [false; 3],
             tiles_seen,
-            akas_seen: [false; 3],
         };
         let cur_shanten = CALC_SHANTEN_FN(&tehai, calc.tehai_len_div3);
         let can_discard = true;
@@ -831,7 +820,6 @@ mod test {
 
     #[test]
     fn tsumo_only() {
-        // No bakaze, jikaze, riichi, dora - these fields are kept for compatibility but ignored
         
         use crate::algo::sp::CALC_SHANTEN_FN;
         use crate::hand::hand;
@@ -846,6 +834,7 @@ mod test {
             maximize_win_prob: true,
             calc_tegawari: true,
             calc_shanten_down: true,
+            ding_que: None,
         };
 
         // Test hand: 45677m 456778p 48s (tenpai, waiting for 7p or 9s)
@@ -872,7 +861,7 @@ mod test {
         // Should have candidates for winning tiles
         assert!(!candidates.is_empty(), "Should have at least one candidate");
         
-        // The exact values may differ from Japanese Mahjong, but the structure should be correct
+        // Verify candidate structure
         let c = &candidates[0];
         // Verify candidate has expected structure
         assert!(c.tenpai_probs.len() > 0, "Should have tenpai probabilities");

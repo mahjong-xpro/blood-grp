@@ -199,12 +199,6 @@ impl BatchGame {
             disable_progress_bar,
         }
     }
-    
-    /// Legacy method name - use `standard_game` instead
-    #[allow(dead_code)]
-    pub const fn tenhou_hanchan(disable_progress_bar: bool) -> Self {
-        Self::standard_game(disable_progress_bar)
-    }
 
     pub fn run(
         &self,

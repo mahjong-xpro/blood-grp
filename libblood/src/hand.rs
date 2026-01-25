@@ -1,8 +1,7 @@
 //! Hand format conversions, usually only useful for testing and debugging.
 //!
 //! Note that all functions in this mod that take or produce strings are dealing
-//! with tenhou.net/2 format tile description (like 0m 123z) instead of mjai (like
-//! 5mr ESW).
+//! with tenhou.net/2 format tile description (like 0m 123z) instead of mjai format.
 
 use crate::tile::Tile;
 use crate::must_tile;
@@ -47,22 +46,7 @@ pub fn hand(s: &str) -> Result<[u8; 27]> {
     Ok(ret)
 }
 
-#[must_use]
-pub fn tile37_to_vec(tiles: &[u8; 37]) -> Vec<Tile> {
-    let mut ret = vec![];
-    tiles
-        .iter()
-        .enumerate()
-        .filter(|&(_, &count)| count > 0)
-        .for_each(|(tid, &count)| {
-            if tid < 34 {
-                ret.resize(ret.len() + count as usize, must_tile!(tid));
-            } else {
-                ret.push(must_tile!(tid));
-            }
-        });
-    ret
-}
+// Removed tile37_to_vec - Bloody Battle Mahjong only uses 27 tile types
 
 #[must_use]
 pub fn tile27_to_vec(tiles: &[u8; 27]) -> Vec<Tile> {
@@ -78,7 +62,7 @@ pub fn tile27_to_vec(tiles: &[u8; 27]) -> Vec<Tile> {
 }
 
 #[must_use]
-pub fn tiles_to_string(tiles: &[u8; 27], _aka: [bool; 3]) -> String {
+pub fn tiles_to_string(tiles: &[u8; 27]) -> String {
     let suhai = tiles[..3 * 9]
         .chunks_exact(9)
         .enumerate()
@@ -141,14 +125,11 @@ mod test {
     #[test]
     fn string() {
         assert_eq!(
-            tiles_to_string(
-                &[
-                    0, 0, 2, 0, 1, 1, 1, 0, 0, // m
-                    0, 0, 1, 1, 1, 1, 1, 1, 0, // p
-                    0, 0, 0, 0, 0, 1, 1, 1, 0, // s
-                ],
-                [false, false, false]
-            ),
+            tiles_to_string(&[
+                0, 0, 2, 0, 1, 1, 1, 0, 0, // m
+                0, 0, 1, 1, 1, 1, 1, 1, 0, // p
+                0, 0, 0, 0, 0, 1, 1, 1, 0, // s
+            ]),
             "33067m 345678p 678s"
         );
     }

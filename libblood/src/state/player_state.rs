@@ -1,5 +1,5 @@
 use super::action::ActionCandidate;
-use super::item::{KawaItem, Sutehai};
+use super::item::KawaItem;
 use crate::algo::sp::Candidate;
 use crate::hand::tiles_to_string;
 use crate::must_tile;
@@ -28,8 +28,9 @@ pub struct PlayerState {
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) tehai: [u8; 27],
 
+    /// Tiles that can be used to win (waiting tiles).
     /// Does not consider yakunashi, but does consider other kinds of
-    /// furiten.
+    /// forbidden wins (similar to furiten in Japanese Mahjong).
     #[derivative(Default(value = "[false; 27]"))]
     pub(super) waits: [bool; 27],
 
@@ -46,7 +47,7 @@ pub struct PlayerState {
     #[derivative(Default(value = "[false; 27]"))]
     pub(super) forbidden_tiles: [bool; 27],
 
-    /// Used for furiten check.
+    /// Used for checking forbidden wins (similar to furiten in Japanese Mahjong).
     #[derivative(Default(value = "[false; 27]"))]
     pub(super) discarded_tiles: [bool; 27],
 
@@ -61,13 +62,9 @@ pub struct PlayerState {
     /// in the kawa, in some very rare cases (about one in a million hanchans),
     /// the size can exceed 24.
     pub(super) kawa: [TinyVec<[Option<KawaItem>; 24]>; 4],
-    /// Last hand discard (手出) for each player - used in observation encoding
-    /// Note: In Bloody Battle Mahjong, this is kept for observation space compatibility
-    pub(super) last_tedashis: [Option<Sutehai>; 4],
 
     pub(super) kawa_overview: [ArrayVec<[Tile; 24]>; 4],
     pub(super) fuuro_overview: [ArrayVec<[ArrayVec<[Tile; 4]>; 4]>; 4],
-    /// In this field all `Tile` are deaka'd.
     /// In this field all `Tile` are normalized (no aka dora distinction in Bloody Battle Mahjong)
     pub(super) ankan_overview: [ArrayVec<[Tile; 4]>; 4],
 
@@ -214,7 +211,7 @@ single player table (max EV):
             self.kyoku + 1,
             self.at_turn,
             format!("{:?}", self.scores),
-            tiles_to_string(&self.tehai, [false; 3]),
+            tiles_to_string(&self.tehai),
             format!("{:?}", self.fuuro_overview[0]),
             format!("{:?}", self.ankan_overview[0]),
             self.tehai_len_div3,

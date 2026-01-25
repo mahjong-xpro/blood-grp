@@ -8,10 +8,6 @@ use serde_json as json;
 pub struct KyokuResult {
     pub kyoku: u8,
     pub can_renchan: bool,
-    #[allow(dead_code)] // Kept for compatibility with result format
-    pub has_hora: bool,
-    #[allow(dead_code)] // Kept for compatibility with result format
-    pub has_abortive_ryukyoku: bool,
     pub scores: [i32; 4],
 }
 

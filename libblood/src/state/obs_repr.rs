@@ -138,7 +138,6 @@ impl<'a> ObsEncoderContext<'a> {
             });
         self.idx += 4;
 
-        // Keep the same offset for compatibility
         self.idx += 3;
 
         for &score in &state.scores {
@@ -172,7 +171,6 @@ impl<'a> ObsEncoderContext<'a> {
         }
         self.idx += 4;
 
-        // Keep the same offset for compatibility
         let cap = match self.version {
             1 | 4 => 10,
             2 | 3 => 6,
@@ -187,7 +185,6 @@ impl<'a> ObsEncoderContext<'a> {
             .rbf_intervals(3)
             .encode(&mut self);
 
-        // Keep the same offset for compatibility
         self.idx += 2;
 
         // Ding que suit (3 dimensions: one-hot for Man/Pin/Sou)
@@ -232,7 +229,6 @@ impl<'a> ObsEncoderContext<'a> {
                 .encode(&mut self);
         }
 
-        // Keep the same offset for compatibility
         self.encode_tile_set(std::iter::empty());
 
         state.kawa[0]
@@ -289,14 +285,8 @@ impl<'a> ObsEncoderContext<'a> {
                         let row = (turn / 6).min(2);
                         let tid = kawa_item.sutehai.tile.as_usize();
                         self.arr.assign(self.idx + row, tid, 1.);
-                        // Note: is_tedashi encoding kept for observation space compatibility
-                        // In Bloody Battle Mahjong, tedashi (手出) vs tsumogiri (摸切) distinction
-                        // is not used in game logic, but preserved in observation encoding
-                        if kawa_item.sutehai.is_tedashi {
-                            self.arr.assign(self.idx + 3 + row, tid, 1.);
-                        }
                     }
-                    self.idx += 6;
+                    self.idx += 3; // Reduced from 6 (removed tedashi encoding)
                 }
                 3 | 4 => {
                     for (turn, kawa_item) in player_kawa.iter().enumerate() {
@@ -305,12 +295,9 @@ impl<'a> ObsEncoderContext<'a> {
                             let tid = sutehai.tile.as_usize();
                             let v = (-0.2 * (max_kawa_len - 1 - turn) as f32).exp();
                             self.arr.assign(self.idx, tid, v);
-                            if sutehai.is_tedashi {
-                                self.arr.assign(self.idx + 1, tid, v);
-                            }
                         }
                     }
-                    self.idx += 3;
+                    self.idx += 1; // Reduced from 3 (removed tedashi encoding)
                 }
                 _ => (),
             }
@@ -327,11 +314,8 @@ impl<'a> ObsEncoderContext<'a> {
                 .encode(&mut self);
         }
 
-        let doras_unseen = 0;
-        IntegerEncoder::new(doras_unseen as usize, 5 * 4 + 3)
-            .rescale(true)
-            .rbf_intervals(4)
-            .encode(&mut self);
+        // Removed doras_unseen encoding (Bloody Battle Mahjong has no dora)
+        // This saves ~23 channels (IntegerEncoder with cap=23, rbf_intervals=4)
 
         for player_kawa_overview in &state.kawa_overview {
             self.encode_tile_set(player_kawa_overview.iter().copied());
@@ -368,28 +352,11 @@ impl<'a> ObsEncoderContext<'a> {
                 }
             }
             self.idx += 1;
-
-            // Note: last_tedashis encoding kept for observation space compatibility
-            // In Bloody Battle Mahjong, tedashi (手出) vs tsumogiri (摸切) distinction
-            // is not used in game logic, but preserved in observation encoding
-            for &player_last_tedashi in &state.last_tedashis[1..] {
-                if let Some(sutehai) = player_last_tedashi {
-                    let tile = sutehai.tile;
-                    let tile_id = tile.as_usize();
-
-                    self.arr.assign(self.idx, tile_id, 1.);
-                }
-                self.idx += 3;
-            }
-            // Keep offset for backward compatibility (3 channels per player)
-            for _ in 1..4 {
-                self.idx += 3;
-            }
+            // Removed last_tedashis encoding (9 channels: 3 per player for 3 players)
+            // No longer needed in Bloody Battle Mahjong
         }
 
-        // Keep offset for backward compatibility
         self.idx += 3;
-        // Keep offset for backward compatibility
         self.idx += 3;
 
         state
@@ -400,13 +367,11 @@ impl<'a> ObsEncoderContext<'a> {
             .for_each(|(t, _)| self.arr.assign(self.idx, t, 1.));
         self.idx += 1;
 
-        // Keep offset for compatibility
         self.idx += 1;
 
         let n = state.shanten as usize;
         IntegerEncoder::new(n, 6).one_hot(true).encode(&mut self);
 
-        // Keep offset for compatibility
         self.idx += 1;
 
         if self.at_kan_select {
@@ -433,7 +398,7 @@ impl<'a> ObsEncoderContext<'a> {
 
         if cans.can_discard {
             state
-                .discard_candidates_aka()
+                .discard_candidates()
                 .iter()
                 .enumerate()
                 .filter(|&(_, &c)| c)
@@ -469,10 +434,8 @@ impl<'a> ObsEncoderContext<'a> {
         }
         self.idx += 5;
 
-        // Keep offset for compatibility
         self.idx += 1;
 
-        // Keep offset for compatibility
         self.idx += 3;
 
         // Action indices: 0-26 (discard), 27 (pon), 28 (kan), 29 (agari), 30 (ryukyoku), 31 (pass)
@@ -743,7 +706,6 @@ impl<'a> ObsEncoderContext<'a> {
             let sutehai = k.sutehai;
                     let tile_id = sutehai.tile.as_usize();
             self.arr.assign(self.idx + 1, tile_id, 1.);
-            // Keep offset for compatibility
             self.idx += 2;
         }
         self.idx += SELF_KAWA_ITEM_CHANNELS;
@@ -752,7 +714,6 @@ impl<'a> ObsEncoderContext<'a> {
     fn encode_kawa(&mut self, item: Option<&KawaItem>) {
         if let Some(k) = item {
             // Chi/pon info is included in fuuro_overview instead
-            // Keep offset for compatibility
             self.idx += 2;
 
             for kan in k.kan {
@@ -763,7 +724,6 @@ impl<'a> ObsEncoderContext<'a> {
             let sutehai = k.sutehai;
                     let tile_id = sutehai.tile.as_usize();
             self.arr.assign(self.idx + 3, tile_id, 1.);
-            // Keep offset for backward compatibility
             self.idx += 4;
         }
         self.idx += KAWA_ITEM_CHANNELS;

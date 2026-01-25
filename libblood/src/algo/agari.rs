@@ -55,15 +55,6 @@ struct Div {
     kotsu_idxs: ArrayVec<[u8; 4]>,
     shuntsu_idxs: ArrayVec<[u8; 4]>,
     has_chitoi: bool,
-    #[allow(dead_code)] // Parsed from binary data but not used in Bloody Battle Mahjong
-    has_chuuren: bool,
-    #[allow(dead_code)] // Parsed from binary data but not used in Bloody Battle Mahjong
-    has_ittsuu: bool,
-    #[allow(dead_code)] // Parsed from binary data but not used in Bloody Battle Mahjong
-    has_ryanpeikou: bool,
-    // CAUTION: it is sound but not complete, broken if there is any ankan
-    #[allow(dead_code)] // Parsed from binary data but not used in Bloody Battle Mahjong
-    has_ipeikou: bool,
 }
 
 /// 
@@ -113,26 +104,15 @@ impl From<u32> for Div {
             .collect();
 
         let has_chitoi = (v >> 26) & 0b1 == 0b1;
-        let has_chuuren = (v >> 27) & 0b1 == 0b1;
-        let has_ittsuu = (v >> 28) & 0b1 == 0b1;
-        let has_ryanpeikou = (v >> 29) & 0b1 == 0b1;
-        let has_ipeikou = (v >> 30) & 0b1 == 0b1;
 
         Self {
             pair_idx,
             kotsu_idxs,
             shuntsu_idxs,
             has_chitoi,
-            has_chuuren,
-            has_ittsuu,
-            has_ryanpeikou,
-            has_ipeikou,
         }
     }
 }
-
-#[allow(dead_code)]
-// The derive macro handles Fan(u8) comparison automatically
 
 impl Agari {
     #[must_use]
@@ -503,14 +483,11 @@ fn get_tile14_and_key(tiles: &[u8; 27]) -> ([u8; 14], u32) {
 /// with the tile is legal.
 ///
 /// Check if ankan (暗杠) is valid when in tenpai (听牌) state.
-/// 
-/// Note: Function name contains "riichi" for historical reasons, but this function
-/// is used in Bloody Battle Mahjong to check if ankan changes the tenpai shape.
-/// Bloody Battle Mahjong does not have riichi (立直) concept.
 ///
+/// This function checks if performing ankan changes the tenpai shape or wait tiles.
 /// The behavior is undefined if `tehai` is not tenpai.
 #[must_use]
-pub fn check_ankan_after_riichi(tehai: &[u8; 27], len_div3: u8, tile: Tile, strict: bool) -> bool {
+pub fn check_ankan_in_tenpai(tehai: &[u8; 27], len_div3: u8, tile: Tile, strict: bool) -> bool {
     let tile_id = tile.as_usize();
     if tile_id >= 27 || tehai[tile_id] != 4 {
         return false;
@@ -572,15 +549,14 @@ mod test {
     use crate::hand::hand;
 
     #[test]
-    fn ankan_after_riichi() {
-        // Note: Test name contains "riichi" for historical reasons, but this tests
-        // ankan validity in tenpai state, which is also needed in Bloody Battle Mahjong
+    fn ankan_in_tenpai() {
+        // Test ankan validity in tenpai state
         let test_one = |tehai_str, tile_str: &str, len_div3, strict, expected| {
             let mut tehai = hand(tehai_str).unwrap();
             let tile: Tile = tile_str.parse().unwrap();
             tehai[tile.as_usize()] += 1;
             assert_eq!(
-                check_ankan_after_riichi(&tehai, len_div3, tile, strict),
+                check_ankan_in_tenpai(&tehai, len_div3, tile, strict),
                 expected,
                 "failed for {tehai_str} + {tile_str}, expected {expected}",
             );
@@ -1046,7 +1022,6 @@ mod test {
             exclude_gen_tile: None,
         };
         let points = calc.agari().unwrap().point(false);
-        // 立直, 門前清自摸和
         assert_eq!(
             points,
             Point {

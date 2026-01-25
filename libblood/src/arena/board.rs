@@ -42,9 +42,6 @@ pub struct BoardState {
     #[derivative(Default(value = "[false; 4]"))]
     players_agari: [bool; 4],
     agari_count: u8,
-    
-    #[allow(dead_code)] // Kept for compatibility with result format
-    has_abortive_ryukyoku: bool,
     kyoku_deltas: [i32; 4],
 
     #[derivative(Default(value = "56"))]
@@ -135,8 +132,6 @@ impl BoardState {
         KyokuResult {
             kyoku: self.board.kyoku,
             can_renchan: false,
-            has_hora: self.agari_count > 0,
-            has_abortive_ryukyoku: self.has_abortive_ryukyoku,
             scores: self.board.scores,
         }
     }
@@ -364,7 +359,6 @@ impl BoardState {
             deltas: Some([0; 4]),
         };
         self.add_log_no_meta(ryukyoku);
-        self.has_abortive_ryukyoku = true;
         // No need to broadcast
     }
 
@@ -520,7 +514,7 @@ impl BoardState {
                     });
                 idx += 4;
 
-                idx += 3; // Keep same index offset for compatibility
+                idx += 3;
 
                 let n = state.shanten() as usize;
                 match version {
@@ -559,15 +553,14 @@ impl BoardState {
             idx = encode_tile(idx, tile);
         }
         // Skip remaining yama slots (no aka encoding, so only 1 dimension per tile)
-        // Keep the same offset calculation for compatibility
-        let max_yama_tiles = 69; // Keep original max for compatibility
+        let max_yama_tiles = 69;
         idx += (max_yama_tiles - self.tiles_left as usize) * 1;
 
-        idx += 4 * 1; // Keep offset but use 1 dimension
+        idx += 4 * 1;
 
-        idx += 5 * 1; // Keep offset but use 1 dimension
+        idx += 5 * 1;
 
-        idx += 5 * 1; // Keep offset but use 1 dimension
+        idx += 5 * 1;
 
         assert_eq!(idx, shape.0);
         arr.build()

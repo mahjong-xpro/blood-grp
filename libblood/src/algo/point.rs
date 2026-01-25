@@ -33,11 +33,6 @@ impl Point {
         }
     }
 
-    /// Legacy method for compatibility - calculates from fu and han (Japanese Mahjong/日本麻将)
-    #[must_use]
-    pub fn calc(_is_oya: bool, _fu: u8, han: u8) -> Self {
-        Self::calc_from_fan(han)
-    }
 
     #[must_use]
     pub const fn yakuman(_is_oya: bool, _count: i32) -> Self {

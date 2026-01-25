@@ -80,11 +80,11 @@ pub struct Stat {
     pub houjuu_point_to_ko: i64,
 
     #[pyo3(get, set)]
-    pub dama_agari: i64,
+    pub menzen_agari: i64,
     #[pyo3(get, set)]
-    pub dama_agari_jun: i64,
+    pub menzen_agari_jun: i64,
     #[pyo3(get, set)]
-    pub dama_agari_point: i64,
+    pub menzen_agari_point: i64,
 
     #[pyo3(get, set)]
     pub ryukyoku: i64,
@@ -121,12 +121,12 @@ Avg winning Δscore               {:.6}
 Avg winning Δscore as dealer     {:.6}
 Avg winning Δscore as non-dealer {:.6}
 Avg open winning Δscore          {:.6}
-Avg dama winning Δscore          {:.6}
+Avg menzen winning Δscore        {:.6}
 Avg ryukyoku Δscore              {:.6}
 
 Avg winning turn        {:.6}
 Avg open winning turn   {:.6}
-Avg dama winning turn   {:.6}
+Avg menzen winning turn {:.6}
 
 Avg deal-in turn                 {:.6}
 Avg deal-in Δscore               {:.6}
@@ -171,12 +171,12 @@ Deal-in to dealer/all deal-ins {:.6}"#,
             self.avg_point_per_oya_agari(),
             self.avg_point_per_ko_agari(),
             self.avg_point_per_fuuro_agari(),
-            self.avg_point_per_dama_agari(),
+            self.avg_point_per_menzen_agari(),
             self.avg_point_per_ryukyoku(),
             //
             self.avg_agari_jun(),
             self.avg_fuuro_agari_jun(),
-            self.avg_dama_agari_jun(),
+            self.avg_menzen_agari_jun(),
             //
             self.avg_houjuu_jun(),
             self.avg_point_per_houjuu(),
@@ -260,10 +260,9 @@ impl Stat {
                         stat.fuuro_point += point;
                     } else {
                         // Bloody Battle Mahjong: menzen agari (门清和牌) - agari without fuuro
-                        // Note: dama_agari field name is for historical compatibility
-                        stat.dama_agari += 1;
-                        stat.dama_agari_jun += jun;
-                        stat.dama_agari_point += point;
+                        stat.menzen_agari += 1;
+                        stat.menzen_agari_jun += jun;
+                        stat.menzen_agari_point += point;
                     }
 
                 } else if target == player_id {
@@ -485,8 +484,8 @@ impl Stat {
     #[getter]
     #[inline]
     #[must_use]
-    pub fn avg_point_per_dama_agari(&self) -> f64 {
-        self.dama_agari_point as f64 / self.dama_agari as f64
+    pub fn avg_point_per_menzen_agari(&self) -> f64 {
+        self.menzen_agari_point as f64 / self.menzen_agari as f64
     }
     #[getter]
     #[inline]
@@ -510,8 +509,8 @@ impl Stat {
     #[getter]
     #[inline]
     #[must_use]
-    pub fn avg_dama_agari_jun(&self) -> f64 {
-        self.dama_agari_jun as f64 / self.dama_agari as f64
+    pub fn avg_menzen_agari_jun(&self) -> f64 {
+        self.menzen_agari_jun as f64 / self.menzen_agari as f64
     }
 
     #[getter]

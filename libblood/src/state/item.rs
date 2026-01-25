@@ -13,20 +13,11 @@ pub(super) struct KawaItem {
 #[derive(Debug, Clone, Copy, Serialize)]
 pub(super) struct Sutehai {
     pub(super) tile: Tile,
-    /// Whether the tile was discarded from hand (手出) vs tsumogiri (摸切)
-    /// Note: In Bloody Battle Mahjong, this distinction is not used in game logic,
-    /// but kept for observation space compatibility (used in obs encoding)
-    pub(super) is_tedashi: bool,
 }
 
 impl fmt::Display for Sutehai {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}{}",
-            self.tile,
-            if self.is_tedashi { "" } else { "^" },
-        )
+        write!(f, "{}", self.tile)
     }
 }
 

@@ -89,7 +89,7 @@ fn process_path(path: &Path) -> Result<()> {
                     states[*actor as usize].brief_info(),
                 );
 
-                let discard_candidates = states[*actor as usize].discard_candidates_aka();
+                let discard_candidates = states[*actor as usize].discard_candidates();
                 ensure!(
                     discard_candidates[pai.as_usize()],
                     "fails discard_candidates at line {line}\naction: {ev:?}\nstate:\n{}",
@@ -180,7 +180,7 @@ fn process_path(path: &Path) -> Result<()> {
         }
 
         for (s, c) in states.iter_mut().zip(&mut cans) {
-            *c = s.update_with_keep_cans(ev, true)?;
+            *c = s.update(ev)?;
         }
     }
 

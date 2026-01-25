@@ -7,9 +7,8 @@
 //! - Whenever shanten calculation is involved, all types of shanten will be
 //!   considered (using `shanten::calc_all`). In the original version, you can
 //!   only choose one of normal, chitoi and kokushi.
-//! - When calculating uradora probs, the actual the number of tiles left is
-//!   calculated and used, while the original version uses a fixed value of 121.
-//!   although dama has no benefit at all in single-player mahjong.
+//! - The actual number of tiles left is calculated and used, while the original
+//!   version uses a fixed value of 121.
 //! - `max_tsumo` is set to the actual value, instead of the hardcoded 17 or 18
 //!   in the original version. Not only does this reduce the amount of
 //!   calculations, but more importantly, I think this is the theoretically

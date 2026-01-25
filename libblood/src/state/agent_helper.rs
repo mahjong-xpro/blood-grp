@@ -20,12 +20,6 @@ impl PlayerState {
     /// Used by `Agent` impls, must be called at 3n+2.
     #[must_use]
     pub fn discard_candidates(&self) -> [bool; 27] {
-        self.discard_candidates_aka()
-    }
-
-    /// Discard candidates (aka dora naming kept for historical compatibility).
-    #[must_use]
-    pub fn discard_candidates_aka(&self) -> [bool; 27] {
         assert!(self.last_cans.can_discard, "tehai is not 3n+2");
 
         let mut ret = [false; 27];
@@ -70,20 +64,14 @@ impl PlayerState {
     ///
     /// The return value indicates the tiles which can make the hand tenpai for
     /// real after being discarded, with the number of future tenpai tiles left
-    /// and furiten considered, without depending on any incidental yaku, and is
+    /// and forbidden win conditions considered, without depending on any incidental yaku, and is
     #[must_use]
     pub fn discard_candidates_with_unconditional_tenpai(&self) -> [bool; 27] {
-        self.discard_candidates_with_unconditional_tenpai_aka()
-    }
-
-    /// Discard candidates with unconditional tenpai (aka dora naming kept for historical compatibility).
-    #[must_use]
-    pub fn discard_candidates_with_unconditional_tenpai_aka(&self) -> [bool; 27] {
         assert!(self.last_cans.can_discard, "tehai is not 3n+2");
 
         let mut ret = [false; 27];
 
-        if self.tiles_left == 0 // haitei
+        if self.tiles_left == 0 // last tile
             || self.shanten > 1 // impossible to discard-to-tenpai
             || self.shanten == 1 && !self.has_next_shanten_discard
         {
@@ -92,7 +80,7 @@ impl PlayerState {
 
         if let Some(last_self_tsumo) = self.last_self_tsumo {
             if self.waits[last_self_tsumo.as_usize()] {
-                // already agari and any discard will result in furiten
+                // already agari and any discard will result in forbidden win
                 return ret;
             }
             // All valid waits can agari
@@ -448,13 +436,10 @@ impl PlayerState {
 
         let init_state = InitState {
             tehai,
-            akas_in_hand: [false; 3],
             tiles_seen: self.tiles_seen,
-            akas_seen: [false; 3],
         };
         let sp_calc = SPCalculator {
             tehai_len_div3: self.tehai_len_div3,
-            chis: &[],
             pons: &self.pons,
             minkans: &self.minkans,
             ankans: &self.ankans,

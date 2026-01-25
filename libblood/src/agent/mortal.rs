@@ -213,7 +213,7 @@ impl BatchAgent for MortalBatchAgent {
             && !cans.can_kakan
             && !cans.can_ryukyoku
         {
-            let candidates = state.discard_candidates_aka();
+            let candidates = state.discard_candidates();
             let mut only_candidate = None;
             for (tile, &flag) in candidates.iter().enumerate() {
                 if !flag {
@@ -311,7 +311,6 @@ impl BatchAgent for MortalBatchAgent {
         let kan_select_idx = sync_fields.kan_action_idxs[index].take();
 
         let actor = self.player_ids[index];
-        let _akas_in_hand = [false; 3]; // Placeholder
         let cans = state.last_cans();
 
         let orig_action = self.actions[action_idx];

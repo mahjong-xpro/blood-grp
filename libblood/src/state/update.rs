@@ -22,28 +22,15 @@ pub(super) enum MoveType {
 impl PlayerState {
     #[inline]
     pub fn update(&mut self, event: &Event) -> Result<ActionCandidate> {
-        self.update_with_keep_cans(event, false)
-    }
-
-    /// If `keep_cans_on_announce` is true, then ReachAccepted, Dora and Hora
-    /// events will keep `self.last_cans`, `self.ankan_candidates` and
-    /// `self.kakan_candidates` unchanged from the last update. Currently
-    /// setting it to true is only useful in validate_logs.
-    pub fn update_with_keep_cans(
-        &mut self,
-        event: &Event,
-        keep_cans_on_announce: bool,
-    ) -> Result<ActionCandidate> {
-        self.update_inner(event, keep_cans_on_announce)
+        self.update_inner(event)
             .with_context(|| format!("on event {event:?}"))
     }
 
     fn update_inner(
         &mut self,
         event: &Event,
-        keep_cans_on_announce: bool,
     ) -> Result<ActionCandidate> {
-        if !keep_cans_on_announce || !event.is_in_game_announce() {
+        if !event.is_in_game_announce() {
             self.last_cans = ActionCandidate {
                 target_actor: event.actor().unwrap_or(self.player_id),
                 ..Default::default()
@@ -51,7 +38,6 @@ impl PlayerState {
             self.ankan_candidates.clear();
             self.kakan_candidates.clear();
         }
-
 
         match *event {
             Event::StartKyoku {
@@ -160,7 +146,7 @@ impl PlayerState {
     }
 
     fn tsumo(&mut self, actor: u8, pai: Tile) -> Result<()> {
-        // Allow tsumo if tiles_left is 0 but this is the last tile (haitei)
+        // Allow tsumo if tiles_left is 0 but this is the last tile
         // This handles the case where tiles_left might be slightly out of sync
         if self.tiles_left == 0 {
             // This is the last tile, allow it but don't decrement further
@@ -199,7 +185,7 @@ impl PlayerState {
             self.last_cans.can_tsumo_agari = agari_calc.has_yaku();
         }
 
-        // haitei tile cannot be used for kakan or ankan
+        // Last tile cannot be used for kakan or ankan
         if self.tiles_left == 0 {
             return Ok(());
         }
@@ -225,7 +211,7 @@ impl PlayerState {
         Ok(())
     }
 
-    fn dahai(&mut self, actor: u8, pai: Tile, tsumogiri: bool) -> Result<()> {
+    fn dahai(&mut self, actor: u8, pai: Tile, _tsumogiri: bool) -> Result<()> {
         let actor_rel = self.rel(actor);
         if actor_rel == 0 {
             self.move_tile(pai, MoveType::Discard)?;
@@ -240,7 +226,6 @@ impl PlayerState {
         
         let sutehai = Sutehai {
             tile: pai,
-            is_tedashi: !tsumogiri,
         };
         let kawa_item = KawaItem {
             kan: mem::take(&mut self.intermediate_kan),
@@ -249,10 +234,6 @@ impl PlayerState {
         self.kawa[actor_rel].push(Some(kawa_item));
         self.kawa_overview[actor_rel].push(pai);
         self.last_kawa_tile = Some(pai);
-
-        if !tsumogiri {
-            self.last_tedashis[actor_rel] = Some(sutehai);
-        }
 
         if actor_rel == 0 {
             self.forbidden_tiles.fill(false);
@@ -511,10 +492,9 @@ impl PlayerState {
         Ok(())
     }
 
-    /// Updates `dora_indicators`, witness the dora indicator itself and
-    /// recounts doras (`doras_seen` and `doras_owned`) based on all the seen
-    /// tiles.
-
+    /// Pads the kawa (discard pile) for pon or daiminkan actions.
+    /// This ensures the discard pile has the correct structure when a player
+    /// calls pon or daiminkan from another player's discard.
     pub(super) fn pad_kawa_for_pon_or_daiminkan(&mut self, abs_actor: u8, abs_target: u8) {
         let mut i = (abs_target + 1) % 4;
         while i != abs_actor {
@@ -524,13 +504,6 @@ impl PlayerState {
         }
     }
 
-    #[allow(dead_code)] // Kept for compatibility, may be used in future
-    pub(super) fn pad_kawa_at_start(&mut self) {
-        self.kawa
-            .iter_mut()
-            .take(self.oya as usize)
-            .for_each(|kawa| kawa.push(None));
-    }
 
 
     /// Can be called at either 3n+1 or 3n+2.
@@ -599,12 +572,6 @@ impl PlayerState {
                 *is_wait = self.tiles_seen[t] < 4;
             }
         }
-    }
-
-
-    #[allow(dead_code)] // May be used in future
-    pub(super) fn update_rank(&mut self) {
-        self.rank = self.get_rank(self.scores);
     }
 
     pub(super) fn get_rank(&self, mut scores_rel: [i32; 4]) -> u8 {

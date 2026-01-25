@@ -10,11 +10,9 @@ use tinyvec::ArrayVec;
 pub(super) struct State {
     // hand
     pub(super) tehai: [u8; 27],
-    pub(super) akas_in_hand: [bool; 3], // Kept for compatibility, but will be all false
 
     // global
     pub(super) tiles_in_wall: [u8; 27],
-    pub(super) akas_in_wall: [bool; 3], // Kept for compatibility, but will be all false
     pub(super) n_extra_tsumo: u8,
 }
 
@@ -23,31 +21,23 @@ pub(super) struct State {
 pub struct InitState {
     // hand
     pub tehai: [u8; 27],
-    pub akas_in_hand: [bool; 3], // Kept for compatibility, but will be all false
 
     // global
     pub tiles_seen: [u8; 27],
-    pub akas_seen: [bool; 3], // Kept for compatibility, but will be all false
 }
 
 impl From<InitState> for State {
     fn from(
         InitState {
             tehai,
-            akas_in_hand,
             tiles_seen,
-            akas_seen,
         }: InitState,
     ) -> Self {
         let mut tiles_in_wall = tiles_seen;
-        let mut akas_in_wall = akas_seen;
         tiles_in_wall.iter_mut().for_each(|v| *v = 4 - *v);
-        akas_in_wall.iter_mut().for_each(|v| *v = !*v);
         Self {
             tehai,
-            akas_in_hand,
             tiles_in_wall,
-            akas_in_wall,
             n_extra_tsumo: 0,
         }
     }
