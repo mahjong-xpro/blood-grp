@@ -259,6 +259,7 @@ impl Stat {
                         stat.fuuro_agari_point += point;
                         stat.fuuro_point += point;
                     } else {
+                        // Bloody Battle Mahjong: no dama (默听) concept, this is just menzen agari (门清和牌)
                         stat.dama_agari += 1;
                         stat.dama_agari_jun += jun;
                         stat.dama_agari_point += point;

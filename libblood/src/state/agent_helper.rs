@@ -440,10 +440,7 @@ impl PlayerState {
             let target = self.rel(self.last_cans.target_actor) as u8;
             // Let's just ignore chankan here.
             let tiles_left_at_next_tsumo = self.tiles_left.saturating_sub(4 - target);
-            (
-                tiles_left_at_next_tsumo / 4,
-                tiles_left_at_next_tsumo.is_multiple_of(4),
-            )
+            tiles_left_at_next_tsumo / 4
         };
         ensure!(tsumos_left >= 1, "need at least one more tsumo");
 
