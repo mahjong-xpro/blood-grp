@@ -257,6 +257,18 @@ impl PlayerState {
         );
         // kawa capacity is 55, which is the theoretical maximum (108 total tiles - 52 initial hands - 1 last draw)
         // If this panics, it indicates invalid game log data or a bug in game logic
+        let kawa_len = self.kawa[actor_rel].len();
+        assert!(
+            kawa_len < 55,
+            "kawa capacity overflow: player {} (relative {}) has {} discards, attempting to add one more. Maximum is 55. This indicates invalid game log data. Current tile: {:?}, kyoku: {}, at_turn: {}, tiles_left: {}",
+            actor,
+            actor_rel,
+            kawa_len,
+            pai,
+            self.kyoku,
+            self.at_turn,
+            self.tiles_left
+        );
         self.kawa[actor_rel].push(Some(kawa_item));
         self.kawa_overview[actor_rel].push(pai);
         self.last_kawa_tile = Some(pai);
@@ -561,6 +573,19 @@ impl PlayerState {
             let rel = self.rel(i);
             // kawa capacity is 55, which is the theoretical maximum
             // If this panics, it indicates invalid game log data or a bug in game logic
+            let kawa_len = self.kawa[rel].len();
+            assert!(
+                kawa_len < 55,
+                "kawa capacity overflow in pad_kawa_for_pon_or_daiminkan: player {} (relative {}) has {} discards, attempting to pad. Maximum is 55. This indicates invalid game log data. abs_actor: {}, abs_target: {}, kyoku: {}, at_turn: {}, tiles_left: {}",
+                i,
+                rel,
+                kawa_len,
+                abs_actor,
+                abs_target,
+                self.kyoku,
+                self.at_turn,
+                self.tiles_left
+            );
             self.kawa[rel].push(None);
             i = (i + 1) % 4;
         }
