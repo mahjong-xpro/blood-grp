@@ -455,8 +455,18 @@ def main():
     import os
     import sys
     import time
+    import multiprocessing
     from subprocess import Popen
     from config import config
+
+    # Set multiprocessing start method to 'spawn' to avoid fork() issues
+    # This prevents the deprecation warning about multi-threaded processes using fork()
+    # Required on both macOS and Linux when using PyTorch DataLoader with num_workers > 0
+    try:
+        multiprocessing.set_start_method('spawn', force=True)
+    except RuntimeError:
+        # Already set, ignore
+        pass
 
     # do not set this env manually
     is_sub_proc_key = 'MORTAL_IS_SUB_PROC'
