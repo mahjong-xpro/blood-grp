@@ -259,7 +259,15 @@ impl AgariCalculator<'_> {
         
         // Check hand structure
         let (tile14, key) = get_tile14_and_key(self.tehai);
-        let divs = AGARI_TABLE.get(&key)?;
+        let divs = AGARI_TABLE.get(&key).or_else(|| {
+            // Log warning for debugging
+            let tehai_total: u8 = self.tehai.iter().sum();
+            eprintln!(
+                "WARNING: AGARI_TABLE.get(&key) returned None. key={}, tehai_total={}, winning_tile={}, is_ron={}, ding_que={:?}",
+                key, tehai_total, self.winning_tile, self.is_ron, self.ding_que
+            );
+            None
+        })?;
         
         // Find the best division for fan calculation
         let mut max_fan: u8 = 0;

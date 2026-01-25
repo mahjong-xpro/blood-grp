@@ -398,6 +398,16 @@ impl PlayerState {
             let tid = winning_tile.deaka().as_usize();
             tehai[tid] += 1;
         }
+        
+        // Validate tehai total (should be 14 tiles for agari)
+        let tehai_total: u8 = tehai.iter().sum();
+        ensure!(
+            tehai_total == 14,
+            "tehai total should be 14 for agari, but got {} (is_ron: {}, tehai_len_div3: {})",
+            tehai_total,
+            is_ron,
+            self.tehai_len_div3
+        );
 
         let is_chankan = is_ron && self.chankan_chance.is_some();
         let is_kan_discard_from_dahai = is_ron && self.last_discard_was_after_kan && !is_chankan;
