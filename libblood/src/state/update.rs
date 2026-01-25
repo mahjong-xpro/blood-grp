@@ -116,6 +116,7 @@ impl PlayerState {
         self.chankan_kakan_actor = None;
         self.chankan_kakan_tile = None;
         self.last_discard_was_after_kan = false;
+        self.intermediate_kan.clear(); // 新局开始时清空 intermediate_kan
         
         self.tiles_left = 56;
         self.at_turn = 0;
@@ -220,6 +221,14 @@ impl PlayerState {
         }
 
         // Check if there was a kan before this discard (for 杠上炮)
+        // 基础规则：intermediate_kan 应该在杠操作后被设置，在打牌时被清空
+        // 如果 intermediate_kan 有多个元素，说明有多个杠操作没有及时打牌，这是不正常的
+        assert!(
+            self.intermediate_kan.len() <= 1,
+            "intermediate_kan has {} elements, but should have at most 1. This indicates a fundamental bug: multiple kan operations without discard.",
+            self.intermediate_kan.len()
+        );
+        
         let was_kan_before_discard = !self.intermediate_kan.is_empty();
         // Store this info for agari_points() to use later
         self.last_discard_was_after_kan = was_kan_before_discard;
@@ -231,6 +240,13 @@ impl PlayerState {
             kan: mem::take(&mut self.intermediate_kan),
             sutehai,
         };
+        
+        // 基础规则：打牌后 intermediate_kan 应该被清空
+        assert!(
+            self.intermediate_kan.is_empty(),
+            "intermediate_kan should be empty after discard, but has {} elements. This indicates a fundamental bug in kan tracking.",
+            self.intermediate_kan.len()
+        );
         self.kawa[actor_rel].push(Some(kawa_item));
         self.kawa_overview[actor_rel].push(pai);
         self.last_kawa_tile = Some(pai);
@@ -381,10 +397,32 @@ impl PlayerState {
             // 当其他玩家加杠时，如果听的牌正好是加杠的牌，可以抢杠和牌
             // 抢杠时，加杠的玩家的根不应该计算
             if self.waits[pai.as_usize()] {
-                self.last_cans.can_ron_agari = true;
-                self.chankan_chance = Some(());
-                self.chankan_kakan_actor = Some(actor); // 记录加杠的玩家，用于排除其根
-                self.chankan_kakan_tile = Some(pai.as_u8()); // 记录加杠的牌，用于排除其根
+                // 必须检查定缺规则：即使听的牌是加杠的牌，也要确保没有定缺花色牌
+                let mut tehai_with_winning_tile = self.tehai;
+                tehai_with_winning_tile[pai.as_usize()] += 1;
+                
+                let agari_calc = AgariCalculator {
+                    tehai: &tehai_with_winning_tile,
+                    is_menzen: self.is_menzen,
+                    pons: &self.pons,
+                    minkans: &self.minkans,
+                    ankans: &self.ankans,
+                    winning_tile: pai.as_u8(),
+                    is_ron: true,
+                    ding_que: self.ding_que,
+                    is_after_kan: false, // 抢杠不是从岭上牌摸的
+                    is_kan_discard: false, // 抢杠不是杠上炮
+                    is_chankan: true, // 这是抢杠
+                    exclude_gen_tile: None,
+                };
+                
+                // 只有通过定缺规则检查才能抢杠和牌
+                if agari_calc.has_yaku() {
+                    self.last_cans.can_ron_agari = true;
+                    self.chankan_chance = Some(());
+                    self.chankan_kakan_actor = Some(actor); // 记录加杠的玩家，用于排除其根
+                    self.chankan_kakan_tile = Some(pai.as_u8()); // 记录加杠的牌，用于排除其根
+                }
             } else {
             }
 

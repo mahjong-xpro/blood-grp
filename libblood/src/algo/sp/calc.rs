@@ -90,6 +90,7 @@ impl SPCalculator<'_> {
         let max_tsumo = tsumos_left as usize;
 
         let state = State::from(init_state);
+        // sum_left_tiles() 内部已经有断言确保不超过56（基础规则）
         let n_left_tiles = state.sum_left_tiles() as usize;
 
         // Despite the bloating binary size, the use of const generics here may
@@ -140,14 +141,18 @@ fn build_tsumo_prob_table<const MAX_TSUMO: usize>(n_left_tiles: usize) -> [[f32;
 fn build_not_tsumo_prob_table<const MAX_TSUMO: usize>(
     n_left_tiles: usize,
 ) -> [[f32; MAX_TSUMO]; MAX_TILES_LEFT + 1] {
+    // 血战到底基础规则：n_left_tiles 不应该超过 MAX_TILES_LEFT (56)
+    // 如果超过，说明 tiles_in_wall 的计算有严重错误，必须panic
+    assert!(
+        n_left_tiles <= MAX_TILES_LEFT,
+        "n_left_tiles ({}) exceeds MAX_TILES_LEFT ({}). This indicates a fundamental bug in tiles_in_wall calculation.",
+        n_left_tiles,
+        MAX_TILES_LEFT
+    );
+    
     let mut table = [[0.; MAX_TSUMO]; MAX_TILES_LEFT + 1];
     // 有効牌の合計枚数ごとに、これまでの巡目で有効牌が引けなかった確率のテーブルを作成する。
     // not_tumo_prob_table_[i][j] = 有効牌の合計枚数が i 枚の場合に j - 1 巡目までに有効牌が引けなかった確率
-    //
-    // 业务逻辑：n_left_tiles 不应该超过 MAX_TILES_LEFT (56)
-    // 如果超过，说明 tiles_in_wall 的计算有问题，需要明确处理
-    // 这里先限制在 MAX_TILES_LEFT 以内，避免数组越界
-    let n_left_tiles = n_left_tiles.min(MAX_TILES_LEFT);
     for (i, row) in table.iter_mut().enumerate().take(n_left_tiles + 1) {
         row[0] = 1.;
         // n_left_tiles - i - j > 0 は残りはすべて有効牌の場合を考慮
@@ -456,17 +461,17 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
         // 业务逻辑验证：
         // 1. sum_required_tiles 不应该超过实际剩余牌数 n_left_tiles
         // 2. n_left_tiles 不应该超过 MAX_TILES_LEFT (56)
-        // 如果超过，说明业务逻辑有问题，需要明确处理
+        // sum_left_tiles() 内部已经有断言确保不超过56，这里不需要再检查
         let n_left_tiles = self.state.sum_left_tiles() as usize;
-        if n_left_tiles > MAX_TILES_LEFT {
-            // 这不应该发生，如果发生说明 tiles_in_wall 的计算有问题
-            // 但我们先限制在 MAX_TILES_LEFT 以内，避免数组越界
-            // TODO: 需要检查为什么 n_left_tiles 会超过 56
-        }
         // sum_required_tiles 理论上 <= n_left_tiles，如果超过说明计算有问题
-        let index = (sum_required_tiles as usize)
-            .min(n_left_tiles)
-            .min(MAX_TILES_LEFT);
+        // 这是基础规则，如果违反应该panic
+        assert!(
+            sum_required_tiles as usize <= n_left_tiles,
+            "sum_required_tiles ({}) exceeds n_left_tiles ({}). This indicates a fundamental bug in required tiles calculation.",
+            sum_required_tiles,
+            n_left_tiles
+        );
+        let index = sum_required_tiles as usize;
         let not_tsumo_probs = &self.not_tsumo_prob_table[index];
 
         for DrawTile {

@@ -146,6 +146,15 @@ impl State {
     }
 
     pub(super) fn sum_left_tiles(&self) -> u8 {
-        self.tiles_in_wall.iter().sum()
+        let sum: u8 = self.tiles_in_wall.iter().sum();
+        // 血战到底基础规则：初始108张牌，发牌后剩余56张
+        // 如果计算出的值超过56，说明 tiles_in_wall 的计算有严重错误，必须panic
+        assert!(
+            sum <= 56,
+            "sum_left_tiles() = {} exceeds maximum 56. This indicates a fundamental bug in tiles_in_wall calculation. tiles_in_wall: {:?}",
+            sum,
+            self.tiles_in_wall
+        );
+        sum
     }
 }

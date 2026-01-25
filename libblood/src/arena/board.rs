@@ -9,7 +9,7 @@ use crate::t;
 use std::convert::TryInto;
 use std::{array, mem};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use derivative::Derivative;
 use ndarray::prelude::*;
 use rand::prelude::*;
@@ -174,6 +174,15 @@ impl BoardState {
             .pop()
             .context("invalid yama: empty at init")?;
         self.tiles_left -= 1;
+        
+        // 基础规则：tiles_left 和 yama.len() 必须保持一致
+        assert_eq!(
+            self.tiles_left as usize,
+            self.board.yama.len(),
+            "After initial tsumo, tiles_left ({}) and yama.len() ({}) are inconsistent. This indicates a fundamental bug in game state management.",
+            self.tiles_left,
+            self.board.yama.len()
+        );
         let first_tsumo = Event::Tsumo {
             actor: self.oya,
             pai: tile,
@@ -386,6 +395,14 @@ impl BoardState {
             }
         }
 
+        // 确保至少有一个玩家还没有和牌（基础规则：3人和牌时游戏结束）
+        // 如果所有玩家都已和牌，说明游戏状态不一致，应该已经结束
+        ensure!(
+            self.agari_count < 4,
+            "All players have agari (agari_count = {}), but game hasn't ended. This indicates a fundamental bug in game state management.",
+            self.agari_count
+        );
+
         let ev = reactions
             .iter()
             .enumerate()
@@ -397,7 +414,12 @@ impl BoardState {
                 Event::None => 3,
                 _ => 2,
             })
-            .unwrap(); // Unwrap is safe because at least one player hasn't agari
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No valid reaction found. All players have agari (agari_count = {}), but game hasn't ended. This indicates a fundamental bug in game state management.",
+                    self.agari_count
+                )
+            })?;
 
         if self.check_four_kan && !matches!(ev.event, Event::Hora { .. }) {
             self.abortive_ryukyoku();
@@ -406,6 +428,15 @@ impl BoardState {
 
         match ev.event {
             Event::None => {
+                // 基础规则：tiles_left 和 yama.len() 必须保持一致
+                // 如果两者不一致，说明游戏状态有严重错误，必须panic
+                assert!(
+                    self.tiles_left as usize == self.board.yama.len(),
+                    "tiles_left ({}) and yama.len() ({}) are inconsistent. This indicates a fundamental bug in game state management.",
+                    self.tiles_left,
+                    self.board.yama.len()
+                );
+                
                 // Check both tiles_left and yama to ensure consistency
                 if self.tiles_left == 0 || self.board.yama.is_empty() {
                     self.exhaustive_ryukyoku();
@@ -413,12 +444,31 @@ impl BoardState {
                 }
 
                 // Skip players who have agari
+                // 基础规则：最多3人和牌，所以最多循环3次就能找到未和牌玩家
+                // 如果循环4次还没找到，说明所有玩家都已和牌，游戏状态不一致
+                let mut attempts = 0;
                 while self.players_agari[self.tsumo_actor as usize] {
                     self.tsumo_actor = (self.tsumo_actor + 1) % 4;
+                    attempts += 1;
+                    if attempts >= 4 {
+                        // 所有玩家都已和牌，应该已经结束游戏（agari_count >= 3）
+                        // 这是基础规则违反，必须panic
+                        bail!(
+                            "All players have agari (agari_count = {}), but game hasn't ended. This indicates a fundamental bug in game state management.",
+                            self.agari_count
+                        );
+                    }
                 }
 
                 // Double-check before popping from yama
+                // 基础规则：tiles_left 和 yama.len() 必须保持一致
                 if self.board.yama.is_empty() {
+                    // 如果 yama 为空，tiles_left 也应该是 0
+                    assert_eq!(
+                        self.tiles_left, 0,
+                        "yama is empty but tiles_left ({}) is not 0. This indicates a fundamental bug in game state management.",
+                        self.tiles_left
+                    );
                     self.exhaustive_ryukyoku();
                     return Ok(Poll::End);
                 }
@@ -427,6 +477,15 @@ impl BoardState {
                     format!("tiles left > 0 ({}) but yama is empty", self.tiles_left)
                 })?;
                 self.tiles_left -= 1;
+                
+                // 基础规则：pop 后 tiles_left 和 yama.len() 必须保持一致
+                assert_eq!(
+                    self.tiles_left as usize,
+                    self.board.yama.len(),
+                    "After popping from yama, tiles_left ({}) and yama.len() ({}) are inconsistent. This indicates a fundamental bug in game state management.",
+                    self.tiles_left,
+                    self.board.yama.len()
+                );
                 let tsumo = Event::Tsumo {
                     actor: self.tsumo_actor,
                     pai: tile,
@@ -441,8 +500,20 @@ impl BoardState {
                 self.add_log(ev.clone());
                 
                 let mut next_actor = (actor + 1) % 4;
+                // 基础规则：最多3人和牌，所以最多循环3次就能找到未和牌玩家
+                // 如果循环4次还没找到，说明所有玩家都已和牌，游戏状态不一致
+                let mut attempts = 0;
                 while self.players_agari[next_actor as usize] {
                     next_actor = (next_actor + 1) % 4;
+                    attempts += 1;
+                    if attempts >= 4 {
+                        // 所有玩家都已和牌，应该已经结束游戏（agari_count >= 3）
+                        // 这是基础规则违反，必须panic
+                        bail!(
+                            "All players have agari (agari_count = {}), but game hasn't ended. This indicates a fundamental bug in game state management.",
+                            self.agari_count
+                        );
+                    }
                 }
                 self.tsumo_actor = next_actor;
 
