@@ -107,7 +107,22 @@ impl Board {
 impl BoardState {
     /// Returns iff any player on the board can act or the kyoku has ended.
     pub fn poll(&mut self, mut reactions: [EventExt; 4]) -> Result<Poll> {
+        let mut loop_count = 0;
+        const MAX_LOOP_COUNT: usize = 1000; // 防止无限循环
+        
         loop {
+            loop_count += 1;
+            if loop_count > MAX_LOOP_COUNT {
+                bail!(
+                    "poll() loop exceeded maximum iterations ({}). This indicates a deadlock bug. \
+                    Current state: ding_que_phase={}, tiles_left={}, can_act={:?}",
+                    MAX_LOOP_COUNT,
+                    self.ding_que_phase,
+                    self.tiles_left,
+                    self.player_states.iter().map(|s| s.last_cans().can_act()).collect::<Vec<_>>()
+                );
+            }
+            
             let poll = self.step(&reactions)?;
             match poll {
                 Poll::InGame => {
@@ -120,6 +135,16 @@ impl BoardState {
                     if self.player_states.iter().any(|c| c.last_cans().can_act()) {
                         return Ok(poll);
                     }
+                    // 如果没有玩家可以行动，但是step()返回了InGame，这可能是一个bug
+                    // 但是为了避免死循环，我们仍然返回InGame，让上层处理
+                    // 这通常发生在游戏状态不一致的情况下
+                    log::warn!(
+                        "poll() returned InGame but no player can act. This may indicate a bug. \
+                        tiles_left={}, ding_que_phase={}",
+                        self.tiles_left,
+                        self.ding_que_phase
+                    );
+                    return Ok(poll);
                 }
                 Poll::End => {
                     self.add_log_no_meta(Event::EndKyoku);
