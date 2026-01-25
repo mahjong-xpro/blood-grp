@@ -28,17 +28,19 @@ pub const fn obs_shape(version: u32) -> (usize, usize) {
         1 => (964, 27), // 938 + 26 = 964 (ding que: 3+1+13+9)
         2 => (960, 27), // 944 + 16 = 960 (ding que: 3+1+3+9)
         3 => (952, 27), // 936 + 16 = 952 (ding que: 3+1+3+9)
-        4 => (1466, 27), // 修复后：考虑最大情况（所有位置都有 item）
+        4 => (1468, 27), // 修复后：考虑最大情况（所有位置都有 item，且 can_discard=true）
                          // 理论计算：
                          //   - SP table 编码之前（最大情况）: 875 + 48 (self_kawa) + 432 (other_kawa) = 1355 行
                          //   - SP table 编码（最大路径）: 111 行
-                         //   - 理论最大总计: 1355 + 111 = 1466 行
+                         //   - can_discard=true 时的额外 2 行（best ev/win prob discard）: 2 行
+                         //   - 理论最大总计: 1355 + 111 + 2 = 1468 行
                          // 修复内容：
                          //   - 修复了 encode_self_kawa 和 encode_kawa 的补偿逻辑
                          //   - 补偿逻辑现在考虑最大情况（所有位置都有 item）
                          //   - self_kawa: (6-len) * (4+2) = (6-len) * 6
                          //   - other_kawa: (6-len) * (8+6) = (6-len) * 14
-                         // 注意：实际运行中，不是所有位置都有 item，所以实际行数会小于 1466
+                         //   - 添加了 can_discard=true 时的额外 2 行
+                         // 注意：实际运行中，不是所有位置都有 item，所以实际行数会小于 1468
                          // 但使用最大情况可以确保不会溢出
         _ => unreachable!(),
     }
