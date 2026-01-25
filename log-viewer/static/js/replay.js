@@ -130,14 +130,11 @@ function renderFuuro(playerId) {
     player.fuuro.forEach(meld => {
         const meldEl = document.createElement('div');
         meldEl.className = 'meld';
-        meldEl.style.display = 'flex';
-        meldEl.style.gap = '2px';
-        meldEl.style.margin = '2px';
         
         if (Array.isArray(meld)) {
             meld.forEach(tile => {
                 const tileEl = document.createElement('div');
-                tileEl.className = getTileClass(tile);
+                tileEl.className = getTileClass(tile) + ' tile';
                 tileEl.textContent = tileToText(tile);
                 tileEl.title = tile;
                 meldEl.appendChild(tileEl);
@@ -279,7 +276,14 @@ function loadLog(logData) {
     
     // Process all events up to current index
     resetGameState();
+    
+    // Process events up to current index (if any)
+    for (let i = 0; i <= gameState.currentEventIndex && i < gameState.events.length; i++) {
+        processEvent(gameState.events[i]);
+    }
+    
     updateEventDisplay();
+    updateDisplay(); // Update game board display
     
     document.getElementById('event-total').textContent = gameState.events.length;
     document.getElementById('game-info').style.display = 'block';
@@ -333,6 +337,7 @@ function goToEvent(index) {
     
     gameState.currentEventIndex = index;
     updateEventDisplay();
+    updateDisplay(); // Update game board display
 }
 
 function prevEvent() {
