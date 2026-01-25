@@ -327,26 +327,26 @@ impl Gameplay {
         let mut kan_select = None;
         let label_opt = match *next {
             Event::Dahai { pai, .. } => Some(pai.as_usize()),
-            Event::Pon { actor, .. } if actor == self.player_id => Some(41),
+            Event::Pon { actor, .. } if actor == self.player_id => Some(27), // Pon action (was 41)
             Event::Daiminkan { actor, pai, .. } if actor == self.player_id => {
                 if config.always_include_kan_select {
                     kan_select = Some(pai.as_usize());
                 }
-                Some(42)
+                Some(28) // Kan action (was 42)
             }
             Event::Kakan { pai, .. } => {
                 if config.always_include_kan_select || state.kakan_candidates().len() > 1 {
                     kan_select = Some(pai.as_usize());
                 }
-                Some(42)
+                Some(28) // Kan action (was 42)
             }
             Event::Ankan { consumed, .. } => {
                 if config.always_include_kan_select || state.ankan_candidates().len() > 1 {
                     kan_select = Some(consumed[0].as_usize());
                 }
-                Some(42)
+                Some(28) // Kan action (was 42)
             }
-            Event::Ryukyoku { .. } if cans.can_ryukyoku => Some(44),
+            Event::Ryukyoku { .. } if cans.can_ryukyoku => Some(30), // Ryukyoku action (was 44)
             _ => {
                 let mut ret = None;
 
@@ -357,7 +357,7 @@ impl Gameplay {
                         match *ev {
                             Event::EndKyoku => break,
                             Event::Hora { actor, .. } if actor == self.player_id => {
-                                ret = Some(43);
+                                ret = Some(29); // Agari action (was 43)
                                 break;
                             }
                             _ => (),
@@ -370,14 +370,9 @@ impl Gameplay {
                     if (cans.can_pon || cans.can_daiminkan || cans.can_ron_agari)
                             && !has_any_ron
                     {
-                        // Can chi, but actively denied instead of being
-                        // interrupted by other's pon/daiminkan/ron.
-                        //
-                        // or
-                        //
                         // Can pon/daiminkan/ron, but actively denied
                         // instead of being interrupted by other's ron.
-                        ret = Some(45);
+                        ret = Some(31); // Pass action (was 45)
                     }
                 }
 
