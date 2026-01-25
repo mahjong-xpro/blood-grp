@@ -245,14 +245,18 @@ impl<'a> ObsEncoderContext<'a> {
             .iter()
             .take(6)
             .for_each(|kawa_item| self.encode_self_kawa(kawa_item.as_ref()));
-        self.idx += (6 - state.kawa[0].len().min(6)) * SELF_KAWA_ITEM_CHANNELS;
+        // Fix: 补偿逻辑应该考虑最大情况（所有位置都有 item）
+        // 如果有 item，每个位置使用 6 行（2 + 4），如果没有 item，使用 4 行
+        // 补偿逻辑假设缺失的位置也有 item（使用 6 行），这样总行数始终是最大情况
+        self.idx += (6 - state.kawa[0].len().min(6)) * (SELF_KAWA_ITEM_CHANNELS + 2);
 
         state.kawa[0]
             .iter()
             .rev()
             .take(18)
             .for_each(|kawa_item| self.encode_self_kawa(kawa_item.as_ref()));
-        self.idx += (18 - state.kawa[0].len().min(18)) * SELF_KAWA_ITEM_CHANNELS;
+        // Fix: 同上，考虑最大情况
+        self.idx += (18 - state.kawa[0].len().min(18)) * (SELF_KAWA_ITEM_CHANNELS + 2);
 
         let max_kawa_len = state.kawa.iter().map(|k| k.len()).max().unwrap();
         if matches!(self.version, 3 | 4) {
@@ -272,14 +276,18 @@ impl<'a> ObsEncoderContext<'a> {
                 .iter()
                 .take(6)
                 .for_each(|kawa_item| self.encode_kawa(kawa_item.as_ref()));
-            self.idx += (6 - player_kawa.len().min(6)) * KAWA_ITEM_CHANNELS;
+            // Fix: 补偿逻辑应该考虑最大情况（所有位置都有 item）
+            // 如果有 item，每个位置使用 14 行（2 + 4 + 8），如果没有 item，使用 8 行
+            // 补偿逻辑假设缺失的位置也有 item（使用 14 行），这样总行数始终是最大情况
+            self.idx += (6 - player_kawa.len().min(6)) * (KAWA_ITEM_CHANNELS + 6);
 
             player_kawa
                 .iter()
                 .rev()
                 .take(18)
                 .for_each(|kawa_item| self.encode_kawa(kawa_item.as_ref()));
-            self.idx += (18 - player_kawa.len().min(18)) * KAWA_ITEM_CHANNELS;
+            // Fix: 同上，考虑最大情况
+            self.idx += (18 - player_kawa.len().min(18)) * (KAWA_ITEM_CHANNELS + 6);
 
             match self.version {
                 2 => {
