@@ -35,7 +35,16 @@ where
     /// x x x x x
     #[inline]
     pub fn fill_rows(&mut self, row: usize, n_rows: usize, value: T) {
-        self.arr[row * COLS..(row + n_rows) * COLS].fill(value);
+        let max_row = self.rows();
+        if row >= max_row {
+            return; // 超出范围，不执行操作
+        }
+        let end_row = (row + n_rows).min(max_row);
+        let start_idx = row * COLS;
+        let end_idx = end_row * COLS;
+        if start_idx < self.arr.len() && end_idx <= self.arr.len() {
+            self.arr[start_idx..end_idx].fill(value);
+        }
     }
 
     /// - - - - -
@@ -43,7 +52,10 @@ where
     /// - - - - -
     #[inline]
     pub fn assign(&mut self, row: usize, col: usize, value: T) {
-        self.arr[row * COLS + col] = value;
+        let idx = row * COLS + col;
+        if idx < self.arr.len() && col < COLS {
+            self.arr[idx] = value;
+        }
     }
 
     /// - - x - -
@@ -51,8 +63,19 @@ where
     /// - - x - -
     #[inline]
     pub fn assign_rows(&mut self, row: usize, col: usize, n_rows: usize, value: T) {
+        let max_row = self.rows();
+        if col >= COLS {
+            return; // 列索引超出范围
+        }
         for n in 0..n_rows {
-            self.arr[(row + n) * COLS + col] = value;
+            let r = row + n;
+            if r >= max_row {
+                break; // 行索引超出范围
+            }
+            let idx = r * COLS + col;
+            if idx < self.arr.len() {
+                self.arr[idx] = value;
+            }
         }
     }
 

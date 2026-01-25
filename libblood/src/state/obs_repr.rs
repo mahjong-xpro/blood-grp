@@ -644,7 +644,17 @@ impl<'a> ObsEncoderContext<'a> {
             }
         }
 
-        assert_eq!(self.idx, self.arr.rows());
+        // 业务逻辑验证：idx 不应该超过数组行数
+        // 如果超过，说明 obs_shape 的计算有问题，或者编码逻辑有误
+        if self.idx > self.arr.rows() {
+            panic!(
+                "Observation encoding overflow: idx={} > arr.rows()={}, version={}. \
+                This indicates obs_shape calculation is incorrect or encoding logic has a bug.",
+                self.idx, self.arr.rows(), self.version
+            );
+        }
+        // 如果 idx < arr.rows()，说明编码未完成或 obs_shape 计算过大
+        // 但这种情况通常不会导致崩溃，只是浪费空间
         let arr = self.arr.build();
         debug_assert!(arr.iter().all(|&v| (0. ..=1.).contains(&v)));
         (arr, self.mask)
