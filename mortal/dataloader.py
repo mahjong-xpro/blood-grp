@@ -1,6 +1,7 @@
 import random
 import torch
 import numpy as np
+import logging
 from torch.utils.data import IterableDataset
 
 # Ensure libblood is initialized before importing modules that depend on it
@@ -100,7 +101,14 @@ class FileDatasetsIter(IterableDataset):
         self.buffer.clear()
 
     def populate_buffer(self, file_list):
-        data = self.loader.load_gz_log_files(file_list)
+        try:
+            data = self.loader.load_gz_log_files(file_list)
+        except Exception as e:
+            # Log the error and skip this batch of files
+            # This can happen if game logs contain invalid data (e.g., kawa capacity overflow)
+            logging.warning(f"Failed to load game logs from {len(file_list)} files, skipping: {e}")
+            return
+        
         for file in data:
             for game in file:
                 # per move

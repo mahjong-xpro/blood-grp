@@ -256,9 +256,9 @@ impl PlayerState {
             self.intermediate_kan.len()
         );
         // kawa capacity is 55, which is the theoretical maximum (108 total tiles - 52 initial hands - 1 last draw)
-        // If this panics, it indicates invalid game log data or a bug in game logic
+        // If this fails, it indicates invalid game log data or a bug in game logic
         let kawa_len = self.kawa[actor_rel].len();
-        assert!(
+        ensure!(
             kawa_len < 55,
             "kawa capacity overflow: player {} (relative {}) has {} discards, attempting to add one more. Maximum is 55. This indicates invalid game log data. Current tile: {:?}, kyoku: {}, at_turn: {}, tiles_left: {}",
             actor,
@@ -331,7 +331,7 @@ impl PlayerState {
         // Pon info is stored in fuuro_overview (Bloody Battle Mahjong has no chi)
         // Only pad kawa from the actor's perspective to avoid duplicate pushes when broadcast
         if actor_rel == 0 {
-            self.pad_kawa_for_pon_or_daiminkan(actor, target);
+            self.pad_kawa_for_pon_or_daiminkan(actor, target)?;
         }
 
         if actor_rel != 0 {
@@ -376,7 +376,7 @@ impl PlayerState {
         self.intermediate_kan.push(pai);
         // Only pad kawa from the actor's perspective to avoid duplicate pushes when broadcast
         if actor_rel == 0 {
-            self.pad_kawa_for_pon_or_daiminkan(actor, target);
+            self.pad_kawa_for_pon_or_daiminkan(actor, target)?;
         }
         self.kans_on_board += 1;
 
@@ -567,14 +567,14 @@ impl PlayerState {
     /// Pads the kawa (discard pile) for pon or daiminkan actions.
     /// This ensures the discard pile has the correct structure when a player
     /// calls pon or daiminkan from another player's discard.
-    pub(super) fn pad_kawa_for_pon_or_daiminkan(&mut self, abs_actor: u8, abs_target: u8) {
+    pub(super) fn pad_kawa_for_pon_or_daiminkan(&mut self, abs_actor: u8, abs_target: u8) -> Result<()> {
         let mut i = (abs_target + 1) % 4;
         while i != abs_actor {
             let rel = self.rel(i);
             // kawa capacity is 55, which is the theoretical maximum
-            // If this panics, it indicates invalid game log data or a bug in game logic
+            // If this fails, it indicates invalid game log data or a bug in game logic
             let kawa_len = self.kawa[rel].len();
-            assert!(
+            ensure!(
                 kawa_len < 55,
                 "kawa capacity overflow in pad_kawa_for_pon_or_daiminkan: player {} (relative {}) has {} discards, attempting to pad. Maximum is 55. This indicates invalid game log data. abs_actor: {}, abs_target: {}, kyoku: {}, at_turn: {}, tiles_left: {}",
                 i,
@@ -589,6 +589,7 @@ impl PlayerState {
             self.kawa[rel].push(None);
             i = (i + 1) % 4;
         }
+        Ok(())
     }
 
 

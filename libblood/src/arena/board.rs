@@ -499,6 +499,13 @@ impl BoardState {
                 self.broadcast(&ev.event);
                 self.add_log(ev.clone());
                 
+                // 基础规则：如果 tiles_left == 0，应该触发流局
+                // 检查必须在打牌后立即进行，避免继续游戏导致 kawa 溢出
+                if self.tiles_left == 0 || self.board.yama.is_empty() {
+                    self.exhaustive_ryukyoku();
+                    return Ok(Poll::End);
+                }
+                
                 let mut next_actor = (actor + 1) % 4;
                 // 基础规则：最多3人和牌，所以最多循环3次就能找到未和牌玩家
                 // 如果循环4次还没找到，说明所有玩家都已和牌，游戏状态不一致
