@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>血战到底麻将 - 日志回放</title>
+    <link rel="stylesheet" href="/static/css/replay.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>血战到底麻将 - 日志回放</h1>
+            <div class="file-selector">
+                <input type="file" id="file-input" accept=".json,.json.gz" style="display: none;">
+                <button id="upload-btn" class="btn btn-primary">上传日志文件</button>
+                <input type="text" id="log-path-input" placeholder="或输入日志文件路径">
+                <button id="load-btn" class="btn btn-primary">加载</button>
+            </div>
+        </header>
+
+        <!-- Game Info -->
+        <div class="game-info" id="game-info" style="display: none;">
+            <div class="players-info">
+                <div class="player-info" v-for="(player, idx) in players" :key="idx">
+                    <div class="player-name" v-text="player.name"></div>
+                    <div class="player-score" v-text="'分数: ' + player.score"></div>
+                    <div class="player-dingque" v-if="player.dingque" v-text="'定缺: ' + player.dingque"></div>
+                </div>
+            </div>
+            <div class="kyoku-info">
+                <span v-text="'局: ' + currentKyoku"></span>
+                <span v-text="'剩余牌数: ' + tilesLeft"></span>
+            </div>
+        </div>
+
+        <!-- Game Board -->
+        <div class="game-board" id="game-board">
+            <!-- Player 0 (Bottom) -->
+            <div class="player-area player-0">
+                <div class="player-name" v-text="players[0]?.name || '玩家 0'"></div>
+                <div class="discard-area" id="discard-0"></div>
+                <div class="hand-area" id="hand-0"></div>
+                <div class="fuuro-area" id="fuuro-0"></div>
+                <div class="score" v-text="players[0]?.score || 25000"></div>
+            </div>
+
+            <!-- Player 1 (Right) -->
+            <div class="player-area player-1">
+                <div class="player-name" v-text="players[1]?.name || '玩家 1'"></div>
+                <div class="discard-area" id="discard-1"></div>
+                <div class="hand-area" id="hand-1"></div>
+                <div class="fuuro-area" id="fuuro-1"></div>
+                <div class="score" v-text="players[1]?.score || 25000"></div>
+            </div>
+
+            <!-- Player 2 (Top) -->
+            <div class="player-area player-2">
+                <div class="player-name" v-text="players[2]?.name || '玩家 2'"></div>
+                <div class="discard-area" id="discard-2"></div>
+                <div class="hand-area" id="hand-2"></div>
+                <div class="fuuro-area" id="fuuro-2"></div>
+                <div class="score" v-text="players[2]?.score || 25000"></div>
+            </div>
+
+            <!-- Player 3 (Left) -->
+            <div class="player-area player-3">
+                <div class="player-name" v-text="players[3]?.name || '玩家 3'"></div>
+                <div class="discard-area" id="discard-3"></div>
+                <div class="hand-area" id="hand-3"></div>
+                <div class="fuuro-area" id="fuuro-3"></div>
+                <div class="score" v-text="players[3]?.score || 25000"></div>
+            </div>
+
+            <!-- Center Area -->
+            <div class="center-area">
+                <div class="wall-info" v-text="'剩余: ' + tilesLeft"></div>
+            </div>
+        </div>
+
+        <!-- Control Panel -->
+        <div class="control-panel">
+            <div class="playback-controls">
+                <button id="prev-btn" class="btn">⏮ 上一步</button>
+                <button id="play-pause-btn" class="btn btn-primary">▶ 播放</button>
+                <button id="next-btn" class="btn">⏭ 下一步</button>
+                <button id="first-btn" class="btn">⏪ 开始</button>
+                <button id="last-btn" class="btn">⏩ 结束</button>
+            </div>
+            <div class="speed-control">
+                <label>播放速度:</label>
+                <input type="range" id="speed-slider" min="0.5" max="5" step="0.5" value="1">
+                <span id="speed-value">1.0x</span>
+            </div>
+            <div class="event-info">
+                <div>事件: <span id="event-index">0</span> / <span id="event-total">0</span></div>
+                <div id="current-event">等待加载日志...</div>
+            </div>
+        </div>
+
+        <!-- Event Log -->
+        <div class="event-log" id="event-log">
+            <h3>事件日志</h3>
+            <div class="log-content" id="log-content"></div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script>
+        // Vue app for reactive data binding
+        const { createApp } = Vue;
+        
+        window.vueApp = createApp({
+            data() {
+                return {
+                    players: [
+                        { name: '玩家 0', score: 25000, dingque: null },
+                        { name: '玩家 1', score: 25000, dingque: null },
+                        { name: '玩家 2', score: 25000, dingque: null },
+                        { name: '玩家 3', score: 25000, dingque: null },
+                    ],
+                    currentKyoku: 0,
+                    tilesLeft: 56,
+                };
+            },
+        }).mount('#game-board');
+    </script>
+    <script src="/static/js/replay.js"></script>
+</body>
+</html>
