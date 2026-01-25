@@ -50,6 +50,12 @@ pub struct BoardState {
     kans: u8,
     check_four_kan: bool,
 
+    // 定缺选择阶段状态
+    #[derivative(Default(value = "false"))]
+    ding_que_phase: bool,
+    #[derivative(Default(value = "[false; 4]"))]
+    ding_que_selected: [bool; 4],
+
     log: Vec<EventExt>,
 }
 
@@ -168,27 +174,9 @@ impl BoardState {
         self.broadcast(&start_kyoku);
         self.add_log_no_meta(start_kyoku);
 
-        let tile = self
-            .board
-            .yama
-            .pop()
-            .context("invalid yama: empty at init")?;
-        self.tiles_left -= 1;
-        
-        // 基础规则：tiles_left 和 yama.len() 必须保持一致
-        assert_eq!(
-            self.tiles_left as usize,
-            self.board.yama.len(),
-            "After initial tsumo, tiles_left ({}) and yama.len() ({}) are inconsistent. This indicates a fundamental bug in game state management.",
-            self.tiles_left,
-            self.board.yama.len()
-        );
-        let first_tsumo = Event::Tsumo {
-            actor: self.oya,
-            pai: tile,
-        };
-        self.broadcast(&first_tsumo);
-        self.add_log_no_meta(first_tsumo);
+        // 进入定缺选择阶段（基础规则：血战到底必须在打牌前选择定缺）
+        self.ding_que_phase = true;
+        self.ding_que_selected = [false; 4];
 
         Ok(())
     }
@@ -198,15 +186,40 @@ impl BoardState {
         let mut final_deltas = [0; 4];
 
         // Step 1: 查花猪 (Check Huazhu - players with ding_que suit tiles remaining)
-        // 花猪玩家需要向所有非花猪玩家赔付16000点（封顶点数）
-        // 每个花猪向每个非花猪支付 16000/非花猪数量
+        // 花猪的定义：选择了定缺，但手牌中还有定缺花色的牌
+        // 如果玩家没有选择定缺（ding_que == None），不应该被认为是花猪
         let huazhu_actors: ArrayVec<[_; 4]> = self
             .player_states
             .iter()
             .enumerate()
-            .filter(|&(_, s)| !s.check_ding_que_complete()) // 还有定缺花色牌
+            .filter(|&(_, s)| {
+                // 改进：只有选择了定缺但还有定缺花色牌的玩家才是花猪
+                if let Some(_) = s.ding_que {
+                    !s.check_ding_que_complete() // 选择了定缺但还有定缺花色牌
+                } else {
+                    false // 没有选择定缺，不是花猪
+                }
+            })
             .map(|(i, _)| i)
             .collect();
+
+        // 检查是否有玩家没有选择定缺（这应该是游戏状态错误）
+        let players_with_ding_que: usize = self
+            .player_states
+            .iter()
+            .filter(|s| s.ding_que.is_some())
+            .count();
+        
+        if players_with_ding_que == 0 {
+            // 所有玩家都没有选择定缺，这是游戏状态错误
+            // 基础规则：血战到底必须在打牌前选择定缺
+            // 如果所有玩家都没有选择定缺，说明游戏流程有问题
+            // 这里我们记录警告，但不panic，因为可能是旧日志或测试数据
+            log::warn!(
+                "All players have no ding_que selected in exhaustive_ryukyoku. This indicates a bug in game flow. \
+                In normal gameplay, all players should have selected ding_que before playing."
+            );
+        }
 
         if !huazhu_actors.is_empty() {
             let non_huazhu_count = 4 - huazhu_actors.len();
@@ -227,18 +240,29 @@ impl BoardState {
                     }
                 }
                 vec_add_assign(&mut final_deltas, &huazhu_deltas);
+            } else {
+                // 如果所有玩家都是花猪，不计算花猪罚分（因为没有人可以接收罚分）
+                // 这是边界情况，在正常游戏中不应该发生
+                log::warn!(
+                    "All players are huazhu in exhaustive_ryukyoku. No penalty applied. \
+                    This is an edge case that should not occur in normal gameplay."
+                );
             }
         }
 
         // Step 2: 查大叫 (Check Tenpai - exclude huazhu players)
         // 排除花猪玩家后，未听牌玩家向听牌玩家赔付
+        // 改进：只检查选择了定缺的玩家（基础规则：只有选择了定缺的玩家才参与查大叫）
         let tenpai_actors: ArrayVec<[_; 4]> = self
             .player_states
             .iter()
             .enumerate()
             .filter(|&(i, s)| {
                 // 排除花猪玩家
-                !huazhu_actors.contains(&i) && s.shanten() == 0
+                !huazhu_actors.contains(&i)
+                // 改进：只检查选择了定缺的玩家
+                && s.ding_que.is_some()
+                && s.shanten() == 0
             })
             .map(|(i, _)| i)
             .collect();
@@ -378,6 +402,85 @@ impl BoardState {
 
         if self.tiles_left == 56 {
             self.haipai()?;
+            return Ok(Poll::InGame);
+        }
+
+        // 处理定缺选择阶段（基础规则：血战到底必须在打牌前选择定缺）
+        if self.ding_que_phase {
+            // 处理所有玩家的定缺选择
+            for (actor, ev) in reactions.iter().enumerate() {
+                if let Event::DingQue { actor: ev_actor, suit: _ } = ev.event {
+                    // 验证：actor 必须匹配
+                    ensure!(
+                        ev_actor == actor as u8,
+                        "DingQue event actor mismatch: expected {}, got {}",
+                        actor,
+                        ev_actor
+                    );
+                    
+                    // 验证：玩家还没有选择定缺
+                    ensure!(
+                        !self.ding_que_selected[actor],
+                        "Player {} already selected ding_que. This violates the fundamental rule.",
+                        actor
+                    );
+                    
+                    // 更新玩家状态
+                    self.player_states[actor]
+                        .update(&ev.event)
+                        .with_context(|| {
+                            format!(
+                                "failed to update player {} state with DingQue event",
+                                actor
+                            )
+                        })?;
+                    
+                    // 标记该玩家已选择定缺
+                    self.ding_que_selected[actor] = true;
+                    
+                    // 记录日志
+                    self.add_log(ev.clone());
+                } else if !self.ding_que_selected[actor] {
+                    // 如果玩家还没有选择定缺，必须发送 DingQue 事件
+                    ensure!(
+                        matches!(ev.event, Event::DingQue { .. }),
+                        "Player {} must select ding_que before other actions. Current action: {:?}",
+                        actor,
+                        ev.event
+                    );
+                }
+            }
+            
+            // 检查是否所有玩家都选择了定缺
+            if self.ding_que_selected.iter().all(|&x| x) {
+                // 所有玩家都选择了定缺，退出定缺选择阶段，开始第一轮摸牌
+                self.ding_que_phase = false;
+                
+                let tile = self
+                    .board
+                    .yama
+                    .pop()
+                    .context("invalid yama: empty at init")?;
+                self.tiles_left -= 1;
+                
+                // 基础规则：tiles_left 和 yama.len() 必须保持一致
+                assert_eq!(
+                    self.tiles_left as usize,
+                    self.board.yama.len(),
+                    "After initial tsumo, tiles_left ({}) and yama.len() ({}) are inconsistent. This indicates a fundamental bug in game state management.",
+                    self.tiles_left,
+                    self.board.yama.len()
+                );
+                
+                let first_tsumo = Event::Tsumo {
+                    actor: self.oya,
+                    pai: tile,
+                };
+                self.broadcast(&first_tsumo);
+                self.add_log_no_meta(first_tsumo);
+            }
+            
+            // 如果还在定缺选择阶段，返回 InGame 等待更多玩家选择
             return Ok(Poll::InGame);
         }
 
