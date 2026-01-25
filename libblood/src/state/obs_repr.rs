@@ -289,6 +289,9 @@ impl<'a> ObsEncoderContext<'a> {
                         let row = (turn / 6).min(2);
                         let tid = kawa_item.sutehai.tile.as_usize();
                         self.arr.assign(self.idx + row, tid, 1.);
+                        // Note: is_tedashi encoding kept for observation space compatibility
+                        // In Bloody Battle Mahjong, tedashi (手出) vs tsumogiri (摸切) distinction
+                        // is not used in game logic, but preserved in observation encoding
                         if kawa_item.sutehai.is_tedashi {
                             self.arr.assign(self.idx + 3 + row, tid, 1.);
                         }
@@ -366,6 +369,9 @@ impl<'a> ObsEncoderContext<'a> {
             }
             self.idx += 1;
 
+            // Note: last_tedashis encoding kept for observation space compatibility
+            // In Bloody Battle Mahjong, tedashi (手出) vs tsumogiri (摸切) distinction
+            // is not used in game logic, but preserved in observation encoding
             for &player_last_tedashi in &state.last_tedashis[1..] {
                 if let Some(sutehai) = player_last_tedashi {
                     let tile = sutehai.tile;

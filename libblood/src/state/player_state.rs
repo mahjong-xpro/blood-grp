@@ -61,6 +61,8 @@ pub struct PlayerState {
     /// in the kawa, in some very rare cases (about one in a million hanchans),
     /// the size can exceed 24.
     pub(super) kawa: [TinyVec<[Option<KawaItem>; 24]>; 4],
+    /// Last hand discard (手出) for each player - used in observation encoding
+    /// Note: In Bloody Battle Mahjong, this is kept for observation space compatibility
     pub(super) last_tedashis: [Option<Sutehai>; 4],
 
     pub(super) kawa_overview: [ArrayVec<[Tile; 24]>; 4],

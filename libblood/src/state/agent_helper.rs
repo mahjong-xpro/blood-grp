@@ -23,7 +23,7 @@ impl PlayerState {
         self.discard_candidates_aka()
     }
 
-    /// Aka dora covered version of `discard_candidates`.
+    /// Discard candidates (aka dora naming kept for historical compatibility).
     #[must_use]
     pub fn discard_candidates_aka(&self) -> [bool; 27] {
         assert!(self.last_cans.can_discard, "tehai is not 3n+2");
@@ -76,7 +76,7 @@ impl PlayerState {
         self.discard_candidates_with_unconditional_tenpai_aka()
     }
 
-    /// Aka dora covered version of `discard_candidates_with_unconditional_tenpai`.
+    /// Discard candidates with unconditional tenpai (aka dora naming kept for historical compatibility).
     #[must_use]
     pub fn discard_candidates_with_unconditional_tenpai_aka(&self) -> [bool; 27] {
         assert!(self.last_cans.can_discard, "tehai is not 3n+2");
