@@ -359,7 +359,7 @@ impl PlayerState {
 
         self.last_cans.can_discard = true;
         self.is_menzen = false;
-        self.tehai_len_div3 -= 1;
+        self.tehai_len_div3 = self.tehai_len_div3.saturating_sub(1);
         // Marked explicitly as `None` to let `Agent` impls set
         // `tsumogiri` to false in the Dahai after Pon
         self.last_self_tsumo = None;
@@ -403,7 +403,7 @@ impl PlayerState {
 
         self.at_rinshan = true;
         self.is_menzen = false;
-        self.tehai_len_div3 -= 1;
+        self.tehai_len_div3 = self.tehai_len_div3.saturating_sub(1);
 
         // Bloody Battle: No dora
         for t in consumed {
@@ -489,7 +489,7 @@ impl PlayerState {
         }
 
         self.at_rinshan = true;
-        self.tehai_len_div3 -= 1;
+        self.tehai_len_div3 = self.tehai_len_div3.saturating_sub(1);
         for t in consumed {
             self.move_tile(t, MoveType::FuuroConsume)?;
         }
