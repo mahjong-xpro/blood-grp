@@ -8,7 +8,7 @@ fn test_stage2_completion_verification() {
     
     // Test 1: Verify no chi functionality
     let mut ps = PlayerState::new(0);
-    ps.test_update(&Event::StartKyoku {
+    ps.update(&Event::StartKyoku {
         kyoku: 1,
         oya: 0,
         scores: [25000; 4],
@@ -23,7 +23,7 @@ fn test_stage2_completion_verification() {
     });
     
     // Try to trigger chi (should not be available)
-    ps.test_update(&Event::Dahai {
+    ps.update(&Event::Dahai {
         actor: 1,
         pai: t!(2m),
         tsumogiri: false,
