@@ -649,8 +649,7 @@ impl<'a> DivWorker<'a> {
         // This method is not used for Bloody Battle Mahjong
         // The agari() method implements the fan calculation instead
         // All the Japanese Mahjong yaku calculation code has been removed
-        }
-        }
+        None
     }
 }
 
