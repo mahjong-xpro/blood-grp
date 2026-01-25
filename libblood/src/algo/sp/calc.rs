@@ -4,7 +4,7 @@ use super::tile::{DiscardTile, DrawTile};
 use super::{Candidate, CandidateColumn, MAX_TSUMOS_LEFT};
 use crate::algo::agari::{Agari, AgariCalculator};
 use crate::tile::Tile;
-use crate::{must_tile, t};
+use crate::t;
 use std::rc::Rc;
 
 use ahash::AHashMap;
@@ -520,8 +520,8 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
                             // Bloody Battle: No riichi (立直), no ippatsu (一发), no haitei (海底), no double riichi (两立直)
                             // These fields are set to false in agent_helper.rs, so these calculations
                             // will always result in 0 additional han
-                            let assume_riichi = false; // Bloody Battle: No riichi (立直)
-                            let win_double_riichi = false; // Bloody Battle: No double riichi (两立直)
+                            let _assume_riichi = false; // Bloody Battle: No riichi (立直)
+                            let _win_double_riichi = false; // Bloody Battle: No double riichi (两立直)
                             let _win_ippatsu = false; // Bloody Battle: No ippatsu
                             let _win_haitei = false; // Bloody Battle: No haitei
                             let han_plus = 0; // Bloody Battle: No additional han from riichi (立直)/dora (宝牌)
