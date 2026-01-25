@@ -3,6 +3,7 @@
 fn test_stage2_completion_verification() {
     use crate::hand::{hand, tile27_to_vec};
     use crate::mjai::Event;
+    use crate::state::PlayerState;
     use crate::t;
     
     // Test 1: Verify no chi functionality

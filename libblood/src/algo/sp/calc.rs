@@ -522,7 +522,7 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
                             // will always result in 0 additional han
                             let assume_riichi = false; // Bloody Battle: No riichi (立直)
                             let win_double_riichi = false; // Bloody Battle: No double riichi (两立直)
-                            let win_ippatsu = false; // Bloody Battle: No ippatsu
+                            let _win_ippatsu = false; // Bloody Battle: No ippatsu
                             let _win_haitei = false; // Bloody Battle: No haitei
                             let han_plus = 0; // Bloody Battle: No additional han from riichi (立直)/dora (宝牌)
 
@@ -762,6 +762,7 @@ mod test {
     use super::*;
     use crate::algo::sp::CALC_SHANTEN_FN;
     use crate::hand::hand;
+    #[cfg(test)]
     use crate::tuz; // Used in test at line 993
 
     fn feq(a: f32, b: f32) -> bool {
