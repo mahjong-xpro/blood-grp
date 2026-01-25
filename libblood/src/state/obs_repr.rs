@@ -615,8 +615,8 @@ impl<'a> ObsEncoderContext<'a> {
                     }
                 }
             } else {
-                // Use the minimal tsumo agari point as the max EV. It is
-                // minimal because we assume no uradora.
+                // Use the minimal tsumo agari point as the max EV.
+                // Note: In Bloody Battle Mahjong, there is no uradora (里宝牌)
                 let min_tsumo_agari = state
                     .agari_points(cans.can_ron_agari, &[])
                     .map(|p| p.tsumo_total(state.is_oya()) as f32)
@@ -734,8 +734,8 @@ impl<'a> ObsEncoderContext<'a> {
     fn encode_self_kawa(&mut self, item: Option<&KawaItem>) {
         if let Some(k) = item {
             for kan in k.kan {
-                // deaka is required, it is possible for it to be an aka
-                // (for example in Daiminkan and Kakan).
+                // Note: In Bloody Battle Mahjong, there is no aka dora (赤牌),
+                // so tiles are already normalized (no aka distinction)
                 let tile_id = kan.as_usize();
                 self.arr.assign(self.idx, tile_id, 1.);
             }
