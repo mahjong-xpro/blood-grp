@@ -255,6 +255,7 @@ def list_logs():
                 'mtime': log_entry['mtime'],
                 'mtime_str': log_entry['mtime_str'],
                 'cached': True,  # Indicate this is cached in memory
+                'cache_key': log_entry['path'],  # Use full path as cache key
             })
         
         return jsonify({
@@ -269,14 +270,57 @@ def list_logs():
 def get_log(log_path):
     """Load and parse a log file. Try cache first, then file system."""
     try:
+        # Decode URL-encoded path
+        import urllib.parse
+        log_path = urllib.parse.unquote(log_path)
+        
         # First, try to get from memory cache
         with log_cache['lock']:
+            # Try exact match first (most common case)
             cached_log = log_cache['logs'].get(log_path)
+            
+            # If not found, try multiple matching strategies
+            if not cached_log:
+                # Normalize the path for comparison
+                log_path_normalized = str(Path(log_path).resolve()) if os.path.isabs(log_path) else log_path
+                
+                for cached_path, cached_entry in log_cache['logs'].items():
+                    # Strategy 1: Exact match
+                    if log_path == cached_path:
+                        cached_log = cached_entry
+                        break
+                    
+                    # Strategy 2: Match by filename
+                    if log_path.endswith(cached_entry['name']) or cached_entry['name'] in log_path:
+                        cached_log = cached_entry
+                        break
+                    
+                    # Strategy 3: Match by relative path
+                    rel_path = cached_entry.get('relative_path', '')
+                    if rel_path and (log_path == rel_path or log_path.endswith(rel_path)):
+                        cached_log = cached_entry
+                        break
+                    
+                    # Strategy 4: Match by path components (handle different path separators)
+                    cached_path_normalized = str(Path(cached_path).resolve()) if os.path.isabs(cached_path) else cached_path
+                    if (log_path_normalized == cached_path_normalized or
+                        log_path_normalized.endswith(cached_path_normalized) or
+                        cached_path_normalized.endswith(log_path_normalized)):
+                        cached_log = cached_entry
+                        break
+            
             if cached_log:
                 # Return cached data
+                print(f"Loading log from cache: {log_path} -> {cached_log['path']}")
                 return jsonify(cached_log['game_info'])
         
-        # If not in cache, try to load from file system
+        # If not in cache, try to load from file system (for manually specified files)
+        # But first check if this is from the monitored directory - if so, file was deleted
+        if DEFAULT_LOG_DIR and str(log_path).startswith(str(DEFAULT_LOG_DIR)):
+            return jsonify({
+                'error': f'Log file not found in cache: {log_path}. The file may have been deleted from disk. Please refresh the log list to see cached logs.'
+            }), 404
+        
         log_file = None
         
         # If it's an absolute path, use it directly
@@ -306,7 +350,10 @@ def get_log(log_path):
                     log_file = Path(log_path)
         
         if not log_file or not log_file.exists():
-            return jsonify({'error': f'Log file not found: {log_path}'}), 404
+            # If file doesn't exist and not in cache, return error
+            return jsonify({
+                'error': f'Log file not found: {log_path}. File may have been deleted. If this was from the monitored directory, please refresh the log list to load from cache.'
+            }), 404
         
         # Load from file
         log_data = load_log_content(log_file)
@@ -316,6 +363,8 @@ def get_log(log_path):
         return jsonify(log_data['game_info'])
     
     except Exception as e:
+        import traceback
+        print(f"Error in get_log: {e}\n{traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/upload', methods=['POST'])

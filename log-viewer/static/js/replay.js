@@ -429,15 +429,16 @@ async function loadLogList() {
             `;
             
             item.addEventListener('click', () => {
-                // Use full path if available, otherwise use relative path
-                const path = log.path || log.relative_path || log.name;
+                // For cached logs, always use the full path (log.path) which is the cache key
+                // This ensures the backend can find it in the cache
+                const path = log.path || log.cache_key || log.relative_path || log.name;
                 document.getElementById('log-path-input').value = path;
-                loadLogFile(path);
                 
-                // Show indicator if cached
+                // Always use the full path for cached logs
                 if (log.cached) {
                     console.log('Loading from memory cache:', path);
                 }
+                loadLogFile(path);
             });
             
             logListEl.appendChild(item);
@@ -532,11 +533,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function loadLogFile(path) {
     try {
-        const response = await fetch(`/api/log/${encodeURIComponent(path)}`);
+        // Encode the path properly for URL
+        // Handle both absolute and relative paths
+        let encodedPath = path;
+        if (path.includes('/')) {
+            // For paths with slashes, encode each segment separately
+            encodedPath = path.split('/').map(segment => encodeURIComponent(segment)).join('/');
+        } else {
+            encodedPath = encodeURIComponent(path);
+        }
+        
+        const response = await fetch(`/api/log/${encodedPath}`);
         const logData = await response.json();
         
         if (logData.error) {
-            alert('加载失败: ' + logData.error);
+            // If file not found, suggest refreshing the log list
+            let errorMsg = logData.error;
+            if (errorMsg.includes('not found') || errorMsg.includes('deleted')) {
+                errorMsg += '\n\n提示: 文件可能已被删除。请点击"刷新日志列表"按钮，然后从缓存中加载。';
+            }
+            alert('加载失败: ' + errorMsg);
             return;
         }
         
