@@ -442,14 +442,49 @@ def train():
             submit_param(mortal, dqn, is_idle=True)
             logging.info('param has been submitted')
 
+    # Initialize train_player for offline mode self-play
+    train_player = None
+    if not online:
+        train_player = TrainPlayer()
+
     while True:
         train_epoch()
         gc.collect()
         # torch.cuda.empty_cache()
         # torch.cuda.synchronize()
+        
+        # In offline mode, generate new self-play data after each epoch
         if not online:
-            # only run one epoch for offline for easier control
-            break
+            logging.info('Epoch completed. Generating new self-play data...')
+            rankings, generated_files = train_player.train_play(mortal, dqn, device)
+            logging.info(f'Generated {len(generated_files)} files from self-play')
+            logging.info(f'Average ranking: {rankings.mean():.2f}')
+            
+            # Rebuild file index with newly generated data
+            logging.info('Rebuilding file index with newly generated data...')
+            file_index = config['dataset']['file_index']
+            file_list = []
+            for pat in config['dataset']['globs']:
+                file_list.extend(glob(pat, recursive=True))
+            
+            # Apply player_names filter if needed
+            player_names_set = set()
+            for filename in config['dataset']['player_names_files']:
+                with open(filename) as f:
+                    player_names_set.update(filtered_trimmed_lines(f))
+            if len(player_names_set) > 0:
+                filtered = []
+                for filename in tqdm(file_list, unit='file', desc='Filtering files'):
+                    with gzip.open(filename, 'rt') as f:
+                        start = json.loads(next(f))
+                        if not set(start['names']).isdisjoint(player_names_set):
+                            filtered.append(filename)
+                file_list = filtered
+            
+            file_list.sort(reverse=True)
+            torch.save({'file_list': file_list}, file_index)
+            logging.info(f'File list size after self-play: {len(file_list):,}')
+            logging.info('Starting next epoch with updated data...')
 
 def main():
     import os
