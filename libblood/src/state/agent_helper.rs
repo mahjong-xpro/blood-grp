@@ -122,6 +122,18 @@ impl PlayerState {
                         continue;
                     }
 
+                    // Validate tehai total: should be 14 - 3 * fuuro_count for agari
+                    // AGARI_TABLE only contains valid agari structures with exactly 14 tiles in tehai
+                    let fuuro_count = self.pons.len() + self.minkans.len() + self.ankans.len();
+                    let expected_tehai_total = 14 - (fuuro_count as u8 * 3);
+                    let tehai_total: u8 = tehai_3n2.iter().sum();
+                    if tehai_total != expected_tehai_total {
+                        // This is not a valid agari state - skip it
+                        // This can happen when the hand structure is invalid or when
+                        // the calculation is in an intermediate state
+                        continue;
+                    }
+
                     let agari_calc = AgariCalculator {
                         tehai: &tehai_3n2,
                         is_menzen: self.is_menzen,
