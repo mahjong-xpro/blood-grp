@@ -1,7 +1,7 @@
 use super::board::{Board, BoardState, Poll};
 use super::result::GameResult;
 use crate::agent::BatchAgent;
-use crate::mjai::EventExt;
+use crate::mjai::{Event, EventExt};
 use std::time::Duration;
 use std::{array, mem};
 
@@ -79,33 +79,27 @@ impl Game {
         let poll = self.board.poll(reactions)?;
         match poll {
             Poll::InGame => {
-                let ctx = self.board.agent_context();
-                // 在定缺选择阶段，需要处理所有还没有选择定缺的玩家，即使can_act()返回false
-                let in_ding_que_phase = self.board.is_ding_que_phase();
-                
-                for (player_id, state) in ctx.player_states.iter().enumerate() {
-                    // 在定缺选择阶段，如果玩家还没有选择定缺，需要处理（即使can_act()返回false）
-                    let needs_scene = if in_ding_que_phase {
-                        !self.board.ding_que_selected(player_id)
-                    } else {
-                        state.last_cans().can_act()
-                    };
-                    
-                    if !needs_scene {
-                        continue;
+                // 在定缺选择阶段，不调用Agent，直接自动选择定缺（在step()中处理）
+                // 这样可以避免Agent处理未训练过的状态导致NaN
+                if !self.board.is_ding_que_phase() {
+                    let ctx = self.board.agent_context();
+                    for (player_id, state) in ctx.player_states.iter().enumerate() {
+                        if !state.last_cans().can_act() {
+                            continue;
+                        }
+
+                        let invisible_state = self.oracle_obs_versions[player_id]
+                            .map(|ver| self.board.encode_oracle_obs(player_id as u8, ver));
+                        self.invisible_state_cache[player_id].clone_from(&invisible_state);
+
+                        let idx = self.indexes[player_id];
+                        agents[idx.agent_idx].set_scene(
+                            idx.player_id_idx,
+                            ctx.log,
+                            state,
+                            invisible_state,
+                        )?;
                     }
-
-                    let invisible_state = self.oracle_obs_versions[player_id]
-                        .map(|ver| self.board.encode_oracle_obs(player_id as u8, ver));
-                    self.invisible_state_cache[player_id].clone_from(&invisible_state);
-
-                    let idx = self.indexes[player_id];
-                    agents[idx.agent_idx].set_scene(
-                        idx.player_id_idx,
-                        ctx.log,
-                        state,
-                        invisible_state,
-                    )?;
                 }
             }
 
@@ -180,31 +174,31 @@ impl Game {
             return Ok(Some(game_result));
         }
 
-        let ctx = self.board.agent_context();
-        // 在定缺选择阶段，需要处理所有还没有选择定缺的玩家，即使can_act()返回false
-        let in_ding_que_phase = self.board.is_ding_que_phase();
-        
-        for (player_id, state) in ctx.player_states.iter().enumerate() {
-            // 在定缺选择阶段，如果玩家还没有选择定缺，需要处理（即使can_act()返回false）
-            let needs_reaction = if in_ding_que_phase {
-                !self.board.ding_que_selected(player_id)
-            } else {
-                state.last_cans().can_act()
-            };
-            
-            if !needs_reaction {
-                continue;
+        // 在定缺选择阶段，不调用Agent，直接自动选择定缺（在step()中处理）
+        // 这样可以避免Agent处理未训练过的状态导致NaN
+        if self.board.is_ding_que_phase() {
+            // 在定缺选择阶段，设置所有玩家的reactions为Event::None
+            // step()函数会自动为所有玩家选择定缺
+            for player_id in 0..4 {
+                self.last_reactions[player_id] = EventExt::no_meta(Event::None);
             }
+        } else {
+            let ctx = self.board.agent_context();
+            for (player_id, state) in ctx.player_states.iter().enumerate() {
+                if !state.last_cans().can_act() {
+                    continue;
+                }
 
-            let invisible_state = self.invisible_state_cache[player_id].take();
+                let invisible_state = self.invisible_state_cache[player_id].take();
 
-            let idx = self.indexes[player_id];
-            self.last_reactions[player_id] = agents[idx.agent_idx].get_reaction(
-                idx.player_id_idx,
-                ctx.log,
-                state,
-                invisible_state,
-            )?;
+                let idx = self.indexes[player_id];
+                self.last_reactions[player_id] = agents[idx.agent_idx].get_reaction(
+                    idx.player_id_idx,
+                    ctx.log,
+                    state,
+                    invisible_state,
+                )?;
+            }
         }
 
         Ok(None)
