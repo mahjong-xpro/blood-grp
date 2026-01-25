@@ -420,6 +420,16 @@ impl PlayerState {
         for t in consumed {
             self.move_tile(t, MoveType::FuuroConsume)?;
         }
+        let pons_len = self.pons.len();
+        assert!(
+            pons_len < 4,
+            "pons capacity overflow: player {} has {} pons, attempting to add one more. Maximum is 4. This indicates invalid game log data or a bug in game logic. kyoku: {}, at_turn: {}, tiles_left: {}",
+            self.player_id,
+            pons_len,
+            self.kyoku,
+            self.at_turn,
+            self.tiles_left
+        );
         self.pons.push(pai.as_u8());
 
         if self.tehai[pai.as_usize()] > 0 {
@@ -451,6 +461,17 @@ impl PlayerState {
         self.fuuro_overview[actor_rel].push(full_set);
         // Clear any previous kan before adding new one (only track most recent kan before discard)
         self.intermediate_kan.clear();
+        // intermediate_kan should be empty after clear(), so we can safely push
+        // But add a check just in case clear() didn't work as expected
+        assert!(
+            self.intermediate_kan.len() < 4,
+            "intermediate_kan capacity overflow: player {} has {} tiles in intermediate_kan after clear(), attempting to add one more. Maximum is 4. This indicates a bug in intermediate_kan management. kyoku: {}, at_turn: {}, tiles_left: {}",
+            self.player_id,
+            self.intermediate_kan.len(),
+            self.kyoku,
+            self.at_turn,
+            self.tiles_left
+        );
         self.intermediate_kan.push(pai);
         // Only pad kawa from the actor's perspective to avoid duplicate pushes when broadcast
         if actor_rel == 0 {
@@ -507,6 +528,17 @@ impl PlayerState {
         }
         // Clear any previous kan before adding new one (only track most recent kan before discard)
         self.intermediate_kan.clear();
+        // intermediate_kan should be empty after clear(), so we can safely push
+        // But add a check just in case clear() didn't work as expected
+        assert!(
+            self.intermediate_kan.len() < 4,
+            "intermediate_kan capacity overflow: player {} has {} tiles in intermediate_kan after clear(), attempting to add one more. Maximum is 4. This indicates a bug in intermediate_kan management. kyoku: {}, at_turn: {}, tiles_left: {}",
+            self.player_id,
+            self.intermediate_kan.len(),
+            self.kyoku,
+            self.at_turn,
+            self.tiles_left
+        );
         self.intermediate_kan.push(pai);
         self.kans_on_board += 1;
 
@@ -553,6 +585,16 @@ impl PlayerState {
         self.at_rinshan = true;
         self.move_tile(pai, MoveType::FuuroConsume)?;
         self.pons.retain(|&t| t != pai.as_u8());
+        let minkans_len = self.minkans.len();
+        assert!(
+            minkans_len < 4,
+            "minkans capacity overflow: player {} has {} minkans, attempting to add one more. Maximum is 4. This indicates invalid game log data or a bug in game logic. kyoku: {}, at_turn: {}, tiles_left: {}",
+            self.player_id,
+            minkans_len,
+            self.kyoku,
+            self.at_turn,
+            self.tiles_left
+        );
         self.minkans.push(pai.as_u8());
 
         // The shanten number and the shape of tenpai (if any) may
@@ -601,6 +643,16 @@ impl PlayerState {
         for t in consumed {
             self.move_tile(t, MoveType::FuuroConsume)?;
         }
+        let ankans_len = self.ankans.len();
+        assert!(
+            ankans_len < 4,
+            "ankans capacity overflow: player {} has {} ankans, attempting to add one more. Maximum is 4. This indicates invalid game log data or a bug in game logic. kyoku: {}, at_turn: {}, tiles_left: {}",
+            self.player_id,
+            ankans_len,
+            self.kyoku,
+            self.at_turn,
+            self.tiles_left
+        );
         self.ankans.push(tile.as_u8());
 
         // The shanten number and the shape of tenpai (if any) may
