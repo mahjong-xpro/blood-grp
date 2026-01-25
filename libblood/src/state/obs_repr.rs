@@ -647,6 +647,12 @@ impl<'a> ObsEncoderContext<'a> {
                 // Skip everything else.
                 // Bloody Battle: 27 tile kinds (no jihai)
                 self.idx += 2 * 27 + 2 + 3 * MAX_NUM_TURNS;
+                // 业务逻辑：在 can_discard=True 时，需要额外的 2 行用于 best ev/win prob discard
+                // 这与 empty table 和 non-empty table 的情况保持一致
+                if cans.can_discard {
+                    // Additional 2 for best ev/win prob discard
+                    self.idx += 2;
+                }
             }
         }
 
