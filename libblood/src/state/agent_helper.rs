@@ -227,10 +227,9 @@ impl PlayerState {
             return false;
         }
 
-        // Do not ryukyoku if we have all the jihai kinds.
-        if self.tehai[3 * 9..].iter().all(|&c| c > 0) {
-            return false;
-        }
+        // Bloody Battle: No jihai (字牌), so skip jihai check
+        // Original check: if we have all the jihai kinds, do not ryukyoku
+        // This doesn't apply to Bloody Battle Mahjong
 
         // Ryukyoku otherwise.
         true
