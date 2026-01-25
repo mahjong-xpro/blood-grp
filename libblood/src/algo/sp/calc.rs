@@ -4,7 +4,7 @@ use super::tile::{DiscardTile, DrawTile};
 use super::{Candidate, CandidateColumn, MAX_TSUMOS_LEFT};
 use crate::algo::agari::{Agari, AgariCalculator};
 use crate::tile::Tile;
-use crate::must_tile;
+use crate::{must_tile, t};
 use std::rc::Rc;
 
 use ahash::AHashMap;
