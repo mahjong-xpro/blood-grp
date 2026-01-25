@@ -58,18 +58,13 @@ pub struct PlayerState {
     pub(super) rank: u8,
     /// Relative to `player_id`.
     pub(super) oya: u8,
-    /// 24 is the theoretical max size of kawa, however, since None is included
-    /// in the kawa, in some very rare cases (about one in a million hanchans),
-    /// the size can exceed 24.
-    pub(super) kawa: [TinyVec<[Option<KawaItem>; 24]>; 4],
+    /// 55 is the theoretical max size of kawa (108 total tiles - 52 initial hands - 1 last draw = 55 max discards)
+    pub(super) kawa: [ArrayVec<[Option<KawaItem>; 55]>; 4],
 
-    /// Use TinyVec instead of ArrayVec to handle rare cases where size exceeds 24
-    pub(super) kawa_overview: [TinyVec<[Tile; 24]>; 4],
-    /// Use TinyVec to handle rare cases where a player might have more than 4 fuuro (shouldn't happen, but for safety)
-    pub(super) fuuro_overview: [TinyVec<[ArrayVec<[Tile; 4]>; 4]>; 4],
+    pub(super) kawa_overview: [ArrayVec<[Tile; 55]>; 4],
+    pub(super) fuuro_overview: [ArrayVec<[ArrayVec<[Tile; 4]>; 4]>; 4],
     /// In this field all `Tile` are normalized (no aka dora distinction in Bloody Battle Mahjong)
-    /// Use TinyVec to handle rare cases (shouldn't happen, but for safety)
-    pub(super) ankan_overview: [TinyVec<[Tile; 4]>; 4],
+    pub(super) ankan_overview: [ArrayVec<[Tile; 4]>; 4],
 
     pub(super) at_turn: u8,
     pub(super) tiles_left: u8,
@@ -83,8 +78,8 @@ pub struct PlayerState {
     pub(super) last_cans: ActionCandidate,
 
     /// Use TinyVec to handle cases where there might be more than 3 candidates
-    pub(super) ankan_candidates: TinyVec<[Tile; 3]>,
-    pub(super) kakan_candidates: TinyVec<[Tile; 3]>,
+    pub(super) ankan_candidates: ArrayVec<[Tile; 3]>,
+    pub(super) kakan_candidates: ArrayVec<[Tile; 3]>,
     pub(super) chankan_chance: Option<()>,
     /// Track which player performed kakan when chankan occurs (for excluding gen)
     /// This is set when chankan_chance is Some(())
