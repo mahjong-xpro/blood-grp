@@ -121,19 +121,18 @@ impl PlayerState {
         self.tiles_left = 56;
         self.at_turn = 0;
         
-        // Initialize tehai from tehais and witness all initial hand tiles
-        // This is critical: tiles_seen must include ALL initial hand tiles from ALL players
-        // to correctly calculate tiles_in_wall for SPCalculator
-        for player_tehais in &tehais {
-            for &tile in player_tehais {
-                self.witness_tile(tile)?;
-            }
-        }
-        
-        // Initialize this player's tehai
+        // Initialize this player's tehai and witness only this player's initial hand tiles
+        // tiles_seen should only include tiles that are known to this player:
+        // - This player's own hand (private, but known to this player)
+        // - Discarded tiles (public)
+        // - Fuuro tiles (public)
+        // Other players' private hands should NOT be included in tiles_seen
         for &tile in &tehais[self.player_id as usize] {
             let tid = tile.as_usize();
             self.tehai[tid] += 1;
+            // Witness this player's own initial hand tiles
+            // These are private but known to this player, so they should be counted
+            self.witness_tile(tile)?;
         }
         
         self.tehai_len_div3 = (self.tehai.iter().sum::<u8>() % 3) as u8;
