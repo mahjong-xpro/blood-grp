@@ -991,9 +991,10 @@ impl<'a> DivWorker<'a> {
                     }
                 }
             }
-        }
+            }
 
-        make_return!();
+            make_return!();
+        }
     }
 }
 
