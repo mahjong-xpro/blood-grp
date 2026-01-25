@@ -2,6 +2,28 @@ import random
 import torch
 import numpy as np
 from torch.utils.data import IterableDataset
+
+# Ensure libblood is initialized before importing modules that depend on it
+# This is necessary when using 'spawn' multiprocessing method
+try:
+    import prelude  # This will initialize libblood
+except ImportError:
+    # Fallback: try to import libblood directly
+    try:
+        import libblood_loader
+    except ImportError:
+        pass
+    try:
+        import libblood
+    except ImportError:
+        import sys
+        import os
+        # If libblood is not found, try to add the project root to path
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
+        import libblood
+
 from model import GRP
 from reward_calculator import RewardCalculator
 from libblood.dataset import GameplayLoader
