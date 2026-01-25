@@ -2,7 +2,7 @@ use super::PlayerState;
 use super::action::ActionCandidate;
 use super::item::{KawaItem, Sutehai};
 // Bloody Battle: ChiPon removed (no chi)
-use crate::algo::agari::{self, AgariCalculator};
+use crate::algo::agari::AgariCalculator;
 use crate::algo::shanten;
 use crate::mjai::Event;
 use crate::rankings::Rankings;
@@ -96,7 +96,7 @@ impl PlayerState {
             Event::Kakan { actor, pai, .. } => self.kakan(actor, pai)?,
             Event::Ankan { actor, consumed } => self.ankan(actor, consumed)?,
             // Event::Dora removed - Bloody Battle Mahjong does not have dora
-            // Event::Reach and Event::ReachAccepted removed - Bloody Battle Mahjong does not have riichi
+            // Event::Reach and Event::ReachAccepted removed - Bloody Battle Mahjong does not have riichi (立直)
 
             _ => (),
         };
@@ -180,7 +180,7 @@ impl PlayerState {
         self.witness_tile(pai)?;
         self.move_tile(pai, MoveType::Tsumo)?;
 
-        // Bloody Battle: No riichi, always update shanten
+        // Bloody Battle: No riichi (立直), always update shanten
         self.update_shanten_discards();
 
         if self.waits[pai.deaka().as_usize()] {
@@ -231,7 +231,7 @@ impl PlayerState {
                 });
         }
 
-        // Bloody Battle: No riichi
+        // Bloody Battle: No riichi (立直)
         self.last_cans.can_riichi = false
             && self.tiles_left >= 4
             && self.scores[0] >= 1000
@@ -248,7 +248,7 @@ impl PlayerState {
             self.witness_tile(pai)?;
         }
 
-        // Bloody Battle: No riichi, no dora
+        // Bloody Battle: No riichi (立直), no dora (宝牌)
         // Check if there was a kan before this discard (for 杠上炮)
         let was_kan_before_discard = !self.intermediate_kan.is_empty();
         // Store this info for agari_points() to use later
@@ -277,7 +277,7 @@ impl PlayerState {
             self.at_rinshan = false;
             self.discarded_tiles[pai.deaka().as_usize()] = true;
 
-            // Bloody Battle: Always update shanten and waits (no riichi/furiten)
+            // Bloody Battle: Always update shanten and waits (no riichi/立直 or furiten/振听)
             if self.next_shanten_discards[pai.deaka().as_usize()] {
                 self.shanten -= 1;
             } else if !self.keep_shanten_discards[pai.deaka().as_usize()] {
@@ -345,7 +345,7 @@ impl PlayerState {
             for _t in full_set {
                 // Bloody Battle: No dora
             }
-            // Bloody Battle: No riichi
+            // Bloody Battle: No riichi (立直)
             return Ok(());
         }
 
@@ -389,7 +389,7 @@ impl PlayerState {
             for _t in full_set {
                 // Bloody Battle: No dora
             }
-            // Bloody Battle: No riichi
+            // Bloody Battle: No riichi (立直)
             return Ok(());
         }
 
@@ -470,7 +470,7 @@ impl PlayerState {
         self.intermediate_kan.push(tile);
         self.kans_on_board += 1;
 
-        // Bloody Battle: No riichi or ippatsu
+        // Bloody Battle: No riichi (立直) or ippatsu (一发)
 
         if actor_rel != 0 {
             for t in consumed {
@@ -487,7 +487,7 @@ impl PlayerState {
         }
         self.ankans.push(tile.as_u8());
 
-        // Bloody Battle: Always update shanten (no riichi)
+        // Bloody Battle: Always update shanten (no riichi/立直)
         // The shanten number and the shape of tenpai (if any) may
         // be changed after an ankan. See the example in daiminkan.
         self.update_shanten();
@@ -496,17 +496,17 @@ impl PlayerState {
         Ok(())
     }
 
-    // Bloody Battle: No riichi, these functions are completely removed
-    // They are kept as dead code stubs for compatibility
+    // Bloody Battle: No riichi (立直), these functions are completely removed
+    // They are kept as dead code stubs for backward compatibility
     #[allow(dead_code)]
     const fn reach_removed(&mut self, _actor: u8) {
-        // Bloody Battle: No riichi
+        // Bloody Battle: No riichi (立直)
         // This function should not be called
     }
 
     #[allow(dead_code)]
     fn reach_accepted_removed(&mut self, _actor: u8) -> Result<()> {
-        // Bloody Battle: No riichi
+        // Bloody Battle: No riichi (立直)
         // This function should not be called
         Ok(())
     }

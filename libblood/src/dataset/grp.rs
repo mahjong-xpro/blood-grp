@@ -1,7 +1,6 @@
 use crate::consts::GRP_SIZE;
 use crate::mjai::Event;
 use crate::rankings::Rankings;
-use crate::tu8;
 use crate::vec_ops::vec_add_assign;
 use std::fs::File;
 use std::io;
@@ -103,7 +102,7 @@ impl Grp {
                         vec_add_assign(&mut final_deltas, &ds);
                     }
                 }
-                // Event::ReachAccepted removed - Bloody Battle Mahjong does not have riichi
+                // Event::ReachAccepted removed - Bloody Battle Mahjong does not have riichi (立直)
                 Event::StartKyoku {
                     kyoku,
                     scores,

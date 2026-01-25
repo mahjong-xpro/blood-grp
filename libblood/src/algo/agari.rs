@@ -1000,7 +1000,7 @@ fn get_tile14_and_key(tiles: &[u8; 27]) -> ([u8; 14], u32) {
 /// `tehai` must already contain `tile`. `true` is returned if making an ankan
 /// with the tile is legal.
 ///
-/// Bloody Battle Mahjong does not have riichi, so this function always allows ankan
+/// Bloody Battle Mahjong does not have riichi (立直), so this function always allows ankan
 /// if the tile count is 4.
 ///
 /// The behavior is undefined if `tehai` is not tenpai.
@@ -1012,7 +1012,7 @@ pub fn check_ankan_after_riichi(tehai: &[u8; 27], len_div3: u8, tile: Tile, stri
     }
 
     // Bloody Battle: No jihai, so no special check for jihai
-    // Bloody Battle: No riichi, so ankan is always allowed if it doesn't change waits
+    // Bloody Battle: No riichi (立直), so ankan is always allowed if it doesn't change waits
     let mut tehai_before_tsumo = *tehai;
     tehai_before_tsumo[tile_id] -= 1;
 

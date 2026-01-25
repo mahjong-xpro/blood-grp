@@ -4,7 +4,7 @@ use crate::algo::sp::{Candidate, CandidateColumn};
 use crate::array::Simple2DArray;
 use crate::consts::{ACTION_SPACE, MAX_VERSION, obs_shape};
 use crate::tile::Tile;
-use crate::{tu8, tuz};
+// use crate::{tu8, tuz}; // Unused imports
 use std::num::NonZeroUsize;
 
 use ndarray::prelude::*;
@@ -267,7 +267,7 @@ impl<'a> ObsEncoderContext<'a> {
                             if sutehai.is_tedashi {
                                 self.arr.assign(self.idx + 1, tid, v);
                             }
-                            // Bloody Battle: No riichi
+                            // Bloody Battle: No riichi (立直)
                         }
                     }
                     self.idx += 3;
@@ -347,18 +347,18 @@ impl<'a> ObsEncoderContext<'a> {
                 }
                 self.idx += 3;
             }
-            // Bloody Battle: No riichi_sutehais
-            // Keep offset for compatibility (3 channels per player)
+            // Bloody Battle: No riichi (立直) sutehais
+            // Keep offset for backward compatibility (3 channels per player)
             for _ in 1..4 {
                 self.idx += 3;
             }
         }
 
-        // Bloody Battle: No riichi_declared
-        // Keep offset for compatibility
+        // Bloody Battle: No riichi (立直) declared
+        // Keep offset for backward compatibility
         self.idx += 3;
-        // Bloody Battle: No riichi_accepted
-        // Keep offset for compatibility
+        // Bloody Battle: No riichi (立直) accepted
+        // Keep offset for backward compatibility
         self.idx += 3;
 
         state
@@ -442,7 +442,7 @@ impl<'a> ObsEncoderContext<'a> {
                     .for_each(|(t, _)| self.arr.assign(self.idx + 3, t, 1.));
             }
 
-            // Bloody Battle: No riichi_declared
+            // Bloody Battle: No riichi (立直) declared
         }
         self.idx += 5;
 
@@ -703,8 +703,8 @@ impl<'a> ObsEncoderContext<'a> {
             let sutehai = k.sutehai;
             let tile_id = sutehai.tile.deaka().as_usize();
             self.arr.assign(self.idx + 3, tile_id, 1.);
-            // Bloody Battle: No akas, dora, tedashi, or riichi
-            // Keep offset for compatibility
+            // Bloody Battle: No akas (红5), dora (宝牌), tedashi (手出), or riichi (立直)
+            // Keep offset for backward compatibility
             self.idx += 4;
         }
         self.idx += KAWA_ITEM_CHANNELS;

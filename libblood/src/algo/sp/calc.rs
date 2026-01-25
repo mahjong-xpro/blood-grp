@@ -14,7 +14,7 @@ const SHANTEN_THRES: i8 = 3;
 // Bloody Battle: 27 tile kinds, 4 players, 13 tiles per player initially
 const MAX_TILES_LEFT: usize = 27 * 4 - 1 - 13;
 
-// Bloody Battle: No uradora (no riichi, no dora), so URADORA_PROB_TABLE is removed
+// Bloody Battle: No uradora (里宝牌) - no riichi (立直), no dora (宝牌), so URADORA_PROB_TABLE is removed
 
 type StateCache<const MAX_TSUMO: usize> =
     [AHashMap<State, Rc<Values<MAX_TSUMO>>>; SHANTEN_THRES as usize + 1];
@@ -514,14 +514,14 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
 
                     match &scores_or_values {
                         ScoresOrValues::Scores(scores) => {
-                            // Bloody Battle: No riichi, no ippatsu, no haitei, no double riichi
+                            // Bloody Battle: No riichi (立直), no ippatsu (一发), no haitei (海底), no double riichi (两立直)
                             // These fields are set to false in agent_helper.rs, so these calculations
                             // will always result in 0 additional han
-                            let assume_riichi = false; // Bloody Battle: No riichi
-                            let win_double_riichi = false; // Bloody Battle: No double riichi
+                            let assume_riichi = false; // Bloody Battle: No riichi (立直)
+                            let win_double_riichi = false; // Bloody Battle: No double riichi (两立直)
                             let win_ippatsu = false; // Bloody Battle: No ippatsu
                             let win_haitei = false; // Bloody Battle: No haitei
-                            let han_plus = 0; // Bloody Battle: No additional han from riichi/dora
+                            let han_plus = 0; // Bloody Battle: No additional han from riichi (立直)/dora (宝牌)
 
                             win_probs[i] += prob;
                             exp_values[i] += prob * scores[han_plus];
@@ -652,7 +652,7 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
         };
         let _is_oya = false; // Bloody Battle: No oya advantage
 
-        // Bloody Battle: No additional_yakus or num_doras (no riichi, no dora)
+        // Bloody Battle: No additional_yakus or num_doras (no riichi/立直, no dora/宝牌)
         // Bloody Battle: agari() returns Agari::Fan(u8) directly
         let fan = match calc.agari()? {
             Agari::Fan(f) => f,
@@ -675,7 +675,7 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
         return Some(scores);
         
         // TODO: The rest of this function deals with Japanese Mahjong rules
-        // (dora, riichi, uradora, etc.) which don't apply to Bloody Battle.
+        // (dora/宝牌, riichi/立直, uradora/里宝牌, etc.) which don't apply to Bloody Battle.
         // This needs to be completely rewritten for Bloody Battle scoring.
         // The code below is commented out as it's unreachable and uses Japanese Mahjong rules.
         
@@ -691,12 +691,12 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
 
         // ダブル立直、一発、海底撈月で最大3翻まで増加するので、
         // Bloody Battle: Calculate scores directly using fan-based scoring
-        // No need for riichi, dora, or uradora calculations
+        // No need for riichi (立直), dora (宝牌), or uradora (里宝牌) calculations
         let mut scores = [0.; 4];
 
-        // Bloody Battle: No riichi, no dora, so skip all riichi/dora calculations
-        let assume_riichi = false; // Bloody Battle: No riichi
-        if false { // Bloody Battle: Skip riichi/dora branch
+        // Bloody Battle: No riichi (立直), no dora (宝牌), so skip all riichi/dora calculations
+        let assume_riichi = false; // Bloody Battle: No riichi (立直)
+        if false { // Bloody Battle: Skip riichi (立直)/dora (宝牌) branch
             // 裏ドラ考慮ありかつ表ドラが1枚以上の場合は、厳密に計算する。
             let mut n_indicators = [0; 5];
             let mut sum_indicators = 0;
@@ -739,7 +739,7 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
                     *s += agari.point(is_oya).tsumo_total(is_oya) as f32 * p;
                 }
             }
-        // Bloody Battle: No riichi, no dora, so this branch is removed
+        // Bloody Battle: No riichi (立直), no dora (宝牌), so this branch is removed
         // } else if assume_riichi && self.sup.dora_indicators.len() > 1 {
         //     // 裏ドラ考慮ありかつ表ドラが2枚以上の場合、統計データを利用する。
         //     // Bloody Battle: This code is removed as it's not applicable

@@ -4,7 +4,7 @@ use crate::consts::MAX_VERSION;
 use crate::hand::{hand, hand_with_aka, tile27_to_vec, tile37_to_vec};
 use crate::mjai::Event;
 use crate::{must_tile, t, tuz};
-use std::mem;
+// use std::mem; // Unused
 
 impl PlayerState {
     fn test_update(&mut self, event: &Event) -> ActionCandidate {
@@ -734,8 +734,9 @@ fn bloody_battle_game_flow_with_three_agari() {
     // Bloody Battle: Old test code removed - needs complete rewrite for Bloody Battle Mahjong
     // The test has been replaced with bloody_battle_game_flow_with_three_agari() above
 //}
-#[test]
-//fn get_rank() {
+
+// #[test]
+// fn get_rank() {
 //    let ps = PlayerState::new(0);
 //    let rank = ps.get_rank([20000, 25000, 25000, 30000]);
 //    assert_eq!(rank, 3);

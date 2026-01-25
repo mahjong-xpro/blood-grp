@@ -5,7 +5,7 @@ use crate::algo::shanten;
 use crate::algo::sp::{InitState, SPCalculator};
 use crate::tile::Tile;
 use crate::vec_ops::vec_add_assign;
-use crate::{must_tile, t, tu8, tuz};
+use crate::tuz; // Used in yaokyuu_kind_count
 
 use anyhow::{Context, Result, ensure};
 // Bloody Battle: array_vec not used
@@ -33,7 +33,7 @@ impl PlayerState {
         // Bloody Battle: 27 tile kinds (no jihai, no red 5s)
         let mut ret = [false; 27];
 
-        // Bloody Battle: No riichi
+        // Bloody Battle: No riichi (立直)
         for (i, count) in self.tehai.iter().copied().enumerate() {
             if count == 0 {
                 continue;
@@ -65,7 +65,7 @@ impl PlayerState {
     /// The return value indicates the tiles which can make the hand tenpai for
     /// real after being discarded, with the number of future tenpai tiles left
     /// and furiten considered, without depending on any incidental yaku, and is
-    /// not affected by the riichi status of the player.
+    /// not affected by the riichi (立直) status of the player (Bloody Battle has no riichi).
     #[must_use]
     pub fn discard_candidates_with_unconditional_tenpai(&self) -> [bool; 27] {
         // Bloody Battle: No akas, just return the aka version directly
@@ -92,7 +92,7 @@ impl PlayerState {
                 // already agari and any discard will result in furiten
                 return ret;
             }
-            // Bloody Battle: No riichi or furiten
+            // Bloody Battle: No riichi (立直) or furiten (振听)
             // All valid waits can agari
             ret[last_self_tsumo.as_usize()] = true;
             return ret;
@@ -251,7 +251,7 @@ impl PlayerState {
         }
 
         // Calculate the max theoretical score we can achieve through this agari.
-        // Bloody Battle: No riichi, calculate max win point directly
+        // Bloody Battle: No riichi (立直), calculate max win point directly
         let max_win_point = {
             let mut tehai_full = self.tehai;
             for t in &self.ankan_overview[0] {
@@ -304,7 +304,7 @@ impl PlayerState {
     /// change.
     /// Calculate agari points for Bloody Battle Mahjong
     /// 
-    /// Bloody Battle: No ura_indicators, no riichi, no dora
+    /// Bloody Battle: No ura_indicators (里宝牌指示牌), no riichi (立直), no dora (宝牌)
     pub fn agari_points(&self, is_ron: bool, _ura_indicators: &[Tile]) -> Result<Point> {
         ensure!(
             is_ron && self.last_cans.can_ron_agari || self.last_cans.can_tsumo_agari,
@@ -474,16 +474,16 @@ impl PlayerState {
         };
         ensure!(tsumos_left >= 1, "need at least one more tsumo");
 
-        // Bloody Battle: No dora, riichi, or akas
+        // Bloody Battle: No dora (宝牌), riichi (立直), or akas (红5)
         let num_doras_in_fuuro = 0;
         let prefer_riichi = false;
         let calc_double_riichi = false;
 
-        // Bloody Battle: No riichi, so no special discard handling
+        // Bloody Battle: No riichi (立直), so no special discard handling
         let tehai = self.tehai;
 
         // Bloody Battle: SPCalculator is updated for Bloody Battle rules
-        // - No riichi, dora, haitei calculations (fields set to false/empty)
+        // - No riichi (立直), dora (宝牌), haitei (海底) calculations (fields set to false/empty)
         // - get_score() method uses Bloody Battle fan-based scoring
         // - All Japanese Mahjong-specific calculations are disabled
         let init_state = InitState {
@@ -513,7 +513,7 @@ impl PlayerState {
         };
 
         let mut max_ev_table = sp_calc.calc(init_state, can_discard, tsumos_left, cur_shanten)?;
-        // Bloody Battle: No riichi discard handling
+        // Bloody Battle: No riichi (立直) discard handling
 
         Ok(SinglePlayerTables { max_ev_table })
     }

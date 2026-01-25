@@ -2,7 +2,7 @@ use super::{BatchAgent, InvisibleState};
 use crate::consts::ACTION_SPACE;
 use crate::mjai::{Event, EventExt, Metadata};
 use crate::state::PlayerState;
-use crate::{must_tile, tu8};
+use crate::must_tile;
 use std::mem;
 use std::sync::Arc;
 use std::time::{Duration, Instant};

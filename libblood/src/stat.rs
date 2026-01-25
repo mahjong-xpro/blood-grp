@@ -21,8 +21,8 @@ use serde_json as json;
 ///
 /// Notes:
 ///
-/// - Bloody Battle Mahjong does not have riichi, dora, honba, or kyotaku
-/// - All riichi-related fields are kept for compatibility but will always be 0
+/// - Bloody Battle Mahjong does not have riichi (立直), dora (宝牌), honba (本场), or kyotaku (供托)
+/// - All riichi-related fields are kept for backward compatibility but will always be 0
 /// - Ankan is not recognized as fuuro
 #[pyclass]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Add, AddAssign, Sum)]
@@ -83,7 +83,7 @@ pub struct Stat {
     #[pyo3(get, set)]
     pub houjuu_point_to_ko: i64,
 
-    // Bloody Battle: No riichi, these fields are kept for compatibility but always 0
+    // Bloody Battle: No riichi (立直), these fields are kept for backward compatibility but always 0
     #[pyo3(get, set)]
     #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
     pub riichi: i64,
@@ -314,7 +314,7 @@ impl Stat {
                 fuuro_num += 1;
             }
 
-            // Event::Reach and Event::ReachAccepted removed - Bloody Battle Mahjong does not have riichi
+            // Event::Reach and Event::ReachAccepted removed - Bloody Battle Mahjong does not have riichi (立直)
 
             Event::Hora {
                 actor,
@@ -326,7 +326,7 @@ impl Stat {
                 vec_add_assign(&mut cur_scores, &deltas);
 
                 if actor == player_id {
-                    // Bloody Battle: No riichi, so no 1000 point deduction
+                    // Bloody Battle: No riichi (立直), so no 1000 point deduction
                     let point = deltas[player_id as usize] as i64;
                     stat.agari += 1;
                     stat.agari_jun += jun;
@@ -337,7 +337,7 @@ impl Stat {
                         stat.agari_point_ko += point;
                     }
 
-                    // Bloody Battle: No riichi_agari tracking
+                    // Bloody Battle: No riichi (立直) agari tracking
                     if fuuro_num > 0 {
                         stat.fuuro_agari += 1;
                         stat.fuuro_agari_jun += jun;
@@ -364,7 +364,7 @@ impl Stat {
                         stat.houjuu_point_to_ko += point;
                     }
 
-                    // Bloody Battle: No riichi_declared
+                    // Bloody Battle: No riichi (立直) declared
                     if fuuro_num > 0 {
                         stat.fuuro_houjuu += 1;
                         stat.fuuro_point += point;
@@ -379,7 +379,7 @@ impl Stat {
                 let point = deltas[player_id as usize] as i64;
                 stat.ryukyoku += 1;
                 stat.ryukyoku_point += point;
-                // Bloody Battle: No riichi_accepted
+                // Bloody Battle: No riichi (立直) accepted
                 if fuuro_num > 0 {
                     stat.fuuro_point += point;
                 }

@@ -139,7 +139,7 @@ fn process_path(path: &Path) -> Result<()> {
                     states[*actor as usize].brief_info(),
                 );
             }
-            // Reach event removed - Bloody Battle Mahjong does not have riichi
+            // Reach event removed - Bloody Battle Mahjong does not have riichi (立直)
             Event::Hora {
                 actor,
                 target,
