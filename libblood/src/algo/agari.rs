@@ -665,7 +665,8 @@ impl<'a> DivWorker<'a> {
             }};
         }
 
-        if has_pinfu {
+        // Bloody Battle: No pinfu (平和) - this code is unreachable
+        if false { // has_pinfu is always false in Bloody Battle
             // 平和
             check_early_return! { han += 1 };
         }
