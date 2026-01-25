@@ -557,12 +557,17 @@ impl<'a> ObsEncoderContext<'a> {
                     // Skip encoding if table is empty, just advance idx to maintain shape
                     // Bloody Battle: 27 tile kinds (no jihai)
                     // Skip: max_ev encoding (2), required tiles encoding, SP table encoding
+                    // Note: encode_sp_table handles empty table and adds 3 * MAX_NUM_TURNS
                     if cans.can_discard {
-                        // max_ev (2) + required tiles (2 * 27) + max required tiles (2) + SP table (3 * MAX_NUM_TURNS + 2)
-                        self.idx += 2 + 2 * 27 + 2 + 3 * MAX_NUM_TURNS + 2;
+                        // max_ev (2) + required tiles (2 * 27) + max required tiles (2) + SP table (3 * MAX_NUM_TURNS + 2 for best ev/win prob)
+                        self.idx += 2 + 2 * 27 + 2;
+                        // encode_sp_table will add 3 * MAX_NUM_TURNS + 2
+                        self.encode_sp_table(max_ev_table, cans.can_discard, 0.);
                     } else {
                         // max_ev (2) + required tiles (2 * 27 + 1) + first required (1) + SP table (3 * MAX_NUM_TURNS)
-                        self.idx += 2 + 2 * 27 + 1 + 1 + 3 * MAX_NUM_TURNS;
+                        self.idx += 2 + 2 * 27 + 1 + 1;
+                        // encode_sp_table will add 3 * MAX_NUM_TURNS
+                        self.encode_sp_table(max_ev_table, cans.can_discard, 0.);
                     }
                 } else {
                     // Get the max EV from the table that maximizes EV, which should
