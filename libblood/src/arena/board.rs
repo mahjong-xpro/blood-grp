@@ -409,25 +409,39 @@ impl BoardState {
         if self.ding_que_phase {
             // 处理所有玩家的定缺选择
             for (actor, ev) in reactions.iter().enumerate() {
-                if let Event::DingQue { actor: ev_actor, suit: _ } = ev.event {
-                    // 验证：actor 必须匹配
-                    ensure!(
-                        ev_actor == actor as u8,
-                        "DingQue event actor mismatch: expected {}, got {}",
-                        actor,
-                        ev_actor
-                    );
-                    
-                    // 验证：玩家还没有选择定缺
-                    ensure!(
-                        !self.ding_que_selected[actor],
-                        "Player {} already selected ding_que. This violates the fundamental rule.",
-                        actor
-                    );
+                if !self.ding_que_selected[actor] {
+                    // 如果玩家还没有选择定缺
+                    let ding_que_event = if let Event::DingQue { actor: ev_actor, suit } = ev.event {
+                        // Agent返回了DingQue事件，验证actor匹配
+                        ensure!(
+                            ev_actor == actor as u8,
+                            "DingQue event actor mismatch: expected {}, got {}",
+                            actor,
+                            ev_actor
+                        );
+                        Event::DingQue { actor: actor as u8, suit }
+                    } else {
+                        // Agent没有返回DingQue事件，自动为Agent选择定缺
+                        // 选择手牌中最少的花色作为定缺
+                        let state = &self.player_states[actor];
+                        let man_count: u8 = (0..9).map(|i| state.tehai[i]).sum();
+                        let pin_count: u8 = (9..18).map(|i| state.tehai[i]).sum();
+                        let sou_count: u8 = (18..27).map(|i| state.tehai[i]).sum();
+                        
+                        let suit = if man_count <= pin_count && man_count <= sou_count {
+                            crate::mjai::Suit::Man
+                        } else if pin_count <= sou_count {
+                            crate::mjai::Suit::Pin
+                        } else {
+                            crate::mjai::Suit::Sou
+                        };
+                        
+                        Event::DingQue { actor: actor as u8, suit }
+                    };
                     
                     // 更新玩家状态
                     self.player_states[actor]
-                        .update(&ev.event)
+                        .update(&ding_que_event)
                         .with_context(|| {
                             format!(
                                 "failed to update player {} state with DingQue event",
@@ -439,15 +453,7 @@ impl BoardState {
                     self.ding_que_selected[actor] = true;
                     
                     // 记录日志
-                    self.add_log(ev.clone());
-                } else if !self.ding_que_selected[actor] {
-                    // 如果玩家还没有选择定缺，必须发送 DingQue 事件
-                    ensure!(
-                        matches!(ev.event, Event::DingQue { .. }),
-                        "Player {} must select ding_que before other actions. Current action: {:?}",
-                        actor,
-                        ev.event
-                    );
+                    self.add_log(EventExt::no_meta(ding_que_event));
                 }
             }
             
