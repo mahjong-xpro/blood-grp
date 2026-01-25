@@ -59,38 +59,10 @@ impl Tile {
         self.0 as usize
     }
 
-    #[inline]
-    #[must_use]
-    pub const fn deaka(self) -> Self {
-        // Bloody Battle Mahjong has no red 5s, so deaka() just returns self
-        self
-    }
-
-    #[inline]
-    #[must_use]
-    pub const fn akaize(self) -> Self {
-        // Bloody Battle Mahjong has no red 5s, so akaize() just returns self
-        self
-    }
-
-    #[inline]
-    #[must_use]
-    pub const fn is_aka(self) -> bool {
-        // Bloody Battle Mahjong has no red 5s
-        false
-    }
-
-    #[inline]
-    #[must_use]
-    pub const fn is_jihai(self) -> bool {
-        // Bloody Battle Mahjong has no jihai (wind/dragon tiles)
-        false
-    }
 
     #[inline]
     #[must_use]
     pub const fn is_yaokyuu(self) -> bool {
-        // Bloody Battle Mahjong: only terminal tiles (1 and 9)
         matches_tu8!(self.0, 1m | 9m | 1p | 9p | 1s | 9s)
     }
 
@@ -106,11 +78,9 @@ impl Tile {
         if self.is_unknown() {
             return self;
         }
-        let tile = self.deaka();
-        let kind = tile.0 / 9;
-        let num = tile.0 % 9;
+        let kind = self.0 / 9;
+        let num = self.0 % 9;
 
-        // Bloody Battle Mahjong: only number tiles (0-2 for m, p, s)
         if kind < 3 {
             Self(kind * 9 + (num + 1) % 9)
         } else {
@@ -125,10 +95,8 @@ impl Tile {
         if self.is_unknown() {
             return self;
         }
-        let tile = self.deaka();
-        let kind = tile.0 / 9;
-        let num = tile.0 % 9;
-        // Bloody Battle Mahjong: only number tiles (0-2 for m, p, s)
+        let kind = self.0 / 9;
+        let num = self.0 % 9;
         if kind < 3 {
             Self(kind * 9 + (num + 9 - 1) % 9)
         } else {
@@ -143,13 +111,12 @@ impl Tile {
         if self.is_unknown() {
             return self;
         }
-        let tile = self.deaka();
-        let tid = tile.0;
+        let tid = self.0;
         let kind = tid / 9;
         match kind {
             0 => Self(tid + 9), // m -> p
             1 => Self(tid - 9), // p -> m
-            _ => tile,          // s or unknown
+            _ => self,          // s or unknown
         }
     }
 
@@ -272,8 +239,8 @@ mod test {
     fn next_prev() {
         MJAI_PAI_STRINGS.iter().take(27).for_each(|&s| {
             let tile: Tile = s.parse().unwrap();
-            assert_eq!(tile.prev().next(), tile.deaka());
-            assert_eq!(tile.next().prev(), tile.deaka());
+            assert_eq!(tile.prev().next(), tile);
+            assert_eq!(tile.next().prev(), tile);
         });
     }
 }

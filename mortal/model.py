@@ -7,7 +7,6 @@ from functools import partial
 from itertools import permutations
 from libblood.consts import obs_shape, oracle_obs_shape, ACTION_SPACE, GRP_SIZE
 
-# Bloody Battle: 27 tile kinds (no jihai, no red 5s)
 TILE_KINDS = 27
 
 class ChannelAttention(nn.Module):
@@ -101,7 +100,7 @@ class ResNet(nn.Module):
             nn.Conv1d(conv_channels, 32, kernel_size=3, padding=1),
             actv_builder(),
             nn.Flatten(),
-            nn.Linear(32 * TILE_KINDS, 1024),  # Bloody Battle: 27 tile kinds (was 34)
+            nn.Linear(32 * TILE_KINDS, 1024),
         ]
         self.net = nn.Sequential(*layers)
 
@@ -251,8 +250,7 @@ class GRP(nn.Module):
         self.register_buffer('perms', perms)     # (24, 4)
         self.register_buffer('perms_t', perms_t) # (4, 24)
 
-    # Bloody Battle: input: [kyoku, s[0], s[1], s[2], s[3], agari[0], agari[1], agari[2], agari[3], ding_que[0], ding_que[1], ding_que[2], ding_que[3]]
-    # Bloody Battle: No grand_kyoku, honba, kyotaku
+    # input: [kyoku, s[0], s[1], s[2], s[3], agari[0], agari[1], agari[2], agari[3], ding_que[0], ding_que[1], ding_que[2], ding_que[3]]
     # kyoku: current kyoku (counts from 1)
     # s[i]: score of player i / 10000
     # agari[i]: 1.0 if player i has agari, 0.0 otherwise

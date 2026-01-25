@@ -15,7 +15,6 @@ pub(super) struct KawaItem {
 pub(super) struct Sutehai {
     pub(super) tile: Tile,
     pub(super) is_tedashi: bool,
-    // is_dora and is_riichi removed - Bloody Battle Mahjong does not have dora or riichi
 }
 
 #[derive(Debug, Clone, Serialize)]

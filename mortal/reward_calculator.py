@@ -38,8 +38,8 @@ class RewardCalculator:
         return reward.cpu().numpy()
 
     def calc_delta_points(self, player_id, grp_feature, final_scores):
-        # Bloody Battle: GRP feature is [kyoku, score[0], score[1], score[2], score[3], agari[0], agari[1], agari[2], agari[3], ding_que[0], ding_que[1], ding_que[2], ding_que[3]]
-        # So score indices are 1, 2, 3, 4 (not 3, 4, 5, 6)
+        # GRP feature is [kyoku, score[0], score[1], score[2], score[3], agari[0], agari[1], agari[2], agari[3], ding_que[0], ding_que[1], ding_que[2], ding_que[3]]
+        # So score indices are 1, 2, 3, 4
         # agari indices are 5, 6, 7, 8
         # ding_que indices are 9, 10, 11, 12
         seq = np.concatenate((grp_feature[:, 1 + player_id] * 1e4, [final_scores[player_id]]))

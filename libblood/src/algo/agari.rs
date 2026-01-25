@@ -55,18 +55,13 @@ struct Div {
     kotsu_idxs: ArrayVec<[u8; 4]>,
     shuntsu_idxs: ArrayVec<[u8; 4]>,
     has_chitoi: bool,
-    #[allow(dead_code)] // Bloody Battle: Japanese Mahjong yaku (九莲宝灯), kept for compatibility
     has_chuuren: bool,
-    #[allow(dead_code)] // Bloody Battle: Japanese Mahjong yaku (一气通贯), kept for compatibility
     has_ittsuu: bool,
-    #[allow(dead_code)] // Bloody Battle: Japanese Mahjong yaku (二杯口), kept for compatibility
     has_ryanpeikou: bool,
     // CAUTION: it is sound but not complete, broken if there is any ankan
-    #[allow(dead_code)] // Bloody Battle: Japanese Mahjong yaku (一杯口), kept for compatibility
     has_ipeikou: bool,
 }
 
-/// Bloody Battle Mahjong Agari Result
 /// 
 /// Only fan (番数) is used, no fu (符数)
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -75,11 +70,9 @@ pub enum Agari {
     Fan(u8),
 }
 
-/// Bloody Battle Mahjong Agari Calculator
 #[derive(Debug)]
 pub struct AgariCalculator<'a> {
     /// Must include the winning tile (i.e. must be 3n+2)
-    /// Bloody Battle: 27 tile kinds (no jihai, no red 5s)
     pub tehai: &'a [u8; 27],
     /// `self.pons.is_empty() && self.minkans.is_empty() && self.ankans.is_empty()`
     pub is_menzen: bool,
@@ -92,21 +85,15 @@ pub struct AgariCalculator<'a> {
     /// True for ron (荣和), false for tsumo (自摸)
     pub is_ron: bool,
     
-    /// Bloody Battle specific: Ding Que suit (定缺)
     pub ding_que: Option<crate::mjai::Suit>,
     
-    /// Bloody Battle specific: Was this agari after a kan? (for 杠上花)
     pub is_after_kan: bool,
-    /// Bloody Battle specific: Was this agari from a tile discarded after kan? (for 杠上炮)
     pub is_kan_discard: bool,
-    /// Bloody Battle specific: Is this chankan (抢杠)? If true, the kakan player's gen should not be calculated
     pub is_chankan: bool,
-    /// Bloody Battle specific: Tile ID to exclude from gen count (for chankan, the kakan tile)
     /// If Some, this tile will not be counted as gen even if it appears 4 times
     pub exclude_gen_tile: Option<u8>,
 }
 
-#[allow(dead_code)] // Bloody Battle: Japanese Mahjong specific, kept for compatibility
 struct DivWorker<'a> {
     sup: &'a AgariCalculator<'a>,
     tile14: &'a [u8; 14],
@@ -168,15 +155,12 @@ impl From<u32> for Div {
     }
 }
 
-// Bloody Battle: Agari already derives PartialEq, remove manual impl
 #[allow(dead_code)]
-// Bloody Battle: Agari already derives PartialEq, Eq, so manual impls are removed
 // The derive macro handles Fan(u8) comparison automatically
 
 impl Agari {
     #[must_use]
     pub fn point(self, _is_oya: bool) -> Point {
-        // Bloody Battle: Only Fan, no Normal or Yakuman
         match self {
             Self::Fan(fan) => Point::calc_from_fan(fan),
         }
@@ -186,12 +170,10 @@ impl Agari {
 impl AgariCalculator<'_> {
     /// Check if the hand can agari (和牌)
     /// 
-    /// Bloody Battle: All valid hand structures can agari (no yaku requirement)
     /// But must check Ding Que rule: cannot agari if hand still has ding_que suit tiles
     #[inline]
     #[must_use]
     pub fn has_yaku(&self) -> bool {
-        // Bloody Battle: Check if hand structure is valid (can be divided into groups)
         let (_, key) = get_tile14_and_key(self.tehai);
         let has_valid_structure = AGARI_TABLE.get(&key).is_some();
         
@@ -199,7 +181,6 @@ impl AgariCalculator<'_> {
             return false;
         }
         
-        // Bloody Battle: Check Ding Que rule - cannot agari if hand still has ding_que suit tiles
         if let Some(ding_que_suit) = self.ding_que {
             let ding_que_start = match ding_que_suit {
                 crate::mjai::Suit::Man => 0,
@@ -219,19 +200,15 @@ impl AgariCalculator<'_> {
         true
     }
 
-    /// Search for yaku (not used in Bloody Battle, kept for compatibility)
     #[inline]
     #[must_use]
     pub fn search_yakus(&self) -> Option<Agari> {
-        // Bloody Battle: All valid hands can agari, use agari() instead
         self.agari()
     }
 
-    /// Calculate fan (番数) for Bloody Battle Mahjong
     /// 
     /// Returns the total fan count (1-5, capped at 5)
     /// 
-    /// # Bloody Battle Fan Types:
     /// 1. 平胡（PingHu）：+1番（基础，必须）
     /// 2. 自摸（Tsumo）：+1番（if !is_ron）
     /// 3. 七对（QiDui）：+2番
@@ -249,7 +226,6 @@ impl AgariCalculator<'_> {
     ///     - 杠上炮：杠牌后打出的牌和牌，+1番（平胡1番 + 杠上炮1番 = 2番）
     #[must_use]
     pub fn agari(&self) -> Option<Agari> {
-        // Bloody Battle: Check Ding Que rule first - cannot agari if hand still has ding_que suit tiles
         // This check should be done before checking AGARI_TABLE, because if the hand has ding_que
         // suit tiles, it cannot agari (花猪) regardless of hand structure
         if let Some(ding_que_suit) = self.ding_que {
@@ -269,7 +245,6 @@ impl AgariCalculator<'_> {
             }
         }
         
-        // Bloody Battle: Always has 平胡1番 (base fan)
         let mut fan: u8 = 1;
         
         // 2. 自摸（Tsumo）：+1番
@@ -499,7 +474,6 @@ impl AgariCalculator<'_> {
         Some(Agari::Fan(fan))
     }
 
-    /// Bloody Battle: Japanese Mahjong specific, kept for compatibility
     /// This method is deprecated, use agari() instead
     #[allow(dead_code)]
     fn search_yakus_impl(&self, _return_if_any: bool) -> Option<Agari> {
@@ -507,7 +481,6 @@ impl AgariCalculator<'_> {
     }
 }
 
-#[allow(dead_code)] // Bloody Battle: Japanese Mahjong specific, kept for compatibility
 impl<'a> DivWorker<'a> {
     fn new(calc: &'a AgariCalculator<'a>, tile14: &'a [u8; 14], div: &'a Div) -> Self {
         let pair_tile = tile14[div.pair_idx as usize];
@@ -547,7 +520,6 @@ impl<'a> DivWorker<'a> {
             return false;
         }
 
-        // Bloody Battle: No jihai (tiles < 27)
         // If winning_tile >= 27, it's invalid, skip
         if self.sup.winning_tile >= 27 {
             return false;
@@ -576,7 +548,6 @@ impl<'a> DivWorker<'a> {
     }
 
     fn all_shuntsu(&self) -> impl Iterator<Item = u8> + '_ {
-        // Bloody Battle: No chis, only menzen shuntsu
         self.menzen_shuntsu.iter().copied()
     }
 
@@ -623,11 +594,9 @@ impl<'a> DivWorker<'a> {
             .map(|&t| if must_tile!(t).is_yaokyuu() { 16 } else { 8 })
             .sum::<u8>();
 
-        // Bloody Battle: No jihai (P|F|C), no bakaze/jikaze, so skip this check
         // if matches_tu8!(self.pair_tile, P | F | C) {
         //     fu += 2;
         // } else {
-        //     // Bloody Battle: This rule was from Tenhou (Japanese Mahjong), not applicable
         //     // As per [Tenhou's rule](https://tenhou.net/man/#RULE):
         //     //
         //     // > 連風牌は4符
@@ -676,15 +645,11 @@ impl<'a> DivWorker<'a> {
         ((fu - 1) / 10 + 1) * 10
     }
 
-    #[allow(unreachable_code)] // Bloody Battle: Early return, unreachable code below is for reference
     fn search_yakus<const RETURN_IF_ANY: bool>(&self) -> Option<Agari> {
-        // Bloody Battle: search_yakus in DivWorker is deprecated
-        // This method should not be used for Bloody Battle Mahjong
         // Return None to indicate it's not applicable
         return None;
         
         // The code below is unreachable but kept for reference
-        // It uses Japanese Mahjong rules and needs to be completely rewritten for Bloody Battle
         // All code after return None is unreachable, so we use #[allow] to suppress warnings
         #[allow(unreachable_code, unused_variables, unused_macros, dead_code)]
         {
@@ -718,7 +683,6 @@ impl<'a> DivWorker<'a> {
             if self.div.has_ittsuu {
                 check_early_return! { han += 2 };
             }
-            // Bloody Battle: These fields don't exist in Div struct (Japanese Mahjong only)
             // if self.div.has_sanshoku {
             //     check_early_return! { han += 2 };
             // }
@@ -740,7 +704,6 @@ impl<'a> DivWorker<'a> {
             if self.div.has_chuuren {
                 check_early_return! { yakuman += 1 };
             }
-            // Bloody Battle: These fields don't exist in Div struct (Japanese Mahjong only)
             // if self.div.has_suukantsu {
             //     check_early_return! { yakuman += 1 };
             // }
@@ -934,7 +897,6 @@ impl<'a> DivWorker<'a> {
                 _ => (),
             };
 
-            // Bloody Battle: No jihai (F), so ryuisou check is simplified
             let has_ryuisou = self
                 .all_kotsu_and_kantsu()
                 .chain(iter::once(self.pair_tile))
@@ -946,7 +908,6 @@ impl<'a> DivWorker<'a> {
             }
 
             if !has_tanyao {
-                // Bloody Battle: No jihai, no bakaze/jikaze, so skip this check
                 // 役牌 + 大小三元四喜
                 // let mut has_jihai = [false; 7];
                 // for k in self.all_kotsu_and_kantsu() {
@@ -963,7 +924,6 @@ impl<'a> DivWorker<'a> {
                 //     check_early_return! { han += 1 };
                 // }
 
-                // Bloody Battle: No jihai, so skip all jihai-related checks
                 // let saneins = (4..7).filter(|&i| has_jihai[i]).count() as u8;
                 // if saneins > 0 {
                 //     // 役牌:三元牌
@@ -972,21 +932,18 @@ impl<'a> DivWorker<'a> {
                 //         // 大三元
                 //         check_early_return! { yakuman += 1 };
                 //     }
-                //     // Bloody Battle: No jihai (P|F|C), so skip this check
                 //     // else if saneins == 2 && matches_tu8!(self.pair_tile, P | F | C) {
                 //     //     // 小三元
                 //     //     check_early_return! { han += 2 };
                 //     // }
                 // }
 
-                // Bloody Battle: No jihai, so skip all jihai-related checks
                 // let winds = (0..4).filter(|&i| has_jihai[i]).count();
                 // #[allow(clippy::if_same_then_else)]
                 // if winds == 4 {
                 //     // 大四喜
                 //     check_early_return! { yakuman += 1 };
                 // }
-                // // Bloody Battle: No jihai (E|S|W|N), so skip this check
                 // // else if winds == 3 && matches_tu8!(self.pair_tile, E | S | W | N) {
                 // //     // 小四喜
                 // //     check_early_return! { yakuman += 1 };
@@ -1047,7 +1004,6 @@ pub fn ensure_init() {
     assert_eq!(AGARI_TABLE.len(), AGARI_TABLE_SIZE);
 }
 
-/// Bloody Battle Mahjong: 27 tile kinds (no jihai)
 fn get_tile14_and_key(tiles: &[u8; 27]) -> ([u8; 14], u32) {
     let mut tile14 = [0; 14];
     let mut tile14_iter = tile14.iter_mut();
@@ -1089,27 +1045,22 @@ fn get_tile14_and_key(tiles: &[u8; 27]) -> ([u8; 14], u32) {
         }
     }
 
-    // Bloody Battle: No jihai, so we're done after processing 3 suits
     (tile14, key)
 }
 
-/// Bloody Battle: This function is kept for compatibility but riichi is not used.
 /// `tehai` must already contain `tile`. `true` is returned if making an ankan
 /// with the tile is legal.
 ///
-/// Bloody Battle Mahjong does not have riichi (立直), so this function always allows ankan
 /// if the tile count is 4.
 ///
 /// The behavior is undefined if `tehai` is not tenpai.
 #[must_use]
 pub fn check_ankan_after_riichi(tehai: &[u8; 27], len_div3: u8, tile: Tile, strict: bool) -> bool {
-    let tile_id = tile.deaka().as_usize();
+    let tile_id = tile.as_usize();
     if tile_id >= 27 || tehai[tile_id] != 4 {
         return false;
     }
 
-    // Bloody Battle: No jihai, so no special check for jihai
-    // Bloody Battle: No riichi (立直), so ankan is always allowed if it doesn't change waits
     let mut tehai_before_tsumo = *tehai;
     tehai_before_tsumo[tile_id] -= 1;
 
@@ -1207,7 +1158,6 @@ mod test {
 
     #[test]
     fn agari_calc() {
-        // Bloody Battle Mahjong test cases
         
         // Test 1: Basic 平胡 (PingHu) - 1番 (base fan)
         let tehai = hand("123456m 789p 11s 2m").unwrap();
@@ -1602,13 +1552,10 @@ mod test {
         assert_eq!(agari, Agari::Fan(5));
         
         return; // Keep old tests below commented out
-        // Bloody Battle: These tests use Japanese Mahjong rules
-        // They need to be rewritten for Bloody Battle Mahjong
         let tehai = hand("2234455m 234p 234s 3m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1621,10 +1568,8 @@ mod test {
             exclude_gen_tile: None,
         };
         let yaku = calc.agari().unwrap();
-        // Bloody Battle: Use Fan instead of Normal
         assert!(matches!(yaku, Agari::Fan(_)));
 
-        // Bloody Battle: Test case needs update - hand contains jihai (777z)
         // Skipping this test for now
         return;
         
@@ -1632,7 +1577,6 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1650,12 +1594,10 @@ mod test {
             points,
             Point {
                 ron: 7700,
-                tsumo_oya: 0,
                 tsumo_ko: 2600
             }
         );
 
-        // All test cases below are skipped - they need to be rewritten for Bloody Battle
         // They use Japanese Mahjong rules and Agari::Normal/Yakuman format
         // All code below is commented out to avoid compilation errors with jihai references
         return;
@@ -1670,7 +1612,6 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1686,7 +1627,6 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1701,7 +1641,6 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1718,7 +1657,6 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &tu8![9m,],
@@ -1735,7 +1673,6 @@ mod test {
         let mut calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &tu8![9s,],
@@ -1757,7 +1694,6 @@ mod test {
         let mut calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1779,7 +1715,6 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &tu8![9p,],
@@ -1796,7 +1731,6 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: false,
-            // Bloody Battle: No chis
             pons: &tu8![9p,],
             minkans: &[],
             ankans: &[],
@@ -1813,7 +1747,6 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1830,7 +1763,6 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1846,7 +1778,6 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: false,
-            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1863,7 +1794,6 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1882,7 +1812,6 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: false,
-            // Bloody Battle: No chis
             pons: &tu8![N,],
             minkans: &[],
             ankans: &[],
@@ -1900,7 +1829,6 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: false,
-            // Bloody Battle: No chis
             pons: &tu8![S, C],
             minkans: &[],
             ankans: &tu8![N,],
@@ -1928,7 +1856,6 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1946,7 +1873,6 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1964,7 +1890,6 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: false,
-            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1982,7 +1907,6 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -1999,7 +1923,6 @@ mod test {
         let calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: true,
-            // Bloody Battle: No chis
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -2010,7 +1933,6 @@ mod test {
         };
         let yaku = calc.search_yakus().unwrap();
         // 三暗刻, 対々和, 混一色, 混老頭, 小三元, double 南, 白, 中
-        assert!(matches!(yaku, Agari::Normal { han: 15, .. })); // Bloody Battle: Agari::Normal removed
         */
     }
 }

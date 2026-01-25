@@ -2,13 +2,11 @@
 //!
 //! Source: <https://github.com/tomohxx/shanten-number-calculator/>
 
-// Bloody Battle: tuz not used
 use std::io::prelude::*;
 use std::sync::LazyLock;
 
 use flate2::read::GzDecoder;
 
-// Bloody Battle: No jihai, so JIHAI_TABLE is removed
 const SUHAI_TABLE_SIZE: usize = 1_940_777;
 
 static SUHAI_TABLE: LazyLock<Vec<[u8; 10]>> = LazyLock::new(|| {
@@ -38,7 +36,6 @@ fn read_table(gzipped: &[u8], length: usize) -> Vec<[u8; 10]> {
 }
 
 pub fn ensure_init() {
-    // Bloody Battle: No jihai table
     assert_eq!(SUHAI_TABLE.len(), SUHAI_TABLE_SIZE);
 }
 
@@ -87,7 +84,6 @@ fn add_suhai(lhs: &mut [u8; 10], index: usize, m: usize) {
     }
 }
 
-// Bloody Battle: No jihai, so add_jihai function is removed
 
 fn sum_tiles(tiles: &[u8]) -> usize {
     tiles.iter().fold(0, |acc, &x| acc * 5 + x as usize)
@@ -95,7 +91,6 @@ fn sum_tiles(tiles: &[u8]) -> usize {
 
 /// `len_div3` must be within [0, 4].
 #[must_use]
-// Bloody Battle: 27 tile kinds (no jihai)
 pub fn calc_normal(tiles: &[u8; 27], len_div3: u8) -> i8 {
     let len_div3 = len_div3 as usize;
 
@@ -105,13 +100,11 @@ pub fn calc_normal(tiles: &[u8; 27], len_div3: u8) -> i8 {
         .unwrap_or_default();
     add_suhai(&mut ret, sum_tiles(&tiles[9..2 * 9]), len_div3);
     add_suhai(&mut ret, sum_tiles(&tiles[2 * 9..3 * 9]), len_div3);
-    // Bloody Battle: No jihai, so no add_jihai call
 
     (ret[5 + len_div3] as i8) - 1
 }
 
 #[must_use]
-// Bloody Battle: 27 tile kinds (no jihai)
 pub fn calc_chitoi(tiles: &[u8; 27]) -> i8 {
     let mut pairs = 0;
     let mut kinds = 0;
@@ -127,14 +120,11 @@ pub fn calc_chitoi(tiles: &[u8; 27]) -> i8 {
 }
 
 #[must_use]
-// Bloody Battle: No kokushi (requires jihai)
 pub fn calc_kokushi(_tiles: &[u8; 27]) -> i8 {
-    // Bloody Battle: Kokushi is not possible without jihai
     i8::MAX // Return max value to indicate impossible
 }
 
 #[must_use]
-// Bloody Battle: 27 tile kinds (no jihai)
 pub fn calc_all(tiles: &[u8; 27], len_div3: u8) -> i8 {
     let mut shanten = calc_normal(tiles, len_div3);
     if shanten <= 0 || len_div3 < 4 {
@@ -142,7 +132,6 @@ pub fn calc_all(tiles: &[u8; 27], len_div3: u8) -> i8 {
     }
 
     shanten = shanten.min(calc_chitoi(tiles));
-    // Bloody Battle: No kokushi (requires jihai)
     shanten
 }
 
@@ -153,7 +142,6 @@ mod test {
 
     #[test]
     fn calc_3n_plus_1() {
-        // Bloody Battle: No jihai, updated test cases
         let tehai = hand("1111m 333p 222s").unwrap();
         assert_eq!(calc_all(&tehai, 4), 1);
         let tehai = hand("147m 258p 369s").unwrap();
@@ -164,7 +152,6 @@ mod test {
         assert_eq!(calc_all(&tehai, 2), 4);
         let tehai = hand("4455s").unwrap();
         assert_eq!(calc_all(&tehai, 1), 0);
-        // Bloody Battle: No jihai, removed single jihai test
         let tehai = hand("15559m 19p 19s").unwrap();
         assert_eq!(calc_all(&tehai, 4), 3);
         let tehai = hand("9999m 6677p 88s").unwrap();
@@ -175,7 +162,6 @@ mod test {
 
     #[test]
     fn calc_3n_plus_2() {
-        // Bloody Battle: No jihai, updated test cases
         let tehai = hand("2344456m 14p 127s 7p").unwrap();
         assert_eq!(calc_all(&tehai, 4), 3);
         let tehai = hand("2344456m 14p 127s 5p").unwrap();

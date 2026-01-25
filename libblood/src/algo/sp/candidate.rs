@@ -16,7 +16,6 @@ pub struct Candidate {
     /// 巡目ごとの期待値
     pub exp_values: ArrayVec<[f32; MAX_TSUMOS_LEFT]>,
     /// 有効牌及び枚数の一覧
-    /// Bloody Battle: 27 tile kinds (no jihai)
     pub required_tiles: ArrayVec<[RequiredTile; 27]>,
     pub num_required_tiles: u8,
     /// 向聴戻しになるかどうか
@@ -29,7 +28,6 @@ pub(super) struct RawCandidate<'a> {
     pub(super) tenpai_probs: &'a [f32],
     pub(super) win_probs: &'a [f32],
     pub(super) exp_values: &'a [f32],
-    /// Bloody Battle: 27 tile kinds (no jihai)
     pub(super) required_tiles: ArrayVec<[RequiredTile; 27]>,
     pub(super) shanten_down: bool,
 }

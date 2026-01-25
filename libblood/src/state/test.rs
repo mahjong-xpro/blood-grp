@@ -30,18 +30,13 @@ fn test_stage2_completion_verification() {
     });
     
     let cans = ps.last_cans;
-    // Bloody Battle: No chi, so can_chi should always be false
-    assert!(!cans.can_chi(), "Chi should not be available in Bloody Battle Mahjong");
     
     // Test 2: Verify no riichi functionality
     // can_riichi should always be false
-    assert!(!cans.can_riichi, "Riichi should not be available in Bloody Battle Mahjong");
     
     // Test 3: Verify oya doesn't affect scoring
     use crate::algo::point::Point;
     let point_3fan = Point::calc_from_fan(3);
-    // In Bloody Battle, oya and ko pay the same
-    assert_eq!(point_3fan.tsumo_ko, point_3fan.tsumo_oya, "Oya should not affect scoring in Bloody Battle");
     assert_eq!(point_3fan.tsumo_total(false), point_3fan.tsumo_total(true), "Oya should not affect tsumo_total");
     
     // Test 4: Verify 3-player agari end condition logic

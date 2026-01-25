@@ -24,7 +24,6 @@ use tinyvec::{ArrayVec, TinyVec};
 pub struct PlayerState {
     pub(super) player_id: u8,
 
-    /// Bloody Battle Mahjong: 27 tile kinds (no jihai, no red 5s)
     #[derivative(Default(value = "[0; 27]"))]
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) tehai: [u8; 27],
@@ -64,8 +63,6 @@ pub struct PlayerState {
     pub(super) kawa: [TinyVec<[Option<KawaItem>; 24]>; 4],
     pub(super) last_tedashis: [Option<Sutehai>; 4],
 
-    /// Using 34-D arrays here may be more efficient, but I don't want to mess up
-    /// with aka doras.
     pub(super) kawa_overview: [ArrayVec<[Tile; 24]>; 4],
     pub(super) fuuro_overview: [ArrayVec<[ArrayVec<[Tile; 4]>; 4]>; 4],
     /// In this field all `Tile` are deaka'd.
@@ -82,14 +79,13 @@ pub struct PlayerState {
     pub(super) last_kawa_tile: Option<Tile>,
     pub(super) last_cans: ActionCandidate,
 
-    /// Both deaka'd
     pub(super) ankan_candidates: ArrayVec<[Tile; 3]>,
     pub(super) kakan_candidates: ArrayVec<[Tile; 3]>,
     pub(super) chankan_chance: Option<()>,
     /// Track which player performed kakan when chankan occurs (for excluding gen)
     /// This is set when chankan_chance is Some(())
     pub chankan_kakan_actor: Option<u8>,
-    /// Bloody Battle: The tile that was kakan'd (for chankan gen exclusion)
+    /// The tile that was kakan'd (for chankan gen exclusion)
     pub chankan_kakan_tile: Option<u8>,
     /// Track if the last discarded tile was after a kan (for 杠上炮)
     /// This is set in dahai() when intermediate_kan is not empty
@@ -103,12 +99,10 @@ pub struct PlayerState {
     pub(super) kans_on_board: u8,
 
     pub(super) is_menzen: bool,
-    /// For agari calc, all deaka'd.
     pub(super) pons: ArrayVec<[u8; 4]>,
     pub(super) minkans: ArrayVec<[u8; 4]>,
     pub(super) ankans: ArrayVec<[u8; 4]>,
 
-    /// Bloody Battle Mahjong specific fields
     pub has_agari: bool,
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) ding_que: Option<crate::mjai::Suit>,
@@ -117,8 +111,7 @@ pub struct PlayerState {
     /// For shanten calc.
     pub(super) tehai_len_div3: u8,
 
-    /// Used in can_riichi, also in single-player features to get the shanten
-    /// for 3n+2.
+    /// Used in single-player features to get the shanten for 3n+2.
     pub(super) has_next_shanten_discard: bool,
 }
 
@@ -220,7 +213,6 @@ single player table (max EV):
             self.kyoku + 1,
             self.at_turn,
             format!("{:?}", self.scores),
-            // Bloody Battle: No akas_in_hand
             tiles_to_string(&self.tehai, [false; 3]),
             format!("{:?}", self.fuuro_overview[0]),
             format!("{:?}", self.ankan_overview[0]),
@@ -237,7 +229,7 @@ single player table (max EV):
 }
 
 impl PlayerState {
-    /// Bloody Battle: Check if ding que (定缺) is complete (no ding_que suit tiles in hand)
+    /// Check if ding que (定缺) is complete (no ding_que suit tiles in hand)
     #[must_use]
     pub fn check_ding_que_complete(&self) -> bool {
         if let Some(suit) = self.ding_que {
@@ -252,7 +244,7 @@ impl PlayerState {
         }
     }
 
-    /// Bloody Battle: Count remaining ding_que suit tiles in hand
+    /// Count remaining ding_que suit tiles in hand
     #[must_use]
     pub fn count_ding_que_tiles(&self) -> u8 {
         if let Some(suit) = self.ding_que {

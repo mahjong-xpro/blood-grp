@@ -1,7 +1,6 @@
 use super::PlayerState;
 use super::action::ActionCandidate;
 use super::item::{KawaItem, Sutehai};
-// Bloody Battle: ChiPon removed (no chi)
 use crate::algo::agari::AgariCalculator;
 use crate::algo::shanten;
 use crate::mjai::Event;
@@ -53,7 +52,6 @@ impl PlayerState {
             self.kakan_candidates.clear();
         }
 
-        // Bloody Battle: No furiten or ippatsu
 
         match *event {
             Event::StartKyoku {
@@ -77,7 +75,6 @@ impl PlayerState {
                 tsumogiri,
             } => self.dahai(actor, pai, tsumogiri)?,
 
-            // Event::Chi removed - Bloody Battle Mahjong does not have chi
 
             Event::Pon {
                 actor,
@@ -95,8 +92,6 @@ impl PlayerState {
 
             Event::Kakan { actor, pai, .. } => self.kakan(actor, pai)?,
             Event::Ankan { actor, consumed } => self.ankan(actor, consumed)?,
-            // Event::Dora removed - Bloody Battle Mahjong does not have dora
-            // Event::Reach and Event::ReachAccepted removed - Bloody Battle Mahjong does not have riichi (立直)
 
             _ => (),
         };
@@ -111,7 +106,6 @@ impl PlayerState {
         scores: [i32; 4],
         tehais: [[Tile; 13]; 4],
     ) -> Result<()> {
-        // Bloody Battle Mahjong: Initialize player state
         self.tehai.fill(0);
         self.waits.fill(false);
         self.tiles_seen.fill(0);
@@ -126,27 +120,23 @@ impl PlayerState {
         self.scores = scores;
         self.scores.rotate_left(self.player_id as usize);
 
-        // Bloody Battle: Initialize ding_que
         self.ding_que = None;
         self.other_ding_que.fill(None);
         self.has_agari = false;
 
         self.ankan_candidates.clear();
         self.kakan_candidates.clear();
-        // Bloody Battle: Reset chankan tracking at start of each turn
         self.chankan_chance = None;
         self.chankan_kakan_actor = None;
         self.chankan_kakan_tile = None;
         self.last_discard_was_after_kan = false;
         
-        // Bloody Battle: Initialize tiles_left to 56 (108 - 52 = 56 remaining tiles)
-        // This will be synchronized with BoardState's tiles_left during the first tsumo
         self.tiles_left = 56;
         self.at_turn = 0;
         
         // Initialize tehai from tehais
         for &tile in &tehais[self.player_id as usize] {
-            let tid = tile.deaka().as_usize();
+            let tid = tile.as_usize();
             self.tehai[tid] += 1;
         }
         
@@ -156,7 +146,7 @@ impl PlayerState {
         Ok(())
     }
     
-    /// Handle DingQue event (定缺) for Bloody Battle Mahjong
+    /// Handle DingQue event (定缺)
     fn ding_que(&mut self, actor: u8, suit: crate::mjai::Suit) -> Result<()> {
         if actor == self.player_id {
             self.ding_que = Some(suit);
@@ -188,12 +178,9 @@ impl PlayerState {
         self.witness_tile(pai)?;
         self.move_tile(pai, MoveType::Tsumo)?;
 
-        // Bloody Battle: No riichi (立直), always update shanten
         self.update_shanten_discards();
 
-        if self.waits[pai.deaka().as_usize()] {
-            // Bloody Battle: All valid hands can agari (no yaku requirement)
-            // Always check has_yaku() to ensure ding_que rule is checked
+        if self.waits[pai.as_usize()] {
             // Even for is_menzen, tiles_left == 0, or at_rinshan cases
             let agari_calc = AgariCalculator {
                 tehai: &self.tehai,
@@ -201,7 +188,7 @@ impl PlayerState {
                 pons: &self.pons,
                 minkans: &self.minkans,
                 ankans: &self.ankans,
-                winning_tile: pai.deaka().as_u8(),
+                winning_tile: pai.as_u8(),
                 is_ron: false,
                 ding_que: self.ding_que,
                 is_after_kan: self.at_rinshan, // 杠上花：从岭上牌摸的
@@ -217,7 +204,6 @@ impl PlayerState {
             return Ok(());
         }
 
-        // Bloody Battle: No riichi, removed riichi-specific ankan check
 
         if self.kans_on_board < 4 {
             self.tehai
@@ -236,12 +222,6 @@ impl PlayerState {
                 });
         }
 
-        // Bloody Battle: No riichi (立直)
-        self.last_cans.can_riichi = false
-            && self.tiles_left >= 4
-            && self.scores[0] >= 1000
-            && (self.shanten == 0 || self.shanten == 1 && self.has_next_shanten_discard);
-
         Ok(())
     }
 
@@ -253,7 +233,6 @@ impl PlayerState {
             self.witness_tile(pai)?;
         }
 
-        // Bloody Battle: No riichi (立直), no dora (宝牌)
         // Check if there was a kan before this discard (for 杠上炮)
         let was_kan_before_discard = !self.intermediate_kan.is_empty();
         // Store this info for agari_points() to use later
@@ -263,10 +242,9 @@ impl PlayerState {
             tile: pai,
             is_tedashi: !tsumogiri,
         };
-        // Bloody Battle: No chi, only pon (chi_pon field kept for compatibility)
         let kawa_item = KawaItem {
+            chi_pon: None,
             kan: mem::take(&mut self.intermediate_kan),
-            chi_pon: None, // Bloody Battle: No chi, pon info is in fuuro_overview
             sutehai,
         };
         self.kawa[actor_rel].push(Some(kawa_item));
@@ -280,12 +258,11 @@ impl PlayerState {
         if actor_rel == 0 {
             self.forbidden_tiles.fill(false);
             self.at_rinshan = false;
-            self.discarded_tiles[pai.deaka().as_usize()] = true;
+            self.discarded_tiles[pai.as_usize()] = true;
 
-            // Bloody Battle: Always update shanten and waits (no riichi/立直 or furiten/振听)
-            if self.next_shanten_discards[pai.deaka().as_usize()] {
+            if self.next_shanten_discards[pai.as_usize()] {
                 self.shanten -= 1;
-            } else if !self.keep_shanten_discards[pai.deaka().as_usize()] {
+            } else if !self.keep_shanten_discards[pai.as_usize()] {
                 self.update_shanten();
             }
             self.update_waits_and_furiten();
@@ -293,12 +270,11 @@ impl PlayerState {
             return Ok(());
         }
 
-        if self.waits[pai.deaka().as_usize()] {
-            // Bloody Battle: All valid hands can agari
+        if self.waits[pai.as_usize()] {
             // Always check has_yaku() to ensure ding_que rule is checked
             // Even for tiles_left == 0 case
             let mut tehai_with_winning_tile = self.tehai;
-            tehai_with_winning_tile[pai.deaka().as_usize()] += 1;
+            tehai_with_winning_tile[pai.as_usize()] += 1;
 
             let agari_calc = AgariCalculator {
                 tehai: &tehai_with_winning_tile,
@@ -306,7 +282,7 @@ impl PlayerState {
                 pons: &self.pons,
                 minkans: &self.minkans,
                 ankans: &self.ankans,
-                winning_tile: pai.deaka().as_u8(),
+                winning_tile: pai.as_u8(),
                 is_ron: true,
                 ding_que: self.ding_que,
                 is_after_kan: false, // 荣和不是从岭上牌摸的
@@ -316,28 +292,24 @@ impl PlayerState {
             };
             self.last_cans.can_ron_agari = agari_calc.has_yaku();
 
-            // Bloody Battle: No furiten tracking
         }
 
         if self.tiles_left == 0 {
             return Ok(());
         }
 
-        // Bloody Battle: No chi
-        self.last_cans.can_pon = self.tehai[pai.deaka().as_usize()] >= 2;
+        self.last_cans.can_pon = self.tehai[pai.as_usize()] >= 2;
         self.last_cans.can_daiminkan =
-            self.kans_on_board < 4 && self.tehai[pai.deaka().as_usize()] == 3;
+            self.kans_on_board < 4 && self.tehai[pai.as_usize()] == 3;
 
         Ok(())
     }
 
-    // Bloody Battle: No chi, this function is completely removed
 
     fn pon(&mut self, actor: u8, target: u8, pai: Tile, consumed: [Tile; 2]) -> Result<()> {
         let actor_rel = self.rel(actor);
         let full_set = consumed.into_iter().chain(iter::once(pai)).collect();
         self.fuuro_overview[actor_rel].push(full_set);
-        // Bloody Battle: No chi, only pon
         // Chi/pon info is stored in fuuro_overview, not intermediate_chi_pon
         self.pad_kawa_for_pon_or_daiminkan(actor, target);
 
@@ -346,9 +318,7 @@ impl PlayerState {
                 self.witness_tile(t)?;
             }
             for _t in full_set {
-                // Bloody Battle: No dora
             }
-            // Bloody Battle: No riichi (立直)
             return Ok(());
         }
 
@@ -359,14 +329,13 @@ impl PlayerState {
         // `tsumogiri` to false in the Dahai after Pon
         self.last_self_tsumo = None;
 
-        // Bloody Battle: No dora
         for t in consumed {
             self.move_tile(t, MoveType::FuuroConsume)?;
         }
-        self.pons.push(pai.deaka().as_u8());
+        self.pons.push(pai.as_u8());
 
-        if self.tehai[pai.deaka().as_usize()] > 0 {
-            self.forbidden_tiles[pai.deaka().as_usize()] = true;
+        if self.tehai[pai.as_usize()] > 0 {
+            self.forbidden_tiles[pai.as_usize()] = true;
         }
 
         // NOTES: this is 3n+2
@@ -390,9 +359,7 @@ impl PlayerState {
                 self.witness_tile(t)?;
             }
             for _t in full_set {
-                // Bloody Battle: No dora
             }
-            // Bloody Battle: No riichi (立直)
             return Ok(());
         }
 
@@ -400,11 +367,10 @@ impl PlayerState {
         self.is_menzen = false;
         self.tehai_len_div3 = self.tehai_len_div3.saturating_sub(1);
 
-        // Bloody Battle: No dora
         for t in consumed {
             self.move_tile(t, MoveType::FuuroConsume)?;
         }
-        self.minkans.push(pai.deaka().as_u8());
+        self.minkans.push(pai.as_u8());
 
         // The shanten number and the shape of tenpai (if any) may be
         // changed after a daiminkan.
@@ -419,7 +385,7 @@ impl PlayerState {
     fn kakan(&mut self, actor: u8, pai: Tile) -> Result<()> {
         let actor_rel = self.rel(actor);
         for fuuro in &mut self.fuuro_overview[actor_rel] {
-            if fuuro[0].deaka() == pai.deaka() {
+            if fuuro[0] == pai {
                 fuuro.push(pai);
                 break;
             }
@@ -429,20 +395,18 @@ impl PlayerState {
 
         if actor_rel != 0 {
             self.witness_tile(pai)?;
-            // Bloody Battle: No dora
             self.last_kawa_tile = Some(pai); // for getting winning tile in self.agari
 
             // 槍槓 (抢杠)
             // 当其他玩家加杠时，如果听的牌正好是加杠的牌，可以抢杠和牌
             // 抢杠时，加杠的玩家的根不应该计算
-            if !self.at_furiten && self.waits[pai.deaka().as_usize()] {
+            if !self.at_furiten && self.waits[pai.as_usize()] {
                 self.last_cans.can_ron_agari = true;
                 self.to_mark_same_cycle_furiten = Some(());
                 self.chankan_chance = Some(());
                 self.chankan_kakan_actor = Some(actor); // 记录加杠的玩家，用于排除其根
-                self.chankan_kakan_tile = Some(pai.deaka().as_u8()); // 记录加杠的牌，用于排除其根
+                self.chankan_kakan_tile = Some(pai.as_u8()); // 记录加杠的牌，用于排除其根
             } else {
-                // Bloody Battle: No ippatsu
             }
 
             return Ok(());
@@ -450,15 +414,15 @@ impl PlayerState {
 
         self.at_rinshan = true;
         self.move_tile(pai, MoveType::FuuroConsume)?;
-        self.pons.retain(|&t| t != pai.deaka().as_u8());
-        self.minkans.push(pai.deaka().as_u8());
+        self.pons.retain(|&t| t != pai.as_u8());
+        self.minkans.push(pai.as_u8());
 
         // The shanten number and the shape of tenpai (if any) may
         // be changed after an kakan, because the kan'd tile may
         // come from the existing hand.
-        if self.next_shanten_discards[pai.deaka().as_usize()] {
+        if self.next_shanten_discards[pai.as_usize()] {
             self.shanten -= 1;
-        } else if !self.keep_shanten_discards[pai.deaka().as_usize()] {
+        } else if !self.keep_shanten_discards[pai.as_usize()] {
             self.update_shanten();
         }
         self.update_waits_and_furiten();
@@ -468,17 +432,15 @@ impl PlayerState {
 
     fn ankan(&mut self, actor: u8, consumed: [Tile; 4]) -> Result<()> {
         let actor_rel = self.rel(actor);
-        let tile = consumed[0].deaka();
+        let tile = consumed[0];
         self.ankan_overview[actor_rel].push(tile);
         self.intermediate_kan.push(tile);
         self.kans_on_board += 1;
 
-        // Bloody Battle: No riichi (立直) or ippatsu (一发)
 
         if actor_rel != 0 {
             for t in consumed {
                 self.witness_tile(t)?;
-                // Bloody Battle: No dora
             }
             return Ok(());
         }
@@ -490,7 +452,6 @@ impl PlayerState {
         }
         self.ankans.push(tile.as_u8());
 
-        // Bloody Battle: Always update shanten (no riichi/立直)
         // The shanten number and the shape of tenpai (if any) may
         // be changed after an ankan. See the example in daiminkan.
         self.update_shanten();
@@ -499,17 +460,14 @@ impl PlayerState {
         Ok(())
     }
 
-    // Bloody Battle: No riichi (立直), these functions are completely removed
     // They are kept as dead code stubs for backward compatibility
     #[allow(dead_code)]
     const fn reach_removed(&mut self, _actor: u8) {
-        // Bloody Battle: No riichi (立直)
         // This function should not be called
     }
 
     #[allow(dead_code)]
     fn reach_accepted_removed(&mut self, _actor: u8) -> Result<()> {
-        // Bloody Battle: No riichi (立直)
         // This function should not be called
         Ok(())
     }
@@ -518,7 +476,6 @@ impl PlayerState {
         ((actor + 4 - self.player_id) % 4) as usize
     }
 
-    /// Updates `tiles_seen` (Bloody Battle: No dora or akas).
     ///
     /// Returns an error if we have already witnessed 4 such tiles.
     pub(super) fn witness_tile(&mut self, tile: Tile) -> Result<()> {
@@ -526,7 +483,7 @@ impl PlayerState {
             !tile.is_unknown(),
             "rule violation: attempt to witness an unknown tile",
         );
-        let tile_id = tile.deaka().as_usize();
+        let tile_id = tile.as_usize();
 
         let seen = &mut self.tiles_seen[tile_id];
         ensure!(
@@ -535,16 +492,14 @@ impl PlayerState {
         );
         *seen += 1;
 
-        // Bloody Battle: No dora or akas
         Ok(())
     }
 
-    /// Updates `tehai` (Bloody Battle: No akas_in_hand or doras_owned).
     ///
     /// Returns an error when trying to discard or consume a tile that the
     /// player doesn't own.
     pub(super) fn move_tile(&mut self, tile: Tile, move_type: MoveType) -> Result<()> {
-        let tile_id = tile.deaka().as_usize();
+        let tile_id = tile.as_usize();
         let tehai_tile = &mut self.tehai[tile_id];
         match move_type {
             MoveType::Tsumo => {
@@ -566,14 +521,12 @@ impl PlayerState {
             }
         }
 
-        // Bloody Battle: No akas
         Ok(())
     }
 
     /// Updates `dora_indicators`, witness the dora indicator itself and
     /// recounts doras (`doras_seen` and `doras_owned`) based on all the seen
     /// tiles.
-    // Bloody Battle: No dora, this function is completely removed
 
     pub(super) fn pad_kawa_for_pon_or_daiminkan(&mut self, abs_actor: u8, abs_target: u8) {
         let mut i = (abs_target + 1) % 4;
@@ -592,50 +545,6 @@ impl PlayerState {
             .for_each(|kawa| kawa.push(None));
     }
 
-    #[allow(dead_code)] // Bloody Battle: No chi (吃), kept for compatibility
-    pub(super) fn set_can_chi_from_tile(&mut self, tile: Tile) {
-        self.last_cans.can_chi_low = false;
-        self.last_cans.can_chi_mid = false;
-        self.last_cans.can_chi_high = false;
-
-        let tile_id = tile.deaka().as_usize();
-        let literal_num = tile_id % 9 + 1;
-
-        // it considered case like 1111234 where you cannot chi 14
-        if literal_num <= 7 && self.tehai[tile_id + 1] > 0 && self.tehai[tile_id + 2] > 0 {
-            // TODO: check the conditions only when self.shanten == 0?
-            let mut tehai_after = self.tehai;
-            tehai_after[tile_id] = 0;
-            tehai_after[tile_id + 1] -= 1;
-            tehai_after[tile_id + 2] -= 1;
-            if literal_num < 7 {
-                tehai_after[tile_id + 3] = 0;
-            }
-            self.last_cans.can_chi_low = tehai_after.iter().any(|&t| t > 0);
-        }
-
-        if matches!(literal_num, 2..=8)
-            && self.tehai[tile_id - 1] > 0
-            && self.tehai[tile_id + 1] > 0
-        {
-            let mut tehai_after = self.tehai;
-            tehai_after[tile_id] = 0;
-            tehai_after[tile_id - 1] -= 1;
-            tehai_after[tile_id + 1] -= 1;
-            self.last_cans.can_chi_mid = tehai_after.iter().any(|&t| t > 0);
-        }
-
-        if literal_num >= 3 && self.tehai[tile_id - 2] > 0 && self.tehai[tile_id - 1] > 0 {
-            let mut tehai_after = self.tehai;
-            tehai_after[tile_id] = 0;
-            tehai_after[tile_id - 2] -= 1;
-            tehai_after[tile_id - 1] -= 1;
-            if literal_num > 3 {
-                tehai_after[tile_id - 3] = 0;
-            }
-            self.last_cans.can_chi_high = tehai_after.iter().any(|&t| t > 0);
-        }
-    }
 
     /// Can be called at either 3n+1 or 3n+2.
     ///
@@ -722,7 +631,6 @@ impl PlayerState {
         }
     }
 
-    // Bloody Battle: No dora, this function is removed
 
     #[allow(dead_code)] // May be used in future
     pub(super) fn update_rank(&mut self) {

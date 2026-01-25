@@ -10,7 +10,6 @@ use indicatif::{ProgressBar, ProgressStyle};
 use ndarray::prelude::*;
 
 pub struct BatchGame {
-    /// 8 for hanchan and 4 for tonpuu
     pub length: u8,
     pub init_scores: [i32; 4],
     pub disable_progress_bar: bool,
@@ -37,16 +36,12 @@ struct Game {
 
     board: BoardState,
     kyoku: u8,
-    // Bloody Battle: No honba or kyotaku
     scores: [i32; 4],
     game_log: Vec<Vec<EventExt>>,
 
     kyoku_started: bool,
     ended: bool,
-    /// Bloody Battle: Game end condition tracking
-    /// Game ends when 3 players have agari or when tiles are exhausted
-    /// (No renchan in Bloody Battle Mahjong)
-    in_renchan: bool, // Kept for compatibility, but not used in Bloody Battle
+    in_renchan: bool,
 }
 
 impl Game {
@@ -70,7 +65,6 @@ impl Game {
                 return Ok(());
             }
 
-            // Bloody Battle: No honba or kyotaku
             let mut next_board = Board {
                 kyoku: self.kyoku,
                 scores: self.scores,
@@ -114,7 +108,6 @@ impl Game {
                 }
 
                 let kyoku_result = self.board.end();
-                // Bloody Battle: No kyotaku
                 self.scores = kyoku_result.scores;
 
                 let logs = self.board.take_log();
@@ -126,7 +119,6 @@ impl Game {
                     return Ok(());
                 }
 
-                // Bloody Battle: No honba or renchan
                 if !kyoku_result.can_renchan {
                     self.kyoku += 1;
                     return self.poll(agents);
@@ -154,7 +146,6 @@ impl Game {
 
                 // renchan
                 self.in_renchan = true;
-                // Bloody Battle: No honba
                 return self.poll(agents);
             }
         };
@@ -164,7 +155,6 @@ impl Game {
 
     fn commit(&mut self, agents: &mut [Box<dyn BatchAgent>]) -> Result<Option<GameResult>> {
         if self.ended {
-            // Bloody Battle: No kyotaku
 
             let names = array::from_fn(|i| agents[self.indexes[i].agent_idx].name());
             let game_result = GameResult {
@@ -202,20 +192,16 @@ impl Game {
 }
 
 impl BatchGame {
-    /// Create a standard Bloody Battle Mahjong game configuration
-    /// Bloody Battle: Game ends when 3 players have agari or when tiles are exhausted
     pub const fn standard_game(disable_progress_bar: bool) -> Self {
         Self {
-            length: 8, // Bloody Battle: 8 rounds (can be adjusted based on game rules)
+            length: 8,
             init_scores: [25000; 4],
             disable_progress_bar,
         }
     }
     
     /// Legacy method name - use `standard_game` instead
-    /// Bloody Battle: This method name refers to Tenhou (天鳳) which is a Japanese Mahjong platform
-    #[deprecated(note = "Use standard_game instead for Bloody Battle Mahjong")]
-    #[allow(dead_code)] // Kept for backward compatibility
+    #[allow(dead_code)]
     pub const fn tenhou_hanchan(disable_progress_bar: bool) -> Self {
         Self::standard_game(disable_progress_bar)
     }

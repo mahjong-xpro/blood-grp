@@ -19,10 +19,6 @@ use tinyvec::array_vec;
 #[pyclass]
 #[derive(Clone, Default)]
 pub struct Grp {
-    // Bloody Battle: [kyoku, [score[i] / 10000], [agari[i]], [ding_que[i]]] where i is player_id
-    // agari[i] = 1.0 if player i has agari, 0.0 otherwise
-    // ding_que[i] = 0.0 for Man, 0.5 for Pin, 1.0 for Sou (normalized)
-    // No grand_kyoku, honba, kyotaku
     pub feature: Array2<f64>,
     pub rank_by_player: [u8; 4],
     pub final_scores: [i32; 4],
@@ -96,7 +92,6 @@ impl Grp {
         let mut final_scores = [0; 4];
         
         // Track which players have agari and their ding_que at the START of each StartKyoku
-        // In Bloody Battle, agari state persists across kyokus (once a player agari, they stay agari)
         // Ding_que is set at the start of each kyoku and persists for that kyoku
         // We need to build this by forward traversal first
         let mut players_agari_at_kyoku: Vec<[bool; 4]> = vec![];
@@ -143,7 +138,6 @@ impl Grp {
                         vec_add_assign(&mut final_deltas, &ds);
                     }
                 }
-                // Event::ReachAccepted removed - Bloody Battle Mahjong does not have riichi (立直)
                 Event::StartKyoku {
                     kyoku,
                     scores,
@@ -164,10 +158,6 @@ impl Grp {
                         rank_by_player_opt = Some(rk.rank_by_player);
                     }
 
-                    // Bloody Battle Mahjong: GRP feature is [kyoku, [score[i] / 10000], [agari[i]], [ding_que[i]]]
-                    // agari[i] = 1.0 if player i has agari, 0.0 otherwise
-                    // ding_que[i] = 0.0 for Man, 0.5 for Pin, 1.0 for Sou (normalized), or 0.0 if not set
-                    // No grand_kyoku, honba, or kyotaku
                     let mut kyoku_info = array_vec!([_; GRP_SIZE]);
                     kyoku_info.push(kyoku as f64);
                     kyoku_info.extend(scores.iter().map(|&score| score as f64 / 10000.));

@@ -291,7 +291,6 @@ impl Gameplay {
         } = ctx;
 
         let cur = &wnd[0];
-        // Bloody Battle: No ReachAccepted or Dora events
         let next = &wnd[1];
 
         match cur {
@@ -336,23 +335,22 @@ impl Gameplay {
         let mut kan_select = None;
         let label_opt = match *next {
             Event::Dahai { pai, .. } => Some(pai.as_usize()),
-            // Bloody Battle: No Reach or Chi events
             Event::Pon { actor, .. } if actor == self.player_id => Some(41),
             Event::Daiminkan { actor, pai, .. } if actor == self.player_id => {
                 if config.always_include_kan_select {
-                    kan_select = Some(pai.deaka().as_usize());
+                    kan_select = Some(pai.as_usize());
                 }
                 Some(42)
             }
             Event::Kakan { pai, .. } => {
                 if config.always_include_kan_select || state.kakan_candidates().len() > 1 {
-                    kan_select = Some(pai.deaka().as_usize());
+                    kan_select = Some(pai.as_usize());
                 }
                 Some(42)
             }
             Event::Ankan { consumed, .. } => {
                 if config.always_include_kan_select || state.ankan_candidates().len() > 1 {
-                    kan_select = Some(consumed[0].deaka().as_usize());
+                    kan_select = Some(consumed[0].as_usize());
                 }
                 Some(42)
             }
@@ -377,8 +375,7 @@ impl Gameplay {
 
                 if ret.is_none() {
                     // It is now proven there is no ron from the POV.
-                    if cans.can_chi() && matches!(next, Event::Tsumo { .. })
-                        || (cans.can_pon || cans.can_daiminkan || cans.can_ron_agari)
+                    if (cans.can_pon || cans.can_daiminkan || cans.can_ron_agari)
                             && !has_any_ron
                     {
                         // Can chi, but actively denied instead of being

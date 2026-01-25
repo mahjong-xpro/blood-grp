@@ -365,11 +365,9 @@ def train():
                         'agari': stat.agari_rate,
                         'houjuu': stat.houjuu_rate,
                         'fuuro': stat.fuuro_rate,
-                        # Bloody Battle: No riichi (立直)
                     }, steps)
                     writer.add_scalars('test_play/agari_point', {
                         'overall': stat.avg_point_per_agari,
-                        # Bloody Battle: No riichi (立直)
                         'fuuro': stat.avg_point_per_fuuro_agari,
                         'dama': stat.avg_point_per_dama_agari,
                     }, steps)
@@ -378,9 +376,7 @@ def train():
                     writer.add_scalars('test_play/key_step', {
                         'agari_jun': stat.avg_agari_jun,
                         'houjuu_jun': stat.avg_houjuu_jun,
-                        # Bloody Battle: No riichi (立直)
                     }, steps)
-                    # Bloody Battle: No riichi (立直) statistics - removed
                     writer.add_scalars('test_play/fuuro', {
                         'agari_after_fuuro': stat.agari_rate_after_fuuro,
                         'houjuu_after_fuuro': stat.houjuu_rate_after_fuuro,

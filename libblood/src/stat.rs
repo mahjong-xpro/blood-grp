@@ -1,4 +1,3 @@
-// Bloody Battle: Point not used in stat.rs
 use crate::mjai::Event;
 use crate::py_helper::add_submodule;
 use crate::rankings::Rankings;
@@ -17,12 +16,9 @@ use pyo3::prelude::*;
 use rayon::prelude::*;
 use serde_json as json;
 
-/// Bloody Battle Mahjong Statistics
 ///
 /// Notes:
 ///
-/// - Bloody Battle Mahjong does not have riichi (立直), dora (宝牌), honba (本场), or kyotaku (供托)
-/// - All riichi-related fields are kept for backward compatibility but will always be 0
 /// - Ankan is not recognized as fuuro
 #[pyclass]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Add, AddAssign, Sum)]
@@ -83,41 +79,6 @@ pub struct Stat {
     #[pyo3(get, set)]
     pub houjuu_point_to_ko: i64,
 
-    // Bloody Battle: No riichi (立直), these fields are kept for backward compatibility but always 0
-    #[pyo3(get, set)]
-    #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
-    pub riichi: i64,
-    #[pyo3(get, set)]
-    #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
-    pub riichi_as_oya: i64,
-    #[pyo3(get, set)]
-    #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
-    pub riichi_jun: i64,
-    #[pyo3(get, set)]
-    #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
-    pub riichi_agari: i64,
-    #[pyo3(get, set)]
-    #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
-    pub riichi_agari_point: i64,
-    #[pyo3(get, set)]
-    #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
-    pub riichi_agari_jun: i64,
-    #[pyo3(get, set)]
-    #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
-    pub riichi_houjuu: i64,
-    #[pyo3(get, set)]
-    #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
-    pub riichi_ryukyoku: i64,
-    #[pyo3(get, set)]
-    #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
-    pub riichi_point: i64,
-    #[pyo3(get, set)]
-    #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
-    pub chasing_riichi: i64,
-    #[pyo3(get, set)]
-    #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
-    pub riichi_got_chased: i64,
-
     #[pyo3(get, set)]
     pub dama_agari: i64,
     #[pyo3(get, set)]
@@ -129,14 +90,6 @@ pub struct Stat {
     pub ryukyoku: i64,
     #[pyo3(get, set)]
     pub ryukyoku_point: i64,
-
-    // Bloody Battle: No yakuman (max 5 fan), no nagashi mangan
-    #[pyo3(get, set)]
-    #[deprecated(note = "Bloody Battle Mahjong does not have yakuman (max 5 fan)")]
-    pub yakuman: i64,
-    #[pyo3(get, set)]
-    #[deprecated(note = "Bloody Battle Mahjong does not have nagashi mangan")]
-    pub nagashi_mangan: i64,
 }
 
 impl fmt::Display for Stat {
@@ -163,19 +116,16 @@ Avg round Δscore {:.6}
 Win rate      {:.6}
 Deal-in rate  {:.6}
 Call rate     {:.6}
-Riichi rate   {:.6}
 Ryukyoku rate {:.6}
 
 Avg winning Δscore               {:.6}
 Avg winning Δscore as dealer     {:.6}
 Avg winning Δscore as non-dealer {:.6}
-Avg riichi winning Δscore        {:.6}
 Avg open winning Δscore          {:.6}
 Avg dama winning Δscore          {:.6}
 Avg ryukyoku Δscore              {:.6}
 
 Avg winning turn        {:.6}
-Avg riichi winning turn {:.6}
 Avg open winning turn   {:.6}
 Avg dama winning turn   {:.6}
 
@@ -184,13 +134,6 @@ Avg deal-in Δscore               {:.6}
 Avg deal-in Δscore to dealer     {:.6}
 Avg deal-in Δscore to non-dealer {:.6}
 
-Chasing riichi rate       {:.6}
-Riichi chased rate        {:.6}
-Winning rate after riichi {:.6}
-Deal-in rate after riichi {:.6}
-Avg riichi turn           {:.6}
-Avg riichi Δscore         {:.6}
-
 Avg number of calls     {:.6}
 Winning rate after call {:.6}
 Deal-in rate after call {:.6}
@@ -198,10 +141,7 @@ Avg call Δscore         {:.6}
 
 Dealer wins/all dealer rounds  {:.6}
 Dealer wins/all wins           {:.6}
-Deal-in to dealer/all deal-ins {:.6}
-
-Yakuman (rate)        {} ({:.9})
-Nagashi mangan (rate) {} ({:.9})"#,
+Deal-in to dealer/all deal-ins {:.6}"#,
             self.game,
             self.round,
             self.oya,
@@ -226,19 +166,16 @@ Nagashi mangan (rate) {} ({:.9})"#,
             self.agari_rate(),
             self.houjuu_rate(),
             self.fuuro_rate(),
-            self.riichi_rate(),
             self.ryukyoku_rate(),
             //
             self.avg_point_per_agari(),
             self.avg_point_per_oya_agari(),
             self.avg_point_per_ko_agari(),
-            self.avg_point_per_riichi_agari(),
             self.avg_point_per_fuuro_agari(),
             self.avg_point_per_dama_agari(),
             self.avg_point_per_ryukyoku(),
             //
             self.avg_agari_jun(),
-            self.avg_riichi_agari_jun(),
             self.avg_fuuro_agari_jun(),
             self.avg_dama_agari_jun(),
             //
@@ -246,13 +183,6 @@ Nagashi mangan (rate) {} ({:.9})"#,
             self.avg_point_per_houjuu(),
             self.avg_point_per_houjuu_to_oya(),
             self.avg_point_per_houjuu_to_ko(),
-            //
-            self.chasing_riichi_rate(),
-            self.riichi_chased_rate(),
-            self.agari_rate_after_riichi(),
-            self.houjuu_rate_after_riichi(),
-            self.avg_riichi_jun(),
-            self.avg_riichi_point(),
             //
             self.avg_fuuro_num(),
             self.agari_rate_after_fuuro(),
@@ -262,11 +192,6 @@ Nagashi mangan (rate) {} ({:.9})"#,
             self.agari_rate_as_oya(),
             self.agari_as_oya_rate(),
             self.houjuu_to_oya_rate(),
-            //
-            self.yakuman,
-            self.yakuman_rate(),
-            self.nagashi_mangan,
-            self.nagashi_mangan_rate(),
         )
     }
 }
@@ -277,17 +202,12 @@ impl Stat {
     #[allow(deprecated)] // Using deprecated fields for backward compatibility
     #[must_use]
     pub fn from_game(events: &[Event], player_id: u8) -> Self {
-        #[allow(deprecated)] // Initializing deprecated fields (always 0 in Bloody Battle)
         let mut stat = Self {
             game: 1,
             ..Default::default()
         };
 
         let mut cur_scores = [0; 4];
-        // Bloody Battle: No riichi (立直), these variables are kept for compatibility but unused
-        let mut _riichi_declared = false;
-        let mut _riichi_accepted = false;
-        let mut _others_riichi_declared = false;
         let mut cur_oya = 0;
         let mut jun = 0;
         let mut fuuro_num = 0;
@@ -296,9 +216,6 @@ impl Stat {
             Event::StartKyoku { oya, scores, .. } => {
                 stat.round += 1;
                 cur_scores = scores;
-                _riichi_declared = false;
-                _riichi_accepted = false;
-                _others_riichi_declared = false;
                 cur_oya = oya;
                 if cur_oya == player_id {
                     stat.oya += 1;
@@ -311,7 +228,6 @@ impl Stat {
                 jun += 1;
             }
 
-            // Event::Chi removed - Bloody Battle Mahjong does not have chi
             Event::Pon { actor, .. }
             | Event::Daiminkan { actor, .. }
                 if actor == player_id =>
@@ -319,7 +235,6 @@ impl Stat {
                 fuuro_num += 1;
             }
 
-            // Event::Reach and Event::ReachAccepted removed - Bloody Battle Mahjong does not have riichi (立直)
 
             Event::Hora {
                 actor,
@@ -331,7 +246,6 @@ impl Stat {
                 vec_add_assign(&mut cur_scores, &deltas);
 
                 if actor == player_id {
-                    // Bloody Battle: No riichi (立直), so no 1000 point deduction
                     let point = deltas[player_id as usize] as i64;
                     stat.agari += 1;
                     stat.agari_jun += jun;
@@ -342,7 +256,6 @@ impl Stat {
                         stat.agari_point_ko += point;
                     }
 
-                    // Bloody Battle: No riichi (立直) agari tracking
                     if fuuro_num > 0 {
                         stat.fuuro_agari += 1;
                         stat.fuuro_agari_jun += jun;
@@ -354,10 +267,6 @@ impl Stat {
                         stat.dama_agari_point += point;
                     }
 
-                    // Bloody Battle: No yakuman (5番封顶 = 16000点)
-                    if point >= 16000 {
-                        stat.yakuman += 1;
-                    }
                 } else if target == player_id {
                     let point = deltas[player_id as usize] as i64;
                     stat.houjuu += 1;
@@ -369,7 +278,6 @@ impl Stat {
                         stat.houjuu_point_to_ko += point;
                     }
 
-                    // Bloody Battle: No riichi (立直) declared
                     if fuuro_num > 0 {
                         stat.fuuro_houjuu += 1;
                         stat.fuuro_point += point;
@@ -384,13 +292,8 @@ impl Stat {
                 let point = deltas[player_id as usize] as i64;
                 stat.ryukyoku += 1;
                 stat.ryukyoku_point += point;
-                // Bloody Battle: No riichi (立直) accepted
                 if fuuro_num > 0 {
                     stat.fuuro_point += point;
-                }
-
-                if point >= 8000 {
-                    stat.nagashi_mangan += 1;
                 }
             }
 
@@ -577,13 +480,6 @@ impl Stat {
     #[getter]
     #[inline]
     #[must_use]
-    #[allow(deprecated)] // Using deprecated field for backward compatibility
-    pub fn avg_point_per_riichi_agari(&self) -> f64 {
-        self.riichi_agari_point as f64 / self.riichi_agari as f64
-    }
-    #[getter]
-    #[inline]
-    #[must_use]
     pub fn avg_point_per_fuuro_agari(&self) -> f64 {
         self.fuuro_agari_point as f64 / self.fuuro_agari as f64
     }
@@ -605,13 +501,6 @@ impl Stat {
     #[must_use]
     pub fn avg_agari_jun(&self) -> f64 {
         self.agari_jun as f64 / self.agari as f64
-    }
-    #[getter]
-    #[inline]
-    #[must_use]
-    #[allow(deprecated)] // Using deprecated field for backward compatibility
-    pub fn avg_riichi_agari_jun(&self) -> f64 {
-        self.riichi_agari_jun as f64 / self.riichi_agari as f64
     }
     #[getter]
     #[inline]
@@ -666,13 +555,6 @@ impl Stat {
     #[getter]
     #[inline]
     #[must_use]
-    #[allow(deprecated)] // Using deprecated field for backward compatibility
-    pub fn riichi_rate(&self) -> f64 {
-        self.riichi as f64 / self.round as f64
-    }
-    #[getter]
-    #[inline]
-    #[must_use]
     pub fn fuuro_rate(&self) -> f64 {
         self.fuuro as f64 / self.round as f64
     }
@@ -681,49 +563,6 @@ impl Stat {
     #[must_use]
     pub fn ryukyoku_rate(&self) -> f64 {
         self.ryukyoku as f64 / self.round as f64
-    }
-
-    #[getter]
-    #[inline]
-    #[must_use]
-    #[allow(deprecated)] // Using deprecated field for backward compatibility
-    pub fn agari_rate_after_riichi(&self) -> f64 {
-        self.riichi_agari as f64 / self.riichi as f64
-    }
-    #[getter]
-    #[inline]
-    #[must_use]
-    #[allow(deprecated)] // Using deprecated field for backward compatibility
-    pub fn houjuu_rate_after_riichi(&self) -> f64 {
-        self.riichi_houjuu as f64 / self.riichi as f64
-    }
-    #[getter]
-    #[inline]
-    #[must_use]
-    #[allow(deprecated)] // Using deprecated field for backward compatibility
-    pub fn chasing_riichi_rate(&self) -> f64 {
-        self.chasing_riichi as f64 / self.riichi as f64
-    }
-    #[getter]
-    #[inline]
-    #[must_use]
-    #[allow(deprecated)] // Using deprecated field for backward compatibility
-    pub fn riichi_chased_rate(&self) -> f64 {
-        self.riichi_got_chased as f64 / self.riichi as f64
-    }
-    #[getter]
-    #[inline]
-    #[must_use]
-    #[allow(deprecated)] // Using deprecated field for backward compatibility
-    pub fn avg_riichi_jun(&self) -> f64 {
-        self.riichi_jun as f64 / self.riichi as f64
-    }
-    #[getter]
-    #[inline]
-    #[must_use]
-    #[allow(deprecated)] // Using deprecated field for backward compatibility
-    pub fn avg_riichi_point(&self) -> f64 {
-        self.riichi_point as f64 / self.riichi as f64
     }
 
     #[getter]
@@ -770,20 +609,6 @@ impl Stat {
         self.fuuro_point as f64 / self.fuuro as f64
     }
 
-    #[getter]
-    #[inline]
-    #[must_use]
-    #[allow(deprecated)] // Using deprecated field for backward compatibility
-    pub fn yakuman_rate(&self) -> f64 {
-        self.yakuman as f64 / self.round as f64
-    }
-    #[getter]
-    #[inline]
-    #[must_use]
-    #[allow(deprecated)] // Using deprecated field for backward compatibility
-    pub fn nagashi_mangan_rate(&self) -> f64 {
-        self.nagashi_mangan as f64 / self.round as f64
-    }
 
     fn __str__(&self) -> String {
         self.to_string()

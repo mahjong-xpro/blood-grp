@@ -17,7 +17,6 @@ use rand_chacha::ChaCha12Rng;
 use sha3::{Digest, Sha3_256};
 use tinyvec::ArrayVec;
 
-/// Bloody Battle Mahjong Board
 ///
 /// Game ends when 3 players have agari (和牌) or when tiles are exhausted (流局).
 #[derive(Debug, Default)]
@@ -40,10 +39,8 @@ pub struct BoardState {
     oya: u8,
     player_states: [PlayerState; 4],
 
-    /// Bloody Battle Mahjong: track which players have agari
     #[derivative(Default(value = "[false; 4]"))]
     players_agari: [bool; 4],
-    /// Bloody Battle Mahjong: count of players who have agari
     agari_count: u8,
     
     #[allow(dead_code)] // Kept for compatibility with result format
@@ -57,7 +54,6 @@ pub struct BoardState {
     deal_from_rinshan: Option<()>,
     kans: u8,
     check_four_kan: bool,
-    #[allow(dead_code)] // Bloody Battle: No pao (包), kept for compatibility
     paos: [Option<u8>; 4],
 
     log: Vec<EventExt>,
@@ -77,11 +73,9 @@ pub enum Poll {
 impl Board {
     pub fn init_from_seed(&mut self, game_seed: (u64, u64)) {
         let (nonce, key) = game_seed;
-        // Bloody Battle Mahjong: no honba, use only kyoku for seed
         let kyoku_seed = Sha3_256::new()
             .chain_update(nonce.to_le_bytes())
             .chain_update(key.to_le_bytes())
-            .chain_update([self.kyoku, 0]) // honba always 0 in Bloody Battle
             .finalize()
             .into();
         let mut rng = ChaCha12Rng::from_seed(kyoku_seed);
@@ -124,7 +118,6 @@ impl BoardState {
                 Poll::End => {
                     self.add_log_no_meta(Event::EndKyoku);
                     vec_add_assign(&mut self.board.scores, &self.kyoku_deltas);
-                    // Bloody Battle: No renchan
                     return Ok(poll);
                 }
             };
@@ -144,10 +137,10 @@ impl BoardState {
     pub const fn end(&self) -> KyokuResult {
         KyokuResult {
             kyoku: self.board.kyoku,
-            can_renchan: false, // Bloody Battle: no renchan
+            can_renchan: false,
             has_hora: self.agari_count > 0,
             has_abortive_ryukyoku: self.has_abortive_ryukyoku,
-            kyotaku_left: 0, // Bloody Battle: no kyotaku
+            kyotaku_left: 0,
             scores: self.board.scores,
         }
     }
@@ -175,7 +168,6 @@ impl BoardState {
     }
 
     fn haipai(&mut self) -> Result<()> {
-        // Bloody Battle Mahjong: StartKyoku without bakaze, dora_marker, honba, kyotaku
         let start_kyoku = Event::StartKyoku {
             kyoku: self.oya + 1,
             oya: self.oya,
@@ -202,7 +194,6 @@ impl BoardState {
     }
 
     pub(crate) fn exhaustive_ryukyoku(&mut self) {
-        // Bloody Battle Mahjong: Exhaustive draw (流局)
         // Flow: 1. Check 查花猪 (huazhu), 2. Check 查大叫 (tenpai)
         let mut final_deltas = [0; 4];
 
@@ -280,7 +271,6 @@ impl BoardState {
         // no need to broadcast
     }
 
-    // Bloody Battle Mahjong: No nagashi mangan, four wind, riichi, or dora
     // These functions are removed
 
     fn handle_hora(
@@ -291,7 +281,6 @@ impl BoardState {
     ) -> Result<()> {
         let is_ron = single_actor != single_target;
         
-        // Bloody Battle Mahjong: Mark player as agari
         if !self.players_agari[single_actor as usize] {
             self.players_agari[single_actor as usize] = true;
             self.agari_count += 1;
@@ -313,7 +302,6 @@ impl BoardState {
             None
         };
 
-        // Bloody Battle: Calculate points using agari_points
         // This uses the actual fan calculation from AgariCalculator
         let point = self.player_states[single_actor as usize]
             .agari_points(is_ron, &[])
@@ -340,7 +328,6 @@ impl BoardState {
                 // "抢杠时，加杠的玩家的根不应该计算" - this means the kakan player's gen should not be counted
                 // But the payment is from the kakan player to the winning player
                 // So we need to know: does the payment amount depend on the kakan player's gen?
-                // In Bloody Battle, the payment is based on the winning player's fan, not the payer's
                 // So the gen exclusion for the kakan player doesn't affect the payment amount
                 // The gen exclusion only affects the kakan player's own hand evaluation (if they were to agari)
                 // So we don't need to do anything special here - the payment is correct as is
@@ -352,7 +339,6 @@ impl BoardState {
             }
         } else {
             // Tsumo: all other players pay (no oya advantage)
-            // Bloody Battle: All 3 other players pay the same amount
             let tsumo_total = point.tsumo_total(false); // No oya advantage
             for i in 0..4 {
                 if i != single_actor as usize {
@@ -375,7 +361,6 @@ impl BoardState {
         Ok(())
     }
 
-    // Bloody Battle: No pao (no jihai), this function is removed
 
     #[inline]
     fn abortive_ryukyoku(&mut self) {
@@ -388,7 +373,6 @@ impl BoardState {
     }
 
     fn step(&mut self, reactions: &[EventExt; 4]) -> Result<Poll> {
-        // Bloody Battle Mahjong: Check if 3 players have agari
         if self.agari_count >= 3 {
             return Ok(Poll::End);
         }
@@ -426,14 +410,12 @@ impl BoardState {
             .unwrap(); // Unwrap is safe because at least one player hasn't agari
 
         if self.check_four_kan && !matches!(ev.event, Event::Hora { .. }) {
-            // 四槓散了 (still applies in Bloody Battle)
             self.abortive_ryukyoku();
             return Ok(Poll::End);
         }
 
         match ev.event {
             Event::None => {
-                // Bloody Battle Mahjong: Check for exhaustive draw (流局)
                 // Check both tiles_left and yama to ensure consistency
                 if self.tiles_left == 0 || self.board.yama.is_empty() {
                     self.exhaustive_ryukyoku();
@@ -452,7 +434,6 @@ impl BoardState {
                 }
 
                 let tile = if self.deal_from_rinshan.take().is_some() {
-                    // Bloody Battle: kan draws from yama (no rinshan)
                     // This should not happen, but handle it gracefully
                     self.board.yama.pop().context("illegal kan: yama is empty")?
                 } else {
@@ -474,7 +455,6 @@ impl BoardState {
                 self.broadcast(&ev.event);
                 self.add_log(ev.clone());
                 
-                // Bloody Battle: Skip players who have agari when rotating
                 let mut next_actor = (actor + 1) % 4;
                 while self.players_agari[next_actor as usize] {
                     next_actor = (next_actor + 1) % 4;
@@ -482,7 +462,6 @@ impl BoardState {
                 self.tsumo_actor = next_actor;
 
                 if self.kans == 4 && self.player_states.iter().all(|s| s.kans_count() < 4) {
-                    // 四槓散了 (still applies in Bloody Battle)
                     self.check_four_kan = true;
                 }
             }
@@ -496,7 +475,6 @@ impl BoardState {
                 self.broadcast(&ev.event);
                 self.add_log(ev.clone());
 
-                // Bloody Battle: kan draws from yama (no rinshan, no new dora)
                 self.tsumo_actor = actor;
                 self.deal_from_rinshan = Some(()); // Mark that next draw is after kan
                 self.kans += 1;
@@ -511,7 +489,6 @@ impl BoardState {
                 self.kans += 1;
             }
 
-            // Event::Reach removed - Bloody Battle Mahjong does not have riichi
 
             Event::Hora { actor, target, .. } => {
                 self.handle_hora(actor, target, reactions)?;
@@ -529,14 +506,12 @@ impl BoardState {
             }
         };
 
-        // Bloody Battle: No pao (no jihai), removed update_paos call
 
         Ok(Poll::InGame)
     }
 
     pub fn encode_oracle_obs(&self, perspective: u8, version: u32) -> Array2<f32> {
         let shape = oracle_obs_shape(version);
-        // Bloody Battle: 27 tile kinds (no jihai)
         let mut arr = Simple2DArray::<27, f32>::new(shape.0);
         let mut idx = 0;
 
@@ -556,7 +531,6 @@ impl BoardState {
                     });
                 idx += 4;
 
-                // Bloody Battle: No red 5s, skip akas_in_hand encoding
                 idx += 3; // Keep same index offset for compatibility
 
                 let n = state.shanten() as usize;
@@ -591,30 +565,24 @@ impl BoardState {
             });
 
         let mut encode_tile = |idx: usize, tile: Tile| -> usize {
-            let tile_id = tile.deaka().as_usize();
+            let tile_id = tile.as_usize();
             arr.assign(idx, tile_id, 1.);
-            // Bloody Battle: No red 5s, so only use 1 dimension per tile
             idx + 1
         };
 
-        // Bloody Battle: yama has at most 56 tiles (108 - 52 = 56)
         // Encode remaining tiles in yama
         for &tile in self.board.yama.iter().rev().take(self.tiles_left as usize) {
             idx = encode_tile(idx, tile);
         }
         // Skip remaining yama slots (no aka encoding, so only 1 dimension per tile)
-        // Original had 69 tiles max, but Bloody Battle has 56 max
         // Keep the same offset calculation for compatibility
         let max_yama_tiles = 69; // Keep original max for compatibility
         idx += (max_yama_tiles - self.tiles_left as usize) * 1;
 
-        // Bloody Battle: No rinshan, skip encoding (was 4 * 2 = 8)
         idx += 4 * 1; // Keep offset but use 1 dimension
 
-        // Bloody Battle: No dora indicators, skip encoding (was 5 * 2 = 10)
         idx += 5 * 1; // Keep offset but use 1 dimension
 
-        // Bloody Battle: No ura indicators, skip encoding (was 5 * 2 = 10)
         idx += 5 * 1; // Keep offset but use 1 dimension
 
         assert_eq!(idx, shape.0);
@@ -623,8 +591,6 @@ impl BoardState {
 }
 
 #[rustfmt::skip]
-// Bloody Battle Mahjong: 108 tiles (3 suits × 9 numbers × 4 copies)
-// No jihai (wind/dragon tiles), no red 5s
 const UNSHUFFLED: [Tile; 108] = [
     t!(1m), t!(1m), t!(1m), t!(1m),
     t!(2m), t!(2m), t!(2m), t!(2m),

@@ -7,13 +7,11 @@ use serde_json as json;
 #[derive(Debug, Clone)]
 pub struct KyokuResult {
     pub kyoku: u8,
-    // pub honba: u8,
     pub can_renchan: bool,
     #[allow(dead_code)] // Kept for compatibility with result format
     pub has_hora: bool,
     #[allow(dead_code)] // Kept for compatibility with result format
     pub has_abortive_ryukyoku: bool,
-    #[allow(dead_code)] // Bloody Battle: No kyotaku (供托), kept for compatibility
     pub kyotaku_left: u8,
     pub scores: [i32; 4],
 }

@@ -4,15 +4,14 @@ use pyo3::prelude::*;
 
 pub const MAX_VERSION: u32 = 4;
 
-// Bloody Battle Mahjong: ACTION_SPACE
 pub const ACTION_SPACE: usize = 27 // discard (27 tile kinds)
                               + 1  // pon
                               + 1  // kan (decide)
                               + 1  // agari
                               + 1  // ryukyoku
                               + 1; // pass
-// = 32 (no riichi/立直, no chi/吃)
-// Bloody Battle Mahjong: GRP_SIZE = [kyoku, [score[i] / 10000], [agari[i]], [ding_que[i]]] = 1 + 4 + 4 + 4 = 13
+// = 32
+// GRP_SIZE = [kyoku, [score[i] / 10000], [agari[i]], [ding_que[i]]] = 1 + 4 + 4 + 4 = 13
 // agari[i] = 1.0 if player i has agari, 0.0 otherwise
 // ding_que[i] = 0.0 for Man, 0.5 for Pin, 1.0 for Sou (normalized)
 pub const GRP_SIZE: usize = 13;
@@ -20,7 +19,6 @@ pub const GRP_SIZE: usize = 13;
 #[pyfunction]
 #[inline]
 pub const fn obs_shape(version: u32) -> (usize, usize) {
-    // Bloody Battle: 27 tile kinds (no jihai, no red 5s)
     // Calculated dimensions based on encode_obs function in obs_repr.rs
     // Ding que encoding added:
     //   v1: +26 (3+1+13+9)
@@ -49,7 +47,6 @@ pub const fn obs_shape(version: u32) -> (usize, usize) {
 #[pyfunction]
 #[inline]
 pub const fn oracle_obs_shape(version: u32) -> (usize, usize) {
-    // Bloody Battle: 27 tile kinds (no jihai, no red 5s)
     // Calculated dimensions based on encode_oracle_obs function in board.rs and invisible.rs
     match version {
         1 => (128, 27), // Calculated: 128 rows × 27 tile kinds

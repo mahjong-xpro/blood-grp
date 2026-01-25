@@ -6,33 +6,27 @@ use crate::must_tile;
 use tinyvec::ArrayVec;
 
 /// Mutable state of both the hand and the board.
-/// Bloody Battle: 27 tile kinds (no jihai, no red 5s)
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub(super) struct State {
     // hand
     pub(super) tehai: [u8; 27],
-    // Bloody Battle: No akas
     pub(super) akas_in_hand: [bool; 3], // Kept for compatibility, but will be all false
 
     // global
     pub(super) tiles_in_wall: [u8; 27],
-    // Bloody Battle: No akas
     pub(super) akas_in_wall: [bool; 3], // Kept for compatibility, but will be all false
     pub(super) n_extra_tsumo: u8,
 }
 
 /// Mutable state of both the hand and the board.
-/// Bloody Battle: 27 tile kinds (no jihai, no red 5s)
 #[derive(Clone)]
 pub struct InitState {
     // hand
     pub tehai: [u8; 27],
-    // Bloody Battle: No akas
     pub akas_in_hand: [bool; 3], // Kept for compatibility, but will be all false
 
     // global
     pub tiles_seen: [u8; 27],
-    // Bloody Battle: No akas
     pub akas_seen: [bool; 3], // Kept for compatibility, but will be all false
 }
 
@@ -61,25 +55,21 @@ impl From<InitState> for State {
 
 impl State {
     pub(super) const fn discard(&mut self, tile: Tile) {
-        self.tehai[tile.deaka().as_usize()] -= 1;
-        // Bloody Battle: No akas
+        self.tehai[tile.as_usize()] -= 1;
     }
 
     pub(super) const fn undo_discard(&mut self, tile: Tile) {
-        self.tehai[tile.deaka().as_usize()] += 1;
-        // Bloody Battle: No akas
+        self.tehai[tile.as_usize()] += 1;
     }
 
     pub(super) const fn deal(&mut self, tile: Tile) {
-        self.tiles_in_wall[tile.deaka().as_usize()] -= 1;
-        // Bloody Battle: No akas
+        self.tiles_in_wall[tile.as_usize()] -= 1;
         self.undo_discard(tile);
     }
 
     pub(super) const fn undo_deal(&mut self, tile: Tile) {
         self.discard(tile);
-        self.tiles_in_wall[tile.deaka().as_usize()] += 1;
-        // Bloody Battle: No akas
+        self.tiles_in_wall[tile.as_usize()] += 1;
     }
 
     pub(super) fn get_discard_tiles(
@@ -90,7 +80,6 @@ impl State {
         let mut discard_tiles = ArrayVec::default();
 
         let mut tehai = self.tehai;
-        // Bloody Battle: 27 tile kinds
         for tid in 0..27 {
             if tehai[tid] == 0 {
                 continue;
@@ -102,7 +91,6 @@ impl State {
 
             let shanten_diff = shanten_after - shanten;
 
-            // Bloody Battle: No akas
             let tile = must_tile!(tid);
 
             discard_tiles.push(DiscardTile { tile, shanten_diff });
@@ -119,7 +107,6 @@ impl State {
         let mut draw_tiles = ArrayVec::default();
 
         let mut tehai = self.tehai;
-        // Bloody Battle: 27 tile kinds, no akas
         for (tid, &count) in self.tiles_in_wall.iter().enumerate() {
             if count == 0 {
                 continue;
@@ -132,7 +119,6 @@ impl State {
             let shanten_diff = shanten_after - shanten;
 
             let tile = must_tile!(tid);
-            // Bloody Battle: No akas, just add the tile directly
             draw_tiles.push(DrawTile {
                 tile,
                 count,

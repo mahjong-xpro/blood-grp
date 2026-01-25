@@ -13,14 +13,10 @@ use rand::prelude::*;
 use rand::rng;
 
 /// All fields are sorted early -> late.
-/// Bloody Battle Mahjong: Only yama is needed (no rinshan, dora_indicators, ura_indicators)
 #[derive(Default)]
 pub struct Invisible {
     pub yama: Vec<Tile>,
-    // Bloody Battle: No rinshan, dora_indicators, or ura_indicators
-    pub rinshan: Vec<Tile>, // Kept for compatibility, but will be empty
-    pub dora_indicators: Vec<Tile>, // Kept for compatibility, but will be empty
-    pub ura_indicators: Vec<Tile>, // Kept for compatibility, but will be empty
+    pub rinshan: Vec<Tile>,
 }
 
 impl Invisible {
@@ -29,7 +25,6 @@ impl Invisible {
         let mut cur = Self::default();
         let mut seed = None;
         let mut from_rinshan = false;
-        // Bloody Battle: No ura_indicators, so ura_is_recorded is not needed
         let mut unknown_tiles = new_unknown_tiles();
 
         for event in game {
@@ -48,7 +43,6 @@ impl Invisible {
                     ..
                 } => {
                     if let Some(seed) = seed {
-                        // Bloody Battle: No bakaze, honba, or dora_marker
                         let mut board = Board {
                             kyoku: kyoku - 1,
                             ..Default::default()
@@ -56,10 +50,7 @@ impl Invisible {
                         board.init_from_seed(seed);
 
                         cur.yama = board.yama;
-                        // Bloody Battle: No rinshan, dora_indicators, or ura_indicators in Board
                         cur.rinshan.clear();
-                        cur.dora_indicators.clear();
-                        cur.ura_indicators.clear();
 
                         // reverse because of the way Board pops tiles
                         cur.yama.reverse();
@@ -67,7 +58,6 @@ impl Invisible {
                         ret.push(mem::take(&mut cur));
                         continue;
                     }
-                    // Bloody Battle: No dora_marker
                     tehais
                         .iter()
                         .flatten()
@@ -87,17 +77,13 @@ impl Invisible {
                         from_rinshan = false;
                     } else {
                         cur.yama.push(*pai);
-                        assert!(cur.yama.len() <= 56, "yama size overflow"); // Bloody Battle: 56 tiles in yama
                     }
                     unknown_tiles[pai.as_usize()] -= 1;
                 }
                 Event::Ankan { .. } | Event::Kakan { .. } | Event::Daiminkan { .. } => {
-                    // Bloody Battle: No rinshan, tiles come from yama directly
                     from_rinshan = false;
                 }
-                // Event::Dora removed - Bloody Battle Mahjong does not have dora
                 Event::Hora { .. } => {
-                    // Bloody Battle: No ura_markers
                 }
                 Event::EndKyoku => {
                     let mut filler: Vec<_> = unknown_tiles
@@ -108,17 +94,14 @@ impl Invisible {
                         .collect();
                     filler.shuffle(&mut rng());
 
-                    // Bloody Battle: 56 tiles in yama (108 - 52 = 56)
                     while cur.yama.len() < 56 {
                         cur.yama.push(filler.pop().unwrap());
                     }
-                    // Bloody Battle: No rinshan, dora_indicators, or ura_indicators
                     // Keep them empty for compatibility
                     assert!(filler.is_empty());
 
                     ret.push(mem::take(&mut cur));
                     from_rinshan = false;
-                    // Bloody Battle: No ura_indicators, so ura_is_recorded is not needed
                     unknown_tiles = new_unknown_tiles();
                 }
 
@@ -139,7 +122,6 @@ impl Invisible {
         version: u32,
     ) -> Array2<f32> {
         let shape = oracle_obs_shape(version);
-        // Bloody Battle: 27 tile kinds (no jihai)
         let mut arr = Simple2DArray::<27, f32>::new(shape.0);
         let mut idx = 0;
 
@@ -152,7 +134,6 @@ impl Invisible {
                 .for_each(|(tile_id, &count)| arr.assign_rows(idx, tile_id, count as usize, 1.));
             idx += 4;
 
-            // Bloody Battle: No akas_in_hand
             idx += 3; // Keep same offset for compatibility
 
             let n = state.shanten() as usize;
@@ -180,37 +161,30 @@ impl Invisible {
                 .for_each(|(t, _)| arr.assign(idx, t, 1.));
             idx += 1;
 
-            // Bloody Battle: No furiten
             idx += 1; // Keep same offset for compatibility
         }
 
         let mut encode_tile = |idx: usize, tile: Tile| -> usize {
-            let tile_id = tile.deaka().as_usize();
+            let tile_id = tile.as_usize();
             arr.assign(idx, tile_id, 1.);
-            // Bloody Battle: No akas, so only use 1 dimension per tile
             idx + 1
         };
 
-        // Bloody Battle: yama encoding - encode remaining tiles
         // Each tile uses 1 dimension (no aka encoding)
         for &tile in &self.yama[yama_idx..] {
             idx = encode_tile(idx, tile);
         }
         // Skip remaining yama slots to maintain fixed size
         // Original used 69 max tiles, keep same for compatibility
-        // Bloody Battle has 56 tiles max, but we keep 69 slots for compatibility
         let max_yama_tiles: usize = 69;
         let encoded_tiles = self.yama.len().saturating_sub(yama_idx);
         let remaining_yama = max_yama_tiles.saturating_sub(encoded_tiles);
         idx += remaining_yama;
 
-        // Bloody Battle: No rinshan, skip encoding (was 4 * 2 = 8)
         idx += 4 * 1; // Keep offset but use 1 dimension
 
-        // Bloody Battle: No dora_indicators, skip encoding (was 5 * 2 = 10)
         idx += 5 * 1; // Keep offset but use 1 dimension
 
-        // Bloody Battle: No ura_indicators, skip encoding (was 5 * 2 = 10)
         idx += 5 * 1; // Keep offset but use 1 dimension
 
         assert_eq!(idx, shape.0);
@@ -218,7 +192,6 @@ impl Invisible {
     }
 }
 
-// Bloody Battle: 27 tile kinds (no jihai, no red 5s)
 const fn new_unknown_tiles() -> [u8; 27] {
     [4; 27] // All tiles have 4 copies
 }

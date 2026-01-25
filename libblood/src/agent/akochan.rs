@@ -93,14 +93,12 @@ impl Agent for AkochanAgent {
         state: &PlayerState,
         _: Option<InvisibleState>,
     ) -> Result<EventExt> {
-        // handle two-phase actions like Chi, Pon and Riichi
+        // handle two-phase actions like Pon
         if let Some(dahai) = self.naki_tx.take() {
             let last = events.last().context("events is empty")?;
             match last.event {
-                // Event::Chi removed - Bloody Battle Mahjong does not have chi
                 Event::Pon { actor, .. }
                 | Event::Daiminkan { actor, .. }
-                // Event::Reach removed - Bloody Battle Mahjong does not have riichi
                     if actor == self.player_id =>
                 {
                     return Ok(EventExt::no_meta(dahai));

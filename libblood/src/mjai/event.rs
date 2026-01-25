@@ -6,7 +6,6 @@ use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use serde_with::{TryFromInto, serde_as, skip_serializing_none};
 
-/// Suit for Ding Que (定缺) in Bloody Battle Mahjong
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Suit {
@@ -59,7 +58,6 @@ pub enum Event {
         tsumogiri: bool,
     },
 
-    // Chi event removed - Bloody Battle Mahjong does not have chi
     Pon {
         #[serde_as(deserialize_as = "TryFromInto<Actor>")]
         actor: u8,
@@ -87,8 +85,6 @@ pub enum Event {
         actor: u8,
         consumed: [Tile; 4],
     },
-    // Dora event removed - Bloody Battle Mahjong does not have dora
-    // Reach and ReachAccepted events removed - Bloody Battle Mahjong does not have riichi
 
     DingQue {
         #[serde_as(deserialize_as = "TryFromInto<Actor>")]
@@ -103,7 +99,6 @@ pub enum Event {
         target: u8,
 
         deltas: Option<[i32; 4]>,
-        // ura_markers removed - Bloody Battle Mahjong does not have ura dora
     },
     Ryukyoku {
         deltas: Option<[i32; 4]>,
@@ -193,7 +188,6 @@ impl Event {
             }
             Self::Ankan { consumed, .. } => consumed.iter_mut().for_each(swap_tile),
             Self::Hora { .. } => {
-                // No ura_markers in Bloody Battle Mahjong
             }
             _ => (),
         }

@@ -96,7 +96,6 @@ fn process_path(path: &Path) -> Result<()> {
                     states[*actor as usize].brief_info(),
                 );
             }
-            // Chi event removed - Bloody Battle Mahjong does not have chi
             Event::Pon { actor, .. } => {
                 ensure!(
                     cans[*actor as usize].can_pon,
@@ -120,7 +119,7 @@ fn process_path(path: &Path) -> Result<()> {
 
                 let ankan_candidates = states[*actor as usize].ankan_candidates();
                 ensure!(
-                    ankan_candidates.contains(&consumed[0].deaka()),
+                    ankan_candidates.contains(&consumed[0]),
                     "fails ankan_candidates at line {line}\naction: {ev:?}\nstate:\n{}",
                     states[*actor as usize].brief_info(),
                 );
@@ -134,12 +133,11 @@ fn process_path(path: &Path) -> Result<()> {
 
                 let kakan_candidates = states[*actor as usize].kakan_candidates();
                 ensure!(
-                    kakan_candidates.contains(&pai.deaka()),
+                    kakan_candidates.contains(&pai),
                     "fails kakan_candidates at line {line}\naction: {ev:?}\nstate:\n{}",
                     states[*actor as usize].brief_info(),
                 );
             }
-            // Reach event removed - Bloody Battle Mahjong does not have riichi (立直)
             Event::Hora {
                 actor,
                 target,
@@ -160,11 +158,7 @@ fn process_path(path: &Path) -> Result<()> {
                     );
                 }
 
-                // Bloody Battle: No ura_markers (no ura dora)
-                // Point validation is temporarily disabled as it needs to be updated for Bloody Battle scoring
                 let _deltas = deltas.context("missing field `deltas`")?;
-                // Bloody Battle: agari_points signature may have changed, need to check
-                // For now, skip point validation as it needs to be updated for Bloody Battle scoring
                 // let points = states[*actor as usize]
                 //     .agari_points(is_ron, &[])
                 //     .with_context(|| {

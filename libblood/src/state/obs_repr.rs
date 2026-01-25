@@ -17,7 +17,7 @@ const MAX_NUM_TURNS: usize = 17; // aka the actual practical `MAX_TSUMOS_LEFT`
 
 struct ObsEncoderContext<'a> {
     state: &'a PlayerState,
-    arr: Simple2DArray<27, f32>, // Bloody Battle: 27 tile kinds
+    arr: Simple2DArray<27, f32>,
     mask: Array1<bool>,
     idx: usize,
     at_kan_select: bool,
@@ -111,7 +111,7 @@ impl<'a> ObsEncoderContext<'a> {
     fn new(state: &'a PlayerState, version: u32, at_kan_select: bool) -> Self {
         assert!(version <= MAX_VERSION);
         let shape = obs_shape(version);
-        let arr = Simple2DArray::new(shape.0);
+        let arr = Simple2DArray::<27, f32>::new(shape.0);
         let mask = Array1::default(ACTION_SPACE);
         Self {
             state,
@@ -138,7 +138,6 @@ impl<'a> ObsEncoderContext<'a> {
             });
         self.idx += 4;
 
-        // Bloody Battle: No akas_in_hand
         // Keep the same offset for compatibility
         self.idx += 3;
 
@@ -173,7 +172,6 @@ impl<'a> ObsEncoderContext<'a> {
         }
         self.idx += 4;
 
-        // Bloody Battle: No honba or kyotaku
         // Keep the same offset for compatibility
         let cap = match self.version {
             1 | 4 => 10,
@@ -189,11 +187,9 @@ impl<'a> ObsEncoderContext<'a> {
             .rbf_intervals(3)
             .encode(&mut self);
 
-        // Bloody Battle: No bakaze or jikaze
         // Keep the same offset for compatibility
         self.idx += 2;
 
-        // Bloody Battle: Encode ding_que (定缺) information
         // Ding que suit (3 dimensions: one-hot for Man/Pin/Sou)
         if let Some(suit) = state.ding_que {
             match suit {
@@ -230,14 +226,12 @@ impl<'a> ObsEncoderContext<'a> {
         }
 
         if matches!(self.version, 2 | 3 | 4) {
-            // Bloody Battle: Simplified kyoku encoding (no bakaze)
             let n = state.kyoku;
             IntegerEncoder::new(n as usize, 7)
                 .rescale(true)
                 .encode(&mut self);
         }
 
-        // Bloody Battle: No dora_indicators
         // Keep the same offset for compatibility
         self.encode_tile_set(std::iter::empty());
 
@@ -263,7 +257,7 @@ impl<'a> ObsEncoderContext<'a> {
             for (turn, kawa_item) in state.kawa[0].iter().enumerate() {
                 if let Some(kawa_item) = kawa_item {
                     let sutehai = kawa_item.sutehai;
-                    let tid = sutehai.tile.deaka().as_usize();
+                    let tid = sutehai.tile.as_usize();
                     let v = (-0.2 * (max_kawa_len - 1 - turn) as f32).exp();
                     self.arr.assign(self.idx, tid, v);
                 }
@@ -293,7 +287,7 @@ impl<'a> ObsEncoderContext<'a> {
                 2 => {
                     for (turn, kawa_item) in player_kawa.iter().flatten().enumerate() {
                         let row = (turn / 6).min(2);
-                        let tid = kawa_item.sutehai.tile.deaka().as_usize();
+                        let tid = kawa_item.sutehai.tile.as_usize();
                         self.arr.assign(self.idx + row, tid, 1.);
                         if kawa_item.sutehai.is_tedashi {
                             self.arr.assign(self.idx + 3 + row, tid, 1.);
@@ -305,13 +299,12 @@ impl<'a> ObsEncoderContext<'a> {
                     for (turn, kawa_item) in player_kawa.iter().enumerate() {
                         if let Some(kawa_item) = kawa_item {
                             let sutehai = kawa_item.sutehai;
-                            let tid = sutehai.tile.deaka().as_usize();
+                            let tid = sutehai.tile.as_usize();
                             let v = (-0.2 * (max_kawa_len - 1 - turn) as f32).exp();
                             self.arr.assign(self.idx, tid, v);
                             if sutehai.is_tedashi {
                                 self.arr.assign(self.idx + 1, tid, v);
                             }
-                            // Bloody Battle: No riichi (立直)
                         }
                     }
                     self.idx += 3;
@@ -320,12 +313,10 @@ impl<'a> ObsEncoderContext<'a> {
             }
         }
 
-        // Bloody Battle: 56 tiles in yama (108 - 52 = 56)
         let v = state.tiles_left as f32 / 56.;
         self.arr.fill(self.idx, v);
         self.idx += 1;
 
-        // Bloody Battle: No dora
         for _ in 0..4 {
             IntegerEncoder::new(0, 12)
                 .rescale(true)
@@ -346,12 +337,11 @@ impl<'a> ObsEncoderContext<'a> {
         for player_fuuro in &state.fuuro_overview {
             for f in player_fuuro {
                 for tile in f {
-                    let tile_id = tile.deaka().as_usize();
+                    let tile_id = tile.as_usize();
                     let i = (0..4)
                         .find(|&i| self.arr.get(self.idx + i, tile_id) == 0.)
                         .unwrap();
                     self.arr.assign(self.idx + i, tile_id, 1.);
-                    // Bloody Battle: No akas
                 }
                 self.idx += 5;
             }
@@ -359,7 +349,6 @@ impl<'a> ObsEncoderContext<'a> {
         }
 
         for player_ankan in &state.ankan_overview {
-            // Bloody Battle: 27 tile kinds
             for tile in player_ankan {
                 let tile_id = tile.as_usize();
                 if tile_id < 27 {
@@ -370,7 +359,6 @@ impl<'a> ObsEncoderContext<'a> {
         }
 
         if matches!(self.version, 2 | 3 | 4) {
-            // Bloody Battle: 27 tile kinds
             for (tid, count) in state.tiles_seen.iter().copied().enumerate() {
                 if tid < 27 {
                     self.arr.assign(self.idx, tid, count as f32 / 4.);
@@ -381,27 +369,20 @@ impl<'a> ObsEncoderContext<'a> {
             for &player_last_tedashi in &state.last_tedashis[1..] {
                 if let Some(sutehai) = player_last_tedashi {
                     let tile = sutehai.tile;
-                    let tile_id = tile.deaka().as_usize();
+                    let tile_id = tile.as_usize();
 
                     self.arr.assign(self.idx, tile_id, 1.);
-                    if tile.is_aka() {
-                        self.arr.fill(self.idx + 1, 1.);
-                    }
-                    // Bloody Battle: No dora
                 }
                 self.idx += 3;
             }
-            // Bloody Battle: No riichi (立直) sutehais
             // Keep offset for backward compatibility (3 channels per player)
             for _ in 1..4 {
                 self.idx += 3;
             }
         }
 
-        // Bloody Battle: No riichi (立直) declared
         // Keep offset for backward compatibility
         self.idx += 3;
-        // Bloody Battle: No riichi (立直) accepted
         // Keep offset for backward compatibility
         self.idx += 3;
 
@@ -413,14 +394,12 @@ impl<'a> ObsEncoderContext<'a> {
             .for_each(|(t, _)| self.arr.assign(self.idx, t, 1.));
         self.idx += 1;
 
-        // Bloody Battle: No furiten
         // Keep offset for compatibility
         self.idx += 1;
 
         let n = state.shanten as usize;
         IntegerEncoder::new(n, 6).one_hot(true).encode(&mut self);
 
-        // Bloody Battle: No riichi_accepted
         // Keep offset for compatibility
         self.idx += 1;
 
@@ -433,13 +412,9 @@ impl<'a> ObsEncoderContext<'a> {
             let tile = state
                 .last_kawa_tile
                 .expect("building chi/pon/daiminkan/ron feature without any kawa tile");
-            let tile_id = tile.deaka().as_usize();
+                    let tile_id = tile.as_usize();
 
             self.arr.assign(self.idx, tile_id, 1.);
-            if tile.is_aka() {
-                self.arr.fill(self.idx + 1, 1.);
-            }
-            // Bloody Battle: No dora_factor
 
             // pass
             if !self.at_kan_select {
@@ -457,7 +432,6 @@ impl<'a> ObsEncoderContext<'a> {
                 .enumerate()
                 .filter(|&(_, &c)| c)
                 .for_each(|(t, _)| {
-                    // Bloody Battle: No red 5s, so no conversion needed
                     self.arr.assign(self.idx, t, 1.);
                     if !self.at_kan_select {
                         self.mask[t] = true;
@@ -486,19 +460,15 @@ impl<'a> ObsEncoderContext<'a> {
                     .for_each(|(t, _)| self.arr.assign(self.idx + 3, t, 1.));
             }
 
-            // Bloody Battle: No riichi (立直) declared
         }
         self.idx += 5;
 
-        // Bloody Battle: No riichi
         // Keep offset for compatibility
         self.idx += 1;
 
-        // Bloody Battle: No chi
         // Keep offset for compatibility
         self.idx += 3;
 
-        // Bloody Battle: ACTION_SPACE = 32 (27 discard + 1 pon + 1 kan + 1 agari + 1 ryukyoku + 1 pass)
         // Action indices: 0-26 (discard), 27 (pon), 28 (kan), 29 (agari), 30 (ryukyoku), 31 (pass)
         if cans.can_pon {
             self.arr.fill(self.idx, 1.);
@@ -563,7 +533,6 @@ impl<'a> ObsEncoderContext<'a> {
                 // Handle empty max_ev_table (can happen in early game or special states)
                 if max_ev_table.is_empty() {
                     // Skip encoding if table is empty, just advance idx to maintain shape
-                    // Bloody Battle: 27 tile kinds (no jihai)
                     // Skip: max_ev encoding (2), required tiles encoding, SP table encoding
                     // Note: encode_sp_table handles empty table and adds 3 * MAX_NUM_TURNS
                     // For can_discard, there are additional 2 slots for best ev/win prob discard
@@ -595,11 +564,10 @@ impl<'a> ObsEncoderContext<'a> {
                     // Encode required tiles.
                     if cans.can_discard {
                         for candidate in &max_ev_table {
-                            let discard_tid = candidate.tile.deaka().as_usize();
+                            let discard_tid = candidate.tile.as_usize();
                             for r in &candidate.required_tiles {
-                                let required_tid = r.tile.deaka().as_usize();
+                                let required_tid = r.tile.as_usize();
                                 if candidate.shanten_down {
-                                    // Bloody Battle: 27 tile kinds (no jihai)
                                     self.arr
                                         .assign(self.idx + 27 + discard_tid, required_tid, 1.);
                                 } else {
@@ -607,7 +575,6 @@ impl<'a> ObsEncoderContext<'a> {
                                 }
                             }
                         }
-                        // Bloody Battle: 27 tile kinds (no jihai)
                         self.idx += 2 * 27;
 
                         // Handle max required tiles
@@ -617,17 +584,15 @@ impl<'a> ObsEncoderContext<'a> {
                         {
                             let max_required_tiles_tid = max_candidate
                                 .tile
-                                .deaka()
                                 .as_usize();
                             self.arr.assign(self.idx, max_required_tiles_tid, 1.);
                         }
                         self.idx += 2;
                     } else {
-                        // Bloody Battle: 27 tile kinds (no jihai)
                         self.idx += 2 * 27 + 1;
                         if let Some(first_candidate) = max_ev_table.first() {
                             for r in &first_candidate.required_tiles {
-                                let required_tid = r.tile.deaka().as_usize();
+                                let required_tid = r.tile.as_usize();
                                 self.arr.assign(self.idx, required_tid, 1.);
                             }
                         }
@@ -653,7 +618,6 @@ impl<'a> ObsEncoderContext<'a> {
                 self.encode_ev(min_tsumo_agari);
 
                 // Skip everything else.
-                // Bloody Battle: 27 tile kinds (no jihai)
                 self.idx += 2 * 27 + 2 + 3 * MAX_NUM_TURNS;
                 // 业务逻辑：在 can_discard=True 时，需要额外的 2 行用于 best ev/win prob discard
                 // 这与 empty table 和 non-empty table 的情况保持一致
@@ -705,7 +669,7 @@ impl<'a> ObsEncoderContext<'a> {
 
         if can_discard {
             for candidate in candidates {
-                let tid = candidate.tile.deaka().as_usize();
+                let tid = candidate.tile.as_usize();
                 for (turn, ((&tenpai_prob, &win_prob), &ev)) in candidate
                     .tenpai_probs
                     .iter()
@@ -746,10 +710,9 @@ impl<'a> ObsEncoderContext<'a> {
     where
         I: IntoIterator<Item = Tile>,
     {
-        // Bloody Battle: 27 tile kinds
         let mut counts = [0; 27];
         for tile in tiles {
-            let tile_id = tile.deaka().as_usize();
+                    let tile_id = tile.as_usize();
             if tile_id >= 27 {
                 continue;
             }
@@ -758,7 +721,6 @@ impl<'a> ObsEncoderContext<'a> {
             self.arr.assign(self.idx + *i, tile_id, 1.);
             *i += 1;
 
-            // Bloody Battle: No akas
         }
         self.idx += 7;
     }
@@ -768,14 +730,13 @@ impl<'a> ObsEncoderContext<'a> {
             for kan in k.kan {
                 // deaka is required, it is possible for it to be an aka
                 // (for example in Daiminkan and Kakan).
-                let tile_id = kan.deaka().as_usize();
+                let tile_id = kan.as_usize();
                 self.arr.assign(self.idx, tile_id, 1.);
             }
 
             let sutehai = k.sutehai;
-            let tile_id = sutehai.tile.deaka().as_usize();
+                    let tile_id = sutehai.tile.as_usize();
             self.arr.assign(self.idx + 1, tile_id, 1.);
-            // Bloody Battle: No akas or dora
             // Keep offset for compatibility
             self.idx += 2;
         }
@@ -784,20 +745,18 @@ impl<'a> ObsEncoderContext<'a> {
 
     fn encode_kawa(&mut self, item: Option<&KawaItem>) {
         if let Some(k) = item {
-            // Bloody Battle: No chi (only pon)
             // Chi/pon info is included in fuuro_overview instead
             // Keep offset for compatibility
             self.idx += 2;
 
             for kan in k.kan {
-                let tile_id = kan.deaka().as_usize();
+                let tile_id = kan.as_usize();
                 self.arr.assign(self.idx + 2, tile_id, 1.);
             }
 
             let sutehai = k.sutehai;
-            let tile_id = sutehai.tile.deaka().as_usize();
+                    let tile_id = sutehai.tile.as_usize();
             self.arr.assign(self.idx + 3, tile_id, 1.);
-            // Bloody Battle: No akas (红5), dora (宝牌), tedashi (手出), or riichi (立直)
             // Keep offset for backward compatibility
             self.idx += 4;
         }

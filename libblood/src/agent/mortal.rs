@@ -209,7 +209,6 @@ impl BatchAgent for MortalBatchAgent {
 
         if self.enable_quick_eval
             && cans.can_discard
-            && !cans.can_riichi
             && !cans.can_tsumo_agari
             && !cans.can_ankan
             && !cans.can_kakan
@@ -313,12 +312,10 @@ impl BatchAgent for MortalBatchAgent {
         let kan_select_idx = sync_fields.kan_action_idxs[index].take();
 
         let actor = self.player_ids[index];
-        // Bloody Battle: No akas_in_hand
         let _akas_in_hand = [false; 3]; // Placeholder
         let cans = state.last_cans();
 
         let orig_action = self.actions[action_idx];
-        // Bloody Battle: ACTION_SPACE = 32, agari action is at index 29 (not 43)
         let action =
             if self.enable_rule_based_agari_guard && orig_action == 29 && !state.rule_based_agari()
             {
@@ -326,7 +323,6 @@ impl BatchAgent for MortalBatchAgent {
                 // it. In rule-based agari guard mode, it will force to execute
                 // the best alternative option other than agari.
                 let mut q_values = self.q_values[action_idx];
-                q_values[29] = f32::MIN; // Bloody Battle: agari action is at index 29
                 q_values
                     .iter()
                     .enumerate()
@@ -338,7 +334,6 @@ impl BatchAgent for MortalBatchAgent {
             };
 
         let event = match action {
-            // Bloody Battle: 0-26 = discard (27 tile kinds)
             0..=26 => {
                 ensure!(
                     cans.can_discard,
@@ -355,7 +350,6 @@ impl BatchAgent for MortalBatchAgent {
                 }
             }
 
-            // Bloody Battle: 27 = pon
             27 => {
                 ensure!(cans.can_pon, "failed pon check: {}", state.brief_info());
 
@@ -363,8 +357,7 @@ impl BatchAgent for MortalBatchAgent {
                     .last_kawa_tile()
                     .context("invalid state: no last kawa tile")?;
 
-                // Bloody Battle: No akas
-                let consumed = [pai.deaka(); 2];
+                let consumed = [pai; 2];
                 Event::Pon {
                     actor,
                     target: cans.target_actor,
@@ -373,7 +366,6 @@ impl BatchAgent for MortalBatchAgent {
                 }
             }
 
-            // Bloody Battle: 28 = kan (decide)
             28 => {
                 ensure!(
                     cans.can_daiminkan || cans.can_ankan || cans.can_kakan,
@@ -382,11 +374,10 @@ impl BatchAgent for MortalBatchAgent {
                 );
 
                 if cans.can_daiminkan {
-                    // Bloody Battle: No akas
                     let tile = state
                         .last_kawa_tile()
                         .context("invalid state: no last kawa tile")?;
-                    let consumed = [tile.deaka(); 3];
+                    let consumed = [tile; 3];
                     Event::Daiminkan {
                         actor,
                         target: cans.target_actor,
@@ -406,10 +397,9 @@ impl BatchAgent for MortalBatchAgent {
                     } else {
                         ankan_candidates[0]
                     };
-                    // Bloody Battle: No akas
                     Event::Ankan {
                         actor,
-                        consumed: [tile.deaka(); 4],
+                        consumed: [tile; 4],
                     }
                 } else if cans.can_kakan {
                     let kakan_candidates = state.kakan_candidates();
@@ -424,18 +414,16 @@ impl BatchAgent for MortalBatchAgent {
                     } else {
                         kakan_candidates[0]
                     };
-                    // Bloody Battle: No akas
                     Event::Kakan {
                         actor,
-                        pai: tile.deaka(),
-                        consumed: [tile.deaka(); 3],
+                        pai: tile,
+                        consumed: [tile; 3],
                     }
                 } else {
                     bail!("no kan action available: {}", state.brief_info())
                 }
             }
 
-            // Bloody Battle: 29 = agari
             29 => {
                 ensure!(
                     cans.can_agari(),
@@ -450,7 +438,6 @@ impl BatchAgent for MortalBatchAgent {
                 }
             }
 
-            // Bloody Battle: 30 = ryukyoku
             30 => {
                 ensure!(
                     cans.can_ryukyoku,
@@ -461,7 +448,6 @@ impl BatchAgent for MortalBatchAgent {
                 Event::Ryukyoku { deltas: None }
             }
 
-            // Bloody Battle: 31 = pass
             31 => Event::None,
 
             _ => bail!("invalid action: {} (ACTION_SPACE = {})", action, ACTION_SPACE),

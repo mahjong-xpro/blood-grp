@@ -127,7 +127,6 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 ///   `state.PlayerState`).
 /// - Read mjai logs and produce a batch of instances for training (via
 ///   `dataset`).
-/// - Self-play under Bloody Battle rules (via `arena`).
 /// - Definitions of observation and action space for Mortal (via `consts`).
 /// - Statistical works on mjai logs (via `stat.Stat`).
 /// - mjai interface (via `mjai.Bot`).

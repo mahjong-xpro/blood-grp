@@ -17,7 +17,6 @@ impl PlayerState {
     pub const fn kyoku(&self) -> u8 {
         self.kyoku
     }
-    // Bloody Battle: No honba or kyotaku, these getters are removed
     #[getter]
     #[inline]
     #[must_use]
@@ -31,7 +30,6 @@ impl PlayerState {
     pub const fn tehai(&self) -> [u8; 27] {
         self.tehai
     }
-    // Bloody Battle: No akas_in_hand or chis, these getters are removed
     #[getter]
     #[inline]
     #[must_use]
@@ -105,7 +103,6 @@ impl PlayerState {
             .collect()
     }
 
-    // Bloody Battle: No riichi, these getters are removed
 
     #[getter]
     #[inline]

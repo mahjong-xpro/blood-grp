@@ -9,7 +9,6 @@
 //!   only choose one of normal, chitoi and kokushi.
 //! - When calculating uradora probs, the actual the number of tiles left is
 //!   calculated and used, while the original version uses a fixed value of 121.
-//! - Riichi (立直) is not available in Bloody Battle Mahjong, so you can calculate values of a dama-preferred hand,
 //!   although dama has no benefit at all in single-player mahjong.
 //! - `max_tsumo` is set to the actual value, instead of the hardcoded 17 or 18
 //!   in the original version. Not only does this reduce the amount of
@@ -41,7 +40,6 @@ pub const MAX_TSUMOS_LEFT: usize = 18;
 #[cfg(not(feature = "sp_reproduce_cpp_ver"))]
 pub const MAX_TSUMOS_LEFT: usize = 17;
 
-// Bloody Battle: 27 tile kinds (no jihai)
 #[cfg(feature = "sp_reproduce_cpp_ver")]
 const CALC_SHANTEN_FN: fn(&[u8; 27], u8) -> i8 = super::shanten::calc_normal;
 #[cfg(not(feature = "sp_reproduce_cpp_ver"))]

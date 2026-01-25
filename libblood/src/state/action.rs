@@ -1,7 +1,6 @@
 use super::PlayerState;
 use crate::mjai::Event;
 use crate::tile::Tile;
-// Bloody Battle: tuz not used
 
 use anyhow::{Result, bail, ensure};
 use pyo3::prelude::*;
@@ -13,12 +12,6 @@ pub struct ActionCandidate {
     #[pyo3(get)]
     pub can_discard: bool,
     #[pyo3(get)]
-    pub can_chi_low: bool,
-    #[pyo3(get)]
-    pub can_chi_mid: bool,
-    #[pyo3(get)]
-    pub can_chi_high: bool,
-    #[pyo3(get)]
     pub can_pon: bool,
     #[pyo3(get)]
     pub can_daiminkan: bool,
@@ -26,9 +19,6 @@ pub struct ActionCandidate {
     pub can_kakan: bool,
     #[pyo3(get)]
     pub can_ankan: bool,
-    /// Bloody Battle: No riichi (立直), always false
-    #[pyo3(get)]
-    pub can_riichi: bool,
     #[pyo3(get)]
     pub can_tsumo_agari: bool,
     #[pyo3(get)]
@@ -42,13 +32,6 @@ pub struct ActionCandidate {
 
 #[pymethods]
 impl ActionCandidate {
-    #[getter]
-    #[inline]
-    #[must_use]
-    pub const fn can_chi(&self) -> bool {
-        self.can_chi_low || self.can_chi_mid || self.can_chi_high
-    }
-
     #[getter]
     #[inline]
     #[must_use]
@@ -67,7 +50,7 @@ impl ActionCandidate {
     #[inline]
     #[must_use]
     pub const fn can_pass(&self) -> bool {
-        self.can_chi() || self.can_pon || self.can_daiminkan || self.can_ron_agari
+        self.can_pon || self.can_daiminkan || self.can_ron_agari
     }
 
     #[getter]
@@ -75,10 +58,8 @@ impl ActionCandidate {
     #[must_use]
     pub const fn can_act(&self) -> bool {
         self.can_discard
-            || self.can_chi()
             || self.can_pon
             || self.can_kan()
-            || self.can_riichi
             || self.can_agari()
             || self.can_ryukyoku
     }
@@ -119,9 +100,8 @@ impl PlayerState {
                 ensure!(cans.can_discard, "cannot discard");
                 self.ensure_tiles_in_hand(&[pai])?;
                 
-                // Bloody Battle: Check Ding Que rule
                 if let Some(ding_que_suit) = self.ding_que {
-                    let tile_id = pai.deaka().as_usize();
+                    let tile_id = pai.as_usize();
                     let tile_suit = tile_id / 9; // 0=Man, 1=Pin, 2=Sou
                     let ding_que_suit_id = match ding_que_suit {
                         crate::mjai::Suit::Man => 0,
@@ -159,9 +139,6 @@ impl PlayerState {
                 }
             }
 
-            // Event::Reach removed - Bloody Battle Mahjong does not have riichi
-
-            // Chi event removed - Bloody Battle Mahjong does not have chi
             Event::Pon {
                 actor,
                 target,
@@ -194,14 +171,14 @@ impl PlayerState {
             Event::Kakan { pai, .. } => {
                 ensure!(cans.can_kakan, "cannot kakan");
                 ensure!(
-                    self.kakan_candidates.contains(&pai.deaka()),
+                    self.kakan_candidates.contains(&pai),
                     "cannot kakan {pai}",
                 );
                 self.ensure_tiles_in_hand(&[pai])?;
             }
             Event::Ankan { consumed, .. } => {
                 ensure!(cans.can_ankan, "cannot ankan");
-                let tile = consumed[0].deaka();
+                let tile = consumed[0];
                 ensure!(self.ankan_candidates.contains(&tile), "cannot ankan {tile}");
                 self.ensure_tiles_in_hand(&consumed)?;
             }
@@ -225,10 +202,9 @@ impl PlayerState {
     fn ensure_tiles_in_hand(&self, tiles: &[Tile]) -> Result<()> {
         for &tile in tiles {
             ensure!(
-                self.tehai[tile.deaka().as_usize()] > 0,
+                self.tehai[tile.as_usize()] > 0,
                 "{tile} is not in hand",
             );
-            // Bloody Battle: No akas
         }
         Ok(())
     }
