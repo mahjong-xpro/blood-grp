@@ -227,9 +227,29 @@ impl PlayerState {
                     let tile = must_tile!(tid);
                     if count == 4 {
                         self.last_cans.can_ankan = true;
+                        let ankan_len = self.ankan_candidates.len();
+                        assert!(
+                            ankan_len < 3,
+                            "ankan_candidates capacity overflow: player {} has {} ankan candidates, attempting to add one more. Maximum is 3. This indicates invalid game log data or a bug in game logic. kyoku: {}, at_turn: {}, tiles_left: {}",
+                            self.player_id,
+                            ankan_len,
+                            self.kyoku,
+                            self.at_turn,
+                            self.tiles_left
+                        );
                         self.ankan_candidates.push(tile);
                     } else if self.pons.contains(&(tid as u8)) {
                         self.last_cans.can_kakan = true;
+                        let kakan_len = self.kakan_candidates.len();
+                        assert!(
+                            kakan_len < 3,
+                            "kakan_candidates capacity overflow: player {} has {} kakan candidates, attempting to add one more. Maximum is 3. This indicates invalid game log data or a bug in game logic. kyoku: {}, at_turn: {}, tiles_left: {}",
+                            self.player_id,
+                            kakan_len,
+                            self.kyoku,
+                            self.at_turn,
+                            self.tiles_left
+                        );
                         self.kakan_candidates.push(tile);
                     }
                 });
@@ -363,6 +383,17 @@ impl PlayerState {
     fn pon(&mut self, actor: u8, target: u8, pai: Tile, consumed: [Tile; 2]) -> Result<()> {
         let actor_rel = self.rel(actor);
         let full_set = consumed.into_iter().chain(iter::once(pai)).collect();
+        let fuuro_len = self.fuuro_overview[actor_rel].len();
+        assert!(
+            fuuro_len < 4,
+            "fuuro_overview capacity overflow: player {} (relative {}) has {} fuuro, attempting to add one more. Maximum is 4. This indicates invalid game log data or a bug in game logic. kyoku: {}, at_turn: {}, tiles_left: {}",
+            actor,
+            actor_rel,
+            fuuro_len,
+            self.kyoku,
+            self.at_turn,
+            self.tiles_left
+        );
         self.fuuro_overview[actor_rel].push(full_set);
         // Pon info is stored in fuuro_overview (Bloody Battle Mahjong has no chi)
         // Only pad kawa from the actor's perspective to avoid duplicate pushes when broadcast
@@ -406,6 +437,17 @@ impl PlayerState {
     fn daiminkan(&mut self, actor: u8, target: u8, pai: Tile, consumed: [Tile; 3]) -> Result<()> {
         let actor_rel = self.rel(actor);
         let full_set = consumed.into_iter().chain(iter::once(pai)).collect();
+        let fuuro_len = self.fuuro_overview[actor_rel].len();
+        assert!(
+            fuuro_len < 4,
+            "fuuro_overview capacity overflow: player {} (relative {}) has {} fuuro, attempting to add one more. Maximum is 4. This indicates invalid game log data or a bug in game logic. kyoku: {}, at_turn: {}, tiles_left: {}",
+            actor,
+            actor_rel,
+            fuuro_len,
+            self.kyoku,
+            self.at_turn,
+            self.tiles_left
+        );
         self.fuuro_overview[actor_rel].push(full_set);
         // Clear any previous kan before adding new one (only track most recent kan before discard)
         self.intermediate_kan.clear();
@@ -448,6 +490,17 @@ impl PlayerState {
         let actor_rel = self.rel(actor);
         for fuuro in &mut self.fuuro_overview[actor_rel] {
             if fuuro[0] == pai {
+                let fuuro_len = fuuro.len();
+                assert!(
+                    fuuro_len < 4,
+                    "fuuro capacity overflow: player {} (relative {}) has {} tiles in fuuro, attempting to add one more. Maximum is 4. This indicates invalid game log data or a bug in game logic. kyoku: {}, at_turn: {}, tiles_left: {}",
+                    actor,
+                    actor_rel,
+                    fuuro_len,
+                    self.kyoku,
+                    self.at_turn,
+                    self.tiles_left
+                );
                 fuuro.push(pai);
                 break;
             }
@@ -518,6 +571,17 @@ impl PlayerState {
     fn ankan(&mut self, actor: u8, consumed: [Tile; 4]) -> Result<()> {
         let actor_rel = self.rel(actor);
         let tile = consumed[0];
+        let ankan_len = self.ankan_overview[actor_rel].len();
+        assert!(
+            ankan_len < 4,
+            "ankan_overview capacity overflow: player {} (relative {}) has {} ankans, attempting to add one more. Maximum is 4. This indicates invalid game log data or a bug in game logic. kyoku: {}, at_turn: {}, tiles_left: {}",
+            actor,
+            actor_rel,
+            ankan_len,
+            self.kyoku,
+            self.at_turn,
+            self.tiles_left
+        );
         self.ankan_overview[actor_rel].push(tile);
         // Clear any previous kan before adding new one (only track most recent kan before discard)
         self.intermediate_kan.clear();
