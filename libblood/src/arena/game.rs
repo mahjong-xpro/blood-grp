@@ -77,20 +77,6 @@ impl Game {
 
         let reactions = mem::take(&mut self.last_reactions);
         let poll = self.board.poll(reactions)?;
-        
-        // 添加调试日志
-        if self.board.is_ding_que_phase() {
-            let all_selected = (0..4).all(|player_id| self.board.ding_que_selected(player_id));
-            eprintln!(
-                "DEBUG: Game::poll: ding_que_phase=true, all_selected={}, poll={}",
-                all_selected,
-                match poll {
-                    Poll::InGame => "InGame",
-                    Poll::End => "End",
-                }
-            );
-        }
-        
         match poll {
             Poll::InGame => {
                 // 在定缺选择阶段，不调用Agent，直接自动选择定缺（在step()中处理）
@@ -193,10 +179,6 @@ impl Game {
         if self.board.is_ding_que_phase() {
             // 检查是否所有玩家都已经选择了定缺
             let all_selected = (0..4).all(|player_id| self.board.ding_que_selected(player_id));
-            eprintln!(
-                "DEBUG: Game::commit: ding_que_phase=true, all_selected={}",
-                all_selected
-            );
             if !all_selected {
                 // 如果还有玩家没有选择定缺，设置所有玩家的reactions为Event::None
                 // step()函数会自动为所有玩家选择定缺
@@ -211,7 +193,6 @@ impl Game {
                 // 注意：此时ding_que_phase可能已经是false了（在step()中被设置为false）
                 // 所以这里需要检查一下，如果ding_que_phase已经是false，就进入正常流程
                 if !self.board.is_ding_que_phase() {
-                    eprintln!("DEBUG: Game::commit: ding_que_phase changed to false, entering normal game flow");
                     // 定缺阶段已经结束，进入正常游戏流程
                     let ctx = self.board.agent_context();
                     for (player_id, state) in ctx.player_states.iter().enumerate() {
@@ -229,8 +210,6 @@ impl Game {
                             invisible_state,
                         )?;
                     }
-                } else {
-                    eprintln!("WARNING: Game::commit: all players selected ding_que but ding_que_phase is still true! This may indicate a bug.");
                 }
             }
         } else {
@@ -323,14 +302,6 @@ impl BatchGame {
 
         while !games.is_empty() {
             cycles += 1;
-            if cycles % 1000 == 0 {
-                eprintln!(
-                    "INFO: run() loop: cycles={}, games.len()={}, actions={}",
-                    cycles,
-                    games.len(),
-                    actions
-                );
-            }
             
             for (_, game) in &mut games {
                 game.poll(agents)?;

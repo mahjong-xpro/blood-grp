@@ -113,26 +113,10 @@ impl BoardState {
         loop {
             loop_count += 1;
             if loop_count > MAX_LOOP_COUNT {
-                eprintln!(
-                    "ERROR: poll() loop exceeded maximum iterations ({}). ding_que_phase={}, tiles_left={}, can_act={:?}",
-                    MAX_LOOP_COUNT,
-                    self.ding_que_phase,
-                    self.tiles_left,
-                    self.player_states.iter().map(|s| s.last_cans().can_act()).collect::<Vec<_>>()
-                );
                 bail!(
                     "poll() loop exceeded maximum iterations ({}). This indicates a deadlock bug. \
                     Current state: ding_que_phase={}, tiles_left={}, can_act={:?}",
                     MAX_LOOP_COUNT,
-                    self.ding_que_phase,
-                    self.tiles_left,
-                    self.player_states.iter().map(|s| s.last_cans().can_act()).collect::<Vec<_>>()
-                );
-            }
-            if loop_count % 100 == 0 {
-                eprintln!(
-                    "WARNING: poll() loop iteration {}, ding_que_phase={}, tiles_left={}, can_act={:?}",
-                    loop_count,
                     self.ding_que_phase,
                     self.tiles_left,
                     self.player_states.iter().map(|s| s.last_cans().can_act()).collect::<Vec<_>>()
@@ -154,12 +138,6 @@ impl BoardState {
                     // 如果没有玩家可以行动，但是step()返回了InGame，这可能是一个bug
                     // 但是为了避免死循环，我们仍然返回InGame，让上层处理
                     // 这通常发生在游戏状态不一致的情况下
-                    eprintln!(
-                        "WARNING: poll() returned InGame but no player can act. tiles_left={}, ding_que_phase={}, can_act={:?}",
-                        self.tiles_left,
-                        self.ding_que_phase,
-                        self.player_states.iter().map(|s| s.last_cans().can_act()).collect::<Vec<_>>()
-                    );
                     return Ok(poll);
                 }
                 Poll::End => {
@@ -460,18 +438,12 @@ impl BoardState {
         // 只有在tiles_left==56且还没有进入定缺阶段时才调用haipai()
         // 如果已经进入定缺阶段，说明haipai()已经被调用过了
         if self.tiles_left == 56 && !self.ding_que_phase {
-            eprintln!("DEBUG: step() called with tiles_left=56 and ding_que_phase=false, calling haipai()");
             self.haipai()?;
-            eprintln!("DEBUG: step() after haipai(), ding_que_phase={}", self.ding_que_phase);
             return Ok(Poll::InGame);
         }
 
         // 处理定缺选择阶段（基础规则：血战到底必须在打牌前选择定缺）
         if self.ding_que_phase {
-            eprintln!("DEBUG: step() in ding_que_phase, tiles_left={}, selected={:?}", 
-                self.tiles_left, 
-                self.ding_que_selected
-            );
             // 处理所有玩家的定缺选择
             for (actor, ev) in reactions.iter().enumerate() {
                 if !self.ding_que_selected[actor] {
@@ -524,7 +496,6 @@ impl BoardState {
             
             // 检查是否所有玩家都选择了定缺
             if self.ding_que_selected.iter().all(|&x| x) {
-                eprintln!("DEBUG: step() all players selected ding_que, exiting ding_que_phase and starting first tsumo");
                 // 所有玩家都选择了定缺，退出定缺选择阶段，开始第一轮摸牌
                 self.ding_que_phase = false;
                 
@@ -555,11 +526,6 @@ impl BoardState {
                 self.tsumo_actor = self.oya;
                 
                 // 第一轮摸牌后，摸牌的玩家应该可以打牌，所以can_act()应该返回true
-                let can_act_after_first_tsumo = self.player_states.iter().any(|c| c.last_cans().can_act());
-                eprintln!("DEBUG: step() after first tsumo, can_act={}, tiles_left={}", 
-                    can_act_after_first_tsumo, 
-                    self.tiles_left
-                );
                 // 直接返回InGame，让poll()检查can_act()
                 return Ok(Poll::InGame);
             }

@@ -10,7 +10,7 @@ use crate::must_tile;
 use std::cmp::Ordering;
 use std::{iter, mem};
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, ensure, bail};
 
 #[derive(Clone, Copy)]
 pub(super) enum MoveType {
@@ -117,6 +117,21 @@ impl PlayerState {
         self.chankan_kakan_tile = None;
         self.last_discard_was_after_kan = false;
         self.intermediate_kan.clear(); // 新局开始时清空 intermediate_kan
+        
+        // 新局开始时清空 kawa 和 kawa_overview（业务规则：每局开始时打牌记录应该重置）
+        for kawa in &mut self.kawa {
+            kawa.clear();
+        }
+        for kawa_overview in &mut self.kawa_overview {
+            kawa_overview.clear();
+        }
+        // 清空 fuuro_overview 和 ankan_overview
+        for fuuro in &mut self.fuuro_overview {
+            fuuro.clear();
+        }
+        for ankan in &mut self.ankan_overview {
+            ankan.clear();
+        }
         
         self.tiles_left = 56;
         self.at_turn = 0;
@@ -257,19 +272,37 @@ impl PlayerState {
         );
         // kawa capacity is 55, which is the theoretical maximum (108 total tiles - 52 initial hands - 1 last draw)
         // If this fails, it indicates invalid game log data or a bug in game logic
+        // 业务规则：一个玩家最多只能打55张牌，这是理论最大值
+        // 如果超过55，说明游戏状态不一致或日志数据有问题，必须panic
         let kawa_len = self.kawa[actor_rel].len();
-        ensure!(
+        assert!(
             kawa_len < 55,
-            "kawa capacity overflow: player {} (relative {}) has {} discards, attempting to add one more. Maximum is 55. This indicates invalid game log data. Current tile: {:?}, kyoku: {}, at_turn: {}, tiles_left: {}",
+            "kawa capacity overflow: player {} (relative {}) has {} discards, attempting to add one more. Maximum is 55. This indicates a fundamental bug in game logic or invalid game log data. Current tile: {:?}, kyoku: {}, at_turn: {}, tiles_left: {}, tehai_sum: {}",
             actor,
             actor_rel,
             kawa_len,
             pai,
             self.kyoku,
             self.at_turn,
-            self.tiles_left
+            self.tiles_left,
+            self.tehai.iter().sum::<u8>()
         );
+        // Push to kawa (will panic if capacity exceeded, but we've already checked)
         self.kawa[actor_rel].push(Some(kawa_item));
+        // Also check kawa_overview capacity before pushing
+        let kawa_overview_len = self.kawa_overview[actor_rel].len();
+        assert!(
+            kawa_overview_len < 55,
+            "kawa_overview capacity overflow: player {} (relative {}) has {} discards in overview, attempting to add one more. Maximum is 55. This indicates a fundamental bug in game logic or invalid game log data. Current tile: {:?}, kyoku: {}, at_turn: {}, tiles_left: {}, tehai_sum: {}",
+            actor,
+            actor_rel,
+            kawa_overview_len,
+            pai,
+            self.kyoku,
+            self.at_turn,
+            self.tiles_left,
+            self.tehai.iter().sum::<u8>()
+        );
         self.kawa_overview[actor_rel].push(pai);
         self.last_kawa_tile = Some(pai);
 
@@ -573,10 +606,12 @@ impl PlayerState {
             let rel = self.rel(i);
             // kawa capacity is 55, which is the theoretical maximum
             // If this fails, it indicates invalid game log data or a bug in game logic
+            // 业务规则：一个玩家最多只能打55张牌，这是理论最大值
+            // 如果超过55，说明游戏状态不一致或日志数据有问题，必须panic
             let kawa_len = self.kawa[rel].len();
-            ensure!(
+            assert!(
                 kawa_len < 55,
-                "kawa capacity overflow in pad_kawa_for_pon_or_daiminkan: player {} (relative {}) has {} discards, attempting to pad. Maximum is 55. This indicates invalid game log data. abs_actor: {}, abs_target: {}, kyoku: {}, at_turn: {}, tiles_left: {}",
+                "kawa capacity overflow in pad_kawa_for_pon_or_daiminkan: player {} (relative {}) has {} discards, attempting to pad. Maximum is 55. This indicates a fundamental bug in game logic or invalid game log data. abs_actor: {}, abs_target: {}, kyoku: {}, at_turn: {}, tiles_left: {}",
                 i,
                 rel,
                 kawa_len,
@@ -586,6 +621,7 @@ impl PlayerState {
                 self.at_turn,
                 self.tiles_left
             );
+            // Push to kawa (will panic if capacity exceeded, but we've already checked)
             self.kawa[rel].push(None);
             i = (i + 1) % 4;
         }
