@@ -107,7 +107,7 @@ impl Invisible {
         &self,
         opponent_states: &[PlayerState; 3],
         yama_idx: usize,
-        _rinshan_idx: usize,
+        _unused: usize, // Reserved for future use (previously rinshan_idx, not used in Bloody Battle)
         version: u32,
     ) -> Array2<f32> {
         let shape = oracle_obs_shape(version);

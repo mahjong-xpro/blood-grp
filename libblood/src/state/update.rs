@@ -306,7 +306,7 @@ impl PlayerState {
         let actor_rel = self.rel(actor);
         let full_set = consumed.into_iter().chain(iter::once(pai)).collect();
         self.fuuro_overview[actor_rel].push(full_set);
-        // Chi/pon info is stored in fuuro_overview, not intermediate_chi_pon
+        // Pon info is stored in fuuro_overview (Bloody Battle Mahjong has no chi)
         self.pad_kawa_for_pon_or_daiminkan(actor, target);
 
         if actor_rel != 0 {

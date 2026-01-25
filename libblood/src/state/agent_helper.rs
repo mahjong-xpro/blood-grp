@@ -87,7 +87,7 @@ impl PlayerState {
             ret[last_self_tsumo.as_usize()] = true;
             return ret;
         } else if shanten::calc_all(&self.tehai, self.tehai_len_div3) == -1 {
-            // Ditto but for discard after chi/pon
+            // Ditto but for discard after pon (Bloody Battle Mahjong has no chi)
             return ret;
         }
 
@@ -400,16 +400,17 @@ impl PlayerState {
             };
         }
 
-        // 3n+2, tenpai after chi or pon. `self.shanten` is 0, but the actual
+        // 3n+2, tenpai after pon. `self.shanten` is 0, but the actual
         // shanten could be 0 or -1.
         //
-        // At 223m 55p 45s, `self.shanten` is 1. After 6s chi, `self.shanten`
-        // becomes 0 because `update_shanten` is always called after a chi/pon
+        // At 223m 55p 45s, `self.shanten` is 1. After pon, `self.shanten`
+        // becomes 0 because `update_shanten` is always called after a pon
         // event. The actual shanten is 0 as well.
         //
-        // At 123m 55p 45s, `self.shanten` is 0. After 6s chi, `self.shanten`
+        // At 123m 55p 45s, `self.shanten` is 0. After pon, `self.shanten`
         // becomes 0 because `update_shanten` clamps the value to be >= 0. The
         // actual shanten is -1.
+        // Note: Bloody Battle Mahjong has no chi (吃牌)
         shanten::calc_all(&self.tehai, self.tehai_len_div3)
     }
 

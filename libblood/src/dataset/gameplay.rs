@@ -403,7 +403,7 @@ impl Gameplay {
             let invisible_obs = invisibles[ctx.kyoku_idx].encode(
                 &ctx.opponent_states,
                 ctx.yama_idx,
-                0, // rinshan_idx not used in Bloody Battle
+                0, // Reserved parameter (previously rinshan_idx, not used in Bloody Battle Mahjong)
                 ctx.config.version,
             );
             self.invisible_obs.push(invisible_obs);

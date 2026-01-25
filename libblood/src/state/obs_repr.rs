@@ -382,7 +382,7 @@ impl<'a> ObsEncoderContext<'a> {
         if cans.can_pass() {
             let tile = state
                 .last_kawa_tile
-                .expect("building chi/pon/daiminkan/ron feature without any kawa tile");
+                .expect("building pon/daiminkan/ron feature without any kawa tile");
                     let tile_id = tile.as_usize();
 
             self.arr.assign(self.idx, tile_id, 1.);
@@ -713,7 +713,7 @@ impl<'a> ObsEncoderContext<'a> {
 
     fn encode_kawa(&mut self, item: Option<&KawaItem>) {
         if let Some(k) = item {
-            // Chi/pon info is included in fuuro_overview instead
+            // Pon info is included in fuuro_overview instead (Bloody Battle Mahjong has no chi)
             self.idx += 2;
 
             for kan in k.kan {
