@@ -460,17 +460,6 @@ impl PlayerState {
         Ok(())
     }
 
-    // They are kept as dead code stubs for backward compatibility
-    #[allow(dead_code)]
-    const fn reach_removed(&mut self, _actor: u8) {
-        // This function should not be called
-    }
-
-    #[allow(dead_code)]
-    fn reach_accepted_removed(&mut self, _actor: u8) -> Result<()> {
-        // This function should not be called
-        Ok(())
-    }
 
     pub(super) const fn rel(&self, actor: u8) -> usize {
         ((actor + 4 - self.player_id) % 4) as usize

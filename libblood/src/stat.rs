@@ -93,7 +93,6 @@ pub struct Stat {
 }
 
 impl fmt::Display for Stat {
-    #[allow(deprecated)] // Using deprecated fields for backward compatibility
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -199,7 +198,6 @@ Deal-in to dealer/all deal-ins {:.6}"#,
 impl Stat {
     /// We do not use `add_game(&mut self)` here as `Stat` impls `Add` and `Sum` so we
     /// can use rayon easier.
-    #[allow(deprecated)] // Using deprecated fields for backward compatibility
     #[must_use]
     pub fn from_game(events: &[Event], player_id: u8) -> Self {
         let mut stat = Self {
@@ -211,7 +209,6 @@ impl Stat {
         let mut cur_oya = 0;
         let mut jun = 0;
         let mut fuuro_num = 0;
-        #[allow(deprecated)] // Accessing deprecated fields for backward compatibility
         events.iter().for_each(|ev| match *ev {
             Event::StartKyoku { oya, scores, .. } => {
                 stat.round += 1;
