@@ -644,33 +644,86 @@ impl<'a> DivWorker<'a> {
         
         // The code below is unreachable but kept for reference
         // It uses Japanese Mahjong rules and needs to be completely rewritten for Bloody Battle
-        // Variables are commented out to avoid unused variable warnings
-        /*
-        let mut han = 0;
-        let mut yakuman = 0;
-        let _has_pinfu = false;
+        // All code after return None is unreachable, so we use #[allow] to suppress warnings
+        #[allow(unreachable_code, unused_variables, unused_macros, dead_code)]
+        {
+            let mut _han = 0;
+            let mut _yakuman = 0;
+            let _has_pinfu = false;
 
-        macro_rules! make_return {
-            () => {
-                return None;
-            };
-        }
-        macro_rules! check_early_return {
-            ($($block:tt)*) => {{
-                $($block)*;
-                if RETURN_IF_ANY {
-                    make_return!();
-                }
-            }};
-        }
+            macro_rules! make_return {
+                () => {
+                    return None;
+                };
+            }
+            macro_rules! check_early_return {
+                ($($block:tt)*) => {{
+                    $($block)*;
+                    if RETURN_IF_ANY {
+                        make_return!();
+                    }
+                }};
+            }
 
-        if _has_pinfu {
-            check_early_return! { han += 1 };
+            if _has_pinfu {
+                check_early_return! { _han += 1 };
+            }
+            if self.div.has_chitoi {
+                check_early_return! { _han += 2 };
+            }
+            if self.div.has_ryanpeikou {
+                check_early_return! { _han += 3 };
+            }
+            if self.div.has_ittsuu {
+                check_early_return! { _han += 2 };
+            }
+            if self.div.has_sanshoku {
+                check_early_return! { _han += 2 };
+            }
+            if self.div.has_sanshoku_doukou {
+                check_early_return! { _han += 2 };
+            }
+            if self.div.has_suukantsu {
+                check_early_return! { _yakuman += 1 };
+            }
+            if self.div.has_daisangen {
+                check_early_return! { _yakuman += 1 };
+            }
+            if self.div.has_shousuushii {
+                check_early_return! { _yakuman += 1 };
+            }
+            if self.div.has_daisuushii {
+                check_early_return! { _yakuman += 1 };
+            }
+            if self.div.has_chuuren {
+                check_early_return! { _yakuman += 1 };
+            }
+            if self.div.has_suukantsu {
+                check_early_return! { _yakuman += 1 };
+            }
+            if self.div.has_tsuuiisou {
+                check_early_return! { _yakuman += 1 };
+            }
+            if self.div.has_ryuuiisou {
+                check_early_return! { _yakuman += 1 };
+            }
+            if self.div.has_chinroutou {
+                check_early_return! { _yakuman += 1 };
+            }
+            if self.div.has_kokushi {
+                check_early_return! { _yakuman += 1 };
+            }
+            if self.div.has_suushiihou {
+                check_early_return! { _yakuman += 1 };
+            }
+            if _yakuman > 0 {
+                make_return!();
+            }
+            if _han == 0 {
+                make_return!();
+            }
+            make_return!();
         }
-        if self.div.has_chitoi {
-            check_early_return! { han += 2 };
-        }
-        */
         if self.div.has_ryanpeikou {
             // 二盃口
             check_early_return! { han += 3 };
