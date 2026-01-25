@@ -177,10 +177,40 @@ impl Game {
         // 在定缺选择阶段，不调用Agent，直接自动选择定缺（在step()中处理）
         // 这样可以避免Agent处理未训练过的状态导致NaN
         if self.board.is_ding_que_phase() {
-            // 在定缺选择阶段，设置所有玩家的reactions为Event::None
-            // step()函数会自动为所有玩家选择定缺
-            for player_id in 0..4 {
-                self.last_reactions[player_id] = EventExt::no_meta(Event::None);
+            // 检查是否所有玩家都已经选择了定缺
+            let all_selected = (0..4).all(|player_id| self.board.ding_que_selected(player_id));
+            if !all_selected {
+                // 如果还有玩家没有选择定缺，设置所有玩家的reactions为Event::None
+                // step()函数会自动为所有玩家选择定缺
+                for player_id in 0..4 {
+                    if !self.board.ding_que_selected(player_id) {
+                        self.last_reactions[player_id] = EventExt::no_meta(Event::None);
+                    }
+                }
+            } else {
+                // 如果所有玩家都已经选择了定缺，step()已经处理完了（退出定缺阶段并开始第一轮摸牌）
+                // 但是下次poll()需要正常游戏流程的reactions，所以需要调用Agent
+                // 注意：此时ding_que_phase可能已经是false了（在step()中被设置为false）
+                // 所以这里需要检查一下，如果ding_que_phase已经是false，就进入正常流程
+                if !self.board.is_ding_que_phase() {
+                    // 定缺阶段已经结束，进入正常游戏流程
+                    let ctx = self.board.agent_context();
+                    for (player_id, state) in ctx.player_states.iter().enumerate() {
+                        if !state.last_cans().can_act() {
+                            continue;
+                        }
+
+                        let invisible_state = self.invisible_state_cache[player_id].take();
+
+                        let idx = self.indexes[player_id];
+                        self.last_reactions[player_id] = agents[idx.agent_idx].get_reaction(
+                            idx.player_id_idx,
+                            ctx.log,
+                            state,
+                            invisible_state,
+                        )?;
+                    }
+                }
             }
         } else {
             let ctx = self.board.agent_context();

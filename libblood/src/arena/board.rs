@@ -500,6 +500,13 @@ impl BoardState {
                 };
                 self.broadcast(&first_tsumo);
                 self.add_log_no_meta(first_tsumo);
+                
+                // 初始化tsumo_actor为oya（第一轮摸牌后，下一个摸牌的是oya）
+                self.tsumo_actor = self.oya;
+                
+                // 第一轮摸牌后，摸牌的玩家应该可以打牌，所以can_act()应该返回true
+                // 直接返回InGame，让poll()检查can_act()
+                return Ok(Poll::InGame);
             }
             
             // 如果还在定缺选择阶段，返回 InGame 等待更多玩家选择
