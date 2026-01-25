@@ -382,9 +382,9 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
                         // i 巡目で聴牌し、次の巡目で和了の場合は一発成立
                         let win_ippatsu = assume_riichi;
                         // 最後の巡目で和了の場合は海底撈月成立
-                        let win_haitei = self.sup.calc_haitei && i == MAX_TSUMO - 1;
+                        let _win_haitei = self.sup.calc_haitei && i == MAX_TSUMO - 1; // Bloody Battle: No haitei
                         let han_plus =
-                            win_double_riichi as usize + win_ippatsu as usize + win_haitei as usize;
+                            win_double_riichi as usize + win_ippatsu as usize + _win_haitei as usize;
 
                         win_probs[i] += tump_prob;
                         exp_values[i] += tump_prob * scores[han_plus];
