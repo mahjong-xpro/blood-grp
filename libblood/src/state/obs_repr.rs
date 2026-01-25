@@ -628,6 +628,12 @@ impl<'a> ObsEncoderContext<'a> {
 
                     let ev_scale = if max_ev < 1. { 0. } else { 1. / max_ev };
                     self.encode_sp_table(max_ev_table, cans.can_discard, ev_scale);
+                    // 业务逻辑：在 can_discard=True 时，需要额外的 2 行用于 best ev/win prob discard
+                    // 这与 empty table 的情况保持一致
+                    if cans.can_discard {
+                        // Additional 2 for best ev/win prob discard (not handled by encode_sp_table)
+                        self.idx += 2;
+                    }
                 }
             } else {
                 // Use the minimal tsumo agari point as the max EV. It is
