@@ -285,9 +285,9 @@ impl Stat {
 
         let mut cur_scores = [0; 4];
         // Bloody Battle: No riichi (立直), these variables are kept for compatibility but unused
-        let _riichi_declared = false;
-        let _riichi_accepted = false;
-        let _others_riichi_declared = false;
+        let mut _riichi_declared = false;
+        let mut _riichi_accepted = false;
+        let mut _others_riichi_declared = false;
         let mut cur_oya = 0;
         let mut jun = 0;
         let mut fuuro_num = 0;
@@ -296,9 +296,9 @@ impl Stat {
             Event::StartKyoku { oya, scores, .. } => {
                 stat.round += 1;
                 cur_scores = scores;
-                riichi_declared = false;
-                riichi_accepted = false;
-                others_riichi_declared = false;
+                _riichi_declared = false;
+                _riichi_accepted = false;
+                _others_riichi_declared = false;
                 cur_oya = oya;
                 if cur_oya == player_id {
                     stat.oya += 1;
