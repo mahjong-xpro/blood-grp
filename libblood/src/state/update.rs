@@ -118,6 +118,14 @@ impl PlayerState {
         self.last_discard_was_after_kan = false;
         self.intermediate_kan.clear(); // 新局开始时清空 intermediate_kan
         
+        // 新局开始时清空所有副露相关的状态
+        self.pons.clear();
+        self.minkans.clear();
+        self.ankans.clear();
+        self.is_menzen = true;
+        self.kans_on_board = 0;
+        self.at_rinshan = false;
+        
         // 新局开始时清空 kawa 和 kawa_overview（业务规则：每局开始时打牌记录应该重置）
         for kawa in &mut self.kawa {
             kawa.clear();
