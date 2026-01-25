@@ -1,12 +1,13 @@
 use super::PlayerState;
 use super::action::ActionCandidate;
-use super::item::{ChiPon, KawaItem, Sutehai};
+use super::item::{KawaItem, Sutehai};
+// Bloody Battle: ChiPon removed (no chi)
 use crate::algo::agari::{self, AgariCalculator};
 use crate::algo::shanten;
 use crate::mjai::Event;
 use crate::rankings::Rankings;
 use crate::tile::Tile;
-use crate::{must_tile, tu8, tuz};
+use crate::must_tile;
 use std::cmp::Ordering;
 use std::{iter, mem};
 
@@ -132,7 +133,11 @@ impl PlayerState {
 
         self.ankan_candidates.clear();
         self.kakan_candidates.clear();
-        // Bloody Battle: No chankan_chance
+        // Bloody Battle: Reset chankan tracking at start of each turn
+        self.chankan_chance = None;
+        self.chankan_kakan_actor = None;
+        self.chankan_kakan_tile = None;
+        self.last_discard_was_after_kan = false;
         
         // Initialize tehai from tehais
         for &tile in &tehais[self.player_id as usize] {
@@ -193,8 +198,10 @@ impl PlayerState {
                     winning_tile: pai.deaka().as_u8(),
                     is_ron: false,
                     ding_que: self.ding_que,
-                    is_after_kan: false,
+                    is_after_kan: self.at_rinshan, // 杠上花：从岭上牌摸的
                     is_kan_discard: false,
+                    is_chankan: false,
+                    exclude_gen_tile: None,
                 };
                 self.last_cans.can_tsumo_agari = agari_calc.has_yaku();
             }
@@ -242,6 +249,11 @@ impl PlayerState {
         }
 
         // Bloody Battle: No riichi, no dora
+        // Check if there was a kan before this discard (for 杠上炮)
+        let was_kan_before_discard = !self.intermediate_kan.is_empty();
+        // Store this info for agari_points() to use later
+        self.last_discard_was_after_kan = was_kan_before_discard;
+        
         let sutehai = Sutehai {
             tile: pai,
             is_tedashi: !tsumogiri,
@@ -293,8 +305,10 @@ impl PlayerState {
                     winning_tile: pai.deaka().as_u8(),
                     is_ron: true,
                     ding_que: self.ding_que,
-                    is_after_kan: self.at_rinshan,
-                    is_kan_discard: false,
+                    is_after_kan: false, // 荣和不是从岭上牌摸的
+                    is_kan_discard: was_kan_before_discard, // 杠上炮：刚有人杠后打出的牌
+                    is_chankan: false, // dahai()中的荣和不是抢杠
+                    exclude_gen_tile: None,
                 };
                 self.last_cans.can_ron_agari = agari_calc.has_yaku();
             }
@@ -328,7 +342,7 @@ impl PlayerState {
             for t in consumed {
                 self.witness_tile(t)?;
             }
-            for t in full_set {
+            for _t in full_set {
                 // Bloody Battle: No dora
             }
             // Bloody Battle: No riichi
@@ -372,7 +386,7 @@ impl PlayerState {
             for t in consumed {
                 self.witness_tile(t)?;
             }
-            for t in full_set {
+            for _t in full_set {
                 // Bloody Battle: No dora
             }
             // Bloody Battle: No riichi
@@ -415,11 +429,15 @@ impl PlayerState {
             // Bloody Battle: No dora
             self.last_kawa_tile = Some(pai); // for getting winning tile in self.agari
 
-            // 槍槓
+            // 槍槓 (抢杠)
+            // 当其他玩家加杠时，如果听的牌正好是加杠的牌，可以抢杠和牌
+            // 抢杠时，加杠的玩家的根不应该计算
             if !self.at_furiten && self.waits[pai.deaka().as_usize()] {
                 self.last_cans.can_ron_agari = true;
                 self.to_mark_same_cycle_furiten = Some(());
                 self.chankan_chance = Some(());
+                self.chankan_kakan_actor = Some(actor); // 记录加杠的玩家，用于排除其根
+                self.chankan_kakan_tile = Some(pai.deaka().as_u8()); // 记录加杠的牌，用于排除其根
             } else {
                 // Bloody Battle: No ippatsu
             }

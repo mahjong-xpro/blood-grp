@@ -4,7 +4,7 @@ import numpy as np
 from torch.utils.data import IterableDataset
 from model import GRP
 from reward_calculator import RewardCalculator
-from libriichi.dataset import GameplayLoader
+from libblood.dataset import GameplayLoader
 from config import config
 
 class FileDatasetsIter(IterableDataset):
@@ -103,7 +103,9 @@ class FileDatasetsIter(IterableDataset):
                 assert len(kyoku_rewards) >= at_kyoku[-1] + 1 # usually they are equal, unless there is no action in the last kyoku
 
                 final_scores = grp.take_final_scores()
-                scores_seq = np.concatenate((grp_feature[:, 3:] * 1e4, [final_scores]))
+                # Bloody Battle: GRP feature is [kyoku, score[0], score[1], score[2], score[3]]
+                # So score columns are indices 1, 2, 3, 4 (not 3, 4, 5, 6)
+                scores_seq = np.concatenate((grp_feature[:, 1:] * 1e4, [final_scores]))
                 rank_by_player_seq = (-scores_seq).argsort(-1, kind='stable').argsort(-1, kind='stable')
                 player_ranks = rank_by_player_seq[:, player_id]
 

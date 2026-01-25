@@ -41,7 +41,8 @@ pub const MAX_TSUMOS_LEFT: usize = 18;
 #[cfg(not(feature = "sp_reproduce_cpp_ver"))]
 pub const MAX_TSUMOS_LEFT: usize = 17;
 
+// Bloody Battle: 27 tile kinds (no jihai)
 #[cfg(feature = "sp_reproduce_cpp_ver")]
-const CALC_SHANTEN_FN: fn(&[u8; 34], u8) -> i8 = super::shanten::calc_normal;
+const CALC_SHANTEN_FN: fn(&[u8; 27], u8) -> i8 = super::shanten::calc_normal;
 #[cfg(not(feature = "sp_reproduce_cpp_ver"))]
-const CALC_SHANTEN_FN: fn(&[u8; 34], u8) -> i8 = super::shanten::calc_all;
+const CALC_SHANTEN_FN: fn(&[u8; 27], u8) -> i8 = super::shanten::calc_all;

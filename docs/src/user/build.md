@@ -31,20 +31,20 @@ Check [pytorch's doc](https://pytorch.org/get-started/locally/) on how to instal
 Only `torch` is needed. You can skip the installation of `torchvision` and `torchaudio`.
 ```
 
-### Build and install libriichi
+### Build and install libblood
 > Working directory: `$MORTAL_ROOT`
 ```shell
-$ cargo build -p libriichi --lib --release
+$ cargo build -p libblood --lib --release
 ```
 
 For Linux
 ```shell
-$ cp target/release/libriichi.so mortal/libriichi.so
+$ cp target/release/libblood.so mortal/libblood.so
 ```
 
 For Windows (MSYS2)
 ```shell
-$ cp target/release/riichi.dll mortal/libriichi.pyd
+$ cp target/release/blood.dll mortal/libblood.pyd
 ```
 
 ### Test the environment
@@ -54,8 +54,8 @@ $ python
 Python 3.9.7 | packaged by conda-forge | (default, Sep 29 2021, 19:23:11)
 [GCC 9.4.0] on linux
 Type "help", "copyright", "credits" or "license" for more information.
->>> import libriichi
->>> help(libriichi)
+>>> import libblood
+>>> help(libblood)
 ```
 
 ## Optional targets
@@ -68,13 +68,13 @@ $ cargo test --workspace --no-default-features --features flate2/zlib -- --nocap
 ### Run benchmarks
 > Working directory: `$MORTAL_ROOT`
 ```shell
-$ cargo test -p libriichi --no-default-features --bench bench
+$ cargo test -p libblood --no-default-features --bench bench
 ```
 
 ### Build executable utilities
 > Working directory: `$MORTAL_ROOT`
 ```shell
-$ cargo build -p libriichi --bins --no-default-features --release
+$ cargo build -p libblood --bins --no-default-features --release
 $ cargo build -p exe-wrapper --release
 ```
 

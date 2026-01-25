@@ -12,7 +12,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_sequence
 from torch.utils.data import DataLoader, IterableDataset
 from torch.utils.tensorboard import SummaryWriter
 from model import GRP
-from libriichi.dataset import Grp
+from libblood.dataset import Grp
 from common import tqdm
 from config import config
 

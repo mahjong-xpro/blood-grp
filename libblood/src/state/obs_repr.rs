@@ -413,13 +413,8 @@ impl<'a> ObsEncoderContext<'a> {
                 .enumerate()
                 .filter(|&(_, &c)| c)
                 .for_each(|(t, _)| {
-                    let deaka_t = match t as u8 {
-                        tu8!(5mr) => tuz!(5m),
-                        tu8!(5pr) => tuz!(5p),
-                        tu8!(5sr) => tuz!(5s),
-                        _ => t,
-                    };
-                    self.arr.assign(self.idx, deaka_t, 1.);
+                    // Bloody Battle: No red 5s, so no conversion needed
+                    self.arr.assign(self.idx, t, 1.);
                     if !self.at_kan_select {
                         self.mask[t] = true;
                     }
@@ -451,38 +446,20 @@ impl<'a> ObsEncoderContext<'a> {
         }
         self.idx += 5;
 
-        if cans.can_riichi {
-            self.arr.fill(self.idx, 1.);
-            if !self.at_kan_select {
-                self.mask[37] = true;
-            }
-        }
+        // Bloody Battle: No riichi
+        // Keep offset for compatibility
         self.idx += 1;
 
-        if cans.can_chi_low {
-            self.arr.fill(self.idx, 1.);
-            if !self.at_kan_select {
-                self.mask[38] = true;
-            }
-        }
-        if cans.can_chi_mid {
-            self.arr.fill(self.idx + 1, 1.);
-            if !self.at_kan_select {
-                self.mask[39] = true;
-            }
-        }
-        if cans.can_chi_high {
-            self.arr.fill(self.idx + 2, 1.);
-            if !self.at_kan_select {
-                self.mask[40] = true;
-            }
-        }
+        // Bloody Battle: No chi
+        // Keep offset for compatibility
         self.idx += 3;
 
+        // Bloody Battle: ACTION_SPACE = 32 (27 discard + 1 pon + 1 kan + 1 agari + 1 ryukyoku + 1 pass)
+        // Action indices: 0-26 (discard), 27 (pon), 28 (kan), 29 (agari), 30 (ryukyoku), 31 (pass)
         if cans.can_pon {
             self.arr.fill(self.idx, 1.);
             if !self.at_kan_select {
-                self.mask[41] = true;
+                self.mask[27] = true; // pon action
             }
         }
         self.idx += 1;
@@ -490,7 +467,7 @@ impl<'a> ObsEncoderContext<'a> {
         if cans.can_daiminkan {
             self.arr.fill(self.idx, 1.);
             if !self.at_kan_select {
-                self.mask[42] = true;
+                self.mask[28] = true; // kan action
             }
         }
         self.idx += 1;
@@ -499,11 +476,11 @@ impl<'a> ObsEncoderContext<'a> {
             for tile in state.ankan_candidates {
                 self.arr.assign(self.idx, tile.as_usize(), 1.);
                 if self.at_kan_select {
-                    self.mask[tile.as_usize()] = true;
+                    self.mask[tile.as_usize()] = true; // discard tile for kan
                 }
             }
             if !self.at_kan_select {
-                self.mask[42] = true;
+                self.mask[28] = true; // kan action
             }
         }
         self.idx += 1;
@@ -512,11 +489,11 @@ impl<'a> ObsEncoderContext<'a> {
             for tile in state.kakan_candidates {
                 self.arr.assign(self.idx, tile.as_usize(), 1.);
                 if self.at_kan_select {
-                    self.mask[tile.as_usize()] = true;
+                    self.mask[tile.as_usize()] = true; // discard tile for kan
                 }
             }
             if !self.at_kan_select {
-                self.mask[42] = true;
+                self.mask[28] = true; // kan action
             }
         }
         self.idx += 1;
@@ -524,7 +501,7 @@ impl<'a> ObsEncoderContext<'a> {
         if cans.can_agari() {
             self.arr.fill(self.idx, 1.);
             if !self.at_kan_select {
-                self.mask[43] = true;
+                self.mask[29] = true; // agari action
             }
         }
         self.idx += 1;
@@ -532,7 +509,7 @@ impl<'a> ObsEncoderContext<'a> {
         if cans.can_ryukyoku {
             self.arr.fill(self.idx, 1.);
             if !self.at_kan_select {
-                self.mask[44] = true;
+                self.mask[30] = true; // ryukyoku action
             }
         }
         self.idx += 1;
@@ -556,14 +533,16 @@ impl<'a> ObsEncoderContext<'a> {
                         for r in &candidate.required_tiles {
                             let required_tid = r.tile.deaka().as_usize();
                             if candidate.shanten_down {
+                                // Bloody Battle: 27 tile kinds (no jihai)
                                 self.arr
-                                    .assign(self.idx + 34 + discard_tid, required_tid, 1.);
+                                    .assign(self.idx + 27 + discard_tid, required_tid, 1.);
                             } else {
                                 self.arr.assign(self.idx + discard_tid, required_tid, 1.);
                             }
                         }
                     }
-                    self.idx += 2 * 34;
+                    // Bloody Battle: 27 tile kinds (no jihai)
+                    self.idx += 2 * 27;
 
                     let max_required_tiles_tid = max_ev_table
                         .iter()
@@ -575,7 +554,8 @@ impl<'a> ObsEncoderContext<'a> {
                     self.arr.assign(self.idx, max_required_tiles_tid, 1.);
                     self.idx += 2;
                 } else {
-                    self.idx += 2 * 34 + 1;
+                    // Bloody Battle: 27 tile kinds (no jihai)
+                    self.idx += 2 * 27 + 1;
                     for r in &max_ev_table[0].required_tiles {
                         let required_tid = r.tile.deaka().as_usize();
                         self.arr.assign(self.idx, required_tid, 1.);
@@ -595,7 +575,8 @@ impl<'a> ObsEncoderContext<'a> {
                 self.encode_ev(min_tsumo_agari);
 
                 // Skip everything else.
-                self.idx += 2 * 34 + 2 + 3 * MAX_NUM_TURNS;
+                // Bloody Battle: 27 tile kinds (no jihai)
+                self.idx += 2 * 27 + 2 + 3 * MAX_NUM_TURNS;
             }
         }
 

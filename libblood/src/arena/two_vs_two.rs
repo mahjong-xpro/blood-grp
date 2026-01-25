@@ -162,7 +162,7 @@ impl TwoVsTwo {
             new_challenger_agent(&challenger_player_ids)?,
             new_champion_agent(&champion_player_ids)?,
         ];
-        let batch_game = BatchGame::tenhou_hanchan(self.disable_progress_bar);
+        let batch_game = BatchGame::standard_game(self.disable_progress_bar);
 
         let mut challenger_idx = 0;
         let mut champion_idx = 0;
@@ -257,7 +257,7 @@ impl TwoVsTwo {
             new_challenger_agent(&challenger_player_ids)?,
             new_champion_agent(&champion_player_ids)?,
         ];
-        let batch_game = BatchGame::tenhou_hanchan(self.disable_progress_bar);
+        let batch_game = BatchGame::standard_game(self.disable_progress_bar);
 
         let indexes = if split == 0 {
             [[

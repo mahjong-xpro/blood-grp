@@ -7,7 +7,7 @@ use std::mem;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use crossbeam::sync::WaitGroup;
 use ndarray::prelude::*;
 use numpy::{PyArray1, PyArray2};
@@ -314,18 +314,19 @@ impl BatchAgent for MortalBatchAgent {
 
         let actor = self.player_ids[index];
         // Bloody Battle: No akas_in_hand
-        let akas_in_hand = [false; 3]; // Placeholder
+        let _akas_in_hand = [false; 3]; // Placeholder
         let cans = state.last_cans();
 
         let orig_action = self.actions[action_idx];
+        // Bloody Battle: ACTION_SPACE = 32, agari action is at index 29 (not 43)
         let action =
-            if self.enable_rule_based_agari_guard && orig_action == 43 && !state.rule_based_agari()
+            if self.enable_rule_based_agari_guard && orig_action == 29 && !state.rule_based_agari()
             {
                 // The engine wants agari, but the rule-based engine is against
                 // it. In rule-based agari guard mode, it will force to execute
                 // the best alternative option other than agari.
                 let mut q_values = self.q_values[action_idx];
-                q_values[43] = f32::MIN;
+                q_values[29] = f32::MIN; // Bloody Battle: agari action is at index 29
                 q_values
                     .iter()
                     .enumerate()

@@ -157,7 +157,7 @@ macro_rules! must_tile {
 
 #[cfg(doctest)]
 /// ```rust,compile_fail
-/// use riichi::tu8;
+/// use blood::tu8;
 ///
 /// let t = tu8!(0m);
 /// ```

@@ -21,7 +21,7 @@ where
     /// Example:
     ///
     /// ```rust
-    /// use riichi::agent::{BatchAgent, BatchifiedAgent, Tsumogiri};
+    /// use blood::agent::{BatchAgent, BatchifiedAgent, Tsumogiri};
     ///
     /// let batch_tsumogiri = BatchifiedAgent::new(|i| Ok(Tsumogiri(i)), &[0, 1, 2, 3]).unwrap();
     /// fn impl_test<T: BatchAgent>(_: T) {}

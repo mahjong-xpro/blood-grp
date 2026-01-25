@@ -6,7 +6,7 @@ import secrets
 import os
 from model import Brain, DQN
 from engine import MortalEngine
-from libriichi.arena import OneVsThree
+from libblood.arena import OneVsThree
 from config import config
 
 def main():

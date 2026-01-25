@@ -8,7 +8,7 @@ use crate::vec_ops::vec_add_assign;
 use crate::{must_tile, t, tu8, tuz};
 
 use anyhow::{Context, Result, ensure};
-use tinyvec::array_vec;
+// Bloody Battle: array_vec not used
 
 impl PlayerState {
     /// Used by `BoardState` to check if a player is making 4 kans on his own.
@@ -37,6 +37,20 @@ impl PlayerState {
         for (i, count) in self.tehai.iter().copied().enumerate() {
             if count == 0 {
                 continue;
+            }
+
+            // Bloody Battle: Check Ding Que rule - cannot discard ding_que suit tiles
+            if let Some(ding_que_suit) = self.ding_que {
+                let tile_suit = i / 9; // 0=Man, 1=Pin, 2=Sou
+                let ding_que_suit_id = match ding_que_suit {
+                    crate::mjai::Suit::Man => 0,
+                    crate::mjai::Suit::Pin => 1,
+                    crate::mjai::Suit::Sou => 2,
+                };
+                // Cannot discard ding_que suit tiles
+                if tile_suit == ding_que_suit_id {
+                    continue; // Skip ding_que suit tiles
+                }
             }
 
             ret[i] = !self.forbidden_tiles[i];
@@ -128,6 +142,7 @@ impl PlayerState {
                     let agari_calc = AgariCalculator {
                         tehai: &tehai_3n2,
                         is_menzen: self.is_menzen,
+                        exclude_gen_tile: None,
                         pons: &self.pons,
                         minkans: &self.minkans,
                         ankans: &self.ankans,
@@ -136,6 +151,7 @@ impl PlayerState {
                         ding_que: self.ding_que,
                         is_after_kan: false,
                         is_kan_discard: false,
+                        is_chankan: false,
                     };
                     ret[discard] = agari_calc.has_yaku();
                 }
@@ -262,7 +278,7 @@ impl PlayerState {
                 .iter_mut()
                 .enumerate()
                 .skip(1)
-                .for_each(|(idx, s)| {
+                .for_each(|(_idx, s)| {
                     // Bloody Battle: All players pay the same (no oya advantage)
                     *s -= max_win_point.tsumo_ko;
                 });
@@ -309,7 +325,22 @@ impl PlayerState {
             tehai[tid] += 1;
         }
 
-        // TODO: Determine is_after_kan and is_kan_discard from game state
+        // is_after_kan: true if tsumo and at_rinshan (杠上花)
+        // is_kan_discard: true if ron and the discarded tile was after a kan (杠上炮)
+        // is_chankan: true if this is chankan (抢杠) - ron on kakan
+        // Note: 
+        //   - 抢杠、杠上花、杠上炮是不同的：
+        //     * 抢杠：在别人加杠时抢杠和牌，+1番（平胡1番 + 抢杠1番 = 2番）
+        //     * 杠上花：杠牌后摸牌自摸，+1番（自摸1番 + 平胡1番 + 杠上花1番 = 3番）
+        //     * 杠上炮：杠牌后打出的牌和牌，+1番（平胡1番 + 杠上炮1番 = 2番）
+        //   - chankan is detected via chankan_chance (set in update.rs::kakan())
+        //   - kan_discard for dahai is detected via last_discard_was_after_kan (set in update.rs::dahai())
+        //   - 抢杠时，被抢杠的玩家的根不应该计算（因为加杠的牌被抢走了）
+        let is_chankan = is_ron && self.chankan_chance.is_some();
+        let is_kan_discard_from_dahai = is_ron && self.last_discard_was_after_kan && !is_chankan;
+        // For chankan, exclude the kakan tile from gen count for the kakan player
+        // But this is for the winning player, so exclude_gen_tile is None
+        // The kakan player's gen exclusion is handled separately in handle_hora
         let agari_calc = AgariCalculator {
             tehai: &tehai,
             is_menzen: self.is_menzen,
@@ -319,8 +350,56 @@ impl PlayerState {
             winning_tile: winning_tile.deaka().as_u8(),
             is_ron,
             ding_que: self.ding_que,
-            is_after_kan: self.at_rinshan, // TODO: Properly track kan state
-            is_kan_discard: false, // TODO: Properly track kan discard state
+            is_after_kan: !is_ron && self.at_rinshan, // 杠上花：自摸且从岭上牌摸的
+            is_kan_discard: is_kan_discard_from_dahai, // 杠上炮：杠后打出的牌（不包括抢杠）
+            is_chankan, // 抢杠：在别人加杠时抢杠和牌
+            exclude_gen_tile: None, // For winning player, no exclusion needed
+        };
+        let agari = agari_calc
+            .agari()
+            .context("not a hora hand")?;
+
+        // Bloody Battle: No oya advantage
+        Ok(agari.point(false))
+    }
+
+    /// Calculate agari points excluding gen for a specific tile (for chankan)
+    /// This is used when calculating the payment amount for the kakan player in chankan
+    pub fn agari_points_exclude_gen(&self, is_ron: bool, exclude_tile: u8, _ura_indicators: &[Tile]) -> Result<Point> {
+        ensure!(
+            is_ron && self.last_cans.can_ron_agari || self.last_cans.can_tsumo_agari,
+            "cannot agari"
+        );
+
+        let winning_tile = if is_ron {
+            self.last_kawa_tile
+        } else {
+            self.last_self_tsumo
+        }
+        .context("cannot find the winning tile")?;
+
+        // Add winning tile to tehai for agari calculation
+        let mut tehai = self.tehai;
+        if is_ron {
+            let tid = winning_tile.deaka().as_usize();
+            tehai[tid] += 1;
+        }
+
+        let is_chankan = is_ron && self.chankan_chance.is_some();
+        let is_kan_discard_from_dahai = is_ron && self.last_discard_was_after_kan && !is_chankan;
+        let agari_calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: self.is_menzen,
+            pons: &self.pons,
+            minkans: &self.minkans,
+            ankans: &self.ankans,
+            winning_tile: winning_tile.deaka().as_u8(),
+            is_ron,
+            ding_que: self.ding_que,
+            is_after_kan: !is_ron && self.at_rinshan,
+            is_kan_discard: is_kan_discard_from_dahai,
+            is_chankan,
+            exclude_gen_tile: Some(exclude_tile), // Exclude this tile from gen count
         };
         let agari = agari_calc
             .agari()
@@ -382,7 +461,7 @@ impl PlayerState {
         ensure!(cur_shanten >= 0, "can't calculate an agari hand");
 
         let mut can_discard = self.last_cans.can_discard;
-        let (tsumos_left, calc_haitei) = if can_discard {
+        let (tsumos_left, _calc_haitei) = if can_discard {
             (self.tiles_left / 4, self.tiles_left.is_multiple_of(4))
         } else {
             let target = self.rel(self.last_cans.target_actor) as u8;
@@ -403,9 +482,10 @@ impl PlayerState {
         // Bloody Battle: No riichi, so no special discard handling
         let tehai = self.tehai;
 
-        // TODO: SPCalculator needs to be updated for Bloody Battle
-        // For now, return empty table as placeholder
-        // This will need to be fixed when we update SPCalculator
+        // Bloody Battle: SPCalculator is updated for Bloody Battle rules
+        // - No riichi, dora, haitei calculations (fields set to false/empty)
+        // - get_score() method uses Bloody Battle fan-based scoring
+        // - All Japanese Mahjong-specific calculations are disabled
         let init_state = InitState {
             tehai,
             akas_in_hand: [false; 3], // Bloody Battle: No akas

@@ -84,6 +84,14 @@ pub struct PlayerState {
     pub(super) ankan_candidates: ArrayVec<[Tile; 3]>,
     pub(super) kakan_candidates: ArrayVec<[Tile; 3]>,
     pub(super) chankan_chance: Option<()>,
+    /// Track which player performed kakan when chankan occurs (for excluding gen)
+    /// This is set when chankan_chance is Some(())
+    pub chankan_kakan_actor: Option<u8>,
+    /// Bloody Battle: The tile that was kakan'd (for chankan gen exclusion)
+    pub chankan_kakan_tile: Option<u8>,
+    /// Track if the last discarded tile was after a kan (for 杠上炮)
+    /// This is set in dahai() when intermediate_kan is not empty
+    pub(super) last_discard_was_after_kan: bool,
 
     pub(super) at_rinshan: bool,
     pub(super) at_furiten: bool,

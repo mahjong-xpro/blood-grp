@@ -92,10 +92,15 @@ pub struct AgariCalculator<'a> {
     /// Bloody Battle specific: Ding Que suit (定缺)
     pub ding_que: Option<crate::mjai::Suit>,
     
-    /// Bloody Battle specific: Was this agari after a kan? (for 杠上花/杠上炮)
+    /// Bloody Battle specific: Was this agari after a kan? (for 杠上花)
     pub is_after_kan: bool,
     /// Bloody Battle specific: Was this agari from a tile discarded after kan? (for 杠上炮)
     pub is_kan_discard: bool,
+    /// Bloody Battle specific: Is this chankan (抢杠)? If true, the kakan player's gen should not be calculated
+    pub is_chankan: bool,
+    /// Bloody Battle specific: Tile ID to exclude from gen count (for chankan, the kakan tile)
+    /// If Some, this tile will not be counted as gen even if it appears 4 times
+    pub exclude_gen_tile: Option<u8>,
 }
 
 struct DivWorker<'a> {
@@ -178,12 +183,36 @@ impl AgariCalculator<'_> {
     /// Check if the hand can agari (和牌)
     /// 
     /// Bloody Battle: All valid hand structures can agari (no yaku requirement)
+    /// But must check Ding Que rule: cannot agari if hand still has ding_que suit tiles
     #[inline]
     #[must_use]
     pub fn has_yaku(&self) -> bool {
         // Bloody Battle: Check if hand structure is valid (can be divided into groups)
         let (_, key) = get_tile14_and_key(self.tehai);
-        AGARI_TABLE.get(&key).is_some()
+        let has_valid_structure = AGARI_TABLE.get(&key).is_some();
+        
+        if !has_valid_structure {
+            return false;
+        }
+        
+        // Bloody Battle: Check Ding Que rule - cannot agari if hand still has ding_que suit tiles
+        if let Some(ding_que_suit) = self.ding_que {
+            let ding_que_start = match ding_que_suit {
+                crate::mjai::Suit::Man => 0,
+                crate::mjai::Suit::Pin => 9,
+                crate::mjai::Suit::Sou => 18,
+            };
+            let ding_que_end = ding_que_start + 9;
+            
+            // Check if hand still has any ding_que suit tiles
+            for i in ding_que_start..ding_que_end {
+                if self.tehai[i] > 0 {
+                    return false; // Cannot agari if hand still has ding_que suit tiles (花猪)
+                }
+            }
+        }
+        
+        true
     }
 
     /// Search for yaku (not used in Bloody Battle, kept for compatibility)
@@ -208,11 +237,16 @@ impl AgariCalculator<'_> {
     /// 7. 带幺九（DaiYaoJiu）：+3番
     /// 8. 四归一（SiGuiYi / 根）：+1番/根
     /// 9. 杠上花（GangShangHua）：+1番（if is_after_kan && !is_ron）
-    /// 10. 杠上炮（GangShangPao）：+1番（if is_kan_discard && is_ron）
+    /// 10. 杠上炮（GangShangPao）：+1番（if is_kan_discard && is_ron && !is_chankan）
+    /// 11. 抢杠（Chankan）：+1番（if is_chankan && is_ron）
+    ///     Note: 抢杠、杠上花、杠上炮是不同的：
+    ///     - 抢杠：在别人加杠时抢杠和牌，+1番（平胡1番 + 抢杠1番 = 2番）
+    ///     - 杠上花：杠牌后摸牌自摸，+1番（自摸1番 + 平胡1番 + 杠上花1番 = 3番）
+    ///     - 杠上炮：杠牌后打出的牌和牌，+1番（平胡1番 + 杠上炮1番 = 2番）
     #[must_use]
     pub fn agari(&self) -> Option<Agari> {
         // Bloody Battle: Always has 平胡1番 (base fan)
-        let mut fan = 1;
+        let mut fan: u8 = 1;
         
         // 2. 自摸（Tsumo）：+1番
         if !self.is_ron {
@@ -224,9 +258,9 @@ impl AgariCalculator<'_> {
         let divs = AGARI_TABLE.get(&key)?;
         
         // Find the best division for fan calculation
-        let mut max_fan = 0;
+        let mut max_fan: u8 = 0;
         for div in divs.iter() {
-            let mut div_fan = 0;
+            let mut div_fan: u8 = 0;
             
             // 3. 七对（QiDui）：+2番
             if div.has_chitoi {
@@ -241,17 +275,22 @@ impl AgariCalculator<'_> {
                 div_fan += 1;
             }
             
-            // 5. 金钩钓（JinGouDiao）：+2番 (4 fuuro + single wait)
+            // 5. 金钩钓（JinGouDiao）：+2番 (4 fuuro + single wait/tanki)
             let fuuro_count = self.pons.len() + self.minkans.len() + self.ankans.len();
             if fuuro_count == 4 {
-                // TODO: Check if single wait (tanki)
-                div_fan += 2;
+                // Check if single wait (tanki): pair is the winning tile
+                let is_tanki = div.pair_idx < 14 && tile14[div.pair_idx as usize] == self.winning_tile;
+                if is_tanki {
+                    div_fan += 2;
+                }
             }
             
             // 6. 清一色（QingYiSe）：+2番
-            // Check if all tiles are same suit
+            // Check if all tiles (hand + fuuro) are same suit
             let mut suit_kind: Option<u8> = None;
             let mut is_qingyise = true;
+            
+            // Check hand tiles
             for &tile_id in &tile14 {
                 if tile_id >= 27 {
                     continue; // Skip invalid tiles
@@ -266,43 +305,136 @@ impl AgariCalculator<'_> {
                     suit_kind = Some(kind);
                 }
             }
+            
+            // Check fuuro tiles (pons, minkans, ankans)
+            if is_qingyise {
+                for &tile_id in self.pons.iter().chain(self.minkans.iter()).chain(self.ankans.iter()) {
+                    if tile_id >= 27 {
+                        continue;
+                    }
+                    let kind = tile_id / 9;
+                    if let Some(prev_kind) = suit_kind {
+                        if prev_kind != kind {
+                            is_qingyise = false;
+                            break;
+                        }
+                    } else {
+                        suit_kind = Some(kind);
+                    }
+                }
+            }
+            
             if is_qingyise && suit_kind.is_some() {
                 div_fan += 2;
             }
             
             // 7. 带幺九（DaiYaoJiu）：+3番
-            // Check if all groups contain 1 or 9
+            // Check if all groups (shuntsu, kotsu, pair) contain 1 or 9
             let mut is_daiyaojiu = true;
-            for &tile_id in &tile14 {
+            
+            // Check shuntsu: must start with 1 or end with 9 (1-2-3 or 7-8-9)
+            for &shuntsu_idx in &div.shuntsu_idxs {
+                let tile_id = tile14[shuntsu_idx as usize];
                 if tile_id >= 27 {
                     continue;
                 }
-                let kind = tile_id / 9;
                 let num = tile_id % 9;
-                // Check if tile is 1 or 9
-                if kind < 3 && num != 0 && num != 8 {
+                // Shuntsu must be 1-2-3 (num == 0) or 7-8-9 (num == 6)
+                if num != 0 && num != 6 {
                     is_daiyaojiu = false;
                     break;
                 }
             }
+            
+            // Check kotsu: must be 1 or 9
+            if is_daiyaojiu {
+                for &kotsu_idx in &div.kotsu_idxs {
+                    let tile_id = tile14[kotsu_idx as usize];
+                    if tile_id >= 27 {
+                        continue;
+                    }
+                    let num = tile_id % 9;
+                    if num != 0 && num != 8 {
+                        is_daiyaojiu = false;
+                        break;
+                    }
+                }
+            }
+            
+            // Check pair: must be 1 or 9
+            if is_daiyaojiu {
+                let pair_tile = tile14[div.pair_idx as usize];
+                if pair_tile < 27 {
+                    let num = pair_tile % 9;
+                    if num != 0 && num != 8 {
+                        is_daiyaojiu = false;
+                    }
+                }
+            }
+            
+            // Check fuuro (pons, minkans, ankans): must be 1 or 9
+            if is_daiyaojiu {
+                for &tile_id in self.pons.iter().chain(self.minkans.iter()).chain(self.ankans.iter()) {
+                    if tile_id >= 27 {
+                        continue;
+                    }
+                    let num = tile_id % 9;
+                    if num != 0 && num != 8 {
+                        is_daiyaojiu = false;
+                        break;
+                    }
+                }
+            }
+            
             if is_daiyaojiu {
                 div_fan += 3;
             }
             
             // 8. 四归一（SiGuiYi / 根）：+1番/根
-            // Count how many tiles appear 4 times
-            let mut gen_count = 0;
-            for count in self.tehai.iter() {
-                if *count == 4 {
-                    gen_count += 1;
+            // Count how many tiles appear 4 times (in hand or fuuro)
+            // Note: If exclude_gen_tile is set (for chankan), exclude that tile from gen count
+            let mut gen_count: u8 = 0;
+            
+            // Count tiles in hand that appear 4 times
+            for (tile_id, &count) in self.tehai.iter().enumerate() {
+                if count == 4 {
+                    // Exclude the tile if it's the chankan kakan tile
+                    if let Some(exclude_tile) = self.exclude_gen_tile {
+                        if tile_id == exclude_tile as usize {
+                            continue; // This tile was kakan'd and stolen, so it's not gen
+                        }
+                    }
+                    gen_count = gen_count.saturating_add(1);
                 }
             }
-            div_fan += gen_count;
+            
+            // Count tiles in fuuro that appear 4 times (ankans, minkans)
+            // Note: pons are 3 tiles, so they don't count as gen
+            // Ankans and minkans are 4 tiles each
+            // Exclude the tile if it's the chankan kakan tile
+            for &tile_id in self.ankans.iter() {
+                if let Some(exclude_tile) = self.exclude_gen_tile {
+                    if tile_id == exclude_tile {
+                        continue; // This tile was kakan'd and stolen, so it's not gen
+                    }
+                }
+                gen_count = gen_count.saturating_add(1);
+            }
+            for &tile_id in self.minkans.iter() {
+                if let Some(exclude_tile) = self.exclude_gen_tile {
+                    if tile_id == exclude_tile {
+                        continue; // This tile was kakan'd and stolen, so it's not gen
+                    }
+                }
+                gen_count = gen_count.saturating_add(1);
+            }
+            
+            div_fan = div_fan.saturating_add(gen_count);
             
             max_fan = max_fan.max(div_fan);
         }
         
-        fan += max_fan;
+        fan = fan.saturating_add(max_fan);
         
         // 9. 杠上花（GangShangHua）：+1番
         if self.is_after_kan && !self.is_ron {
@@ -310,7 +442,17 @@ impl AgariCalculator<'_> {
         }
         
         // 10. 杠上炮（GangShangPao）：+1番
-        if self.is_kan_discard && self.is_ron {
+        // 注意：抢杠（chankan）和杠上炮是不同的
+        // - 抢杠：在别人加杠时抢杠和牌，+1番
+        // - 杠上炮：其他玩家杠牌后打出的牌和牌，+1番
+        if self.is_kan_discard && self.is_ron && !self.is_chankan {
+            fan += 1;
+        }
+        
+        // 11. 抢杠（Chankan）：+1番
+        // 抢杠：在别人加杠时抢杠和牌，+1番
+        // 抢杠时，被抢杠的玩家的根不应该计算（因为加杠的牌被抢走了）
+        if self.is_chankan && self.is_ron {
             fan += 1;
         }
         
@@ -442,19 +584,20 @@ impl<'a> DivWorker<'a> {
             .map(|&t| if must_tile!(t).is_yaokyuu() { 16 } else { 8 })
             .sum::<u8>();
 
-        if matches_tu8!(self.pair_tile, P | F | C) {
-            fu += 2;
-        } else {
-            // As per [Tenhou's rule](https://tenhou.net/man/#RULE):
-            //
-            // > 連風牌は4符
-            if self.pair_tile == self.sup.bakaze {
-                fu += 2;
-            }
-            if self.pair_tile == self.sup.jikaze {
-                fu += 2;
-            }
-        }
+        // Bloody Battle: No jihai (P|F|C), no bakaze/jikaze, so skip this check
+        // if matches_tu8!(self.pair_tile, P | F | C) {
+        //     fu += 2;
+        // } else {
+        //     // As per [Tenhou's rule](https://tenhou.net/man/#RULE):
+        //     //
+        //     // > 連風牌は4符
+        //     if self.pair_tile == self.sup.bakaze {
+        //         fu += 2;
+        //     }
+        //     if self.pair_tile == self.sup.jikaze {
+        //         fu += 2;
+        //     }
+        // }
 
         if fu == 20 {
             return if !self.sup.is_menzen {
@@ -505,6 +648,14 @@ impl<'a> DivWorker<'a> {
         // This method should not be used for Bloody Battle Mahjong
         // Return None to indicate it's not applicable
         return None;
+        
+        // The code below is unreachable but kept for reference
+        // It uses Japanese Mahjong rules and needs to be completely rewritten for Bloody Battle
+        macro_rules! make_return {
+            () => {
+                return None;
+            };
+        }
         macro_rules! check_early_return {
             ($($block:tt)*) => {{
                 $($block)*;
@@ -689,10 +840,11 @@ impl<'a> DivWorker<'a> {
                 _ => (),
             };
 
+            // Bloody Battle: No jihai (F), so ryuisou check is simplified
             let has_ryuisou = self
                 .all_kotsu_and_kantsu()
                 .chain(iter::once(self.pair_tile))
-                .all(|k| matches_tu8!(k, 2s | 3s | 4s | 6s | 8s | F))
+                .all(|k| matches_tu8!(k, 2s | 3s | 4s | 6s | 8s))
                 && self.all_shuntsu().all(|s| s == tu8!(2s)); // only 234s is possible for shuntsu in ryuisou
             if has_ryuisou {
                 // 緑一色
@@ -700,44 +852,51 @@ impl<'a> DivWorker<'a> {
             }
 
             if !has_tanyao {
+                // Bloody Battle: No jihai, no bakaze/jikaze, so skip this check
                 // 役牌 + 大小三元四喜
-                let mut has_jihai = [false; 7];
-                for k in self.all_kotsu_and_kantsu() {
-                    if k >= 3 * 9 {
-                        has_jihai[k as usize - 3 * 9] = true;
-                    }
-                }
-                if has_jihai[self.sup.bakaze as usize - 3 * 9] {
-                    // 役牌:門風牌
-                    check_early_return! { han += 1 };
-                }
-                if has_jihai[self.sup.jikaze as usize - 3 * 9] {
-                    // 役牌:場風牌
-                    check_early_return! { han += 1 };
-                }
+                // let mut has_jihai = [false; 7];
+                // for k in self.all_kotsu_and_kantsu() {
+                //     if k >= 3 * 9 {
+                //         has_jihai[k as usize - 3 * 9] = true;
+                //     }
+                // }
+                // if has_jihai[self.sup.bakaze as usize - 3 * 9] {
+                //     // 役牌:門風牌
+                //     check_early_return! { han += 1 };
+                // }
+                // if has_jihai[self.sup.jikaze as usize - 3 * 9] {
+                //     // 役牌:場風牌
+                //     check_early_return! { han += 1 };
+                // }
 
-                let saneins = (4..7).filter(|&i| has_jihai[i]).count() as u8;
-                if saneins > 0 {
-                    // 役牌:三元牌
-                    check_early_return! { han += saneins };
-                    if saneins == 3 {
-                        // 大三元
-                        check_early_return! { yakuman += 1 };
-                    } else if saneins == 2 && matches_tu8!(self.pair_tile, P | F | C) {
-                        // 小三元
-                        check_early_return! { han += 2 };
-                    }
-                }
+                // Bloody Battle: No jihai, so skip all jihai-related checks
+                // let saneins = (4..7).filter(|&i| has_jihai[i]).count() as u8;
+                // if saneins > 0 {
+                //     // 役牌:三元牌
+                //     check_early_return! { han += saneins };
+                //     if saneins == 3 {
+                //         // 大三元
+                //         check_early_return! { yakuman += 1 };
+                //     }
+                //     // Bloody Battle: No jihai (P|F|C), so skip this check
+                //     // else if saneins == 2 && matches_tu8!(self.pair_tile, P | F | C) {
+                //     //     // 小三元
+                //     //     check_early_return! { han += 2 };
+                //     // }
+                // }
 
-                let winds = (0..4).filter(|&i| has_jihai[i]).count();
-                #[allow(clippy::if_same_then_else)]
-                if winds == 4 {
-                    // 大四喜
-                    check_early_return! { yakuman += 1 };
-                } else if winds == 3 && matches_tu8!(self.pair_tile, E | S | W | N) {
-                    // 小四喜
-                    check_early_return! { yakuman += 1 };
-                }
+                // Bloody Battle: No jihai, so skip all jihai-related checks
+                // let winds = (0..4).filter(|&i| has_jihai[i]).count();
+                // #[allow(clippy::if_same_then_else)]
+                // if winds == 4 {
+                //     // 大四喜
+                //     check_early_return! { yakuman += 1 };
+                // }
+                // // Bloody Battle: No jihai (E|S|W|N), so skip this check
+                // // else if winds == 3 && matches_tu8!(self.pair_tile, E | S | W | N) {
+                // //     // 小四喜
+                // //     check_early_return! { yakuman += 1 };
+                // // }
             }
         }
 
@@ -837,34 +996,27 @@ fn get_tile14_and_key(tiles: &[u8; 27]) -> ([u8; 14], u32) {
     (tile14, key)
 }
 
+/// Bloody Battle: This function is kept for compatibility but riichi is not used.
 /// `tehai` must already contain `tile`. `true` is returned if making an ankan
-/// with the tile is legal under the riichi'd `tehai`.
+/// with the tile is legal.
 ///
-/// If `strict` is `false`, it is the same as [Tenhou's
-/// rule](https://tenhou.net/man/#RULE):
-///
-/// > リーチ後の暗槓は待ちが変わらない場合のみ。送り槓不可、牌姿や役の増減は不
-/// > 問。
-///
-/// If `strict` is `true`, it will also check the shape of tenpai and agari, but
-/// will not check yaku anyways.
+/// Bloody Battle Mahjong does not have riichi, so this function always allows ankan
+/// if the tile count is 4.
 ///
 /// The behavior is undefined if `tehai` is not tenpai.
 #[must_use]
-pub fn check_ankan_after_riichi(tehai: &[u8; 34], len_div3: u8, tile: Tile, strict: bool) -> bool {
+pub fn check_ankan_after_riichi(tehai: &[u8; 27], len_div3: u8, tile: Tile, strict: bool) -> bool {
     let tile_id = tile.deaka().as_usize();
-    if tehai[tile_id] != 4 {
+    if tile_id >= 27 || tehai[tile_id] != 4 {
         return false;
     }
 
-    if tile_id >= 3 * 9 {
-        return true;
-    }
-
+    // Bloody Battle: No jihai, so no special check for jihai
+    // Bloody Battle: No riichi, so ankan is always allowed if it doesn't change waits
     let mut tehai_before_tsumo = *tehai;
     tehai_before_tsumo[tile_id] -= 1;
 
-    (0..34)
+    (0..27)
         .filter(|&t| {
             if tehai_before_tsumo[t] == 4 {
                 return false;
@@ -900,7 +1052,7 @@ pub fn check_ankan_after_riichi(tehai: &[u8; 34], len_div3: u8, tile: Tile, stri
                 let (_, key) = get_tile14_and_key(&tehai_before);
                 let divs_before = AGARI_TABLE
                     .get(&key)
-                    .expect("invalid riichi detected when testing ankan after riichi");
+                    .expect("invalid tenpai detected when testing ankan");
 
                 if divs_after.len() != divs_before.len() {
                     return false;
@@ -957,11 +1109,395 @@ mod test {
     }
 
     #[test]
-    #[ignore] // Bloody Battle: Tests need to be completely rewritten for Bloody Battle Mahjong
     fn agari_calc() {
-        // TODO: Rewrite all test cases for Bloody Battle Mahjong
-        // These tests use Japanese Mahjong rules and need to be updated
-        return;
+        // Bloody Battle Mahjong test cases
+        
+        // Test 1: Basic 平胡 (PingHu) - 1番 (base fan)
+        let tehai = hand("123456m 789p 11s 2m").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(2m),
+            is_ron: false, // 自摸
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
+        };
+        let agari = calc.agari().unwrap();
+        // 自摸 + 平胡 = 1 + 1 = 2番
+        assert_eq!(agari, Agari::Fan(2));
+        
+        // Test 2: 平胡 + 自摸 (Tsumo) - 2番
+        let tehai = hand("123456m 789p 11s 2m").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(2m),
+            is_ron: true, // 荣和
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
+        };
+        let agari = calc.agari().unwrap();
+        // 荣和 + 平胡 = 1番（荣和没有自摸番）
+        assert_eq!(agari, Agari::Fan(1));
+        
+        // Test 3: 七对 (QiDui) - 2番
+        let tehai = hand("11223344556677m").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(7m),
+            is_ron: false, // 自摸
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
+        };
+        let agari = calc.agari().unwrap();
+        // 自摸 + 平胡 + 七对 = 1 + 1 + 2 = 4番
+        assert_eq!(agari, Agari::Fan(4));
+        
+        // Test 4: 碰碰胡 (ToiToi) - 1番
+        let tehai = hand("11133355577m 99p").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(9p),
+            is_ron: false, // 自摸
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+        };
+        let agari = calc.agari().unwrap();
+        // 自摸 + 平胡 + 碰碰胡 = 1 + 1 + 1 = 3番
+        assert_eq!(agari, Agari::Fan(3));
+        
+        // Test 5: 清一色 (QingYiSe) - 2番
+        let tehai = hand("1112345678999m").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(9m),
+            is_ron: false, // 自摸
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+        };
+        let agari = calc.agari().unwrap();
+        // 自摸 + 平胡 + 清一色 = 1 + 1 + 2 = 4番
+        assert_eq!(agari, Agari::Fan(4));
+        
+        // Test 6: 带幺九 (DaiYaoJiu) - 3番
+        let tehai = hand("111999m 111999p 11s").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(1s),
+            is_ron: false, // 自摸
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+        };
+        let agari = calc.agari().unwrap();
+        // 自摸 + 平胡 + 带幺九 = 1 + 1 + 3 = 5番（封顶）
+        assert_eq!(agari, Agari::Fan(5));
+        
+        // Test 7: 杠上花 (GangShangHua) - 1番
+        let tehai = hand("123456m 789p 11s 2m").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(2m),
+            is_ron: false, // 自摸
+            ding_que: None,
+            is_after_kan: true, // 杠上花
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
+        };
+        let agari = calc.agari().unwrap();
+        // 自摸 + 平胡 + 杠上花 = 1 + 1 + 1 = 3番
+        assert_eq!(agari, Agari::Fan(3));
+        
+        // Test 8: 杠上炮 (GangShangPao) - 1番
+        let tehai = hand("123456m 789p 11s 2m").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(2m),
+            is_ron: true, // 荣和
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: true, // 杠上炮
+            is_chankan: false,
+            exclude_gen_tile: None,
+        };
+        let agari = calc.agari().unwrap();
+        // 荣和 + 平胡 + 杠上炮 = 1 + 1 = 2番
+        assert_eq!(agari, Agari::Fan(2));
+        
+        // Test 9: 四归一 (SiGuiYi / 根) - 1番/根
+        let tehai = hand("111123456m 789p 11s").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(1m),
+            is_ron: false, // 自摸
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
+        };
+        let agari = calc.agari().unwrap();
+        // 自摸 + 平胡 + 四归一(1根) = 1 + 1 + 1 = 3番
+        assert_eq!(agari, Agari::Fan(3));
+        
+        // Test 10: 金钩钓 (JinGouDiao) - 2番 (4 fuuro + tanki wait)
+        // This requires 4 fuuro, so we need to set pons/minkans/ankans
+        let tehai = hand("11m").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: false,
+            pons: &[tu8!(2m), tu8!(3m), tu8!(4m), tu8!(5m)], // 4 pons
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(1m), // tanki wait
+            is_ron: false, // 自摸
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
+        };
+        let agari = calc.agari().unwrap();
+        // 自摸 + 平胡 + 金钩钓 = 1 + 1 + 2 = 4番
+        assert_eq!(agari, Agari::Fan(4));
+        
+        // Test 11: Fan cap at 5
+        // 自摸 + 平胡 + 七对 + 清一色 = 1 + 1 + 2 + 2 = 6番，但封顶5番
+        let tehai = hand("11223344556677m").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(7m),
+            is_ron: false, // 自摸
+            ding_que: Some(crate::mjai::Suit::Pin), // 定缺筒子
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
+        };
+        let agari = calc.agari().unwrap();
+        // 应该封顶在5番
+        assert_eq!(agari, Agari::Fan(5));
+        
+        // Test 12: Ding Que check - cannot agari if hand has ding_que suit tiles
+        let tehai = hand("123456m 789p 11s 2p").unwrap(); // Has pin tiles
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(2p),
+            is_ron: false,
+            ding_que: Some(crate::mjai::Suit::Pin), // 定缺筒子，但手牌有筒子
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
+        };
+        // 应该不能和牌（花猪）
+        assert!(!calc.has_yaku());
+        
+        // Test 13: 抢杠 (Chankan) - 2番 (平胡1番 + 抢杠1番)
+        // 抢杠：在别人加杠时，如果听的牌正好是加杠的牌，可以抢杠和牌
+        // 抢杠和杠上炮是不同的：
+        // - 抢杠：在别人加杠时抢杠和牌，+1番（平胡1番 + 抢杠1番 = 2番）
+        // - 杠上炮：其他玩家杠牌后打出的牌和牌，+1番（平胡1番 + 杠上炮1番 = 2番）
+        // 抢杠时，被抢杠的玩家的根不应该计算（因为加杠的牌被抢走了）
+        let tehai = hand("123456m 789p 11s").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(1s), // 听的牌
+            is_ron: true, // 荣和
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false, // 抢杠不是杠上炮
+            is_chankan: true, // 这是抢杠
+        };
+        let agari = calc.agari().unwrap();
+        // 荣和 + 平胡 + 抢杠 = 1 + 1 = 2番
+        assert_eq!(agari, Agari::Fan(2));
+        
+        // Test 14: 番数叠加 - 清一色 + 自摸 + 平胡 = 4番
+        // 清一色（2番）+ 自摸（1番）+ 平胡（1番）= 4番
+        let tehai = hand("1112345678999m").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(9m),
+            is_ron: false, // 自摸
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
+        };
+        let agari = calc.agari().unwrap();
+        // 自摸 + 平胡 + 清一色 = 1 + 1 + 2 = 4番
+        assert_eq!(agari, Agari::Fan(4));
+        
+        // Test 15: 番数叠加 - 带幺九 + 自摸 + 平胡 = 5番（封顶）
+        // 带幺九（3番）+ 自摸（1番）+ 平胡（1番）= 5番（封顶）
+        let tehai = hand("111999m 111999p 11s").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(1s),
+            is_ron: false, // 自摸
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
+        };
+        let agari = calc.agari().unwrap();
+        // 自摸 + 平胡 + 带幺九 = 1 + 1 + 3 = 5番（封顶）
+        assert_eq!(agari, Agari::Fan(5));
+        
+        // Test 16: 互斥番数 - 七对与碰碰胡互斥
+        // 七对（2番）与碰碰胡（1番）互斥，应该只计算七对
+        let tehai = hand("11223344556677m").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(7m),
+            is_ron: false, // 自摸
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
+        };
+        let agari = calc.agari().unwrap();
+        // 自摸 + 平胡 + 七对 = 1 + 1 + 2 = 4番（不是碰碰胡）
+        assert_eq!(agari, Agari::Fan(4));
+        
+        // Test 17: 金钩钓 - 4副露 + 单钓 = 4番
+        // 金钩钓（2番）+ 自摸（1番）+ 平胡（1番）= 4番
+        let tehai = hand("11m").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: false, // 有副露
+            pons: &[tu8!(2m), tu8!(3m), tu8!(4m), tu8!(5m)], // 4个碰
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(1m), // 单钓1m
+            is_ron: false, // 自摸
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
+        };
+        let agari = calc.agari().unwrap();
+        // 自摸 + 平胡 + 金钩钓 = 1 + 1 + 2 = 4番
+        assert_eq!(agari, Agari::Fan(4));
+        
+        // Test 18: 四归一（根）- 多个根的情况
+        // 四归一（1番/根）+ 自摸（1番）+ 平胡（1番）= 3番（1个根）
+        let tehai = hand("111123456789m 11p").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(1p),
+            is_ron: false, // 自摸
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
+        };
+        let agari = calc.agari().unwrap();
+        // 自摸 + 平胡 + 四归一（1根）= 1 + 1 + 1 = 3番
+        assert_eq!(agari, Agari::Fan(3));
+        
+        // Test 19: 番数叠加 - 清一色 + 碰碰胡 + 自摸 + 平胡 = 5番（封顶）
+        // 清一色（2番）+ 碰碰胡（1番）+ 自摸（1番）+ 平胡（1番）= 5番（封顶）
+        let tehai = hand("111444777999m 11m").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(1m),
+            is_ron: false, // 自摸
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
+        };
+        let agari = calc.agari().unwrap();
+        // 自摸 + 平胡 + 清一色 + 碰碰胡 = 1 + 1 + 2 + 1 = 5番（封顶）
+        assert_eq!(agari, Agari::Fan(5));
+        
+        return; // Keep old tests below commented out
         // Bloody Battle: These tests use Japanese Mahjong rules
         // They need to be rewritten for Bloody Battle Mahjong
         let tehai = hand("2234455m 234p 234s 3m").unwrap();
@@ -977,6 +1513,8 @@ mod test {
             ding_que: None,
             is_after_kan: false,
             is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
         };
         let yaku = calc.agari().unwrap();
         // Bloody Battle: Use Fan instead of Normal
@@ -999,6 +1537,8 @@ mod test {
             ding_que: None,
             is_after_kan: false,
             is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
         };
         let points = calc.agari().unwrap().point(false);
         // 立直, 門前清自摸和
@@ -1013,24 +1553,15 @@ mod test {
 
         // All test cases below are skipped - they need to be rewritten for Bloody Battle
         // They use Japanese Mahjong rules and Agari::Normal/Yakuman format
+        // All code below is commented out to avoid compilation errors with jihai references
         return;
-        
-        let _tehai = hand("22334m 33p 4m").unwrap();
-        let calc = AgariCalculator {
-            tehai: &tehai,
-            is_menzen: false,
-            // Bloody Battle: No chis
-            pons: &[],
-            minkans: &[],
-            ankans: &[],
-            bakaze: tu8!(E),
-            jikaze: tu8!(S),
-            winning_tile: tu8!(4m),
-            is_ron: true,
-        };
-        let yaku = calc.search_yakus().unwrap();
-        assert_eq!(yaku, Agari::Normal { fu: 30, han: 1 });
+        /*
+        // All test code below uses Japanese Mahjong rules and needs complete rewrite
+        // Commented out to avoid compilation errors
+        */
 
+        // All test code below commented out - uses Japanese Mahjong rules
+        /*
         let tehai = hand("223344p 667788s 3m 3m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
@@ -1375,7 +1906,7 @@ mod test {
         };
         let yaku = calc.search_yakus().unwrap();
         // 三暗刻, 対々和, 混一色, 混老頭, 小三元, double 南, 白, 中
-        assert!(matches!(yaku, Agari::Normal { han: 15, .. }));
+        assert!(matches!(yaku, Agari::Normal { han: 15, .. })); // Bloody Battle: Agari::Normal removed
         */
     }
 }

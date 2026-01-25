@@ -5,13 +5,13 @@
 //! 5mr ESW).
 
 use crate::tile::Tile;
-use crate::vec_ops::vec_add_assign;
-use crate::{must_tile, tuz};
+use crate::must_tile;
 
 use anyhow::{Result, bail, ensure};
 
 /// Spaces are allowed.
 pub fn hand_with_aka(s: &str) -> Result<[u8; 37]> {
+    // Bloody Battle: This function is kept for compatibility but red 5s are not supported
     // We will be using bytes instead of chars afterwards.
     ensure!(s.is_ascii(), "hand {s} contains non-ascii content");
 
@@ -23,24 +23,30 @@ pub fn hand_with_aka(s: &str) -> Result<[u8; 37]> {
             b'0'..=b'9' => stack.push((b - b'0') as usize),
             b'm' | b'p' | b's' | b'z' => {
                 for t in stack.drain(..) {
-                    let idx = if t == 0 {
-                        match b {
-                            b'm' => tuz!(5mr),
-                            b'p' => tuz!(5pr),
-                            b's' => tuz!(5sr),
-                            _ => bail!("unexpected byte {b}"),
-                        }
-                    } else {
-                        let kind = match b {
-                            b'm' => 0,
-                            b'p' => 1,
-                            b's' => 2,
-                            b'z' => 3,
-                            _ => unreachable!(),
-                        };
-                        kind * 9 + t - 1
+                    // Bloody Battle: Treat 0 as regular 5 (no red 5s)
+                    let num = if t == 0 { 5 } else { t };
+                    let kind = match b {
+                        b'm' => 0,
+                        b'p' => 1,
+                        b's' => 2,
+                        b'z' => 3, // Bloody Battle: jihai not used but kept for compatibility
+                        _ => unreachable!(),
                     };
-                    ret[idx] += 1;
+                    let idx = if kind < 3 {
+                        kind * 9 + num - 1
+                    } else {
+                        // jihai: 27 + (num - 1) for E/S/W/N/P/F/C
+                        if num >= 1 && num <= 7 {
+                            27 + num - 1
+                        } else {
+                            bail!("invalid jihai number: {num}");
+                        }
+                    };
+                    if idx < 37 {
+                        ret[idx] += 1;
+                    } else {
+                        bail!("tile index out of range: {idx}");
+                    }
                 }
             }
             b' ' | b'\t' | b'\n' => (),
@@ -52,13 +58,43 @@ pub fn hand_with_aka(s: &str) -> Result<[u8; 37]> {
 }
 
 /// Spaces are allowed.
-pub fn hand(s: &str) -> Result<[u8; 34]> {
-    let mut ret = [0; 34];
-    let hand = hand_with_aka(s)?;
-    vec_add_assign(&mut ret, &hand);
-    ret[tuz!(5m)] += hand[tuz!(5mr)];
-    ret[tuz!(5p)] += hand[tuz!(5pr)];
-    ret[tuz!(5s)] += hand[tuz!(5sr)];
+/// Bloody Battle: Returns [u8; 27] (no jihai, no red 5s)
+pub fn hand(s: &str) -> Result<[u8; 27]> {
+    // Bloody Battle: No jihai, no red 5s, only suhai (m, p, s)
+    ensure!(s.is_ascii(), "hand {s} contains non-ascii content");
+
+    let mut ret = [0; 27];
+    let mut stack = vec![];
+
+    for b in s.as_bytes() {
+        match b {
+            b'0'..=b'9' => stack.push((b - b'0') as usize),
+            b'm' | b'p' | b's' => {
+                for t in stack.drain(..) {
+                    // Bloody Battle: Treat 0 as regular 5 (no red 5s)
+                    let num = if t == 0 { 5 } else { t };
+                    let kind = match b {
+                        b'm' => 0,
+                        b'p' => 1,
+                        b's' => 2,
+                        _ => unreachable!(),
+                    };
+                    let idx = kind * 9 + num - 1;
+                    if idx < 27 {
+                        ret[idx] += 1;
+                    } else {
+                        bail!("tile index out of range: {idx}");
+                    }
+                }
+            }
+            b'z' => {
+                // Bloody Battle: No jihai, skip z tiles
+                stack.clear();
+            }
+            b' ' | b'\t' | b'\n' => (),
+            _ => bail!("unexpected byte {b}"),
+        };
+    }
 
     Ok(ret)
 }
@@ -139,13 +175,13 @@ mod test {
 
     #[test]
     fn parse() {
+        // Bloody Battle: No jihai, updated test cases
         assert_eq!(
-            hand("1111m 333p 222s 444z").unwrap(),
+            hand("1111m 333p 222s").unwrap(),
             [
                 4, 0, 0, 0, 0, 0, 0, 0, 0, // m
                 0, 0, 3, 0, 0, 0, 0, 0, 0, // p
                 0, 3, 0, 0, 0, 0, 0, 0, 0, // s
-                0, 0, 0, 3, 0, 0, 0, // z
             ]
         );
 
@@ -155,33 +191,32 @@ mod test {
                 0, 2, 2, 2, 1, 0, 0, 0, 0, // m
                 0, 1, 1, 1, 0, 0, 0, 0, 0, // p
                 0, 1, 1, 1, 0, 0, 0, 0, 0, // s
-                0, 0, 0, 0, 0, 0, 0, // z
-                1, 0, 0, // a
+                0, 0, 0, 0, 0, 0, 0, // z (kept for compatibility but not used)
+                1, 0, 0, // a (kept for compatibility but not used)
             ]
         );
 
         assert_eq!(
-            hand("456m 6p 7899p 77z 987s 9p").unwrap(),
+            hand("456m 6p 7899p 987s 9p").unwrap(),
             [
                 0, 0, 0, 1, 1, 1, 0, 0, 0, // m
                 0, 0, 0, 0, 0, 1, 1, 1, 3, // p
                 0, 0, 0, 0, 0, 0, 1, 1, 1, // s
-                0, 0, 0, 0, 0, 0, 2, // z
             ]
         );
     }
 
     #[test]
     fn string() {
+        // Bloody Battle: No jihai, updated test case
         assert_eq!(
             tiles_to_string(
                 &[
                     0, 0, 2, 0, 1, 1, 1, 0, 0, // m
                     0, 0, 1, 1, 1, 1, 1, 1, 0, // p
                     0, 0, 0, 0, 0, 1, 1, 1, 0, // s
-                    0, 0, 0, 0, 0, 0, 0, // z
                 ],
-                [true, false, false]
+                [false, false, false] // Bloody Battle: No red 5s
             ),
             "33067m 345678p 678s"
         );

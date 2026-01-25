@@ -2,21 +2,15 @@
 //!
 //! Source: <https://github.com/tomohxx/shanten-number-calculator/>
 
-use crate::tuz;
+// Bloody Battle: tuz not used
 use std::io::prelude::*;
 use std::sync::LazyLock;
 
 use flate2::read::GzDecoder;
 
-const JIHAI_TABLE_SIZE: usize = 78_032;
+// Bloody Battle: No jihai, so JIHAI_TABLE is removed
 const SUHAI_TABLE_SIZE: usize = 1_940_777;
 
-static JIHAI_TABLE: LazyLock<Vec<[u8; 10]>> = LazyLock::new(|| {
-    read_table(
-        include_bytes!("data/shanten_jihai.bin.gz"),
-        JIHAI_TABLE_SIZE,
-    )
-});
 static SUHAI_TABLE: LazyLock<Vec<[u8; 10]>> = LazyLock::new(|| {
     read_table(
         include_bytes!("data/shanten_suhai.bin.gz"),
@@ -44,7 +38,7 @@ fn read_table(gzipped: &[u8], length: usize) -> Vec<[u8; 10]> {
 }
 
 pub fn ensure_init() {
-    assert_eq!(JIHAI_TABLE.len(), JIHAI_TABLE_SIZE);
+    // Bloody Battle: No jihai table
     assert_eq!(SUHAI_TABLE.len(), SUHAI_TABLE_SIZE);
 }
 
@@ -68,16 +62,7 @@ fn add_suhai(lhs: &mut [u8; 10], index: usize, m: usize) {
     }
 }
 
-fn add_jihai(lhs: &mut [u8; 10], index: usize, m: usize) {
-    let tab = JIHAI_TABLE.get(index).copied().unwrap_or_default();
-
-    let j = m + 5;
-    let mut sht = (lhs[j] + tab[0]).min(lhs[0] + tab[j]);
-    for k in 5..j {
-        sht = sht.min(lhs[k] + tab[j - k]).min(lhs[j - k] + tab[k]);
-    }
-    lhs[j] = sht;
-}
+// Bloody Battle: No jihai, so add_jihai function is removed
 
 fn sum_tiles(tiles: &[u8]) -> usize {
     tiles.iter().fold(0, |acc, &x| acc * 5 + x as usize)
@@ -143,9 +128,10 @@ mod test {
 
     #[test]
     fn calc_3n_plus_1() {
-        let tehai = hand("1111m 333p 222s 444z").unwrap();
+        // Bloody Battle: No jihai, updated test cases
+        let tehai = hand("1111m 333p 222s").unwrap();
         assert_eq!(calc_all(&tehai, 4), 1);
-        let tehai = hand("147m 258p 369s 1234z").unwrap();
+        let tehai = hand("147m 258p 369s").unwrap();
         assert_eq!(calc_all(&tehai, 4), 6);
         let tehai = hand("468m 33346p 7s").unwrap();
         assert_eq!(calc_all(&tehai, 3), 2);
@@ -153,29 +139,29 @@ mod test {
         assert_eq!(calc_all(&tehai, 2), 4);
         let tehai = hand("4455s").unwrap();
         assert_eq!(calc_all(&tehai, 1), 0);
-        let tehai = hand("7z").unwrap();
-        assert_eq!(calc_all(&tehai, 0), 0);
-        let tehai = hand("15559m 19p 19s 1234z").unwrap();
+        // Bloody Battle: No jihai, removed single jihai test
+        let tehai = hand("15559m 19p 19s").unwrap();
         assert_eq!(calc_all(&tehai, 4), 3);
-        let tehai = hand("9999m 6677p 88s 355z").unwrap();
+        let tehai = hand("9999m 6677p 88s").unwrap();
         assert_eq!(calc_all(&tehai, 4), 2);
-        let tehai = hand("19m 19p 159s 123456z").unwrap();
+        let tehai = hand("19m 19p 159s").unwrap();
         assert_eq!(calc_all(&tehai, 4), 1);
     }
 
     #[test]
     fn calc_3n_plus_2() {
-        let tehai = hand("2344456m 14p 127s 2z 7p").unwrap();
+        // Bloody Battle: No jihai, updated test cases
+        let tehai = hand("2344456m 14p 127s 7p").unwrap();
         assert_eq!(calc_all(&tehai, 4), 3);
-        let tehai = hand("2344456m 14p 127s 2z 5p").unwrap();
+        let tehai = hand("2344456m 14p 127s 5p").unwrap();
         assert_eq!(calc_all(&tehai, 4), 2);
         let tehai = hand("344455667p 1139s 9m").unwrap();
         assert_eq!(calc_all(&tehai, 4), 2);
         let tehai = hand("344455667p 1139s 9p").unwrap();
         assert_eq!(calc_all(&tehai, 4), 1);
-        let tehai = hand("122334m 678p 37s 22z 5s").unwrap();
+        let tehai = hand("122334m 678p 37s 5s").unwrap();
         assert_eq!(calc_all(&tehai, 4), 0);
-        let tehai = hand("122334m 678p 12s 22z 4s").unwrap();
+        let tehai = hand("122334m 678p 12s 4s").unwrap();
         assert_eq!(calc_all(&tehai, 4), 0);
         let tehai = hand("12223456m 78889p 2m").unwrap();
         assert_eq!(calc_all(&tehai, 4), -1);

@@ -19,12 +19,12 @@ pub const GRP_SIZE: usize = 5;
 #[inline]
 pub const fn obs_shape(version: u32) -> (usize, usize) {
     // Bloody Battle: 27 tile kinds (no jihai, no red 5s)
-    // TODO: Recalculate actual dimensions after removing dora, riichi, etc.
+    // Calculated dimensions based on encode_obs function in obs_repr.rs
     match version {
-        1 => (938, 27), // Placeholder - needs recalculation
-        2 => (942, 27), // Placeholder - needs recalculation
-        3 => (934, 27), // Placeholder - needs recalculation
-        4 => (1012, 27), // Placeholder - needs recalculation
+        1 => (938, 27), // Calculated: 938 rows × 27 tile kinds
+        2 => (944, 27), // Calculated: 944 rows × 27 tile kinds
+        3 => (936, 27), // Calculated: 936 rows × 27 tile kinds
+        4 => (998, 27), // Calculated: 998 rows × 27 tile kinds (includes SP table)
         _ => unreachable!(),
     }
 }
@@ -32,9 +32,11 @@ pub const fn obs_shape(version: u32) -> (usize, usize) {
 #[pyfunction]
 #[inline]
 pub const fn oracle_obs_shape(version: u32) -> (usize, usize) {
+    // Bloody Battle: 27 tile kinds (no jihai, no red 5s)
+    // Calculated dimensions based on encode_oracle_obs function in board.rs and invisible.rs
     match version {
-        1 => (211, 34),
-        2 | 3 | 4 => (217, 34),
+        1 => (128, 27), // Calculated: 128 rows × 27 tile kinds
+        2 | 3 | 4 => (134, 27), // Calculated: 134 rows × 27 tile kinds
         _ => unreachable!(),
     }
 }

@@ -1,16 +1,17 @@
-use riichi::algo::agari::{self, AgariCalculator};
-use riichi::algo::shanten;
-use riichi::algo::sp::{InitState, SPCalculator};
-use riichi::hand::hand;
-use riichi::state::PlayerState;
-use riichi::{t, tu8};
+use blood::algo::agari::{self, AgariCalculator};
+use blood::algo::shanten;
+use blood::algo::sp::{InitState, SPCalculator};
+use blood::hand::hand;
+use blood::state::PlayerState;
+use blood::{t, tu8};
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 
 fn shanten(c: &mut Criterion) {
     shanten::ensure_init();
-    let tehai = hand("2344456m 14p 127s 2z 7p").unwrap();
+    // Bloody Battle: No jihai, updated test case
+    let tehai = hand("2344456m 14p 127s 7p").unwrap();
     c.bench_function("shanten", |b| {
         b.iter(|| {
             let tehai = black_box(tehai);
@@ -25,19 +26,20 @@ fn agari(c: &mut Criterion) {
     c.bench_function("agari", |b| {
         b.iter(|| {
             let tehai = black_box(tehai);
+            // Bloody Battle: No chis, bakaze, jikaze
             let calc = AgariCalculator {
                 tehai: &tehai,
                 is_menzen: false,
-                chis: &[],
-                pons: &tu8![S, C],
+                pons: &[], // Bloody Battle: No jihai, so no pons with jihai
                 minkans: &[],
-                ankans: &tu8![N,],
-                bakaze: tu8!(S),
-                jikaze: tu8!(N),
+                ankans: &[],
                 winning_tile: tu8!(9m),
                 is_ron: true,
+                ding_que: None,
+                is_after_kan: false,
+                is_kan_discard: false,
             };
-            black_box(calc.search_yakus().unwrap());
+            black_box(calc.agari());
         });
     });
 }

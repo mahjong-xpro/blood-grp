@@ -4,7 +4,7 @@ use crate::consts::oracle_obs_shape;
 use crate::mjai::Event;
 use crate::state::PlayerState;
 use crate::tile::Tile;
-use crate::{must_tile, tu8, tuz};
+use crate::must_tile;
 use std::iter;
 use std::mem;
 
@@ -135,11 +135,12 @@ impl Invisible {
         &self,
         opponent_states: &[PlayerState; 3],
         yama_idx: usize,
-        rinshan_idx: usize,
+        _rinshan_idx: usize,
         version: u32,
     ) -> Array2<f32> {
         let shape = oracle_obs_shape(version);
-        let mut arr = Simple2DArray::<34, f32>::new(shape.0);
+        // Bloody Battle: 27 tile kinds (no jihai)
+        let mut arr = Simple2DArray::<27, f32>::new(shape.0);
         let mut idx = 0;
 
         for state in opponent_states {
@@ -183,22 +184,34 @@ impl Invisible {
             idx += 1; // Keep same offset for compatibility
         }
 
-        let encode_tile = |idx: usize, tile: Tile| -> usize {
+        let mut encode_tile = |idx: usize, tile: Tile| -> usize {
             let tile_id = tile.deaka().as_usize();
             arr.assign(idx, tile_id, 1.);
             // Bloody Battle: No akas, so only use 1 dimension per tile
             idx + 1
         };
 
+        // Bloody Battle: yama encoding - encode remaining tiles
+        // Each tile uses 1 dimension (no aka encoding)
         for &tile in &self.yama[yama_idx..] {
             idx = encode_tile(idx, tile);
         }
-        // Bloody Battle: yama has 56 tiles, yama_idx >= 1
-        // Skip remaining yama slots (no aka encoding, so only 1 dimension per tile)
-        idx += (yama_idx - 1) * 1;
+        // Skip remaining yama slots to maintain fixed size
+        // Original used 69 max tiles, keep same for compatibility
+        // Bloody Battle has 56 tiles max, but we keep 69 slots for compatibility
+        let max_yama_tiles: usize = 69;
+        let encoded_tiles = self.yama.len().saturating_sub(yama_idx);
+        let remaining_yama = max_yama_tiles.saturating_sub(encoded_tiles);
+        idx += remaining_yama;
 
-        // Bloody Battle: No rinshan, dora_indicators, or ura_indicators
-        // Skip encoding for these (they are empty)
+        // Bloody Battle: No rinshan, skip encoding (was 4 * 2 = 8)
+        idx += 4 * 1; // Keep offset but use 1 dimension
+
+        // Bloody Battle: No dora_indicators, skip encoding (was 5 * 2 = 10)
+        idx += 5 * 1; // Keep offset but use 1 dimension
+
+        // Bloody Battle: No ura_indicators, skip encoding (was 5 * 2 = 10)
+        idx += 5 * 1; // Keep offset but use 1 dimension
 
         assert_eq!(idx, shape.0);
         arr.build()

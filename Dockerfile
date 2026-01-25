@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.4-labs
 
-FROM archlinux:base-devel as libriichi_build
+FROM archlinux:base-devel as libblood_build
 
 RUN <<EOF
 pacman -Syu --noconfirm --needed rust python
@@ -9,9 +9,9 @@ EOF
 
 WORKDIR /
 COPY Cargo.toml Cargo.lock .
-COPY libriichi libriichi
+COPY libblood libblood
 
-RUN cargo build -p libriichi --lib --release
+RUN cargo build -p libblood --lib --release
 
 # -----
 FROM archlinux:base
@@ -23,7 +23,7 @@ EOF
 
 WORKDIR /mortal
 COPY mortal .
-COPY --from=libriichi_build /target/release/libriichi.so .
+COPY --from=libblood_build /target/release/libblood.so .
 
 ENV MORTAL_CFG config.toml
 COPY <<'EOF' config.toml

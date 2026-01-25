@@ -1,4 +1,4 @@
-use crate::algo::point::Point;
+// Bloody Battle: Point not used in stat.rs
 use crate::mjai::Event;
 use crate::py_helper::add_submodule;
 use crate::rankings::Rankings;
@@ -17,14 +17,13 @@ use pyo3::prelude::*;
 use rayon::prelude::*;
 use serde_json as json;
 
+/// Bloody Battle Mahjong Statistics
+///
 /// Notes:
 ///
-/// - All the Δscore about riichi do not cover the 1000 kyotaku of its
-///   sengenhai, but do cover all other kyotakus.
-/// - Deal-in After Riichi is recognized at the moment the sengenhai is
-///   discarded.
-/// - Every other Δscore cover kyotakus.
-/// - Ankan is not recognized as fuuro.
+/// - Bloody Battle Mahjong does not have riichi, dora, honba, or kyotaku
+/// - All riichi-related fields are kept for compatibility but will always be 0
+/// - Ankan is not recognized as fuuro
 #[pyclass]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Add, AddAssign, Sum)]
 pub struct Stat {
@@ -84,27 +83,39 @@ pub struct Stat {
     #[pyo3(get, set)]
     pub houjuu_point_to_ko: i64,
 
+    // Bloody Battle: No riichi, these fields are kept for compatibility but always 0
     #[pyo3(get, set)]
+    #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
     pub riichi: i64,
     #[pyo3(get, set)]
+    #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
     pub riichi_as_oya: i64,
     #[pyo3(get, set)]
+    #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
     pub riichi_jun: i64,
     #[pyo3(get, set)]
+    #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
     pub riichi_agari: i64,
     #[pyo3(get, set)]
+    #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
     pub riichi_agari_point: i64,
     #[pyo3(get, set)]
+    #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
     pub riichi_agari_jun: i64,
     #[pyo3(get, set)]
+    #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
     pub riichi_houjuu: i64,
     #[pyo3(get, set)]
+    #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
     pub riichi_ryukyoku: i64,
     #[pyo3(get, set)]
+    #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
     pub riichi_point: i64,
     #[pyo3(get, set)]
+    #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
     pub chasing_riichi: i64,
     #[pyo3(get, set)]
+    #[deprecated(note = "Bloody Battle Mahjong does not have riichi")]
     pub riichi_got_chased: i64,
 
     #[pyo3(get, set)]
@@ -119,9 +130,12 @@ pub struct Stat {
     #[pyo3(get, set)]
     pub ryukyoku_point: i64,
 
+    // Bloody Battle: No yakuman (max 5 fan), no nagashi mangan
     #[pyo3(get, set)]
+    #[deprecated(note = "Bloody Battle Mahjong does not have yakuman (max 5 fan)")]
     pub yakuman: i64,
     #[pyo3(get, set)]
+    #[deprecated(note = "Bloody Battle Mahjong does not have nagashi mangan")]
     pub nagashi_mangan: i64,
 }
 

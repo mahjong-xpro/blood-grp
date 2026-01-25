@@ -7,8 +7,8 @@ import logging
 from os import path
 from model import Brain, DQN
 from engine import MortalEngine
-from libriichi.stat import Stat
-from libriichi.arena import OneVsThree
+from libblood.stat import Stat
+from libblood.arena import OneVsThree
 from config import config
 
 class TestPlayer:

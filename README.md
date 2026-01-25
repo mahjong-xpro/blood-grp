@@ -3,7 +3,7 @@
 </p>
 
 # Mortal
-[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/Equim-chan/Mortal/libriichi.yml?branch=main)](https://github.com/Equim-chan/Mortal/actions/workflows/libriichi.yml)
+[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/Equim-chan/Mortal/libblood.yml?branch=main)](https://github.com/Equim-chan/Mortal/actions/workflows/libblood.yml)
 [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/Equim-chan/Mortal/docs.yml?branch=main&label=docs)](https://mortal.ekyu.moe)
 [![dependency status](https://deps.rs/repo/github/Equim-chan/Mortal/status.svg)](https://deps.rs/repo/github/Equim-chan/Mortal)
 ![GitHub top language](https://img.shields.io/github/languages/top/Equim-chan/Mortal)
@@ -13,7 +13,7 @@
 
 [![Donate](https://img.shields.io/badge/Donate-%E2%9D%A4%EF%B8%8F-blue?style=social)](https://mortal.ekyu.moe/donate.html)
 
-Mortal ([凡夫](https://www.mdbg.net/chinese/dictionary?wdqb=%E5%87%A1%E5%A4%AB)) is a free and open source AI for Japanese mahjong, powered by deep reinforcement learning.
+Bloody Battle Mahjong AI is a free and open source AI for Bloody Battle Mahjong (血战到底), powered by deep reinforcement learning.
 
 Read the [**Documentation**](https://mortal.ekyu.moe) for everything about this work.
 

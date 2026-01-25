@@ -5,7 +5,10 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_sequence
 from typing import *
 from functools import partial
 from itertools import permutations
-from libriichi.consts import obs_shape, oracle_obs_shape, ACTION_SPACE, GRP_SIZE
+from libblood.consts import obs_shape, oracle_obs_shape, ACTION_SPACE, GRP_SIZE
+
+# Bloody Battle: 27 tile kinds (no jihai, no red 5s)
+TILE_KINDS = 27
 
 class ChannelAttention(nn.Module):
     def __init__(self, channels, ratio=16, actv_builder=nn.ReLU, bias=True):
@@ -98,7 +101,7 @@ class ResNet(nn.Module):
             nn.Conv1d(conv_channels, 32, kernel_size=3, padding=1),
             actv_builder(),
             nn.Flatten(),
-            nn.Linear(32 * 34, 1024),
+            nn.Linear(32 * TILE_KINDS, 1024),  # Bloody Battle: 27 tile kinds (was 34)
         ]
         self.net = nn.Sequential(*layers)
 
@@ -248,9 +251,10 @@ class GRP(nn.Module):
         self.register_buffer('perms', perms)     # (24, 4)
         self.register_buffer('perms_t', perms_t) # (4, 24)
 
-    # input: [grand_kyoku, honba, kyotaku, s[0], s[1], s[2], s[3]]
-    # grand_kyoku: E1 = 0, S4 = 7, W4 = 11
-    # s is 2.5 at E1
+    # Bloody Battle: input: [kyoku, s[0], s[1], s[2], s[3]]
+    # Bloody Battle: No grand_kyoku, honba, kyotaku
+    # kyoku: current kyoku (counts from 1)
+    # s[i]: score of player i / 10000
     # s[0] is score of player id 0
     def forward(self, inputs: List[Tensor]):
         lengths = torch.tensor([t.shape[0] for t in inputs], dtype=torch.int64)

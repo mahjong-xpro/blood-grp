@@ -1,7 +1,7 @@
 use super::PlayerState;
 use crate::mjai::Event;
 use crate::tile::Tile;
-use crate::tuz;
+// Bloody Battle: tuz not used
 
 use anyhow::{Result, bail, ensure};
 use pyo3::prelude::*;
@@ -117,6 +117,22 @@ impl PlayerState {
             Event::Dahai { pai, tsumogiri, .. } => {
                 ensure!(cans.can_discard, "cannot discard");
                 self.ensure_tiles_in_hand(&[pai])?;
+                
+                // Bloody Battle: Check Ding Que rule - cannot discard ding_que suit tiles
+                if let Some(ding_que_suit) = self.ding_que {
+                    let tile_id = pai.deaka().as_usize();
+                    let tile_suit = tile_id / 9; // 0=Man, 1=Pin, 2=Sou
+                    let ding_que_suit_id = match ding_que_suit {
+                        crate::mjai::Suit::Man => 0,
+                        crate::mjai::Suit::Pin => 1,
+                        crate::mjai::Suit::Sou => 2,
+                    };
+                    ensure!(
+                        tile_suit != ding_que_suit_id,
+                        "cannot discard ding_que suit tile: {pai:?} (ding_que: {ding_que_suit:?})"
+                    );
+                }
+                
                 if tsumogiri {
                     if let Some(tile) = self.last_self_tsumo {
                         ensure!(tile == pai, "cannot tsumogiri");

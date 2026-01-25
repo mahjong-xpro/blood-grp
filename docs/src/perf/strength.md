@@ -11,7 +11,7 @@ The simulation employs a 1v3 duplicate mahjong setup, which is organized as foll
 
 In this configuration, each set of 4 games initialize with the same random seed. The emulator ensures that given the same `(seed, kyoku, honba)` combination, the walls, initial hands, dora/ura indicators, and rinshan tiles are deterministic and reproducible.
 
-The emulator is implemented in [`libriichi::arena`](https://github.com/Equim-chan/Mortal/tree/main/libriichi/src/arena).
+The emulator is implemented in [`libblood::arena`](https://github.com/Equim-chan/Mortal/tree/main/libblood/src/arena).
 
 The "rank pt" in all the tables are calculated using the distribution [90, 45, 0, -135].
 

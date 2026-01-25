@@ -43,14 +43,10 @@ struct Game {
 
     kyoku_started: bool,
     ended: bool,
-    /// Used in 西入 where the oya and another player get to 30000 at the same
-    /// time, but the game continues because oya is not the top.
-    ///
-    /// As per [Tenhou's rule](https://tenhou.net/man/#RULE):
-    ///
-    /// > サドンデスルールは、30000点(供託未収)以上になった時点で終了、ただし親の
-    /// > 連荘がある場合は連荘を優先する
-    in_renchan: bool,
+    /// Bloody Battle: Game end condition tracking
+    /// Game ends when 3 players have agari or when tiles are exhausted
+    /// (No renchan in Bloody Battle Mahjong)
+    in_renchan: bool, // Kept for compatibility, but not used in Bloody Battle
 }
 
 impl Game {
@@ -206,12 +202,20 @@ impl Game {
 }
 
 impl BatchGame {
-    pub const fn tenhou_hanchan(disable_progress_bar: bool) -> Self {
+    /// Create a standard Bloody Battle Mahjong game configuration
+    /// Bloody Battle: Game ends when 3 players have agari or when tiles are exhausted
+    pub const fn standard_game(disable_progress_bar: bool) -> Self {
         Self {
-            length: 8,
+            length: 8, // Bloody Battle: 8 rounds (can be adjusted based on game rules)
             init_scores: [25000; 4],
             disable_progress_bar,
         }
+    }
+    
+    /// Legacy method name - use `standard_game` instead
+    #[deprecated(note = "Use standard_game instead for Bloody Battle Mahjong")]
+    pub const fn tenhou_hanchan(disable_progress_bar: bool) -> Self {
+        Self::standard_game(disable_progress_bar)
     }
 
     pub fn run(
@@ -310,7 +314,7 @@ mod test {
 
     #[test]
     fn tsumogiri() {
-        let g = BatchGame::tenhou_hanchan(true);
+        let g = BatchGame::standard_game(true);
         let mut agents = [
             Box::new(Tsumogiri::new_batched(&[0, 1, 2, 3]).unwrap()) as _,
             Box::new(Tsumogiri::new_batched(&[3, 2, 1, 0]).unwrap()) as _,
