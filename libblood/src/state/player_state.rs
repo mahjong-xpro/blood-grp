@@ -63,7 +63,8 @@ pub struct PlayerState {
     /// the size can exceed 24.
     pub(super) kawa: [TinyVec<[Option<KawaItem>; 24]>; 4],
 
-    pub(super) kawa_overview: [ArrayVec<[Tile; 24]>; 4],
+    /// Use TinyVec instead of ArrayVec to handle rare cases where size exceeds 24
+    pub(super) kawa_overview: [TinyVec<[Tile; 24]>; 4],
     pub(super) fuuro_overview: [ArrayVec<[ArrayVec<[Tile; 4]>; 4]>; 4],
     /// In this field all `Tile` are normalized (no aka dora distinction in Bloody Battle Mahjong)
     pub(super) ankan_overview: [ArrayVec<[Tile; 4]>; 4],
@@ -79,8 +80,9 @@ pub struct PlayerState {
     pub(super) last_kawa_tile: Option<Tile>,
     pub(super) last_cans: ActionCandidate,
 
-    pub(super) ankan_candidates: ArrayVec<[Tile; 3]>,
-    pub(super) kakan_candidates: ArrayVec<[Tile; 3]>,
+    /// Use TinyVec to handle cases where there might be more than 3 candidates
+    pub(super) ankan_candidates: TinyVec<[Tile; 3]>,
+    pub(super) kakan_candidates: TinyVec<[Tile; 3]>,
     pub(super) chankan_chance: Option<()>,
     /// Track which player performed kakan when chankan occurs (for excluding gen)
     /// This is set when chankan_chance is Some(())
