@@ -43,12 +43,27 @@ pub fn ensure_init() {
 }
 
 fn add_suhai(lhs: &mut [u8; 10], index: usize, m: usize) {
+    // len_div3 should be 0-4, so m should be 0-4
+    // If m is out of range, clamp it to prevent index out of bounds
+    assert!(m <= 4, "len_div3 (m) should be 0-4, but got {}", m);
+    let m = m.min(4);
+    
     let tab = SUHAI_TABLE.get(index).copied().unwrap_or_default();
-
+    
+    // j should be in range [5, 9] when m is 0-4
     for j in (5..=(5 + m)).rev() {
+        // Ensure j is within tab bounds [0, 9]
+        if j >= 10 {
+            // This should never happen if m <= 4, but add safety check
+            continue;
+        }
         let mut sht = (lhs[j] + tab[0]).min(lhs[0] + tab[j]);
         for k in 5..j {
-            sht = sht.min(lhs[k] + tab[j - k]).min(lhs[j - k] + tab[k]);
+            // Ensure indices are within bounds
+            let jk = j - k;
+            if jk < 10 && k < 10 {
+                sht = sht.min(lhs[k] + tab[jk]).min(lhs[jk] + tab[k]);
+            }
         }
         lhs[j] = sht;
     }
@@ -56,7 +71,11 @@ fn add_suhai(lhs: &mut [u8; 10], index: usize, m: usize) {
     for j in (0..=m).rev() {
         let mut sht = lhs[j] + tab[0];
         for k in 0..j {
-            sht = sht.min(lhs[k] + tab[j - k]);
+            // Ensure j - k is within tab bounds [0, 9]
+            let jk = j - k;
+            if jk < 10 {
+                sht = sht.min(lhs[k] + tab[jk]);
+            }
         }
         lhs[j] = sht;
     }
