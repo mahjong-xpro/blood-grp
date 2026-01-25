@@ -9,7 +9,6 @@
 use super::point::Point;
 use super::shanten;
 use crate::tile::Tile;
-use crate::must_tile;
 #[cfg(test)]
 use crate::tu8;
 use std::sync::LazyLock;
@@ -449,14 +448,6 @@ impl AgariCalculator<'_> {
         fan = fan.min(5);
         
         Some(Agari::Fan(fan))
-    }
-
-    #[allow(dead_code)]
-    fn search_yakus<const RETURN_IF_ANY: bool>(&self) -> Option<Agari> {
-        // This method is not used for Bloody Battle Mahjong
-        // The agari() method implements the fan calculation instead
-        // All the Japanese Mahjong yaku calculation code has been removed
-        None
     }
 }
 
