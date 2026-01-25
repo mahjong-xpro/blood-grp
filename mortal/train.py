@@ -178,6 +178,31 @@ def train():
                 torch.save({'file_list': file_list}, file_index)
         logging.info(f'file list size: {len(file_list):,}')
 
+        # 如果文件列表为空（首次训练），自动生成初始数据
+        if len(file_list) == 0 and not online:
+            logging.warning('No training data found. Generating initial data through self-play...')
+            train_player = TrainPlayer()
+            rankings, generated_files = train_player.train_play(mortal, dqn, device)
+            logging.info(f'Generated {len(generated_files)} files from self-play')
+            logging.info(f'Average ranking: {rankings.mean():.2f}')
+            
+            # 重新构建文件索引
+            logging.info('Rebuilding file index with generated data...')
+            file_list = []
+            for pat in config['dataset']['globs']:
+                file_list.extend(glob(pat, recursive=True))
+            if len(player_names_set) > 0:
+                filtered = []
+                for filename in tqdm(file_list, unit='file'):
+                    with gzip.open(filename, 'rt') as f:
+                        start = json.loads(next(f))
+                        if not set(start['names']).isdisjoint(player_names_set):
+                            filtered.append(filename)
+                file_list = filtered
+            file_list.sort(reverse=True)
+            torch.save({'file_list': file_list}, file_index)
+            logging.info(f'File list size after self-play: {len(file_list):,}')
+
         before_next_test_play = (test_every - steps % test_every) % test_every
         logging.info(f'total steps: {steps:,} (~{before_next_test_play:,})')
 
