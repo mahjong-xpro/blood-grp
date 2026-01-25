@@ -20,11 +20,15 @@ pub const GRP_SIZE: usize = 5;
 pub const fn obs_shape(version: u32) -> (usize, usize) {
     // Bloody Battle: 27 tile kinds (no jihai, no red 5s)
     // Calculated dimensions based on encode_obs function in obs_repr.rs
+    // Ding que encoding added:
+    //   v1: +26 (3+1+13+9)
+    //   v2|3: +16 (3+1+3+9)
+    //   v4: +14 (3+1+1+9)
     match version {
-        1 => (938, 27), // Calculated: 938 rows × 27 tile kinds
-        2 => (944, 27), // Calculated: 944 rows × 27 tile kinds
-        3 => (936, 27), // Calculated: 936 rows × 27 tile kinds
-        4 => (998, 27), // Calculated: 998 rows × 27 tile kinds (includes SP table)
+        1 => (964, 27), // 938 + 26 = 964 (ding que: 3+1+13+9)
+        2 => (960, 27), // 944 + 16 = 960 (ding que: 3+1+3+9)
+        3 => (952, 27), // 936 + 16 = 952 (ding que: 3+1+3+9)
+        4 => (1012, 27), // 998 + 14 = 1012 (ding que: 3+1+1+9)
         _ => unreachable!(),
     }
 }

@@ -193,6 +193,42 @@ impl<'a> ObsEncoderContext<'a> {
         // Keep the same offset for compatibility
         self.idx += 2;
 
+        // Bloody Battle: Encode ding_que (定缺) information
+        // Ding que suit (3 dimensions: one-hot for Man/Pin/Sou)
+        if let Some(suit) = state.ding_que {
+            match suit {
+                crate::mjai::Suit::Man => self.arr.fill(self.idx, 1.),
+                crate::mjai::Suit::Pin => self.arr.fill(self.idx + 1, 1.),
+                crate::mjai::Suit::Sou => self.arr.fill(self.idx + 2, 1.),
+            }
+        }
+        self.idx += 3;
+
+        // Ding que complete status (1 dimension)
+        if state.check_ding_que_complete() {
+            self.arr.fill(self.idx, 1.);
+        }
+        self.idx += 1;
+
+        // Ding que tiles remaining (encoded with RBF)
+        let ding_que_remaining = state.count_ding_que_tiles();
+        IntegerEncoder::new(ding_que_remaining as usize, 13)
+            .rescale(true)
+            .rbf_intervals(3)
+            .encode(&mut self);
+
+        // Other players' ding que suits (3 dimensions per player × 3 players = 9 dimensions)
+        for i in 0..3 {
+            if let Some(suit) = state.other_ding_que[i] {
+                match suit {
+                    crate::mjai::Suit::Man => self.arr.fill(self.idx, 1.),
+                    crate::mjai::Suit::Pin => self.arr.fill(self.idx + 1, 1.),
+                    crate::mjai::Suit::Sou => self.arr.fill(self.idx + 2, 1.),
+                }
+            }
+            self.idx += 3;
+        }
+
         if matches!(self.version, 2 | 3 | 4) {
             // Bloody Battle: Simplified kyoku encoding (no bakaze)
             let n = state.kyoku;

@@ -232,3 +232,35 @@ single player table (max EV):
         )
     }
 }
+
+impl PlayerState {
+    /// Bloody Battle: Check if ding que (定缺) is complete (no ding_que suit tiles in hand)
+    #[must_use]
+    pub fn check_ding_que_complete(&self) -> bool {
+        if let Some(suit) = self.ding_que {
+            let (start, end) = match suit {
+                crate::mjai::Suit::Man => (0, 9),
+                crate::mjai::Suit::Pin => (9, 18),
+                crate::mjai::Suit::Sou => (18, 27),
+            };
+            (start..end).all(|i| self.tehai[i] == 0)
+        } else {
+            false // No ding_que selected
+        }
+    }
+
+    /// Bloody Battle: Count remaining ding_que suit tiles in hand
+    #[must_use]
+    pub fn count_ding_que_tiles(&self) -> u8 {
+        if let Some(suit) = self.ding_que {
+            let (start, end) = match suit {
+                crate::mjai::Suit::Man => (0, 9),
+                crate::mjai::Suit::Pin => (9, 18),
+                crate::mjai::Suit::Sou => (18, 27),
+            };
+            (start..end).map(|i| self.tehai[i]).sum()
+        } else {
+            0 // No ding_que selected
+        }
+    }
+}
