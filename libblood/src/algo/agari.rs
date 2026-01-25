@@ -502,7 +502,11 @@ fn get_tile14_and_key(tiles: &[u8; 27]) -> ([u8; 14], u32) {
 /// `tehai` must already contain `tile`. `true` is returned if making an ankan
 /// with the tile is legal.
 ///
-/// if the tile count is 4.
+/// Check if ankan (暗杠) is valid when in tenpai (听牌) state.
+/// 
+/// Note: Function name contains "riichi" for historical reasons, but this function
+/// is used in Bloody Battle Mahjong to check if ankan changes the tenpai shape.
+/// Bloody Battle Mahjong does not have riichi (立直) concept.
 ///
 /// The behavior is undefined if `tehai` is not tenpai.
 #[must_use]
@@ -569,6 +573,8 @@ mod test {
 
     #[test]
     fn ankan_after_riichi() {
+        // Note: Test name contains "riichi" for historical reasons, but this tests
+        // ankan validity in tenpai state, which is also needed in Bloody Battle Mahjong
         let test_one = |tehai_str, tile_str: &str, len_div3, strict, expected| {
             let mut tehai = hand(tehai_str).unwrap();
             let tile: Tile = tile_str.parse().unwrap();

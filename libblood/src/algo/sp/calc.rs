@@ -35,6 +35,7 @@ enum ScoresOrValues<const MAX_TSUMO: usize> {
 pub struct SPCalculator<'a> {
     // Immutable states, used in agari calculator.
     pub tehai_len_div3: u8,
+    /// Chi (吃) melds - always empty in Bloody Battle Mahjong (no chi allowed)
     pub chis: &'a [u8],
     pub pons: &'a [u8],
     pub minkans: &'a [u8],
