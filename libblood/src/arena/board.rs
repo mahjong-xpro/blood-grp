@@ -434,7 +434,8 @@ impl BoardState {
         match ev.event {
             Event::None => {
                 // Bloody Battle Mahjong: Check for exhaustive draw (流局)
-                if self.tiles_left == 0 {
+                // Check both tiles_left and yama to ensure consistency
+                if self.tiles_left == 0 || self.board.yama.is_empty() {
                     self.exhaustive_ryukyoku();
                     return Ok(Poll::End);
                 }
@@ -442,6 +443,12 @@ impl BoardState {
                 // Skip players who have agari
                 while self.players_agari[self.tsumo_actor as usize] {
                     self.tsumo_actor = (self.tsumo_actor + 1) % 4;
+                }
+
+                // Double-check before popping from yama
+                if self.board.yama.is_empty() {
+                    self.exhaustive_ryukyoku();
+                    return Ok(Poll::End);
                 }
 
                 let tile = if self.deal_from_rinshan.take().is_some() {
