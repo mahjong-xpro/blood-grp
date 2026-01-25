@@ -3,6 +3,9 @@
 //! Note that all functions in this mod that take or produce strings are dealing
 //! with tenhou.net/2 format tile description (like 0m 123z) instead of mjai (like
 //! 5mr ESW).
+//!
+//! Bloody Battle Mahjong: Only 27 tile kinds (no jihai/z tiles), so format like "123m 456p 789s"
+//! is used instead of "123m 456p 789s 123z".
 
 use crate::tile::Tile;
 use crate::must_tile;

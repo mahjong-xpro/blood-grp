@@ -124,12 +124,15 @@
 **已完成**：
 - ✅ README.md 已更新为血战到底相关描述
 - ✅ 主要代码文件中的注释已更新（添加了中文说明如 "riichi (立直)"）
+- ✅ 主要 API 文档字符串已更新（lib.rs, board.rs, point.rs, stat.rs 等）
+- ✅ 更新了 hand.rs 和 agari.rs 中的 tenhou 相关注释
 - ✅ 创建了 `FUNCTIONAL_VERIFICATION.md` 功能验证报告
 - ✅ 创建了 `PROGRESS_REPORT.md` 进度报告
+- ✅ Python 模块可以正常导入
 
 **待完成**：
-- [ ] 更新所有 API 文档字符串
-- [ ] 检查并更新其他文档文件
+- [x] 更新主要 API 文档字符串 ✅ 已完成（lib.rs, board.rs, point.rs, stat.rs 等）
+- [ ] 检查并更新其他文档文件（如需要）
 
 ---
 

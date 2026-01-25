@@ -587,6 +587,7 @@ impl<'a> DivWorker<'a> {
         // if matches_tu8!(self.pair_tile, P | F | C) {
         //     fu += 2;
         // } else {
+        //     // Bloody Battle: This rule was from Tenhou (Japanese Mahjong), not applicable
         //     // As per [Tenhou's rule](https://tenhou.net/man/#RULE):
         //     //
         //     // > 連風牌は4符
