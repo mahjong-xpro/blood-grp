@@ -8,7 +8,10 @@ import os
 import sys
 import gzip
 import json
+import threading
+import time
 from pathlib import Path
+from datetime import datetime
 from flask import Flask, render_template, jsonify, request, send_from_directory
 from flask_cors import CORS
 
@@ -21,29 +24,90 @@ CORS(app)
 PROJECT_ROOT = Path(__file__).parent.parent
 LOG_VIEWER_DIR = Path(__file__).parent
 
+# Log cache
+log_cache = {
+    'logs': [],
+    'last_update': None,
+    'lock': threading.Lock(),
+}
+
+# Default log directory (can be overridden by command line argument)
+DEFAULT_LOG_DIR = None
+
 @app.route('/')
 def index():
     """Main page."""
     return render_template('replay.html')
 
-@app.route('/api/logs', methods=['GET'])
-def list_logs():
-    """List available log files."""
-    log_dir = request.args.get('dir', str(PROJECT_ROOT))
-    if not os.path.exists(log_dir):
-        return jsonify({'error': 'Directory not found'}), 404
+def scan_log_directory(log_dir, max_files=20):
+    """Scan log directory and return latest log files."""
+    if log_dir is None:
+        return []
+    log_dir = Path(log_dir)
+    if not log_dir.exists():
+        return []
     
     log_files = []
     for ext in ['*.json', '*.json.gz']:
-        for file_path in Path(log_dir).rglob(ext):
-            rel_path = str(file_path.relative_to(Path(log_dir)))
-            log_files.append({
-                'name': file_path.name,
-                'path': rel_path,
-                'size': file_path.stat().st_size,
-            })
+        for file_path in log_dir.rglob(ext):
+            try:
+                stat = file_path.stat()
+                log_files.append({
+                    'name': file_path.name,
+                    'path': str(file_path),
+                    'relative_path': str(file_path.relative_to(log_dir)),
+                    'size': stat.st_size,
+                    'mtime': stat.st_mtime,
+                    'mtime_str': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+                })
+            except (OSError, PermissionError):
+                # Skip files that can't be accessed
+                continue
     
-    return jsonify({'logs': sorted(log_files, key=lambda x: x['name'])})
+    # Sort by modification time (newest first) and take top N
+    log_files.sort(key=lambda x: x['mtime'], reverse=True)
+    return log_files[:max_files]
+
+def update_log_cache():
+    """Update log cache in background."""
+    global DEFAULT_LOG_DIR
+    while True:
+        try:
+            if DEFAULT_LOG_DIR and DEFAULT_LOG_DIR.exists():
+                logs = scan_log_directory(DEFAULT_LOG_DIR, max_files=20)
+                with log_cache['lock']:
+                    log_cache['logs'] = logs
+                    log_cache['last_update'] = datetime.now().isoformat()
+                print(f"[{datetime.now()}] Updated log cache: {len(logs)} files")
+        except Exception as e:
+            print(f"[{datetime.now()}] Error updating log cache: {e}")
+        
+        time.sleep(10)  # Update every 10 seconds
+
+@app.route('/api/logs', methods=['GET'])
+def list_logs():
+    """List available log files from cache."""
+    custom_dir = request.args.get('dir')
+    
+    if custom_dir:
+        # If custom directory is specified, scan it directly
+        if not os.path.exists(custom_dir):
+            return jsonify({'error': 'Directory not found'}), 404
+        
+        log_files = scan_log_directory(custom_dir, max_files=100)
+        return jsonify({
+            'logs': log_files,
+            'cached': False,
+        })
+    
+    # Return cached logs
+    with log_cache['lock']:
+        return jsonify({
+            'logs': log_cache['logs'],
+            'last_update': log_cache['last_update'],
+            'cached': True,
+            'directory': str(DEFAULT_LOG_DIR) if DEFAULT_LOG_DIR else None,
+        })
 
 @app.route('/api/log/<path:log_path>')
 def get_log(log_path):
@@ -136,7 +200,31 @@ if __name__ == '__main__':
     parser.add_argument('--host', default='0.0.0.0', help='Host to bind to')
     parser.add_argument('--port', type=int, default=5000, help='Port to bind to')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    parser.add_argument('--log-dir', type=str, default='/data/mortal/train_play', 
+                       help='Directory to scan for log files')
     args = parser.parse_args()
     
+    # Update default log directory (global variable)
+    DEFAULT_LOG_DIR = Path(args.log_dir)
+    
+    # Check if directory exists
+    if not DEFAULT_LOG_DIR.exists():
+        print(f"Warning: Log directory does not exist: {DEFAULT_LOG_DIR}")
+        print("Log cache will be empty. You can still load logs manually.")
+    else:
+        # Start background thread to update log cache
+        cache_thread = threading.Thread(target=update_log_cache, daemon=True)
+        cache_thread.start()
+        print(f"Started log cache updater thread (scanning: {DEFAULT_LOG_DIR})")
+        
+        # Initial cache update
+        print(f"Performing initial cache update...")
+        logs = scan_log_directory(DEFAULT_LOG_DIR, max_files=20)
+        with log_cache['lock']:
+            log_cache['logs'] = logs
+            log_cache['last_update'] = datetime.now().isoformat()
+        print(f"Initial cache: {len(logs)} files")
+    
     print(f"Starting Mahjong Log Replay Web Service on http://{args.host}:{args.port}")
+    print(f"Log directory: {DEFAULT_LOG_DIR}")
     app.run(host=args.host, port=args.port, debug=args.debug)

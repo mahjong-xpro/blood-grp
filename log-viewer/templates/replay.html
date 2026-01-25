@@ -16,8 +16,16 @@
                 <button id="upload-btn" class="btn btn-primary">上传日志文件</button>
                 <input type="text" id="log-path-input" placeholder="或输入日志文件路径">
                 <button id="load-btn" class="btn btn-primary">加载</button>
+                <button id="refresh-logs-btn" class="btn btn-primary">刷新日志列表</button>
             </div>
         </header>
+
+        <!-- Log List -->
+        <div class="log-list-container" id="log-list-container" style="display: none;">
+            <h3>最新日志文件 (自动更新每10秒)</h3>
+            <div class="log-list-info" id="log-list-info"></div>
+            <div class="log-list" id="log-list"></div>
+        </div>
 
         <!-- Game Info -->
         <div class="game-info" id="game-info" style="display: none;">

@@ -379,6 +379,82 @@ function togglePlayPause() {
     }
 }
 
+// Log list management
+let logListUpdateInterval = null;
+
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+async function loadLogList() {
+    try {
+        const response = await fetch('/api/logs');
+        const data = await response.json();
+        
+        if (data.error) {
+            console.error('Failed to load log list:', data.error);
+            return;
+        }
+        
+        // Update info
+        const infoEl = document.getElementById('log-list-info');
+        if (data.cached) {
+            const updateTime = data.last_update ? new Date(data.last_update).toLocaleString() : '未知';
+            infoEl.textContent = `目录: ${data.directory || '未知'} | 最后更新: ${updateTime} | 共 ${data.logs.length} 个文件`;
+        } else {
+            infoEl.textContent = `共 ${data.logs.length} 个文件`;
+        }
+        
+        // Render log list
+        const logListEl = document.getElementById('log-list');
+        logListEl.innerHTML = '';
+        
+        if (data.logs.length === 0) {
+            logListEl.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">没有找到日志文件</div>';
+            return;
+        }
+        
+        data.logs.forEach(log => {
+            const item = document.createElement('div');
+            item.className = 'log-item';
+            item.innerHTML = `
+                <div class="log-item-name">${log.name}</div>
+                <div class="log-item-meta">
+                    <span>${log.mtime_str || '未知时间'}</span>
+                    <span class="log-item-size">${formatFileSize(log.size)}</span>
+                </div>
+            `;
+            
+            item.addEventListener('click', () => {
+                // Use full path if available, otherwise use relative path
+                const path = log.path || log.relative_path || log.name;
+                document.getElementById('log-path-input').value = path;
+                loadLogFile(path);
+            });
+            
+            logListEl.appendChild(item);
+        });
+        
+        // Show log list container
+        document.getElementById('log-list-container').style.display = 'block';
+    } catch (error) {
+        console.error('Error loading log list:', error);
+    }
+}
+
+function startLogListAutoRefresh() {
+    // Load immediately
+    loadLogList();
+    
+    // Then refresh every 10 seconds
+    if (logListUpdateInterval) {
+        clearInterval(logListUpdateInterval);
+    }
+    logListUpdateInterval = setInterval(loadLogList, 10000);
+}
+
 // Event listeners
 document.addEventListener('DOMContentLoaded', () => {
     // File upload
@@ -417,6 +493,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
+    // Refresh logs button
+    document.getElementById('refresh-logs-btn').addEventListener('click', () => {
+        loadLogList();
+    });
+    
     // Playback controls
     document.getElementById('prev-btn').addEventListener('click', prevEvent);
     document.getElementById('next-btn').addEventListener('click', nextEvent);
@@ -438,6 +519,9 @@ document.addEventListener('DOMContentLoaded', () => {
             togglePlayPause();
         }
     });
+    
+    // Start auto-refresh for log list
+    startLogListAutoRefresh();
 });
 
 async function loadLogFile(path) {
