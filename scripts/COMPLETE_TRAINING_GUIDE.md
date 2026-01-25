@@ -66,15 +66,13 @@ blood/
 
 ```bash
 cd libblood
-cargo build --release
-# 或
-cargo build
+cargo build --lib --release
 ```
 
 **验证**：
 ```bash
 cd ..
-python3 -c "import libblood; print('libblood available')"
+python -c "import libblood; print('libblood available')"
 # 如果成功，说明编译完成
 ```
 

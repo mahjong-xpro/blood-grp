@@ -1,0 +1,190 @@
+# Bloody Battle Mahjong Training Configuration
+# 服务器路径配置：
+# - 数据目录: /data/mortal
+# - 源码目录: /data/blood
+
+[control]
+version = 4
+online = false
+
+# 模型文件路径
+state_file = '/data/mortal/mortal.pth'
+best_state_file = '/data/mortal/best.pth'
+tensorboard_dir = '/data/mortal/logs'
+
+# 计算设备配置
+device = 'cuda:0'  # 如果有 GPU，否则改为 'cpu'
+enable_cudnn_benchmark = true  # GPU 训练时建议启用
+enable_amp = true  # 混合精度训练，节省显存
+enable_compile = false  # PyTorch 2.0+ 编译优化（可选）
+
+# 训练参数
+batch_size = 512
+opt_step_every = 1
+
+# 保存和测试频率
+save_every = 400
+test_every = 20000
+submit_every = 400
+
+# 自对局配置（用于生成训练数据）
+# 使用环境变量 TRAIN_PLAY_PROFILE 可以选择不同的配置
+[train_play.default]
+games = 800  # 每次自对局局数（初期可以设置 400-800，后期可以增加到 2000+）
+log_dir = '/data/mortal/train_play'  # 自对局数据保存目录
+boltzmann_epsilon = 0.005  # 探索率（初期可以设置 0.01-0.02，后期降低到 0.001-0.005）
+boltzmann_temp = 0.05  # 温度参数
+top_p = 1.0
+repeats = 1
+
+# 测试对局配置
+[test_play]
+games = 3000
+log_dir = '/data/mortal/test_play'
+
+# 数据集配置
+# 自博弈训练：指向自对局生成的数据目录
+[dataset]
+globs = ['/data/mortal/train_play/**/*.json.gz']  # 自对局数据路径
+file_index = '/data/mortal/file_index.pth'
+file_batch_size = 15
+reserve_ratio = 0.0
+num_workers = 4  # 根据 CPU 核心数调整（建议为 CPU 核心数）
+player_names_files = []  # 自博弈训练可以留空
+num_epochs = 1
+enable_augmentation = false
+augmented_first = false
+
+# 环境配置
+[env]
+gamma = 1  # 折扣因子
+pts = [6.0, 4.0, 2.0, 0.0]  # 排名对应的分数（1位、2位、3位、4位）
+
+# ResNet 模型配置
+[resnet]
+conv_channels = 192
+num_blocks = 40
+
+# CQL (Conservative Q-Learning) 配置
+[cql]
+min_q_weight = 5
+
+# 辅助任务配置
+[aux]
+next_rank_weight = 0.2  # 排名预测任务的权重
+
+# Batch Normalization 冻结配置
+[freeze_bn]
+# 在线训练时设置为 true
+mortal = false
+
+# 优化器配置
+[optim]
+eps = 1e-8
+betas = [0.9, 0.999]
+weight_decay = 0.1
+max_grad_norm = 0  # 0 表示不进行梯度裁剪
+
+# 学习率调度器配置
+[optim.scheduler]
+peak = 1e-4  # 峰值学习率
+final = 1e-4  # 最终学习率
+warm_up_steps = 0  # 预热步数
+max_steps = 0  # 0 表示不限制最大步数
+
+# Baseline 模型配置（用于自对局）
+# 第一次训练时，如果 baseline 文件不存在，系统会使用当前模型作为 baseline
+[baseline.train]
+device = 'cuda:0'  # 或 'cpu'
+enable_compile = false
+state_file = '/data/mortal/baseline.pth'  # 如果不存在，会使用当前模型
+
+[baseline.test]
+device = 'cuda:0'  # 或 'cpu'
+enable_compile = false
+state_file = '/data/mortal/baseline.pth'
+
+# 在线训练配置（分布式训练）
+[online]
+history_window = 50
+enable_compile = false
+
+[online.remote]
+host = '127.0.0.1'
+port = 5000
+
+[online.server]
+buffer_dir = '/data/mortal/buffer'
+drain_dir = '/data/mortal/drain'
+sample_reuse_rate = 0
+sample_reuse_threshold = 0
+capacity = 1600
+force_sequential = false
+
+# 1v3 测试配置（用于评估模型）
+[1v3]
+seed_key = -1
+games_per_iter = 2000
+iters = 500
+log_dir = '/data/mortal/1v3'
+
+[1v3.challenger]
+device = 'cuda:0'
+name = 'mortal'
+state_file = '/data/mortal/challenger.pth'
+stochastic_latent = false
+enable_compile = false
+enable_amp = true
+enable_rule_based_agari_guard = true
+
+[1v3.champion]
+device = 'cuda:0'
+name = 'baseline'
+state_file = '/data/mortal/baseline.pth'
+stochastic_latent = false
+enable_compile = false
+enable_amp = true
+enable_rule_based_agari_guard = true
+
+[1v3.akochan]
+enabled = false  # 是否使用 Akochan AI 作为对手
+dir = '/path/to/akochan'  # Akochan 目录（如果启用）
+tactics = '/path/to/tactics.json'  # Akochan 策略文件（如果启用）
+
+# GRP (Global Ranking Prediction) 配置
+# ⚠️ 重要：GRP 模型需要先创建或训练，训练主模型时需要 GRP 来计算奖励
+# 快速创建随机 GRP: cd mortal && python ../scripts/create-initial-grp.py
+# 训练 GRP: cd mortal && python train_grp.py
+[grp]
+state_file = '/data/mortal/grp.pth'
+
+[grp.network]
+hidden_size = 64
+num_layers = 2
+
+[grp.control]
+device = 'cuda:0'  # GRP 训练设备
+enable_cudnn_benchmark = false
+tensorboard_dir = '/data/mortal/grp_logs'  # GRP TensorBoard 日志目录
+
+batch_size = 512
+save_every = 2000
+val_steps = 400
+
+[grp.dataset]
+# 自博弈训练：可以指向自对局生成的数据
+train_globs = [
+    '/data/mortal/train_play/**/*.json.gz',  # 自对局数据
+    # 如果有其他数据源，可以添加：
+    # '/data/mortal/dataset/train/**/*.json.gz',
+]
+val_globs = [
+    '/data/mortal/test_play/**/*.json.gz',  # 测试对局数据
+    # 如果有其他验证数据，可以添加：
+    # '/data/mortal/dataset/val/**/*.json.gz',
+]
+file_index = '/data/mortal/grp_file_index.pth'
+file_batch_size = 50
+
+[grp.optim]
+lr = 1e-5
