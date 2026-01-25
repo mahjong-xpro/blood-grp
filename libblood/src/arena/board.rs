@@ -457,8 +457,10 @@ impl BoardState {
             return Ok(Poll::End);
         }
 
-        if self.tiles_left == 56 {
-            eprintln!("DEBUG: step() called with tiles_left=56, calling haipai()");
+        // 只有在tiles_left==56且还没有进入定缺阶段时才调用haipai()
+        // 如果已经进入定缺阶段，说明haipai()已经被调用过了
+        if self.tiles_left == 56 && !self.ding_que_phase {
+            eprintln!("DEBUG: step() called with tiles_left=56 and ding_que_phase=false, calling haipai()");
             self.haipai()?;
             eprintln!("DEBUG: step() after haipai(), ding_que_phase={}", self.ding_que_phase);
             return Ok(Poll::InGame);
