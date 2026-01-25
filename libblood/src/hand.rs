@@ -117,7 +117,9 @@ pub fn tile37_to_vec(tiles: &[u8; 37]) -> Vec<Tile> {
 }
 
 #[must_use]
-pub fn tile34_to_vec(tiles: &[u8; 34]) -> Vec<Tile> {
+/// Bloody Battle: Converts [u8; 27] tile array to Vec<Tile>
+/// (27 tile kinds: 3 suits × 9 numbers, no jihai)
+pub fn tile27_to_vec(tiles: &[u8; 27]) -> Vec<Tile> {
     let mut ret = vec![];
     tiles
         .iter()

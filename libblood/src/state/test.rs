@@ -1,7 +1,7 @@
 use super::{ActionCandidate, PlayerState};
 use crate::algo::shanten;
 use crate::consts::MAX_VERSION;
-use crate::hand::{hand, hand_with_aka, tile37_to_vec};
+use crate::hand::{hand, hand_with_aka, tile27_to_vec, tile37_to_vec};
 use crate::mjai::Event;
 use crate::{must_tile, t, tuz};
 use std::mem;
@@ -489,7 +489,7 @@ fn ding_que_rule_enforcement() {
         oya: 0,
         scores: [25000; 4],
         tehais: [
-            tile37_to_vec(&hand("123456m 123456p 1s").unwrap())
+            tile27_to_vec(&hand("123456m 123456p 1s").unwrap())
                 .try_into()
                 .unwrap(),
             [t!(?); 13],
@@ -518,7 +518,7 @@ fn ding_que_rule_enforcement() {
         oya: 0,
         scores: [25000; 4],
         tehais: [
-            tile37_to_vec(&hand("123456m 123p 123456s").unwrap())
+            tile27_to_vec(&hand("123456m 123p 123456s").unwrap())
                 .try_into()
                 .unwrap(),
             [t!(?); 13],
@@ -552,7 +552,7 @@ fn ding_que_rule_enforcement() {
         oya: 0,
         scores: [25000; 4],
         tehais: [
-            tile37_to_vec(&hand("123456m 123456p 11s").unwrap())
+            tile27_to_vec(&hand("123456m 123456p 11s").unwrap())
                 .try_into()
                 .unwrap(),
             [t!(?); 13],
@@ -596,16 +596,16 @@ fn bloody_battle_game_flow_with_three_agari() {
         oya: 0,
         scores: [25000; 4],
         tehais: [
-            tile37_to_vec(&hand("123456m 123456p 1s").unwrap())
+            tile27_to_vec(&hand("123456m 123456p 1s").unwrap())
                 .try_into()
                 .unwrap(),
-            tile37_to_vec(&hand("123456m 123456p 1s").unwrap())
+            tile27_to_vec(&hand("123456m 123456p 1s").unwrap())
                 .try_into()
                 .unwrap(),
-            tile37_to_vec(&hand("123456m 123456p 1s").unwrap())
+            tile27_to_vec(&hand("123456m 123456p 1s").unwrap())
                 .try_into()
                 .unwrap(),
-            tile37_to_vec(&hand("123456m 123456p 1s").unwrap())
+            tile27_to_vec(&hand("123456m 123456p 1s").unwrap())
                 .try_into()
                 .unwrap(),
         ],
@@ -1411,16 +1411,16 @@ fn exhaustive_draw_game_end() {
         oya: 0,
         scores: [25000; 4],
         tehais: [
-            tile37_to_vec(&hand("123456m 123456p 1s").unwrap())
+            tile27_to_vec(&hand("123456m 123456p 1s").unwrap())
                 .try_into()
                 .unwrap(),
-            tile37_to_vec(&hand("123456m 123456p 1s").unwrap())
+            tile27_to_vec(&hand("123456m 123456p 1s").unwrap())
                 .try_into()
                 .unwrap(),
-            tile37_to_vec(&hand("123456m 123456p 1s").unwrap())
+            tile27_to_vec(&hand("123456m 123456p 1s").unwrap())
                 .try_into()
                 .unwrap(),
-            tile37_to_vec(&hand("123456m 123456p 1s").unwrap())
+            tile27_to_vec(&hand("123456m 123456p 1s").unwrap())
                 .try_into()
                 .unwrap(),
         ],
@@ -1487,10 +1487,10 @@ fn agari_player_continues_scoring() {
         oya: 0,
         scores: [25000; 4],
         tehais: [
-            tile37_to_vec(&hand("111222333m 44455p").unwrap())
+            tile27_to_vec(&hand("111222333m 44455p").unwrap())
                 .try_into()
                 .unwrap(),
-            tile37_to_vec(&hand("123456m 123456p 1s").unwrap())
+            tile27_to_vec(&hand("123456m 123456p 1s").unwrap())
                 .try_into()
                 .unwrap(),
             [t!(?); 13],
