@@ -521,6 +521,7 @@ impl PlayerState {
             maximize_win_prob: false,
             calc_tegawari: false,
             calc_shanten_down: false,
+            ding_que: self.ding_que, // Bloody Battle: Pass ding_que from state
         };
 
         let mut max_ev_table = sp_calc.calc(init_state, can_discard, tsumos_left, cur_shanten)?;

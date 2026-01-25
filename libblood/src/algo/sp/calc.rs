@@ -58,6 +58,9 @@ pub struct SPCalculator<'a> {
     pub calc_tegawari: bool,
     /// 向聴落とし考慮
     pub calc_shanten_down: bool,
+
+    /// Bloody Battle: Ding que suit (定缺花色)
+    pub ding_que: Option<crate::mjai::Suit>,
 }
 
 struct SPCalculatorState<'a, const MAX_TSUMO: usize> {
@@ -644,7 +647,7 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
             ankans: self.sup.ankans,
             winning_tile: win_tile.deaka().as_u8(),
             is_ron: false,
-            ding_que: None, // TODO: Get from state if available
+            ding_que: self.sup.ding_que, // Bloody Battle: Get from SPCalculator
             is_after_kan: false, // TODO: Track if this is after kan
             is_kan_discard: false, // TODO: Track if this is from kan discard
             is_chankan: false, // SPCalculator doesn't track chankan
