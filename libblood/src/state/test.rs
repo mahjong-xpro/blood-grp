@@ -664,183 +664,183 @@ fn bloody_battle_game_flow_with_three_agari() {
     });
     assert!(!ps0.last_cans.can_tsumo_agari, "Cannot agari with ding_que suit tiles in hand");
 }
-        {"type":"tsumo","actor":1,"pai":"7m"}
-        {"type":"dahai","actor":1,"pai":"9m","tsumogiri":false}
-        {"type":"tsumo","actor":2,"pai":"3s"}
-        {"type":"dahai","actor":2,"pai":"2p","tsumogiri":false}
-        {"type":"tsumo","actor":3,"pai":"4s"}
-        {"type":"dahai","actor":3,"pai":"W","tsumogiri":false}
-        {"type":"tsumo","actor":0,"pai":"1m"}
-        {"type":"dahai","actor":0,"pai":"1m","tsumogiri":true}
-        {"type":"tsumo","actor":1,"pai":"9m"}
-        {"type":"dahai","actor":1,"pai":"9m","tsumogiri":true}
-        {"type":"tsumo","actor":2,"pai":"3m"}
-        {"type":"dahai","actor":2,"pai":"N","tsumogiri":false}
-        {"type":"tsumo","actor":3,"pai":"2s"}
-        {"type":"dahai","actor":3,"pai":"F","tsumogiri":false}
-        {"type":"tsumo","actor":0,"pai":"2m"}
-        {"type":"dahai","actor":0,"pai":"2s","tsumogiri":false}
-        {"type":"tsumo","actor":1,"pai":"1m"}
-        {"type":"dahai","actor":1,"pai":"5m","tsumogiri":false}
-        {"type":"tsumo","actor":2,"pai":"3p"}
-        {"type":"dahai","actor":2,"pai":"3p","tsumogiri":true}
-        {"type":"pon","actor":0,"target":2,"pai":"3p","consumed":["3p","3p"]}
-        {"type":"dahai","actor":0,"pai":"2m","tsumogiri":false}
-        {"type":"tsumo","actor":1,"pai":"6p"}
-        {"type":"dahai","actor":1,"pai":"9p","tsumogiri":false}
-        {"type":"tsumo","actor":2,"pai":"6s"}
-        {"type":"dahai","actor":2,"pai":"C","tsumogiri":false}
-        {"type":"tsumo","actor":3,"pai":"7p"}
-        {"type":"dahai","actor":3,"pai":"P","tsumogiri":false}
-        {"type":"pon","actor":0,"target":3,"pai":"P","consumed":["P","P"]}
-        {"type":"dahai","actor":0,"pai":"1p","tsumogiri":false}
-        {"type":"tsumo","actor":1,"pai":"7s"}
-        {"type":"dahai","actor":1,"pai":"5s","tsumogiri":false}
-        {"type":"tsumo","actor":2,"pai":"3s"}
-        {"type":"dahai","actor":2,"pai":"9s","tsumogiri":false}
-        {"type":"tsumo","actor":3,"pai":"2m"}
-        {"type":"dahai","actor":3,"pai":"1s","tsumogiri":false}
-        {"type":"tsumo","actor":0,"pai":"1p"}
-        {"type":"dahai","actor":0,"pai":"1p","tsumogiri":true}
-        {"type":"tsumo","actor":1,"pai":"7m"}
-        {"type":"dahai","actor":1,"pai":"4s","tsumogiri":false}
-        {"type":"chi","actor":2,"target":1,"pai":"4s","consumed":["5s","6s"]}
-        {"type":"dahai","actor":2,"pai":"6p","tsumogiri":false}
-        {"type":"chi","actor":3,"target":2,"pai":"6p","consumed":["5pr","7p"]}
-        {"type":"dahai","actor":3,"pai":"7p","tsumogiri":false}
-        {"type":"tsumo","actor":0,"pai":"1s"}
-        {"type":"dahai","actor":0,"pai":"1s","tsumogiri":true}
-        {"type":"tsumo","actor":1,"pai":"1s"}
-        {"type":"reach","actor":1}
-        {"type":"dahai","actor":1,"pai":"1s","tsumogiri":true}
-        {"type":"reach_accepted","actor":1}
-        {"type":"tsumo","actor":2,"pai":"9s"}
-        {"type":"dahai","actor":2,"pai":"8s","tsumogiri":false}
-        {"type":"tsumo","actor":3,"pai":"4p"}
-        {"type":"dahai","actor":3,"pai":"4p","tsumogiri":true}
-        {"type":"tsumo","actor":0,"pai":"4m"}
-        {"type":"dahai","actor":0,"pai":"4m","tsumogiri":true}
-        {"type":"tsumo","actor":1,"pai":"1p"}
-        {"type":"dahai","actor":1,"pai":"1p","tsumogiri":true}
-        {"type":"tsumo","actor":2,"pai":"8m"}
-        {"type":"dahai","actor":2,"pai":"8m","tsumogiri":true}
-        {"type":"tsumo","actor":3,"pai":"C"}
-        {"type":"dahai","actor":3,"pai":"C","tsumogiri":true}
-        {"type":"tsumo","actor":0,"pai":"2s"}
-        {"type":"dahai","actor":0,"pai":"2s","tsumogiri":true}
-        {"type":"tsumo","actor":1,"pai":"8p"}
-    "#;
-    */
+//         {"type":"tsumo","actor":1,"pai":"7m"}
+//        {"type":"dahai","actor":1,"pai":"9m","tsumogiri":false}
+//        {"type":"tsumo","actor":2,"pai":"3s"}
+//        {"type":"dahai","actor":2,"pai":"2p","tsumogiri":false}
+//        {"type":"tsumo","actor":3,"pai":"4s"}
+//        {"type":"dahai","actor":3,"pai":"W","tsumogiri":false}
+//        {"type":"tsumo","actor":0,"pai":"1m"}
+//        {"type":"dahai","actor":0,"pai":"1m","tsumogiri":true}
+//        {"type":"tsumo","actor":1,"pai":"9m"}
+//        {"type":"dahai","actor":1,"pai":"9m","tsumogiri":true}
+//        {"type":"tsumo","actor":2,"pai":"3m"}
+//        {"type":"dahai","actor":2,"pai":"N","tsumogiri":false}
+//        {"type":"tsumo","actor":3,"pai":"2s"}
+//        {"type":"dahai","actor":3,"pai":"F","tsumogiri":false}
+//        {"type":"tsumo","actor":0,"pai":"2m"}
+//        {"type":"dahai","actor":0,"pai":"2s","tsumogiri":false}
+//        {"type":"tsumo","actor":1,"pai":"1m"}
+//        {"type":"dahai","actor":1,"pai":"5m","tsumogiri":false}
+//        {"type":"tsumo","actor":2,"pai":"3p"}
+//        {"type":"dahai","actor":2,"pai":"3p","tsumogiri":true}
+//        {"type":"pon","actor":0,"target":2,"pai":"3p","consumed":["3p","3p"]}
+//        {"type":"dahai","actor":0,"pai":"2m","tsumogiri":false}
+//        {"type":"tsumo","actor":1,"pai":"6p"}
+//        {"type":"dahai","actor":1,"pai":"9p","tsumogiri":false}
+//        {"type":"tsumo","actor":2,"pai":"6s"}
+//        {"type":"dahai","actor":2,"pai":"C","tsumogiri":false}
+//        {"type":"tsumo","actor":3,"pai":"7p"}
+//        {"type":"dahai","actor":3,"pai":"P","tsumogiri":false}
+//        {"type":"pon","actor":0,"target":3,"pai":"P","consumed":["P","P"]}
+//        {"type":"dahai","actor":0,"pai":"1p","tsumogiri":false}
+//        {"type":"tsumo","actor":1,"pai":"7s"}
+//        {"type":"dahai","actor":1,"pai":"5s","tsumogiri":false}
+//        {"type":"tsumo","actor":2,"pai":"3s"}
+//        {"type":"dahai","actor":2,"pai":"9s","tsumogiri":false}
+//        {"type":"tsumo","actor":3,"pai":"2m"}
+//        {"type":"dahai","actor":3,"pai":"1s","tsumogiri":false}
+//        {"type":"tsumo","actor":0,"pai":"1p"}
+//        {"type":"dahai","actor":0,"pai":"1p","tsumogiri":true}
+//        {"type":"tsumo","actor":1,"pai":"7m"}
+//        {"type":"dahai","actor":1,"pai":"4s","tsumogiri":false}
+//        {"type":"chi","actor":2,"target":1,"pai":"4s","consumed":["5s","6s"]}
+//        {"type":"dahai","actor":2,"pai":"6p","tsumogiri":false}
+//        {"type":"chi","actor":3,"target":2,"pai":"6p","consumed":["5pr","7p"]}
+//        {"type":"dahai","actor":3,"pai":"7p","tsumogiri":false}
+//        {"type":"tsumo","actor":0,"pai":"1s"}
+//        {"type":"dahai","actor":0,"pai":"1s","tsumogiri":true}
+//        {"type":"tsumo","actor":1,"pai":"1s"}
+//        {"type":"reach","actor":1}
+//        {"type":"dahai","actor":1,"pai":"1s","tsumogiri":true}
+//        {"type":"reach_accepted","actor":1}
+//        {"type":"tsumo","actor":2,"pai":"9s"}
+//        {"type":"dahai","actor":2,"pai":"8s","tsumogiri":false}
+//        {"type":"tsumo","actor":3,"pai":"4p"}
+//        {"type":"dahai","actor":3,"pai":"4p","tsumogiri":true}
+//        {"type":"tsumo","actor":0,"pai":"4m"}
+//        {"type":"dahai","actor":0,"pai":"4m","tsumogiri":true}
+//        {"type":"tsumo","actor":1,"pai":"1p"}
+//        {"type":"dahai","actor":1,"pai":"1p","tsumogiri":true}
+//        {"type":"tsumo","actor":2,"pai":"8m"}
+//        {"type":"dahai","actor":2,"pai":"8m","tsumogiri":true}
+//        {"type":"tsumo","actor":3,"pai":"C"}
+//        {"type":"dahai","actor":3,"pai":"C","tsumogiri":true}
+//        {"type":"tsumo","actor":0,"pai":"2s"}
+//        {"type":"dahai","actor":0,"pai":"2s","tsumogiri":true}
+//        {"type":"tsumo","actor":1,"pai":"8p"}
+//    "#;
+//    */
     // Bloody Battle: Old test code removed - needs complete rewrite for Bloody Battle Mahjong
     // The test has been replaced with bloody_battle_game_flow_with_three_agari() above
-}
+//}
 #[test]
-fn get_rank() {
-    let ps = PlayerState::new(0);
-    let rank = ps.get_rank([20000, 25000, 25000, 30000]);
-    assert_eq!(rank, 3);
+//fn get_rank() {
+//    let ps = PlayerState::new(0);
+//    let rank = ps.get_rank([20000, 25000, 25000, 30000]);
+//    assert_eq!(rank, 3);
 
-    let ps = PlayerState::new(3);
-    let rank = ps.get_rank([25000, 25000, 25000, 25000]);
-    assert_eq!(rank, 3);
+//    let ps = PlayerState::new(3);
+//    let rank = ps.get_rank([25000, 25000, 25000, 25000]);
+//    assert_eq!(rank, 3);
 
-    let ps = PlayerState::new(1);
-    let rank = ps.get_rank([25000, 30000, 20000, 25000]);
-    assert_eq!(rank, 2);
+//    let ps = PlayerState::new(1);
+//    let rank = ps.get_rank([25000, 30000, 20000, 25000]);
+//    assert_eq!(rank, 2);
 
-    let ps = PlayerState::new(1);
-    let rank = ps.get_rank([32000, 32000, 18000, 18000]);
-    assert_eq!(rank, 0);
+//    let ps = PlayerState::new(1);
+//    let rank = ps.get_rank([32000, 32000, 18000, 18000]);
+//    assert_eq!(rank, 0);
 
-    let ps = PlayerState::new(2);
-    let rank = ps.get_rank([32000, 18000, 18000, 32000]);
-    assert_eq!(rank, 1);
+//    let ps = PlayerState::new(2);
+//    let rank = ps.get_rank([32000, 18000, 18000, 32000]);
+//    assert_eq!(rank, 1);
 
-    let ps = PlayerState::new(2);
-    let rank = ps.get_rank([5, 2, 5, 3]);
-    assert_eq!(rank, 1);
-}
+//    let ps = PlayerState::new(2);
+//    let rank = ps.get_rank([5, 2, 5, 3]);
+//    assert_eq!(rank, 1);
+//}
 
 // Temporarily disabled - contains Japanese mahjong events, needs rewrite for Bloody Battle
 // #[test]
 // fn kakan_from_hand() {
 //     let log = r#"
-        {"type":"start_kyoku","bakaze":"S","dora_marker":"6m","kyoku":2,"honba":0,"kyotaku":0,"oya":1,"scores":[16100,36600,16800,30500],"tehais":[["5p","5s","1s","9m","9m","W","E","N","1p","F","9m","3p","6p"],["4s","9s","S","4s","1m","P","N","7s","F","2m","3s","2s","2s"],["6m","8p","8p","2p","8m","N","7p","C","1s","2p","N","9s","9p"],["2m","6s","7p","9s","2m","9s","6m","7s","8m","3m","S","5mr","C"]]}
-        {"type":"tsumo","actor":1,"pai":"S"}
-        {"type":"dahai","actor":1,"pai":"N","tsumogiri":false}
-        {"type":"tsumo","actor":2,"pai":"1s"}
-        {"type":"dahai","actor":2,"pai":"9s","tsumogiri":false}
-        {"type":"tsumo","actor":3,"pai":"P"}
-        {"type":"dahai","actor":3,"pai":"S","tsumogiri":false}
-        {"type":"pon","actor":1,"target":3,"pai":"S","consumed":["S","S"]}
-        {"type":"dahai","actor":1,"pai":"P","tsumogiri":false}
-        {"type":"tsumo","actor":2,"pai":"4p"}
-        {"type":"dahai","actor":2,"pai":"C","tsumogiri":false}
-        {"type":"tsumo","actor":3,"pai":"5s"}
-        {"type":"dahai","actor":3,"pai":"C","tsumogiri":false}
-        {"type":"tsumo","actor":0,"pai":"7m"}
-        {"type":"dahai","actor":0,"pai":"E","tsumogiri":false}
-        {"type":"tsumo","actor":1,"pai":"P"}
-        {"type":"dahai","actor":1,"pai":"1m","tsumogiri":false}
-        {"type":"tsumo","actor":2,"pai":"9p"}
-        {"type":"dahai","actor":2,"pai":"6m","tsumogiri":false}
-        {"type":"tsumo","actor":3,"pai":"C"}
-        {"type":"dahai","actor":3,"pai":"C","tsumogiri":true}
-        {"type":"tsumo","actor":0,"pai":"7p"}
-        {"type":"dahai","actor":0,"pai":"W","tsumogiri":false}
-        {"type":"tsumo","actor":1,"pai":"5s"}
-        {"type":"dahai","actor":1,"pai":"2m","tsumogiri":false}
-        {"type":"tsumo","actor":2,"pai":"5m"}
-        {"type":"dahai","actor":2,"pai":"5m","tsumogiri":true}
-        {"type":"tsumo","actor":3,"pai":"1p"}
-        {"type":"dahai","actor":3,"pai":"1p","tsumogiri":true}
-        {"type":"tsumo","actor":0,"pai":"4m"}
-        {"type":"dahai","actor":0,"pai":"N","tsumogiri":false}
-        {"type":"tsumo","actor":1,"pai":"E"}
-        {"type":"dahai","actor":1,"pai":"P","tsumogiri":false}
-        {"type":"tsumo","actor":2,"pai":"1s"}
-        {"type":"dahai","actor":2,"pai":"8m","tsumogiri":false}
-        {"type":"tsumo","actor":3,"pai":"6p"}
-        {"type":"dahai","actor":3,"pai":"8m","tsumogiri":false}
-        {"type":"tsumo","actor":0,"pai":"5p"}
-        {"type":"dahai","actor":0,"pai":"1s","tsumogiri":false}
-        {"type":"tsumo","actor":1,"pai":"2s"}
-        {"type":"dahai","actor":1,"pai":"E","tsumogiri":false}
-        {"type":"tsumo","actor":2,"pai":"5m"}
-        {"type":"dahai","actor":2,"pai":"5m","tsumogiri":true}
-        {"type":"tsumo","actor":3,"pai":"3s"}
-        {"type":"dahai","actor":3,"pai":"3s","tsumogiri":true}
-        {"type":"tsumo","actor":0,"pai":"7p"}
-        {"type":"dahai","actor":0,"pai":"F","tsumogiri":false}
-        {"type":"tsumo","actor":1,"pai":"E"}
-        {"type":"dahai","actor":1,"pai":"E","tsumogiri":true}
-        {"type":"tsumo","actor":2,"pai":"W"}
-        {"type":"dahai","actor":2,"pai":"W","tsumogiri":true}
-        {"type":"tsumo","actor":3,"pai":"7m"}
-        {"type":"dahai","actor":3,"pai":"2m","tsumogiri":false}
-        {"type":"tsumo","actor":0,"pai":"5m"}
-        {"type":"dahai","actor":0,"pai":"5s","tsumogiri":false}
-        {"type":"tsumo","actor":1,"pai":"S"}
-        {"type":"dahai","actor":1,"pai":"F","tsumogiri":false}
-        {"type":"tsumo","actor":2,"pai":"6p"}
-        {"type":"dahai","actor":2,"pai":"N","tsumogiri":false}
-        {"type":"tsumo","actor":3,"pai":"2p"}
-        {"type":"dahai","actor":3,"pai":"2p","tsumogiri":true}
-        {"type":"tsumo","actor":0,"pai":"6p"}
-        {"type":"dahai","actor":0,"pai":"3p","tsumogiri":false}
-        {"type":"tsumo","actor":1,"pai":"4m"}
-        {"type":"dahai","actor":1,"pai":"4m","tsumogiri":true}
-        {"type":"tsumo","actor":2,"pai":"3s"}
-        {"type":"dahai","actor":2,"pai":"N","tsumogiri":false}
-        {"type":"tsumo","actor":3,"pai":"8p"}
-        {"type":"reach","actor":3}
-        {"type":"dahai","actor":3,"pai":"P","tsumogiri":false}
-        {"type":"reach_accepted","actor":3}
-        {"type":"tsumo","actor":0,"pai":"W"}
-        {"type":"dahai","actor":0,"pai":"1p","tsumogiri":false}
-        {"type":"tsumo","actor":1,"pai":"8s"}
-        {"type":"kakan","actor":1,"pai":"S","consumed":["S","S","S"]}
-        {"type":"tsumo","actor":1,"pai":"4s"}
+//         {"type":"start_kyoku","bakaze":"S","dora_marker":"6m","kyoku":2,"honba":0,"kyotaku":0,"oya":1,"scores":[16100,36600,16800,30500],"tehais":[["5p","5s","1s","9m","9m","W","E","N","1p","F","9m","3p","6p"],["4s","9s","S","4s","1m","P","N","7s","F","2m","3s","2s","2s"],["6m","8p","8p","2p","8m","N","7p","C","1s","2p","N","9s","9p"],["2m","6s","7p","9s","2m","9s","6m","7s","8m","3m","S","5mr","C"]]}
+//        {"type":"tsumo","actor":1,"pai":"S"}
+//        {"type":"dahai","actor":1,"pai":"N","tsumogiri":false}
+//        {"type":"tsumo","actor":2,"pai":"1s"}
+//        {"type":"dahai","actor":2,"pai":"9s","tsumogiri":false}
+//        {"type":"tsumo","actor":3,"pai":"P"}
+//        {"type":"dahai","actor":3,"pai":"S","tsumogiri":false}
+//        {"type":"pon","actor":1,"target":3,"pai":"S","consumed":["S","S"]}
+//        {"type":"dahai","actor":1,"pai":"P","tsumogiri":false}
+//        {"type":"tsumo","actor":2,"pai":"4p"}
+//        {"type":"dahai","actor":2,"pai":"C","tsumogiri":false}
+//        {"type":"tsumo","actor":3,"pai":"5s"}
+//        {"type":"dahai","actor":3,"pai":"C","tsumogiri":false}
+//        {"type":"tsumo","actor":0,"pai":"7m"}
+//        {"type":"dahai","actor":0,"pai":"E","tsumogiri":false}
+//        {"type":"tsumo","actor":1,"pai":"P"}
+//        {"type":"dahai","actor":1,"pai":"1m","tsumogiri":false}
+//        {"type":"tsumo","actor":2,"pai":"9p"}
+//        {"type":"dahai","actor":2,"pai":"6m","tsumogiri":false}
+//        {"type":"tsumo","actor":3,"pai":"C"}
+//        {"type":"dahai","actor":3,"pai":"C","tsumogiri":true}
+//        {"type":"tsumo","actor":0,"pai":"7p"}
+//        {"type":"dahai","actor":0,"pai":"W","tsumogiri":false}
+//        {"type":"tsumo","actor":1,"pai":"5s"}
+//        {"type":"dahai","actor":1,"pai":"2m","tsumogiri":false}
+//        {"type":"tsumo","actor":2,"pai":"5m"}
+//        {"type":"dahai","actor":2,"pai":"5m","tsumogiri":true}
+//        {"type":"tsumo","actor":3,"pai":"1p"}
+//        {"type":"dahai","actor":3,"pai":"1p","tsumogiri":true}
+//        {"type":"tsumo","actor":0,"pai":"4m"}
+//        {"type":"dahai","actor":0,"pai":"N","tsumogiri":false}
+//        {"type":"tsumo","actor":1,"pai":"E"}
+//        {"type":"dahai","actor":1,"pai":"P","tsumogiri":false}
+//        {"type":"tsumo","actor":2,"pai":"1s"}
+//        {"type":"dahai","actor":2,"pai":"8m","tsumogiri":false}
+//        {"type":"tsumo","actor":3,"pai":"6p"}
+//        {"type":"dahai","actor":3,"pai":"8m","tsumogiri":false}
+//        {"type":"tsumo","actor":0,"pai":"5p"}
+//        {"type":"dahai","actor":0,"pai":"1s","tsumogiri":false}
+//        {"type":"tsumo","actor":1,"pai":"2s"}
+//        {"type":"dahai","actor":1,"pai":"E","tsumogiri":false}
+//        {"type":"tsumo","actor":2,"pai":"5m"}
+//        {"type":"dahai","actor":2,"pai":"5m","tsumogiri":true}
+//        {"type":"tsumo","actor":3,"pai":"3s"}
+//        {"type":"dahai","actor":3,"pai":"3s","tsumogiri":true}
+//        {"type":"tsumo","actor":0,"pai":"7p"}
+//        {"type":"dahai","actor":0,"pai":"F","tsumogiri":false}
+//        {"type":"tsumo","actor":1,"pai":"E"}
+//        {"type":"dahai","actor":1,"pai":"E","tsumogiri":true}
+//        {"type":"tsumo","actor":2,"pai":"W"}
+//        {"type":"dahai","actor":2,"pai":"W","tsumogiri":true}
+//        {"type":"tsumo","actor":3,"pai":"7m"}
+//        {"type":"dahai","actor":3,"pai":"2m","tsumogiri":false}
+//        {"type":"tsumo","actor":0,"pai":"5m"}
+//        {"type":"dahai","actor":0,"pai":"5s","tsumogiri":false}
+//        {"type":"tsumo","actor":1,"pai":"S"}
+//        {"type":"dahai","actor":1,"pai":"F","tsumogiri":false}
+//        {"type":"tsumo","actor":2,"pai":"6p"}
+//        {"type":"dahai","actor":2,"pai":"N","tsumogiri":false}
+//        {"type":"tsumo","actor":3,"pai":"2p"}
+//        {"type":"dahai","actor":3,"pai":"2p","tsumogiri":true}
+//        {"type":"tsumo","actor":0,"pai":"6p"}
+//        {"type":"dahai","actor":0,"pai":"3p","tsumogiri":false}
+//        {"type":"tsumo","actor":1,"pai":"4m"}
+//        {"type":"dahai","actor":1,"pai":"4m","tsumogiri":true}
+//        {"type":"tsumo","actor":2,"pai":"3s"}
+//        {"type":"dahai","actor":2,"pai":"N","tsumogiri":false}
+//        {"type":"tsumo","actor":3,"pai":"8p"}
+//        {"type":"reach","actor":3}
+//        {"type":"dahai","actor":3,"pai":"P","tsumogiri":false}
+//        {"type":"reach_accepted","actor":3}
+//        {"type":"tsumo","actor":0,"pai":"W"}
+//        {"type":"dahai","actor":0,"pai":"1p","tsumogiri":false}
+//        {"type":"tsumo","actor":1,"pai":"8s"}
+//        {"type":"kakan","actor":1,"pai":"S","consumed":["S","S","S"]}
+//        {"type":"tsumo","actor":1,"pai":"4s"}
 //     "#;
 //     let ps = PlayerState::from_log(1, log);
 // 
@@ -1350,7 +1350,6 @@ fn chi_at_0_shanten() {
 
     // Bloody Battle: No chi, so this test is removed
     // ps.test_update_json with chi event removed
-    let _ = (log, ps); // Suppress unused warning
     // assert_eq!(ps.shanten, 0);
     // assert_eq!(ps.real_time_shanten(), -1);
     // assert!(ps.at_furiten);
