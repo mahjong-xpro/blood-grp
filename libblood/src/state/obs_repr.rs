@@ -392,6 +392,10 @@ impl<'a> ObsEncoderContext<'a> {
                 self.mask[ACTION_SPACE - 1] = true;
             } else if cans.can_daiminkan {
                 self.mask[tile_id] = true;
+            } else if !cans.can_ankan && !cans.can_kakan {
+                // If at_kan_select is true but neither can_ankan nor can_kakan is true,
+                // we should still allow pass action (fallback to normal actions)
+                self.mask[ACTION_SPACE - 1] = true;
             }
         }
         self.idx += 3;
@@ -447,6 +451,10 @@ impl<'a> ObsEncoderContext<'a> {
             self.arr.fill(self.idx, 1.);
             if !self.at_kan_select {
                 self.mask[27] = true; // pon action
+            } else if !cans.can_ankan && !cans.can_kakan {
+                // If at_kan_select is true but neither can_ankan nor can_kakan is true,
+                // we should still allow pon action (fallback to normal actions)
+                self.mask[27] = true; // pon action
             }
         }
         self.idx += 1;
@@ -454,6 +462,10 @@ impl<'a> ObsEncoderContext<'a> {
         if cans.can_daiminkan {
             self.arr.fill(self.idx, 1.);
             if !self.at_kan_select {
+                self.mask[28] = true; // kan action
+            } else if !cans.can_ankan && !cans.can_kakan {
+                // If at_kan_select is true but neither can_ankan nor can_kakan is true,
+                // we should still allow daiminkan action (fallback to normal actions)
                 self.mask[28] = true; // kan action
             }
         }
@@ -502,6 +514,10 @@ impl<'a> ObsEncoderContext<'a> {
             self.arr.fill(self.idx, 1.);
             if !self.at_kan_select {
                 self.mask[29] = true; // agari action
+            } else if !cans.can_ankan && !cans.can_kakan {
+                // If at_kan_select is true but neither can_ankan nor can_kakan is true,
+                // we should still allow agari action (fallback to normal actions)
+                self.mask[29] = true; // agari action
             }
         }
         self.idx += 1;
@@ -509,6 +525,10 @@ impl<'a> ObsEncoderContext<'a> {
         if cans.can_ryukyoku {
             self.arr.fill(self.idx, 1.);
             if !self.at_kan_select {
+                self.mask[30] = true; // ryukyoku action
+            } else if !cans.can_ankan && !cans.can_kakan {
+                // If at_kan_select is true but neither can_ankan nor can_kakan is true,
+                // we should still allow ryukyoku action (fallback to normal actions)
                 self.mask[30] = true; // ryukyoku action
             }
         }
