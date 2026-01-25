@@ -434,8 +434,8 @@ impl PlayerState {
         ensure!(cur_shanten >= 0, "can't calculate an agari hand");
 
         let can_discard = self.last_cans.can_discard;
-        let (tsumos_left, _calc_haitei) = if can_discard {
-            (self.tiles_left / 4, self.tiles_left.is_multiple_of(4))
+        let tsumos_left = if can_discard {
+            self.tiles_left / 4
         } else {
             let target = self.rel(self.last_cans.target_actor) as u8;
             // Let's just ignore chankan here.
