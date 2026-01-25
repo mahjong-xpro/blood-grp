@@ -666,72 +666,8 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
         
         return Some(scores);
         
-        // TODO: The rest of this function deals with Japanese Mahjong rules
-        // The code below is commented out as it's unreachable and uses Japanese Mahjong rules.
-        
-        /*
-        let (fu, han) = match calc.agari(additional_yakus, num_doras)? {
-            Agari::Normal { fu, han } => (fu, han),
-            a @ Agari::Yakuman(_) => {
-                return Some([a.point(is_oya).tsumo_total(is_oya) as f32; 4]);
-            }
-        };
-
-        // 役ありの場合
-
-        // ダブル立直、一発、海底撈月で最大3翻まで増加するので、
-        // No need for riichi (立直), dora (宝牌), or uradora (里宝牌) calculations
-        let mut scores = [0.; 4];
-
-            // 裏ドラ考慮ありかつ表ドラが1枚以上の場合は、厳密に計算する。
-            let mut n_indicators = [0; 5];
-            let mut sum_indicators = 0;
-            for (tid, &count) in self.state.tehai.iter().enumerate() {
-                if count == 0 {
-                    continue;
-                }
-                // ドラ表示牌の枚数を数える。
-                let tile = must_tile!(tid);
-                let ind_count = self.state.tiles_in_wall[tile.prev().as_usize()];
-                n_indicators[count as usize] += ind_count;
-                sum_indicators += ind_count;
-            }
-
-            // 裏ドラの乗る確率を枚数ごとに計算する。
-            let mut uradora_probs = [0.; 5];
-
-            #[cfg(feature = "sp_reproduce_cpp_ver")]
-            // 厳密に計算するなら残り枚数は数えるべきだが、あまり影響がないので
-            // 121枚で固定
-            let n_left_tiles = 121;
-            #[cfg(not(feature = "sp_reproduce_cpp_ver"))]
-            let n_left_tiles = self.state.sum_left_tiles();
-
-            uradora_probs[0] = (n_left_tiles - sum_indicators) as f32 / n_left_tiles as f32;
-            for i in 1..5 {
-                uradora_probs[i] = n_indicators[i] as f32 / n_left_tiles as f32;
-            }
-
-            for (i, s) in scores.iter_mut().enumerate() {
-                // 裏ドラ1枚の場合、最大4翻まで乗る可能性がある
-                for (j, &p) in uradora_probs.iter().enumerate() {
-                    if p == 0. {
-                        continue;
-                    }
-                    let agari = Agari::Normal {
-                        fu,
-                        han: han + i as u8 + j as u8,
-                    };
-                    *s += agari.point(is_oya).tsumo_total(is_oya) as f32 * p;
-                }
-            }
-        // } else if assume_riichi && self.sup.dora_indicators.len() > 1 {
-        //     // 裏ドラ考慮ありかつ表ドラが2枚以上の場合、統計データを利用する。
-        // }
-        // } else {
-        //     // 裏ドラ考慮なしまたは表ドラが0枚の場合
-        // }
-        */
+        // All Japanese Mahjong code (riichi, dora, uradora calculations) has been removed
+        // Bloody Battle Mahjong only uses fan-based scoring
     }
 }
 

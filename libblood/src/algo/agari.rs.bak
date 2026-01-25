@@ -1049,3 +1049,324 @@ mod test {
             }
         );
 
+        // All Japanese Mahjong test code has been removed
+        // The tests below used Agari::Normal/Yakuman format which is not used in Bloody Battle Mahjong
+        let tehai = hand("223344p 667788s 3m 3m").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            bakaze: tu8!(S),
+            jikaze: tu8!(N),
+            winning_tile: tu8!(3m),
+            is_ron: false,
+        };
+        let yaku = calc.search_yakus().unwrap();
+        assert_eq!(yaku, Agari::Normal { fu: 30, han: 4 });
+
+        let tehai = hand("234678m 1123488p 8p").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            bakaze: tu8!(E),
+            jikaze: tu8!(E),
+            winning_tile: tu8!(8p),
+            is_ron: true,
+        };
+        assert_eq!(calc.search_yakus(), None);
+
+        let tehai = hand("223344999m 1188p 8p").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            bakaze: tu8!(E),
+            jikaze: tu8!(E),
+            winning_tile: tu8!(8p),
+            is_ron: true,
+        };
+        let yaku = calc.search_yakus().unwrap();
+        // 一盃口 (without ankan)
+        assert_eq!(yaku, Agari::Normal { fu: 40, han: 1 });
+
+        let tehai = hand("223344m 1188p 8p").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &tu8![9m,],
+            bakaze: tu8!(E),
+            jikaze: tu8!(E),
+            winning_tile: tu8!(8p),
+            is_ron: true,
+        };
+        let yaku = calc.search_yakus().unwrap();
+        // 一盃口 (with ankan)
+        assert_eq!(yaku, Agari::Normal { fu: 70, han: 1 });
+
+        let tehai = hand("55566677m 11p 7m").unwrap();
+        let mut calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &tu8![9s,],
+            bakaze: tu8!(E),
+            jikaze: tu8!(E),
+            winning_tile: tu8!(7m),
+            is_ron: false,
+        };
+        let yaku = calc.search_yakus().unwrap();
+        // 四暗刻
+        assert_eq!(yaku, Agari::Yakuman(1));
+
+        calc.is_ron = true;
+        let yaku = calc.search_yakus().unwrap();
+        // 三暗刻, 対々和
+        assert_eq!(yaku, Agari::Normal { fu: 80, han: 4 });
+
+        let tehai = hand("666677778888m 99p").unwrap();
+        let mut calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            bakaze: tu8!(E),
+            jikaze: tu8!(E),
+            winning_tile: tu8!(8m),
+            is_ron: true,
+        };
+        let yaku = calc.search_yakus().unwrap();
+        // 平和, 二盃口
+        assert_eq!(yaku, Agari::Normal { fu: 30, han: 4 });
+
+        calc.winning_tile = tu8!(7m);
+        let yaku = calc.search_yakus().unwrap();
+        // 二盃口
+        assert_eq!(yaku, Agari::Normal { fu: 40, han: 3 });
+
+        let tehai = hand("12345678m 11p 9m").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &tu8![9p,],
+            bakaze: tu8!(E),
+            jikaze: tu8!(E),
+            winning_tile: tu8!(9m),
+            is_ron: true,
+        };
+        let yaku = calc.search_yakus().unwrap();
+        // 一気通貫
+        assert_eq!(yaku, Agari::Normal { fu: 70, han: 2 });
+
+        let tehai = hand("12345678m 11p 9m").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: false,
+            pons: &tu8![9p,],
+            minkans: &[],
+            ankans: &[],
+            bakaze: tu8!(E),
+            jikaze: tu8!(E),
+            winning_tile: tu8!(9m),
+            is_ron: true,
+        };
+        let yaku = calc.search_yakus().unwrap();
+        // 一気通貫
+        assert_eq!(yaku, Agari::Normal { fu: 30, han: 1 });
+
+        let tehai = hand("111222333m 67p 88s 8p").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            bakaze: tu8!(E),
+            jikaze: tu8!(E),
+            winning_tile: tu8!(8p),
+            is_ron: false,
+        };
+        let yaku = calc.search_yakus().unwrap();
+        // 門前清自摸和 is not accounted.
+        assert_eq!(yaku, Agari::Normal { fu: 40, han: 2 });
+
+        let tehai = hand("1112223334447z 7z").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            bakaze: tu8!(E),
+            jikaze: tu8!(E),
+            winning_tile: tu8!(C),
+            is_ron: true,
+        };
+        let yaku = calc.search_yakus().unwrap();
+        assert_eq!(yaku, Agari::Yakuman(3));
+
+        let tehai = hand("1m 789p 789s 1m").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: false,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            bakaze: tu8!(E),
+            jikaze: tu8!(E),
+            winning_tile: tu8!(1m),
+            is_ron: false,
+        };
+        let yaku = calc.search_yakus().unwrap();
+        // 純全, 三色
+        assert_eq!(yaku, Agari::Normal { fu: 30, han: 3 });
+
+        let tehai = hand("111444m 45556s 22z 5s").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            bakaze: tu8!(S),
+            jikaze: tu8!(S),
+            winning_tile: tu8!(5s),
+            is_ron: true,
+        };
+        let yaku = calc.search_yakus().unwrap();
+        // 三暗刻 (5s is ankou)
+        // 20 + menzenron(10) + kanchan(2) + bakaze(2) + jikaze(2) + 1m(8) + 4m(4)
+        // + 5s(4) + = 52
+        assert_eq!(yaku, Agari::Normal { fu: 60, han: 2 });
+
+        let tehai = hand("999s 1777z 1z").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: false,
+            pons: &tu8![N,],
+            minkans: &[],
+            ankans: &[],
+            bakaze: tu8!(S),
+            jikaze: tu8!(S),
+            winning_tile: tu8!(E),
+            is_ron: true,
+        };
+        let yaku = calc.search_yakus().unwrap();
+        // 混全帯幺九, 役牌*1
+        // 20 + tanki(2) + 9s(8) + 7z(8) + 4z(4) = 42
+        assert_eq!(yaku, Agari::Normal { fu: 50, han: 2 });
+
+        let tehai = hand("1119m 9m").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: false,
+            pons: &tu8![S, C],
+            minkans: &[],
+            ankans: &tu8![N,],
+            bakaze: tu8!(S),
+            jikaze: tu8!(N),
+            winning_tile: tu8!(9m),
+            is_ron: true,
+        };
+        let yaku = calc.search_yakus().unwrap();
+        // 混一色, 混老頭, 役牌*3, 対々和
+        // Note: calc_fu() method and fu calculation have been removed (not used in Bloody Battle Mahjong)
+        // The test code below that uses calc_fu() is commented out
+
+        // This shape is called 八蓮宝燈, waiting on 12456789
+        let tehai = hand("1233334567888m 9m").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            bakaze: tu8!(E),
+            jikaze: tu8!(E),
+            winning_tile: tu8!(9m),
+            is_ron: true,
+        };
+        let yaku = calc.search_yakus().unwrap();
+        // 清一色, 一気通貫
+        assert!(matches!(yaku, Agari::Normal { han: 8, .. }));
+
+        // This shape is called 七蓮宝燈, waiting on 1235789
+        let tehai = hand("2344445666678p 5p").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            bakaze: tu8!(E),
+            jikaze: tu8!(E),
+            winning_tile: tu8!(5p),
+            is_ron: true,
+        };
+        let yaku = calc.search_yakus().unwrap();
+        // 清一色, 断么九
+        assert!(matches!(yaku, Agari::Normal { han: 7, .. }));
+
+        // Waits on 13467s
+        let tehai = hand("2223445566s 1s").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: false,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            bakaze: tu8!(E),
+            jikaze: tu8!(E),
+            winning_tile: tu8!(1s),
+            is_ron: true,
+        };
+        let yaku = calc.search_yakus().unwrap();
+        // 清一色, 一気通貫
+        assert!(matches!(yaku, Agari::Normal { han: 6, .. }));
+
+        // Waits on 14m
+        let tehai = hand("1123444m 111p 111s 1m").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            bakaze: tu8!(E),
+            jikaze: tu8!(E),
+            winning_tile: tu8!(1m),
+            is_ron: true,
+        };
+        let yaku = calc.search_yakus().unwrap();
+        // 清一色, 一気通貫
+        assert_eq!(yaku, Agari::Normal { fu: 60, han: 2 });
+
+        let tehai = hand("111s 2225556677z 7z").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            is_menzen: true,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            bakaze: tu8!(S),
+            jikaze: tu8!(S),
+            winning_tile: tu8!(C),
+            is_ron: true,
+        };
+        let yaku = calc.search_yakus().unwrap();
+        // 三暗刻, 対々和, 混一色, 混老頭, 小三元, double 南, 白, 中
+        */
+    }
+}
