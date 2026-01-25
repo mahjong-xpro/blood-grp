@@ -9,7 +9,9 @@
 use super::point::Point;
 use super::shanten;
 use crate::tile::Tile;
-use crate::{must_tile, tu8};
+use crate::must_tile;
+#[cfg(test)]
+use crate::tu8;
 use std::sync::LazyLock;
 
 use boomphf::hashmap::BoomHashMap;
