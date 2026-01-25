@@ -637,13 +637,6 @@ impl<'a> DivWorker<'a> {
     }
 
     fn search_yakus<const RETURN_IF_ANY: bool>(&self) -> Option<Agari> {
-        let mut han = 0;
-        let mut yakuman = 0;
-
-        // Bloody Battle: No pinfu calculation (no jihai, no bakaze/jikaze)
-        // This is for Japanese Mahjong compatibility only
-        let _has_pinfu = false;
-
         // Bloody Battle: search_yakus in DivWorker is deprecated
         // This method should not be used for Bloody Battle Mahjong
         // Return None to indicate it's not applicable
@@ -651,6 +644,12 @@ impl<'a> DivWorker<'a> {
         
         // The code below is unreachable but kept for reference
         // It uses Japanese Mahjong rules and needs to be completely rewritten for Bloody Battle
+        // Variables are commented out to avoid unused variable warnings
+        /*
+        let mut han = 0;
+        let mut yakuman = 0;
+        let _has_pinfu = false;
+
         macro_rules! make_return {
             () => {
                 return None;
@@ -665,15 +664,13 @@ impl<'a> DivWorker<'a> {
             }};
         }
 
-        // Bloody Battle: No pinfu (平和) - this code is unreachable
-        if false { // has_pinfu is always false in Bloody Battle
-            // 平和
+        if _has_pinfu {
             check_early_return! { han += 1 };
         }
         if self.div.has_chitoi {
-            // 七対子
             check_early_return! { han += 2 };
         }
+        */
         if self.div.has_ryanpeikou {
             // 二盃口
             check_early_return! { han += 3 };
