@@ -1185,6 +1185,8 @@ mod test {
             ding_que: None,
             is_after_kan: false,
             is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 碰碰胡 = 1 + 1 + 1 = 3番
@@ -1203,6 +1205,8 @@ mod test {
             ding_que: None,
             is_after_kan: false,
             is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 清一色 = 1 + 1 + 2 = 4番
@@ -1221,6 +1225,8 @@ mod test {
             ding_que: None,
             is_after_kan: false,
             is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 带幺九 = 1 + 1 + 3 = 5番（封顶）
@@ -1366,6 +1372,7 @@ mod test {
             is_after_kan: false,
             is_kan_discard: false, // 抢杠不是杠上炮
             is_chankan: true, // 这是抢杠
+            exclude_gen_tile: None,
         };
         let agari = calc.agari().unwrap();
         // 荣和 + 平胡 + 抢杠 = 1 + 1 = 2番

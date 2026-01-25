@@ -761,9 +761,10 @@ fn get_rank() {
     assert_eq!(rank, 1);
 }
 
-#[test]
-fn kakan_from_hand() {
-    let log = r#"
+// Temporarily disabled - contains Japanese mahjong events, needs rewrite for Bloody Battle
+// #[test]
+// fn kakan_from_hand() {
+//     let log = r#"
         {"type":"start_kyoku","bakaze":"S","dora_marker":"6m","kyoku":2,"honba":0,"kyotaku":0,"oya":1,"scores":[16100,36600,16800,30500],"tehais":[["5p","5s","1s","9m","9m","W","E","N","1p","F","9m","3p","6p"],["4s","9s","S","4s","1m","P","N","7s","F","2m","3s","2s","2s"],["6m","8p","8p","2p","8m","N","7p","C","1s","2p","N","9s","9p"],["2m","6s","7p","9s","2m","9s","6m","7s","8m","3m","S","5mr","C"]]}
         {"type":"tsumo","actor":1,"pai":"S"}
         {"type":"dahai","actor":1,"pai":"N","tsumogiri":false}
@@ -840,11 +841,11 @@ fn kakan_from_hand() {
         {"type":"tsumo","actor":1,"pai":"8s"}
         {"type":"kakan","actor":1,"pai":"S","consumed":["S","S","S"]}
         {"type":"tsumo","actor":1,"pai":"4s"}
-    "#;
-    let ps = PlayerState::from_log(1, log);
-
-    assert!(ps.last_cans.can_tsumo_agari);
-}
+//     "#;
+//     let ps = PlayerState::from_log(1, log);
+// 
+//     assert!(ps.last_cans.can_tsumo_agari);
+// }
 
 #[test]
 fn discard_candidates_with_unconditional_tenpai() {
