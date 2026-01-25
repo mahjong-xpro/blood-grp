@@ -790,6 +790,7 @@ mod test {
             maximize_win_prob: false,
             calc_tegawari: true,
             calc_shanten_down: true,
+            ding_que: None, // Bloody Battle: No ding_que in test
         };
 
         // Bloody Battle: No jihai, updated test case
@@ -861,6 +862,7 @@ mod test {
             maximize_win_prob: false,
             calc_tegawari: true,
             calc_shanten_down: true,
+            ding_que: None, // Bloody Battle: No ding_que in test
         };
 
         let tehai = hand("45677m 456778p 248s").unwrap();
@@ -918,6 +920,7 @@ mod test {
             maximize_win_prob: false,
             calc_tegawari: true,
             calc_shanten_down: true,
+            ding_que: None, // Bloody Battle: No ding_que in test
         };
         // Bloody Battle: No jihai, updated test case
         let tehai = hand("9999m 6677p 88s 335m 1m").unwrap();
@@ -973,6 +976,7 @@ mod test {
             maximize_win_prob: true,
             calc_tegawari: true,
             calc_shanten_down: true,
+            ding_que: None, // Bloody Battle: No ding_que in test
         };
 
         // Test hand: 45677m 456778p 48s (tenpai, waiting for 7p or 9s)
