@@ -211,14 +211,18 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
 
         let mut candidates = Vec::with_capacity(discard_tiles.len());
         for DiscardTile { tile, shanten_diff } in discard_tiles {
-            if shanten_diff == 0 {
+            if shanten_diff <= 0 {
+                // shanten_diff <= 0: 向听数不变或下降（都是有效选择）
+                // shanten_diff < 0: 向听数下降（这是好事，应该被处理）
+                // shanten_diff == 0: 向听数不变（标准情况）
+                let new_shanten = (shanten as i16 + shanten_diff as i16).max(0) as i8;
                 self.state.discard(tile);
                 let required_tiles = self.state.get_required_tiles(self.sup.tehai_len_div3);
-                let values = self.draw(shanten);
+                let values = self.draw(new_shanten);
                 self.state.undo_discard(tile);
 
                 let mut tenpai_probs = values.tenpai_probs;
-                if shanten == 0 {
+                if new_shanten == 0 {
                     // すでに聴牌している場合の例外処理
                     tenpai_probs.fill(1.);
                 }
@@ -235,6 +239,7 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
                 let candidate = candidate.calibrate(self.real_max_tsumo);
                 candidates.push(candidate);
             } else if self.sup.calc_shanten_down && shanten_diff == 1 && shanten < SHANTEN_THRES {
+                // 向听落とし（向听数上升1）的特殊情况
                 self.state.discard(tile);
                 let required_tiles = self.state.get_required_tiles(self.sup.tehai_len_div3);
                 self.state.n_extra_tsumo += 1;
@@ -254,6 +259,7 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
                 let candidate = candidate.calibrate(self.real_max_tsumo);
                 candidates.push(candidate);
             }
+            // shanten_diff > 1 的情况被忽略（向听数上升太多，不是好选择）
         }
         candidates
     }
@@ -581,10 +587,13 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
 
         for DiscardTile { tile, shanten_diff } in discard_tiles {
             let values;
-            if shanten_diff == 0 {
-                // 向聴数が変化しない打牌
+            if shanten_diff <= 0 {
+                // shanten_diff <= 0: 向听数不变或下降（都是有效选择）
+                // shanten_diff < 0: 向听数下降（这是好事，应该被处理）
+                // shanten_diff == 0: 向听数不变（标准情况）
+                let new_shanten = (shanten as i16 + shanten_diff as i16).max(0) as i8;
                 self.state.discard(tile);
-                values = self.draw(shanten);
+                values = self.draw(new_shanten);
                 self.state.undo_discard(tile);
             } else if self.sup.calc_shanten_down
                 && self.state.n_extra_tsumo == 0
