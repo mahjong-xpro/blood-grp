@@ -615,23 +615,36 @@ impl<'a> ObsEncoderContext<'a> {
         // 如果mask全为false，说明can_act()返回false，但Agent仍然被调用了
         // 这通常发生在状态不一致的情况下
         let mask_count = self.mask.iter().filter(|&&m| m).count();
-        assert!(
-            mask_count > 0,
-            "mask is all false: can_act()={}, can_discard={}, can_pon={}, can_kan()={}, can_agari()={}, can_ryukyoku={}, can_pass()={}. \
-            This indicates a bug: Agent was called when no actions are available. \
-            State: kyoku={}, at_turn={}, tiles_left={}, tehai_sum={}",
-            cans.can_act(),
-            cans.can_discard,
-            cans.can_pon,
-            cans.can_kan(),
-            cans.can_agari(),
-            cans.can_ryukyoku,
-            cans.can_pass(),
-            state.kyoku + 1,
-            state.at_turn,
-            state.tiles_left,
-            state.tehai.iter().sum::<u8>()
-        );
+        if mask_count == 0 {
+            // 收集详细的调试信息
+            let discard_candidates = state.discard_candidates();
+            let discard_candidates_count = discard_candidates.iter().filter(|&&c| c).count();
+            let forbidden_tiles_count = state.forbidden_tiles.iter().filter(|&&f| f).count();
+            let tehai_nonzero_count = state.tehai.iter().filter(|&&c| c > 0).count();
+            let ding_que_info = state.ding_que.map(|s| format!("{:?}", s)).unwrap_or_else(|| "None".to_string());
+            
+            panic!(
+                "mask is all false: can_act()={}, can_discard={}, can_pon={}, can_kan()={}, can_agari()={}, can_ryukyoku={}, can_pass()={}. \
+                This indicates a bug: Agent was called when no actions are available. \
+                State: kyoku={}, at_turn={}, tiles_left={}, tehai_sum={}, tehai_nonzero_count={}. \
+                discard_candidates_count={}, forbidden_tiles_count={}, ding_que={}",
+                cans.can_act(),
+                cans.can_discard,
+                cans.can_pon,
+                cans.can_kan(),
+                cans.can_agari(),
+                cans.can_ryukyoku,
+                cans.can_pass(),
+                state.kyoku + 1,
+                state.at_turn,
+                state.tiles_left,
+                state.tehai.iter().sum::<u8>(),
+                tehai_nonzero_count,
+                discard_candidates_count,
+                forbidden_tiles_count,
+                ding_que_info
+            );
+        }
         
         (arr, self.mask)
     }

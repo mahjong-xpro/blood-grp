@@ -151,7 +151,17 @@ impl PlayerState {
                         ret[i] = true;
                     }
                 }
-                // No other tiles can be discarded
+                // 如果所有定缺花色牌都被标记为forbidden_tiles，那么允许丢弃所有非forbidden_tiles的牌
+                // 这是为了避免游戏卡死（虽然这种情况理论上不应该发生）
+                if ret.iter().all(|&x| !x) {
+                    // 所有定缺花色牌都被标记为forbidden_tiles，允许丢弃所有非forbidden_tiles的牌
+                    for (i, count) in self.tehai.iter().copied().enumerate() {
+                        if count == 0 {
+                            continue;
+                        }
+                        ret[i] = !self.forbidden_tiles[i];
+                    }
+                }
                 return ret;
             }
         }
