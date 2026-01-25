@@ -24,9 +24,13 @@ impl PlayerState {
 fn ding_que_json(actor: u8) -> &'static str {
     const JSON_0: &str = r#"{"type":"ding_que","actor":0,"suit":"s"}"#;
     const JSON_1: &str = r#"{"type":"ding_que","actor":1,"suit":"s"}"#;
+    const JSON_2: &str = r#"{"type":"ding_que","actor":2,"suit":"s"}"#;
+    const JSON_3: &str = r#"{"type":"ding_que","actor":3,"suit":"s"}"#;
     match actor {
         0 => JSON_0,
         1 => JSON_1,
+        2 => JSON_2,
+        3 => JSON_3,
         _ => JSON_0,
     }
 }
@@ -1406,21 +1410,22 @@ fn exhaustive_draw_game_end() {
     let mut ps3 = PlayerState::new(3);
     
     // 开始一局游戏
+    let hand_str = "123456m 123456p 1s";
     let start_event = Event::StartKyoku {
         kyoku: 1,
         oya: 0,
         scores: [25000; 4],
         tehais: [
-            tile27_to_vec(&hand("123456m 123456p 1s").unwrap())
+            tile27_to_vec(&hand(hand_str).unwrap())
                 .try_into()
                 .unwrap(),
-            tile27_to_vec(&hand("123456m 123456p 1s").unwrap())
+            tile27_to_vec(&hand(hand_str).unwrap())
                 .try_into()
                 .unwrap(),
-            tile27_to_vec(&hand("123456m 123456p 1s").unwrap())
+            tile27_to_vec(&hand(hand_str).unwrap())
                 .try_into()
                 .unwrap(),
-            tile27_to_vec(&hand("123456m 123456p 1s").unwrap())
+            tile27_to_vec(&hand(hand_str).unwrap())
                 .try_into()
                 .unwrap(),
         ],
@@ -1432,10 +1437,10 @@ fn exhaustive_draw_game_end() {
     ps3.test_update(&start_event);
     
     // 设置定缺
-    ps0.test_update_json(r#"{"type":"ding_que","actor":0,"suit":"s"}"#);
-    ps1.test_update_json(r#"{"type":"ding_que","actor":1,"suit":"s"}"#);
-    ps2.test_update_json(r#"{"type":"ding_que","actor":2,"suit":"s"}"#);
-    ps3.test_update_json(r#"{"type":"ding_que","actor":3,"suit":"s"}"#);
+    ps0.test_update_json(ding_que_json(0));
+    ps1.test_update_json(ding_que_json(1));
+    ps2.test_update_json(ding_que_json(2));
+    ps3.test_update_json(ding_que_json(3));
     
     // 模拟游戏进行，直到牌墙耗尽
     // 设置玩家0和玩家1为听牌状态（shanten == 0）
