@@ -104,12 +104,6 @@ impl PlayerState {
     }
 
 
-    #[getter]
-    #[inline]
-    #[must_use]
-    pub const fn at_furiten(&self) -> bool {
-        self.at_furiten
-    }
 }
 
 impl PlayerState {

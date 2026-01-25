@@ -243,7 +243,6 @@ impl PlayerState {
             is_tedashi: !tsumogiri,
         };
         let kawa_item = KawaItem {
-            chi_pon: None,
             kan: mem::take(&mut self.intermediate_kan),
             sutehai,
         };
@@ -265,7 +264,7 @@ impl PlayerState {
             } else if !self.keep_shanten_discards[pai.as_usize()] {
                 self.update_shanten();
             }
-            self.update_waits_and_furiten();
+            self.update_waits();
 
             return Ok(());
         }
@@ -377,7 +376,7 @@ impl PlayerState {
         //
         // For example: 12223m 456p 12378s + 2m
         self.update_shanten();
-        self.update_waits_and_furiten();
+        self.update_waits();
 
         Ok(())
     }
@@ -400,9 +399,8 @@ impl PlayerState {
             // 槍槓 (抢杠)
             // 当其他玩家加杠时，如果听的牌正好是加杠的牌，可以抢杠和牌
             // 抢杠时，加杠的玩家的根不应该计算
-            if !self.at_furiten && self.waits[pai.as_usize()] {
+            if self.waits[pai.as_usize()] {
                 self.last_cans.can_ron_agari = true;
-                self.to_mark_same_cycle_furiten = Some(());
                 self.chankan_chance = Some(());
                 self.chankan_kakan_actor = Some(actor); // 记录加杠的玩家，用于排除其根
                 self.chankan_kakan_tile = Some(pai.as_u8()); // 记录加杠的牌，用于排除其根
@@ -425,7 +423,7 @@ impl PlayerState {
         } else if !self.keep_shanten_discards[pai.as_usize()] {
             self.update_shanten();
         }
-        self.update_waits_and_furiten();
+        self.update_waits();
 
         Ok(())
     }
@@ -455,7 +453,7 @@ impl PlayerState {
         // The shanten number and the shape of tenpai (if any) may
         // be changed after an ankan. See the example in daiminkan.
         self.update_shanten();
-        self.update_waits_and_furiten();
+        self.update_waits();
 
         Ok(())
     }
@@ -581,14 +579,9 @@ impl PlayerState {
 
     /// Caller must assure current tehai is 3n+1, and `self.shanten` must be up
     /// to date and correct.
-    pub(super) fn update_waits_and_furiten(&mut self) {
+    pub(super) fn update_waits(&mut self) {
         assert!(!self.last_cans.can_discard, "tehai is not 3n+1");
 
-        // Reset the furiten flag here for:
-        // 1. Clearing same-cycle furiten.
-        // 2. The fact that furiten doesn't make sense if we are no longer
-        //    tenpai.
-        self.at_furiten = false;
         self.waits.fill(false);
 
         if self.shanten > 0 {
@@ -597,24 +590,12 @@ impl PlayerState {
 
         for (t, is_wait) in self.waits.iter_mut().enumerate() {
             if self.tehai[t] == 4 {
-                // Cannot wait, not even furiten for the 5th tile.
-                //
-                // However waiting for the 5th tile when all 4 of them are
-                // already in the kawa or fuuro is a valid furiten.
-                //
-                // Note that although [karaten] is not considered as a wait and
-                // thus will not be written to the `waits` in this impl anyways,
-                // it is still a valid ryukyoku tenpai in our rule spec.
                 continue;
             }
             let mut tehai_after = self.tehai;
             tehai_after[t] += 1;
 
             if shanten::calc_all(&tehai_after, self.tehai_len_div3) == -1 {
-                // furiten is not affected by `tiles_seen`
-                if self.discarded_tiles[t] {
-                    self.at_furiten = true;
-                }
                 *is_wait = self.tiles_seen[t] < 4;
             }
         }

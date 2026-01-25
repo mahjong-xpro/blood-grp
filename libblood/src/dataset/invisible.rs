@@ -16,7 +16,6 @@ use rand::rng;
 #[derive(Default)]
 pub struct Invisible {
     pub yama: Vec<Tile>,
-    pub rinshan: Vec<Tile>,
 }
 
 impl Invisible {
@@ -24,7 +23,6 @@ impl Invisible {
         let mut ret = vec![];
         let mut cur = Self::default();
         let mut seed = None;
-        let mut from_rinshan = false;
         let mut unknown_tiles = new_unknown_tiles();
 
         for event in game {
@@ -50,7 +48,6 @@ impl Invisible {
                         board.init_from_seed(seed);
 
                         cur.yama = board.yama;
-                        cur.rinshan.clear();
 
                         // reverse because of the way Board pops tiles
                         cur.yama.reverse();
@@ -72,16 +69,10 @@ impl Invisible {
 
             match event {
                 Event::Tsumo { pai, .. } => {
-                    if from_rinshan {
-                        cur.rinshan.push(*pai);
-                        from_rinshan = false;
-                    } else {
-                        cur.yama.push(*pai);
-                    }
+                    cur.yama.push(*pai);
                     unknown_tiles[pai.as_usize()] -= 1;
                 }
                 Event::Ankan { .. } | Event::Kakan { .. } | Event::Daiminkan { .. } => {
-                    from_rinshan = false;
                 }
                 Event::Hora { .. } => {
                 }
@@ -97,11 +88,9 @@ impl Invisible {
                     while cur.yama.len() < 56 {
                         cur.yama.push(filler.pop().unwrap());
                     }
-                    // Keep them empty for compatibility
                     assert!(filler.is_empty());
 
                     ret.push(mem::take(&mut cur));
-                    from_rinshan = false;
                     unknown_tiles = new_unknown_tiles();
                 }
 

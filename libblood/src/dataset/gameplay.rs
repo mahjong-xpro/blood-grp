@@ -71,9 +71,7 @@ struct LoaderContext<'a> {
 
     // fields below are only used for oracle
     opponent_states: [PlayerState; 3],
-    from_rinshan: bool,
     yama_idx: usize,
-    rinshan_idx: usize,
 }
 
 #[pymethods]
@@ -257,9 +255,7 @@ impl Gameplay {
             kyoku_idx: 0,
             // end_state: EndState::Passive,
             opponent_states: array::from_fn(|i| PlayerState::new((player_id + i as u8 + 1) % 4)),
-            from_rinshan: false,
             yama_idx: 0,
-            rinshan_idx: 0,
         };
 
         // It is guaranteed that there are at least 4 events.
@@ -285,9 +281,7 @@ impl Gameplay {
             state,
             kyoku_idx,
             opponent_states,
-            from_rinshan,
             yama_idx,
-            rinshan_idx,
         } = ctx;
 
         let cur = &wnd[0];
@@ -304,20 +298,12 @@ impl Gameplay {
         if invisibles.is_some() {
             match cur {
                 Event::EndKyoku => {
-                    *from_rinshan = false;
                     *yama_idx = 0;
-                    *rinshan_idx = 0;
                 }
                 Event::Tsumo { .. } => {
-                    if *from_rinshan {
-                        *rinshan_idx += 1;
-                        *from_rinshan = false;
-                    } else {
-                        *yama_idx += 1;
-                    }
+                    *yama_idx += 1;
                 }
                 Event::Ankan { .. } | Event::Kakan { .. } | Event::Daiminkan { .. } => {
-                    *from_rinshan = true;
                 }
                 _ => (),
             };
@@ -417,7 +403,7 @@ impl Gameplay {
             let invisible_obs = invisibles[ctx.kyoku_idx].encode(
                 &ctx.opponent_states,
                 ctx.yama_idx,
-                ctx.rinshan_idx,
+                0, // rinshan_idx not used in Bloody Battle
                 ctx.config.version,
             );
             self.invisible_obs.push(invisible_obs);

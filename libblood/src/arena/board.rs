@@ -50,8 +50,6 @@ pub struct BoardState {
     #[derivative(Default(value = "56"))]
     tiles_left: u8,
     tsumo_actor: u8,
-    // Just a fancy bool
-    deal_from_rinshan: Option<()>,
     kans: u8,
     check_four_kan: bool,
     paos: [Option<u8>; 4],
@@ -433,14 +431,9 @@ impl BoardState {
                     return Ok(Poll::End);
                 }
 
-                let tile = if self.deal_from_rinshan.take().is_some() {
-                    // This should not happen, but handle it gracefully
-                    self.board.yama.pop().context("illegal kan: yama is empty")?
-                } else {
-                    self.board.yama.pop().with_context(|| {
-                        format!("tiles left > 0 ({}) but yama is empty", self.tiles_left)
-                    })?
-                };
+                let tile = self.board.yama.pop().with_context(|| {
+                    format!("tiles left > 0 ({}) but yama is empty", self.tiles_left)
+                })?;
                 self.tiles_left -= 1;
                 let tsumo = Event::Tsumo {
                     actor: self.tsumo_actor,
@@ -476,7 +469,6 @@ impl BoardState {
                 self.add_log(ev.clone());
 
                 self.tsumo_actor = actor;
-                self.deal_from_rinshan = Some(()); // Mark that next draw is after kan
                 self.kans += 1;
             }
 
@@ -485,7 +477,6 @@ impl BoardState {
                 self.add_log(ev.clone());
 
                 self.tsumo_actor = actor;
-                self.deal_from_rinshan = Some(()); // Mark that next draw is after kan
                 self.kans += 1;
             }
 
@@ -556,11 +547,6 @@ impl BoardState {
                     .enumerate()
                     .filter(|&(_, &c)| c)
                     .for_each(|(t, _)| arr.assign(idx, t, 1.));
-                idx += 1;
-
-                if state.at_furiten() {
-                    arr.fill(idx, 1.);
-                }
                 idx += 1;
             });
 

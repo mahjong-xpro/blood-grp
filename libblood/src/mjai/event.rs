@@ -134,7 +134,6 @@ pub struct Metadata {
     pub batch_size: Option<usize>,
     pub eval_time_ns: Option<u64>,
     pub shanten: Option<i8>,
-    pub at_furiten: Option<bool>,
     pub kan_select: Option<Box<Metadata>>,
 }
 

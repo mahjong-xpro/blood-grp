@@ -92,8 +92,6 @@ pub struct PlayerState {
     pub(super) last_discard_was_after_kan: bool,
 
     pub(super) at_rinshan: bool,
-    pub(super) at_furiten: bool,
-    pub(super) to_mark_same_cycle_furiten: Option<()>,
 
     /// Used for 4-kan check.
     pub(super) kans_on_board: u8,

@@ -130,13 +130,6 @@ impl PlayerState {
                         continue;
                     }
 
-                    // Furiten
-                    if self.discarded_tiles[tsumo] {
-                        ret[discard] = false;
-                        break;
-                    }
-
-                    // Must be placed after the furiten check above
                     if seen == 4 || ret[discard] {
                         continue;
                     }
@@ -190,27 +183,20 @@ impl PlayerState {
         // (This logic may need adjustment based on actual game flow)
 
         // Simplified logic: allow ryukyoku if we are oya or we are not the last
-        {
-            // Ryukyoku if we are oya or we are not the last,
-            // because it is hard to decide whether it is appropriate to not
-            // ryukyoku.
-            if self.oya == 0 || self.rank < 3 {
-                return true;
-            }
-
-            // At all-last, we are the last and we are not oya. If even a
-            // haneman tsumo cannot let us avoid the last, then do not ryukyoku.
-            let mut scores = [-3000; 4];
-            scores[0] = 12000;
-            scores[self.oya as usize] = -6000;
-            vec_add_assign(&mut scores, &self.scores);
-            return self.get_rank(scores) < 3;
+        // Ryukyoku if we are oya or we are not the last,
+        // because it is hard to decide whether it is appropriate to not
+        // ryukyoku.
+        if self.oya == 0 || self.rank < 3 {
+            return true;
         }
 
-        // Original check: if we have all the jihai kinds, do not ryukyoku
-
-        // Ryukyoku otherwise.
-        true
+        // At all-last, we are the last and we are not oya. If even a
+        // haneman tsumo cannot let us avoid the last, then do not ryukyoku.
+        let mut scores = [-3000; 4];
+        scores[0] = 12000;
+        scores[self.oya as usize] = -6000;
+        vec_add_assign(&mut scores, &self.scores);
+        self.get_rank(scores) < 3
     }
 
     #[inline]
