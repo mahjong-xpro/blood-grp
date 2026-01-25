@@ -103,9 +103,11 @@ class FileDatasetsIter(IterableDataset):
                 assert len(kyoku_rewards) >= at_kyoku[-1] + 1 # usually they are equal, unless there is no action in the last kyoku
 
                 final_scores = grp.take_final_scores()
-                # Bloody Battle: GRP feature is [kyoku, score[0], score[1], score[2], score[3]]
+                # Bloody Battle: GRP feature is [kyoku, score[0], score[1], score[2], score[3], agari[0], agari[1], agari[2], agari[3], ding_que[0], ding_que[1], ding_que[2], ding_que[3]]
                 # So score columns are indices 1, 2, 3, 4 (not 3, 4, 5, 6)
-                scores_seq = np.concatenate((grp_feature[:, 1:] * 1e4, [final_scores]))
+                # agari columns are indices 5, 6, 7, 8
+                # ding_que columns are indices 9, 10, 11, 12
+                scores_seq = np.concatenate((grp_feature[:, 1:5] * 1e4, [final_scores]))
                 rank_by_player_seq = (-scores_seq).argsort(-1, kind='stable').argsort(-1, kind='stable')
                 player_ranks = rank_by_player_seq[:, player_id]
 

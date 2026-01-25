@@ -251,10 +251,12 @@ class GRP(nn.Module):
         self.register_buffer('perms', perms)     # (24, 4)
         self.register_buffer('perms_t', perms_t) # (4, 24)
 
-    # Bloody Battle: input: [kyoku, s[0], s[1], s[2], s[3]]
+    # Bloody Battle: input: [kyoku, s[0], s[1], s[2], s[3], agari[0], agari[1], agari[2], agari[3], ding_que[0], ding_que[1], ding_que[2], ding_que[3]]
     # Bloody Battle: No grand_kyoku, honba, kyotaku
     # kyoku: current kyoku (counts from 1)
     # s[i]: score of player i / 10000
+    # agari[i]: 1.0 if player i has agari, 0.0 otherwise
+    # ding_que[i]: 0.0 for Man, 0.5 for Pin, 1.0 for Sou (normalized)
     # s[0] is score of player id 0
     def forward(self, inputs: List[Tensor]):
         lengths = torch.tensor([t.shape[0] for t in inputs], dtype=torch.int64)

@@ -12,8 +12,10 @@ pub const ACTION_SPACE: usize = 27 // discard (27 tile kinds)
                               + 1  // ryukyoku
                               + 1; // pass
 // = 32 (no riichi/立直, no chi/吃)
-// Bloody Battle Mahjong: GRP_SIZE = [kyoku, [score[i] / 10000]] = 1 + 4 = 5
-pub const GRP_SIZE: usize = 5;
+// Bloody Battle Mahjong: GRP_SIZE = [kyoku, [score[i] / 10000], [agari[i]], [ding_que[i]]] = 1 + 4 + 4 + 4 = 13
+// agari[i] = 1.0 if player i has agari, 0.0 otherwise
+// ding_que[i] = 0.0 for Man, 0.5 for Pin, 1.0 for Sou (normalized)
+pub const GRP_SIZE: usize = 13;
 
 #[pyfunction]
 #[inline]

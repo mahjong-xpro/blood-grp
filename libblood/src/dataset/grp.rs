@@ -1,5 +1,5 @@
 use crate::consts::GRP_SIZE;
-use crate::mjai::Event;
+use crate::mjai::{Event, Suit};
 use crate::rankings::Rankings;
 use crate::vec_ops::vec_add_assign;
 use std::fs::File;
@@ -19,7 +19,10 @@ use tinyvec::array_vec;
 #[pyclass]
 #[derive(Clone, Default)]
 pub struct Grp {
-    // Bloody Battle: [kyoku, [score[i] / 10000]] where i is player_id (no grand_kyoku, honba, kyotaku)
+    // Bloody Battle: [kyoku, [score[i] / 10000], [agari[i]], [ding_que[i]]] where i is player_id
+    // agari[i] = 1.0 if player i has agari, 0.0 otherwise
+    // ding_que[i] = 0.0 for Man, 0.5 for Pin, 1.0 for Sou (normalized)
+    // No grand_kyoku, honba, kyotaku
     pub feature: Array2<f64>,
     pub rank_by_player: [u8; 4],
     pub final_scores: [i32; 4],
@@ -91,7 +94,45 @@ impl Grp {
         let mut rank_by_player_opt = None;
         let mut final_deltas = [0; 4];
         let mut final_scores = [0; 4];
+        
+        // Track which players have agari and their ding_que at the START of each StartKyoku
+        // In Bloody Battle, agari state persists across kyokus (once a player agari, they stay agari)
+        // Ding_que is set at the start of each kyoku and persists for that kyoku
+        // We need to build this by forward traversal first
+        let mut players_agari_at_kyoku: Vec<[bool; 4]> = vec![];
+        let mut players_ding_que_at_kyoku: Vec<[Option<Suit>; 4]> = vec![];
+        let mut current_players_agari = [false; 4];
+        let mut current_players_ding_que = [None; 4];
+        
+        // First pass: forward traversal to track agari and ding_que state at the START of each StartKyoku
+        for ev in events.iter() {
+            match ev {
+                Event::StartKyoku { .. } => {
+                    // Record the agari and ding_que state at the START of this kyoku (before any actions in this kyoku)
+                    // This is the state BEFORE this StartKyoku event
+                    players_agari_at_kyoku.push(current_players_agari);
+                    players_ding_que_at_kyoku.push(current_players_ding_que);
+                    // Reset ding_que for new kyoku (each kyoku has its own ding_que)
+                    current_players_ding_que = [None; 4];
+                }
+                Event::Hora { actor, .. } => {
+                    // Mark this player as having agari (this persists for future kyokus)
+                    current_players_agari[*actor as usize] = true;
+                }
+                Event::DingQue { actor, suit } => {
+                    // Record ding_que for this player (persists for this kyoku)
+                    current_players_ding_que[*actor as usize] = Some(*suit);
+                }
+                _ => (),
+            }
+        }
+        
+        // Reverse the tracking for reverse traversal (since we traverse events in reverse)
+        players_agari_at_kyoku.reverse();
+        players_ding_que_at_kyoku.reverse();
+        let mut agari_idx = 0;
 
+        // Second pass: reverse traversal to extract features
         for ev in events.iter().rev() {
             match *ev {
                 Event::Hora { deltas, .. } | Event::Ryukyoku { deltas, .. } => {
@@ -123,11 +164,40 @@ impl Grp {
                         rank_by_player_opt = Some(rk.rank_by_player);
                     }
 
-                    // Bloody Battle Mahjong: GRP feature is [kyoku, [score[i] / 10000]]
+                    // Bloody Battle Mahjong: GRP feature is [kyoku, [score[i] / 10000], [agari[i]], [ding_que[i]]]
+                    // agari[i] = 1.0 if player i has agari, 0.0 otherwise
+                    // ding_que[i] = 0.0 for Man, 0.5 for Pin, 1.0 for Sou (normalized), or 0.0 if not set
                     // No grand_kyoku, honba, or kyotaku
                     let mut kyoku_info = array_vec!([_; GRP_SIZE]);
                     kyoku_info.push(kyoku as f64);
                     kyoku_info.extend(scores.iter().map(|&score| score as f64 / 10000.));
+                    
+                    // Add agari information
+                    let players_agari = if agari_idx < players_agari_at_kyoku.len() {
+                        players_agari_at_kyoku[agari_idx]
+                    } else {
+                        // Fallback: if we don't have tracking data, use empty (shouldn't happen)
+                        [false; 4]
+                    };
+                    kyoku_info.extend(players_agari.iter().map(|&agari| if agari { 1.0 } else { 0.0 }));
+                    
+                    // Add ding_que information
+                    let players_ding_que = if agari_idx < players_ding_que_at_kyoku.len() {
+                        players_ding_que_at_kyoku[agari_idx]
+                    } else {
+                        // Fallback: if we don't have tracking data, use None (shouldn't happen)
+                        [None; 4]
+                    };
+                    kyoku_info.extend(players_ding_que.iter().map(|&ding_que| {
+                        match ding_que {
+                            Some(Suit::Man) => 0.0,
+                            Some(Suit::Pin) => 0.5,
+                            Some(Suit::Sou) => 1.0,
+                            None => 0.0, // Default to 0.0 if not set (shouldn't happen in normal games)
+                        }
+                    }));
+                    agari_idx += 1;
+                    
                     assert_eq!(kyoku_info.len(), GRP_SIZE);
 
                     game_info.insert(0, kyoku_info);
