@@ -20,7 +20,7 @@ def train():
     from torch.utils.data import DataLoader
     from torch.utils.tensorboard import SummaryWriter
     from common import submit_param, parameter_count, drain, filtered_trimmed_lines, tqdm
-    from player import TestPlayer
+    from player import TestPlayer, TrainPlayer
     from dataloader import FileDatasetsIter, worker_init_fn
     from lr_scheduler import LinearWarmUpCosineAnnealingLR
     from model import Brain, DQN, AuxNet
