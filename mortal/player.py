@@ -15,8 +15,40 @@ class TestPlayer:
     def __init__(self):
         baseline_cfg = config['baseline']['test']
         device = torch.device(baseline_cfg['device'])
+        baseline_file = baseline_cfg['state_file']
 
-        state = torch.load(baseline_cfg['state_file'], weights_only=True, map_location=torch.device('cpu'))
+        # 如果 baseline 文件不存在，尝试使用当前模型文件
+        if not path.exists(baseline_file):
+            current_state_file = config['control']['state_file']
+            if path.exists(current_state_file):
+                logging.warning(f'baseline file not found: {baseline_file}, using current model: {current_state_file}')
+                baseline_file = current_state_file
+            else:
+                # 如果当前模型也不存在，创建随机初始化的模型
+                logging.warning(f'baseline file not found: {baseline_file}, creating random baseline model')
+                version = config['control']['version']
+                conv_channels = config['resnet']['conv_channels']
+                num_blocks = config['resnet']['num_blocks']
+                stable_mortal = Brain(version=version, conv_channels=conv_channels, num_blocks=num_blocks).eval()
+                stable_dqn = DQN(version=version).eval()
+                if baseline_cfg['enable_compile']:
+                    stable_mortal.compile()
+                    stable_dqn.compile()
+                self.baseline_engine = MortalEngine(
+                    stable_mortal,
+                    stable_dqn,
+                    is_oracle = False,
+                    version = version,
+                    device = device,
+                    enable_amp = True,
+                    enable_rule_based_agari_guard = True,
+                    name = 'baseline',
+                )
+                self.chal_version = config['control']['version']
+                self.log_dir = path.abspath(config['test_play']['log_dir'])
+                return
+
+        state = torch.load(baseline_file, weights_only=True, map_location=torch.device('cpu'))
         cfg = state['config']
         version = cfg['control'].get('version', 1)
         conv_channels = cfg['resnet']['conv_channels']
@@ -76,8 +108,51 @@ class TrainPlayer:
     def __init__(self):
         baseline_cfg = config['baseline']['train']
         device = torch.device(baseline_cfg['device'])
+        baseline_file = baseline_cfg['state_file']
 
-        state = torch.load(baseline_cfg['state_file'], weights_only=True, map_location=torch.device('cpu'))
+        # 如果 baseline 文件不存在，尝试使用当前模型文件
+        if not path.exists(baseline_file):
+            current_state_file = config['control']['state_file']
+            if path.exists(current_state_file):
+                logging.warning(f'baseline file not found: {baseline_file}, using current model: {current_state_file}')
+                baseline_file = current_state_file
+            else:
+                # 如果当前模型也不存在，创建随机初始化的模型
+                logging.warning(f'baseline file not found: {baseline_file}, creating random baseline model')
+                version = config['control']['version']
+                conv_channels = config['resnet']['conv_channels']
+                num_blocks = config['resnet']['num_blocks']
+                stable_mortal = Brain(version=version, conv_channels=conv_channels, num_blocks=num_blocks).eval()
+                stable_dqn = DQN(version=version).eval()
+                if baseline_cfg['enable_compile']:
+                    stable_mortal.compile()
+                    stable_dqn.compile()
+                self.baseline_engine = MortalEngine(
+                    stable_mortal,
+                    stable_dqn,
+                    is_oracle = False,
+                    version = version,
+                    device = device,
+                    enable_amp = True,
+                    enable_rule_based_agari_guard = True,
+                    name = 'baseline',
+                )
+                profile = os.environ.get('TRAIN_PLAY_PROFILE', 'default')
+                logging.info(f'using profile {profile}')
+                cfg = config['train_play'][profile]
+                self.chal_version = config['control']['version']
+                self.log_dir = path.abspath(cfg['log_dir'])
+                self.train_key = secrets.randbits(64)
+                self.train_seed = 10000
+                self.seed_count = cfg['games'] // 4
+                self.boltzmann_epsilon = cfg['boltzmann_epsilon']
+                self.boltzmann_temp = cfg['boltzmann_temp']
+                self.top_p = cfg['top_p']
+                self.repeats = cfg['repeats']
+                self.repeat_counter = 0
+                return
+
+        state = torch.load(baseline_file, weights_only=True, map_location=torch.device('cpu'))
         cfg = state['config']
         version = cfg['control'].get('version', 1)
         conv_channels = cfg['resnet']['conv_channels']
