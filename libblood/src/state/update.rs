@@ -214,7 +214,10 @@ impl PlayerState {
             return Ok(());
         }
 
-
+        // 在计算 ankan_candidates 之前，确保已经清空（虽然在 update_inner 中已经清空，但这里再次确保）
+        // 然后重新计算 ankan_candidates 和 kakan_candidates
+        self.ankan_candidates.clear();
+        self.kakan_candidates.clear();
         if self.kans_on_board < 4 {
             self.tehai
                 .iter()

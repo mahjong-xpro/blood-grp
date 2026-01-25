@@ -388,11 +388,20 @@ impl BatchAgent for MortalBatchAgent {
                         let tile = must_tile!(self.actions[kan_idx]);
                         ensure!(
                             ankan_candidates.contains(&tile),
-                            "kan choice not in ankan candidates: {}",
+                            "kan choice not in ankan candidates: player (abs): {}\nankan_candidates: {:?}\nselected tile: {:?}\nkan_idx: {:?}\nstate: {}",
+                            actor,
+                            ankan_candidates.iter().map(|t| t.to_string()).collect::<Vec<_>>(),
+                            tile,
+                            kan_idx,
                             state.brief_info()
                         );
                         tile
                     } else {
+                        ensure!(
+                            !ankan_candidates.is_empty(),
+                            "ankan_candidates is empty but can_ankan is true: {}",
+                            state.brief_info()
+                        );
                         ankan_candidates[0]
                     };
                     Event::Ankan {
