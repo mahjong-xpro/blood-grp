@@ -118,7 +118,7 @@ impl PlayerState {
                 ensure!(cans.can_discard, "cannot discard");
                 self.ensure_tiles_in_hand(&[pai])?;
                 
-                // Bloody Battle: Check Ding Que rule - cannot discard ding_que suit tiles
+                // Bloody Battle: Check Ding Que rule
                 if let Some(ding_que_suit) = self.ding_que {
                     let tile_id = pai.deaka().as_usize();
                     let tile_suit = tile_id / 9; // 0=Man, 1=Pin, 2=Sou
@@ -127,10 +127,26 @@ impl PlayerState {
                         crate::mjai::Suit::Pin => 1,
                         crate::mjai::Suit::Sou => 2,
                     };
-                    ensure!(
-                        tile_suit != ding_que_suit_id,
-                        "cannot discard ding_que suit tile: {pai:?} (ding_que: {ding_que_suit:?})"
-                    );
+                    let ding_que_start = ding_que_suit_id * 9;
+                    let ding_que_end = ding_que_start + 9;
+                    
+                    // Check if hand still has any ding_que suit tiles
+                    let has_ding_que_tiles = (ding_que_start..ding_que_end)
+                        .any(|i| self.tehai[i] > 0);
+                    
+                    if has_ding_que_tiles {
+                        // Must discard ding_que suit tiles first
+                        ensure!(
+                            tile_suit == ding_que_suit_id,
+                            "must discard ding_que suit tiles first: {pai:?} (ding_que: {ding_que_suit:?})"
+                        );
+                    } else {
+                        // Cannot discard ding_que suit tiles (even if none remain, rule still applies)
+                        ensure!(
+                            tile_suit != ding_que_suit_id,
+                            "cannot discard ding_que suit tile: {pai:?} (ding_que: {ding_que_suit:?})"
+                        );
+                    }
                 }
                 
                 if tsumogiri {

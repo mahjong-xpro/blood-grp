@@ -33,24 +33,36 @@ impl PlayerState {
         // Bloody Battle: 27 tile kinds (no jihai, no red 5s)
         let mut ret = [false; 27];
 
+        // Bloody Battle: Check Ding Que rule - must discard ding_que suit tiles first if any remain
+        if let Some(ding_que_suit) = self.ding_que {
+            let ding_que_suit_id = match ding_que_suit {
+                crate::mjai::Suit::Man => 0,
+                crate::mjai::Suit::Pin => 1,
+                crate::mjai::Suit::Sou => 2,
+            };
+            let ding_que_start = ding_que_suit_id * 9;
+            let ding_que_end = ding_que_start + 9;
+            
+            // Check if hand still has any ding_que suit tiles
+            let has_ding_que_tiles = (ding_que_start..ding_que_end)
+                .any(|i| self.tehai[i] > 0);
+            
+            if has_ding_que_tiles {
+                // Must discard ding_que suit tiles first - only allow ding_que suit tiles
+                for i in ding_que_start..ding_que_end {
+                    if self.tehai[i] > 0 && !self.forbidden_tiles[i] {
+                        ret[i] = true;
+                    }
+                }
+                // No other tiles can be discarded
+                return ret;
+            }
+        }
+
         // Bloody Battle: No riichi (立直)
         for (i, count) in self.tehai.iter().copied().enumerate() {
             if count == 0 {
                 continue;
-            }
-
-            // Bloody Battle: Check Ding Que rule - cannot discard ding_que suit tiles
-            if let Some(ding_que_suit) = self.ding_que {
-                let tile_suit = i / 9; // 0=Man, 1=Pin, 2=Sou
-                let ding_que_suit_id = match ding_que_suit {
-                    crate::mjai::Suit::Man => 0,
-                    crate::mjai::Suit::Pin => 1,
-                    crate::mjai::Suit::Sou => 2,
-                };
-                // Cannot discard ding_que suit tiles
-                if tile_suit == ding_que_suit_id {
-                    continue; // Skip ding_que suit tiles
-                }
             }
 
             ret[i] = !self.forbidden_tiles[i];
