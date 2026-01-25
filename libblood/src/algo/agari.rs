@@ -451,8 +451,6 @@ impl AgariCalculator<'_> {
         Some(Agari::Fan(fan))
     }
 
-}
-
     #[allow(dead_code)]
     fn search_yakus<const RETURN_IF_ANY: bool>(&self) -> Option<Agari> {
         // This method is not used for Bloody Battle Mahjong
