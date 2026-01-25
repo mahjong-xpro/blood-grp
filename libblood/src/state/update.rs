@@ -354,6 +354,8 @@ impl PlayerState {
         let actor_rel = self.rel(actor);
         let full_set = consumed.into_iter().chain(iter::once(pai)).collect();
         self.fuuro_overview[actor_rel].push(full_set);
+        // Clear any previous kan before adding new one (only track most recent kan before discard)
+        self.intermediate_kan.clear();
         self.intermediate_kan.push(pai);
         self.pad_kawa_for_pon_or_daiminkan(actor, target);
         self.kans_on_board += 1;
@@ -394,6 +396,8 @@ impl PlayerState {
                 break;
             }
         }
+        // Clear any previous kan before adding new one (only track most recent kan before discard)
+        self.intermediate_kan.clear();
         self.intermediate_kan.push(pai);
         self.kans_on_board += 1;
 
@@ -459,6 +463,8 @@ impl PlayerState {
         let actor_rel = self.rel(actor);
         let tile = consumed[0];
         self.ankan_overview[actor_rel].push(tile);
+        // Clear any previous kan before adding new one (only track most recent kan before discard)
+        self.intermediate_kan.clear();
         self.intermediate_kan.push(tile);
         self.kans_on_board += 1;
 
