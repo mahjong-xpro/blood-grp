@@ -397,14 +397,18 @@ impl<'a> ObsEncoderContext<'a> {
         self.idx += 3;
 
         if cans.can_discard {
-            state
-                .discard_candidates()
+            // Only call discard_candidates() if can_discard is true (tehai is 3n+2)
+            // This prevents "tehai is not 3n+2" panic
+            let discard_candidates = state.discard_candidates();
+            discard_candidates
                 .iter()
                 .enumerate()
                 .filter(|&(_, &c)| c)
                 .for_each(|(t, _)| {
                     self.arr.assign(self.idx, t, 1.);
-                    if !self.at_kan_select {
+                    // If at_kan_select is true, only set mask if we're actually in kan selection
+                    // Otherwise, if can_ankan and can_kakan are both false, we should still allow discard
+                    if !self.at_kan_select || (!cans.can_ankan && !cans.can_kakan) {
                         self.mask[t] = true;
                     }
                 });
@@ -478,6 +482,19 @@ impl<'a> ObsEncoderContext<'a> {
             if !self.at_kan_select {
                 self.mask[28] = true; // kan action
             }
+        }
+        
+        // If at_kan_select is true but neither can_ankan nor can_kakan is true,
+        // we should still allow discard actions (fallback to normal discard)
+        if self.at_kan_select && !cans.can_ankan && !cans.can_kakan && cans.can_discard {
+            let discard_candidates = state.discard_candidates();
+            discard_candidates
+                .iter()
+                .enumerate()
+                .filter(|&(_, &c)| c)
+                .for_each(|(t, _)| {
+                    self.mask[t] = true;
+                });
         }
         self.idx += 1;
 
@@ -617,8 +634,13 @@ impl<'a> ObsEncoderContext<'a> {
         let mask_count = self.mask.iter().filter(|&&m| m).count();
         if mask_count == 0 {
             // 收集详细的调试信息
-            let discard_candidates = state.discard_candidates();
-            let discard_candidates_count = discard_candidates.iter().filter(|&&c| c).count();
+            // 注意：只有在 can_discard 为 true 时才能调用 discard_candidates()
+            let discard_candidates_count = if cans.can_discard {
+                let discard_candidates = state.discard_candidates();
+                discard_candidates.iter().filter(|&&c| c).count()
+            } else {
+                0
+            };
             let forbidden_tiles_count = state.forbidden_tiles.iter().filter(|&&f| f).count();
             let tehai_nonzero_count = state.tehai.iter().filter(|&&c| c > 0).count();
             let ding_que_info = state.ding_que.map(|s| format!("{:?}", s)).unwrap_or_else(|| "None".to_string());

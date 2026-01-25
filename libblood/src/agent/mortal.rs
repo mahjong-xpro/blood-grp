@@ -213,6 +213,7 @@ impl BatchAgent for MortalBatchAgent {
             && !cans.can_kakan
             && !cans.can_ryukyoku
         {
+            // can_discard is already checked in the if condition above, so it's safe to call discard_candidates()
             let candidates = state.discard_candidates();
             let mut only_candidate = None;
             for (tile, &flag) in candidates.iter().enumerate() {
