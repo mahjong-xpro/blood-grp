@@ -456,7 +456,7 @@ impl<'a> ObsEncoderContext<'a> {
         self.idx += 1;
 
         if cans.can_ankan {
-            for tile in state.ankan_candidates {
+            for tile in &state.ankan_candidates {
                 self.arr.assign(self.idx, tile.as_usize(), 1.);
                 if self.at_kan_select {
                     self.mask[tile.as_usize()] = true; // discard tile for kan
@@ -469,7 +469,7 @@ impl<'a> ObsEncoderContext<'a> {
         self.idx += 1;
 
         if cans.can_kakan {
-            for tile in state.kakan_candidates {
+            for tile in &state.kakan_candidates {
                 self.arr.assign(self.idx, tile.as_usize(), 1.);
                 if self.at_kan_select {
                     self.mask[tile.as_usize()] = true; // discard tile for kan
