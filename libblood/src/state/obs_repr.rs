@@ -558,13 +558,17 @@ impl<'a> ObsEncoderContext<'a> {
                     // Bloody Battle: 27 tile kinds (no jihai)
                     // Skip: max_ev encoding (2), required tiles encoding, SP table encoding
                     // Note: encode_sp_table handles empty table and adds 3 * MAX_NUM_TURNS
+                    // For can_discard, there are additional 2 slots for best ev/win prob discard
+                    // But encode_sp_table only adds 3 * MAX_NUM_TURNS, so we need to handle the +2 separately
                     if cans.can_discard {
-                        // max_ev (2) + required tiles (2 * 27) + max required tiles (2) + SP table (3 * MAX_NUM_TURNS + 2 for best ev/win prob)
+                        // max_ev (2) + required tiles (2 * 27) + max required tiles (2)
                         self.idx += 2 + 2 * 27 + 2;
-                        // encode_sp_table will add 3 * MAX_NUM_TURNS + 2
+                        // encode_sp_table will add 3 * MAX_NUM_TURNS
                         self.encode_sp_table(max_ev_table, cans.can_discard, 0.);
+                        // Additional 2 for best ev/win prob discard (not handled by encode_sp_table)
+                        self.idx += 2;
                     } else {
-                        // max_ev (2) + required tiles (2 * 27 + 1) + first required (1) + SP table (3 * MAX_NUM_TURNS)
+                        // max_ev (2) + required tiles (2 * 27 + 1) + first required (1)
                         self.idx += 2 + 2 * 27 + 1 + 1;
                         // encode_sp_table will add 3 * MAX_NUM_TURNS
                         self.encode_sp_table(max_ev_table, cans.can_discard, 0.);
