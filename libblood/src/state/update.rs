@@ -193,26 +193,23 @@ impl PlayerState {
 
         if self.waits[pai.deaka().as_usize()] {
             // Bloody Battle: All valid hands can agari (no yaku requirement)
-            // Check if hand structure is valid
-            if self.is_menzen || self.tiles_left == 0 || self.at_rinshan {
-                self.last_cans.can_tsumo_agari = true;
-            } else {
-                let agari_calc = AgariCalculator {
-                    tehai: &self.tehai,
-                    is_menzen: self.is_menzen,
-                    pons: &self.pons,
-                    minkans: &self.minkans,
-                    ankans: &self.ankans,
-                    winning_tile: pai.deaka().as_u8(),
-                    is_ron: false,
-                    ding_que: self.ding_que,
-                    is_after_kan: self.at_rinshan, // 杠上花：从岭上牌摸的
-                    is_kan_discard: false,
-                    is_chankan: false,
-                    exclude_gen_tile: None,
-                };
-                self.last_cans.can_tsumo_agari = agari_calc.has_yaku();
-            }
+            // Always check has_yaku() to ensure ding_que rule is checked
+            // Even for is_menzen, tiles_left == 0, or at_rinshan cases
+            let agari_calc = AgariCalculator {
+                tehai: &self.tehai,
+                is_menzen: self.is_menzen,
+                pons: &self.pons,
+                minkans: &self.minkans,
+                ankans: &self.ankans,
+                winning_tile: pai.deaka().as_u8(),
+                is_ron: false,
+                ding_que: self.ding_que,
+                is_after_kan: self.at_rinshan, // 杠上花：从岭上牌摸的
+                is_kan_discard: false,
+                is_chankan: false,
+                exclude_gen_tile: None,
+            };
+            self.last_cans.can_tsumo_agari = agari_calc.has_yaku();
         }
 
         // haitei tile cannot be used for kakan or ankan
@@ -298,28 +295,26 @@ impl PlayerState {
 
         if self.waits[pai.deaka().as_usize()] {
             // Bloody Battle: All valid hands can agari
-            if self.tiles_left == 0 {
-                self.last_cans.can_ron_agari = true;
-            } else {
-                let mut tehai_with_winning_tile = self.tehai;
-                tehai_with_winning_tile[pai.deaka().as_usize()] += 1;
+            // Always check has_yaku() to ensure ding_que rule is checked
+            // Even for tiles_left == 0 case
+            let mut tehai_with_winning_tile = self.tehai;
+            tehai_with_winning_tile[pai.deaka().as_usize()] += 1;
 
-                let agari_calc = AgariCalculator {
-                    tehai: &tehai_with_winning_tile,
-                    is_menzen: self.is_menzen,
-                    pons: &self.pons,
-                    minkans: &self.minkans,
-                    ankans: &self.ankans,
-                    winning_tile: pai.deaka().as_u8(),
-                    is_ron: true,
-                    ding_que: self.ding_que,
-                    is_after_kan: false, // 荣和不是从岭上牌摸的
-                    is_kan_discard: was_kan_before_discard, // 杠上炮：刚有人杠后打出的牌
-                    is_chankan: false, // dahai()中的荣和不是抢杠
-                    exclude_gen_tile: None,
-                };
-                self.last_cans.can_ron_agari = agari_calc.has_yaku();
-            }
+            let agari_calc = AgariCalculator {
+                tehai: &tehai_with_winning_tile,
+                is_menzen: self.is_menzen,
+                pons: &self.pons,
+                minkans: &self.minkans,
+                ankans: &self.ankans,
+                winning_tile: pai.deaka().as_u8(),
+                is_ron: true,
+                ding_que: self.ding_que,
+                is_after_kan: false, // 荣和不是从岭上牌摸的
+                is_kan_discard: was_kan_before_discard, // 杠上炮：刚有人杠后打出的牌
+                is_chankan: false, // dahai()中的荣和不是抢杠
+                exclude_gen_tile: None,
+            };
+            self.last_cans.can_ron_agari = agari_calc.has_yaku();
 
             // Bloody Battle: No furiten tracking
         }
