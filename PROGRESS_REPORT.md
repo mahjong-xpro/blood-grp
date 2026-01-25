@@ -87,7 +87,7 @@
 **详细报告**: 见 `FUNCTIONAL_VERIFICATION.md`
 
 ### 3. 编译警告（低优先级）
-**状态**: 仍有约 78-79 个编译警告（已减少约 5 个）
+**状态**: 仍有约 54 个编译警告（已减少约 24 个）
 
 **主要警告类型**：
 - 未使用的导入（部分已清理：`tu8`, `must_tile` 等）
@@ -100,11 +100,18 @@
 - ✅ 清理了 `obs_repr.rs` 中的 `tu8`, `tuz` 导入
 - ✅ 清理了 `update.rs` 中的 `self` 导入（`must_tile` 需要保留，被多处使用）
 - ✅ 清理了 `agent_helper.rs` 中的 `must_tile`, `t`, `tu8` 导入（保留 `tuz`）
+- ✅ 清理了 `sp/calc.rs` 和 `sp/state.rs` 中未使用的 `t`, `tu8` 导入
+- ✅ 为 `stat.rs` 的 `from_game` 方法添加了 `#[allow(deprecated)]`
+
+**已完成的清理**：
+- ✅ 为 stat.rs 中使用废弃字段的方法添加了 `#[allow(deprecated)]`
+- ✅ 删除了 agari.rs 中未使用的 Ordering 导入
+- ✅ 警告从 78 个减少到 54 个（减少 24 个）
 
 **建议**：
-- 剩余的警告主要是已废弃字段的使用（为了兼容性保留）
-- 可以添加 `#[allow(deprecated)]` 来抑制这些警告
-- 或者在使用这些字段的地方添加 `#[allow(deprecated)]`
+- 剩余的警告主要是未使用的导入和 from_game 中的废弃字段访问
+- 可以继续清理未使用的导入
+- from_game 中的废弃字段访问可以添加更细粒度的 `#[allow(deprecated)]`
 
 ### 4. 文档更新（中优先级）
 **状态**: 部分完成

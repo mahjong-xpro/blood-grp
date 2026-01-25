@@ -284,12 +284,14 @@ impl Stat {
         };
 
         let mut cur_scores = [0; 4];
-        let mut riichi_declared = false;
-        let mut riichi_accepted = false;
-        let mut others_riichi_declared = false;
+        // Bloody Battle: No riichi (立直), these variables are kept for compatibility but unused
+        let _riichi_declared = false;
+        let _riichi_accepted = false;
+        let _others_riichi_declared = false;
         let mut cur_oya = 0;
         let mut jun = 0;
         let mut fuuro_num = 0;
+        #[allow(deprecated)] // Accessing deprecated fields for backward compatibility
         events.iter().for_each(|ev| match *ev {
             Event::StartKyoku { oya, scores, .. } => {
                 stat.round += 1;

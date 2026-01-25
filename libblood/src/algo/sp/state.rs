@@ -1,7 +1,7 @@
 use super::CALC_SHANTEN_FN;
 use super::tile::{DiscardTile, DrawTile, RequiredTile};
 use crate::tile::Tile;
-use crate::{must_tile, t, tu8};
+use crate::must_tile;
 
 use tinyvec::ArrayVec;
 
