@@ -2,7 +2,7 @@
 
 **生成时间**: 2026-01-25  
 **最后更新**: 2026-01-25  
-**总体进度**: 约 87%
+**总体进度**: 约 90%
 
 ---
 
@@ -37,7 +37,7 @@
 - ✅ 清理未使用的导入
 - ✅ 编译通过（`cargo check` 成功）
 
-### 5. 阶段三：AI和训练系统改造 (今天完成)
+### 5. 阶段三：AI和训练系统改造 (95%)
 - ✅ **观察空间改造**：已添加定缺编码
   - ding_que_suit: 3维（one-hot）
   - ding_que_complete: 1维（boolean）
@@ -50,6 +50,15 @@
   - v4: 998 → 1012 (+14)
 - ✅ **动作空间确认**：ACTION_SPACE = 32（包括ryukyoku流局）
 - ✅ **训练代码清理**：删除train.py中的riichi统计
+- ✅ **Python导入更新**：所有文件已更新为libblood
+  - model.py: libblood.consts ✅
+  - mortal.py: libblood.mjai, libblood.dataset ✅
+  - one_vs_three.py: libblood.arena ✅
+  - train_grp.py: libblood.dataset ✅
+  - dataloader.py: libblood.dataset ✅
+- ✅ **GRP特征更新**：已更新为[kyoku, score[0], score[1], score[2], score[3]]
+- ✅ **SPCalculator更新**：已设置为Bloody Battle规则（无riichi、dora等）
+- ⚠️ **SPCalculator ding_que**：TODO - 需要从state获取ding_que信息（低优先级，不影响基本功能）
 
 ---
 
