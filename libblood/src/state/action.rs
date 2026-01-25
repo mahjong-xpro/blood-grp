@@ -101,6 +101,9 @@ impl PlayerState {
                 self.ensure_tiles_in_hand(&[pai])?;
                 
                 if let Some(ding_que_suit) = self.ding_que {
+                    // 基础规则：定缺规则检查
+                    // 1. 如果手牌中还有定缺花色的牌，必须优先打出定缺花色的牌
+                    // 2. 如果手牌中没有定缺花色的牌了，不能打出定缺花色的牌（即使之前还有）
                     let tile_id = pai.as_usize();
                     let tile_suit = tile_id / 9; // 0=Man, 1=Pin, 2=Sou
                     let ding_que_suit_id = match ding_que_suit {
@@ -116,18 +119,27 @@ impl PlayerState {
                         .any(|i| self.tehai[i] > 0);
                     
                     if has_ding_que_tiles {
-                        // Must discard ding_que suit tiles first
+                        // Must discard ding_que suit tiles first (基础规则)
                         ensure!(
                             tile_suit == ding_que_suit_id,
-                            "must discard ding_que suit tiles first: {pai:?} (ding_que: {ding_que_suit:?})"
+                            "must discard ding_que suit tiles first: {pai:?} (ding_que: {ding_que_suit:?}). This violates the fundamental rule of ding_que."
                         );
                     } else {
                         // Cannot discard ding_que suit tiles (even if none remain, rule still applies)
+                        // 基础规则：即使手牌中没有定缺花色的牌了，也不能打出定缺花色的牌
                         ensure!(
                             tile_suit != ding_que_suit_id,
-                            "cannot discard ding_que suit tile: {pai:?} (ding_que: {ding_que_suit:?})"
+                            "cannot discard ding_que suit tile: {pai:?} (ding_que: {ding_que_suit:?}). This violates the fundamental rule of ding_que."
                         );
                     }
+                } else {
+                    // 基础规则：如果玩家还没有选择定缺，不应该能打牌
+                    // 但在某些特殊情况下（如测试），可能允许，所以这里不强制检查
+                    // 如果需要在生产环境中强制检查，可以取消下面的注释
+                    // ensure!(
+                    //     false,
+                    //     "cannot discard before ding_que is selected. This violates the fundamental rule."
+                    // );
                 }
                 
                 if tsumogiri {

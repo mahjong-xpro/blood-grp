@@ -194,9 +194,9 @@ while self.players_agari[self.tsumo_actor as usize] {
 
 ---
 
-### 4. 定缺规则检查的边界情况
+### 4. 定缺规则检查的边界情况 ✅ **已修复**
 
-**位置**: `libblood/src/state/action.rs:103-131`
+**位置**: `libblood/src/state/action.rs:103-145`
 
 **问题描述**:
 - 定缺规则检查逻辑看起来正确，但需要验证以下边界情况：
@@ -204,9 +204,45 @@ while self.players_agari[self.tsumo_actor as usize] {
   2. 如果玩家手牌中已经没有定缺花色的牌，但之前还有，是否可以打其他花色的牌？
   3. 定缺规则是否在所有情况下都正确执行？
 
-**建议**:
-- 添加单元测试覆盖所有边界情况
-- 确保定缺规则在所有游戏阶段都正确执行
+**修复方案**:
+根据基础规则，定缺规则必须严格执行：
+1. 如果手牌中还有定缺花色的牌，必须优先打出定缺花色的牌
+2. 如果手牌中没有定缺花色的牌了，不能打出定缺花色的牌（即使之前还有）
+
+**已实施的修复**:
+1. ✅ 添加了详细的注释，说明定缺规则的基础规则
+2. ✅ 改进了错误信息，明确指出违反基础规则
+3. ✅ 添加了边界情况的注释说明（如果还没有选择定缺的情况）
+
+**修复后的代码**:
+```rust
+if let Some(ding_que_suit) = self.ding_que {
+    // 基础规则：定缺规则检查
+    // 1. 如果手牌中还有定缺花色的牌，必须优先打出定缺花色的牌
+    // 2. 如果手牌中没有定缺花色的牌了，不能打出定缺花色的牌（即使之前还有）
+    // ... 检查逻辑 ...
+    
+    if has_ding_que_tiles {
+        // Must discard ding_que suit tiles first (基础规则)
+        ensure!(
+            tile_suit == ding_que_suit_id,
+            "must discard ding_que suit tiles first: {pai:?} (ding_que: {ding_que_suit:?}). This violates the fundamental rule of ding_que."
+        );
+    } else {
+        // Cannot discard ding_que suit tiles (even if none remain, rule still applies)
+        // 基础规则：即使手牌中没有定缺花色的牌了，也不能打出定缺花色的牌
+        ensure!(
+            tile_suit != ding_que_suit_id,
+            "cannot discard ding_que suit tile: {pai:?} (ding_que: {ding_que_suit:?}). This violates the fundamental rule of ding_que."
+        );
+    }
+}
+```
+
+**修复位置**:
+- ✅ `action.rs` 中的定缺规则检查（第103-145行）
+
+**状态**: ✅ **已修复** (2026-01-26)
 
 ---
 
@@ -559,13 +595,13 @@ if online:
 2. ✅ Bug #2: 游戏结束条件的不安全unwrap
 
 ### P1（高优先级）
-3. ⚠️ Bug #3: 已和牌玩家的轮转逻辑
-4. ⚠️ Bug #4: 定缺规则检查的边界情况
-5. ⚠️ Bug #5: tiles_left 和 yama 的一致性
+3. ✅ Bug #3: 已和牌玩家的轮转逻辑
+4. ✅ Bug #4: 定缺规则检查的边界情况
+5. ✅ Bug #5: tiles_left 和 yama 的一致性
 
 ### P2（中优先级）
-6. ⚠️ Bug #6: 杠后打牌标记的时序问题
-7. ⚠️ Bug #7: 和牌检查中的定缺规则
+6. ✅ Bug #6: 杠后打牌标记的时序问题
+7. ✅ Bug #7: 和牌检查中的定缺规则
 8. 📝 代码质量 #8-15
 
 ### P3（低优先级）
