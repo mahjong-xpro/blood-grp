@@ -10,7 +10,6 @@ use super::point::Point;
 use super::shanten;
 use crate::tile::Tile;
 use crate::{matches_tu8, must_tile, tu8};
-use std::cmp::Ordering;
 use std::iter;
 use std::sync::LazyLock;
 

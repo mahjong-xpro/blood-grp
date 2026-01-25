@@ -140,6 +140,7 @@ pub struct Stat {
 }
 
 impl fmt::Display for Stat {
+    #[allow(deprecated)] // Using deprecated fields for backward compatibility
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -273,8 +274,10 @@ Nagashi mangan (rate) {} ({:.9})"#,
 impl Stat {
     /// We do not use `add_game(&mut self)` here as `Stat` impls `Add` and `Sum` so we
     /// can use rayon easier.
+    #[allow(deprecated)] // Using deprecated fields for backward compatibility
     #[must_use]
     pub fn from_game(events: &[Event], player_id: u8) -> Self {
+        #[allow(deprecated)] // Initializing deprecated fields (always 0 in Bloody Battle)
         let mut stat = Self {
             game: 1,
             ..Default::default()
@@ -572,6 +575,7 @@ impl Stat {
     #[getter]
     #[inline]
     #[must_use]
+    #[allow(deprecated)] // Using deprecated field for backward compatibility
     pub fn avg_point_per_riichi_agari(&self) -> f64 {
         self.riichi_agari_point as f64 / self.riichi_agari as f64
     }
@@ -603,6 +607,7 @@ impl Stat {
     #[getter]
     #[inline]
     #[must_use]
+    #[allow(deprecated)] // Using deprecated field for backward compatibility
     pub fn avg_riichi_agari_jun(&self) -> f64 {
         self.riichi_agari_jun as f64 / self.riichi_agari as f64
     }
@@ -659,6 +664,7 @@ impl Stat {
     #[getter]
     #[inline]
     #[must_use]
+    #[allow(deprecated)] // Using deprecated field for backward compatibility
     pub fn riichi_rate(&self) -> f64 {
         self.riichi as f64 / self.round as f64
     }
@@ -678,36 +684,42 @@ impl Stat {
     #[getter]
     #[inline]
     #[must_use]
+    #[allow(deprecated)] // Using deprecated field for backward compatibility
     pub fn agari_rate_after_riichi(&self) -> f64 {
         self.riichi_agari as f64 / self.riichi as f64
     }
     #[getter]
     #[inline]
     #[must_use]
+    #[allow(deprecated)] // Using deprecated field for backward compatibility
     pub fn houjuu_rate_after_riichi(&self) -> f64 {
         self.riichi_houjuu as f64 / self.riichi as f64
     }
     #[getter]
     #[inline]
     #[must_use]
+    #[allow(deprecated)] // Using deprecated field for backward compatibility
     pub fn chasing_riichi_rate(&self) -> f64 {
         self.chasing_riichi as f64 / self.riichi as f64
     }
     #[getter]
     #[inline]
     #[must_use]
+    #[allow(deprecated)] // Using deprecated field for backward compatibility
     pub fn riichi_chased_rate(&self) -> f64 {
         self.riichi_got_chased as f64 / self.riichi as f64
     }
     #[getter]
     #[inline]
     #[must_use]
+    #[allow(deprecated)] // Using deprecated field for backward compatibility
     pub fn avg_riichi_jun(&self) -> f64 {
         self.riichi_jun as f64 / self.riichi as f64
     }
     #[getter]
     #[inline]
     #[must_use]
+    #[allow(deprecated)] // Using deprecated field for backward compatibility
     pub fn avg_riichi_point(&self) -> f64 {
         self.riichi_point as f64 / self.riichi as f64
     }
@@ -759,12 +771,14 @@ impl Stat {
     #[getter]
     #[inline]
     #[must_use]
+    #[allow(deprecated)] // Using deprecated field for backward compatibility
     pub fn yakuman_rate(&self) -> f64 {
         self.yakuman as f64 / self.round as f64
     }
     #[getter]
     #[inline]
     #[must_use]
+    #[allow(deprecated)] // Using deprecated field for backward compatibility
     pub fn nagashi_mangan_rate(&self) -> f64 {
         self.nagashi_mangan as f64 / self.round as f64
     }
