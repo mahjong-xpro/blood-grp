@@ -121,7 +121,16 @@ impl PlayerState {
         self.tiles_left = 56;
         self.at_turn = 0;
         
-        // Initialize tehai from tehais
+        // Initialize tehai from tehais and witness all initial hand tiles
+        // This is critical: tiles_seen must include ALL initial hand tiles from ALL players
+        // to correctly calculate tiles_in_wall for SPCalculator
+        for player_tehais in &tehais {
+            for &tile in player_tehais {
+                self.witness_tile(tile)?;
+            }
+        }
+        
+        // Initialize this player's tehai
         for &tile in &tehais[self.player_id as usize] {
             let tid = tile.as_usize();
             self.tehai[tid] += 1;
