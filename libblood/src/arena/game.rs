@@ -80,8 +80,18 @@ impl Game {
         match poll {
             Poll::InGame => {
                 let ctx = self.board.agent_context();
+                // 在定缺选择阶段，需要处理所有还没有选择定缺的玩家，即使can_act()返回false
+                let in_ding_que_phase = self.board.is_ding_que_phase();
+                
                 for (player_id, state) in ctx.player_states.iter().enumerate() {
-                    if !state.last_cans().can_act() {
+                    // 在定缺选择阶段，如果玩家还没有选择定缺，需要处理（即使can_act()返回false）
+                    let needs_scene = if in_ding_que_phase {
+                        !self.board.ding_que_selected(player_id)
+                    } else {
+                        state.last_cans().can_act()
+                    };
+                    
+                    if !needs_scene {
                         continue;
                     }
 
@@ -171,8 +181,18 @@ impl Game {
         }
 
         let ctx = self.board.agent_context();
+        // 在定缺选择阶段，需要处理所有还没有选择定缺的玩家，即使can_act()返回false
+        let in_ding_que_phase = self.board.is_ding_que_phase();
+        
         for (player_id, state) in ctx.player_states.iter().enumerate() {
-            if !state.last_cans().can_act() {
+            // 在定缺选择阶段，如果玩家还没有选择定缺，需要处理（即使can_act()返回false）
+            let needs_reaction = if in_ding_que_phase {
+                !self.board.ding_que_selected(player_id)
+            } else {
+                state.last_cans().can_act()
+            };
+            
+            if !needs_reaction {
                 continue;
             }
 

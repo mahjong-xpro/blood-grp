@@ -111,6 +111,12 @@ impl BoardState {
             let poll = self.step(&reactions)?;
             match poll {
                 Poll::InGame => {
+                    // 在定缺选择阶段，即使can_act()返回false，也应该返回InGame
+                    // 因为我们需要等待Agent返回反应（或自动选择定缺）
+                    if self.ding_que_phase {
+                        return Ok(poll);
+                    }
+                    // 正常游戏阶段，检查是否有玩家可以行动
                     if self.player_states.iter().any(|c| c.last_cans().can_act()) {
                         return Ok(poll);
                     }
@@ -131,6 +137,16 @@ impl BoardState {
             player_states: &self.player_states,
             log: &self.log,
         }
+    }
+
+    #[inline]
+    pub const fn is_ding_que_phase(&self) -> bool {
+        self.ding_que_phase
+    }
+
+    #[inline]
+    pub const fn ding_que_selected(&self, player_id: usize) -> bool {
+        self.ding_que_selected[player_id]
     }
 
     #[inline]
