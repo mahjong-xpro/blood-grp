@@ -642,7 +642,7 @@ impl<'a> DivWorker<'a> {
 
         // Bloody Battle: No pinfu calculation (no jihai, no bakaze/jikaze)
         // This is for Japanese Mahjong compatibility only
-        let has_pinfu = false;
+        let _has_pinfu = false;
 
         // Bloody Battle: search_yakus in DivWorker is deprecated
         // This method should not be used for Bloody Battle Mahjong
