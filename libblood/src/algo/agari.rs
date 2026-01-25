@@ -99,34 +99,6 @@ pub struct AgariCalculator<'a> {
     pub exclude_gen_tile: Option<u8>,
 }
 
-struct DivWorker<'a> {
-    sup: &'a AgariCalculator<'a>,
-    tile14: &'a [u8; 14],
-    div: &'a Div,
-    pair_tile: u8,
-    menzen_kotsu: ArrayVec<[u8; 4]>,
-    menzen_shuntsu: ArrayVec<[u8; 4]>,
-
-    /// Used in fu calc and sanankou condition, indicating whether or not the
-    /// winning tile should build a minkou instead of shuntsu in an ambiguous
-    /// pattern.
-    ///
-    /// The winning tile should try its best to fit into a shuntsu, because that
-    /// always gives a higher score than using that winning tile to turn an
-    /// existing ankou into a minkou, because a shuntsu can only add at most 2
-    /// fu (penchan or kanchan) and does not bring extra yaku (except for pinfu,
-    /// but since we have ankou it can never be pinfu), but an ankou adds at
-    /// least 2 fu and can bring extra yakus like sanankou.
-    ///
-    /// An example of this is 45556 + 5, which could be either 456 + (55 + 5) or
-    /// 555 + (46 + 5). `menzen_kotsu` will contain 555 while `menzen_shuntsu`
-    /// will also contain 456, making it ambiguous whether the winning tile 5
-    /// should be a part of either the minkou 55 + 5 or the shuntsu 46 + 5. In
-    /// practice, the latter should be preferred because it preserves the ankou.
-    /// A test case covers this.
-    winning_tile_makes_minkou: bool,
-}
-
 impl From<u32> for Div {
     fn from(v: u32) -> Self {
         let pair_idx = ((v >> 6) & 0b1111) as u8;
@@ -480,80 +452,6 @@ impl AgariCalculator<'_> {
     }
 
 }
-
-impl<'a> DivWorker<'a> {
-    fn new(calc: &'a AgariCalculator<'a>, tile14: &'a [u8; 14], div: &'a Div) -> Self {
-        let pair_tile = tile14[div.pair_idx as usize];
-        let menzen_kotsu = div
-            .kotsu_idxs
-            .iter()
-            .map(|&idx| tile14[idx as usize])
-            .collect();
-        let menzen_shuntsu = div
-            .shuntsu_idxs
-            .iter()
-            .map(|&idx| tile14[idx as usize])
-            .collect();
-
-        let mut ret = Self {
-            sup: calc,
-            tile14,
-            div,
-            pair_tile,
-            menzen_kotsu,
-            menzen_shuntsu,
-            winning_tile_makes_minkou: false,
-        };
-        ret.winning_tile_makes_minkou = ret.winning_tile_makes_minkou();
-        ret
-    }
-
-    /// For init only.
-    fn winning_tile_makes_minkou(&self) -> bool {
-        if !self.sup.is_ron {
-            // Tsumo agari, no way to make a minkou from the winning tile.
-            return false;
-        }
-        if !self.menzen_kotsu.contains(&self.sup.winning_tile) {
-            // No ankou that contains the winning tile, so no ambiguous pattern
-            // at all.
-            return false;
-        }
-
-        // If winning_tile >= 27, it's invalid, skip
-        if self.sup.winning_tile >= 27 {
-            return false;
-        }
-        let kind = self.sup.winning_tile / 9;
-        let num = self.sup.winning_tile % 9;
-        let low = kind * 9 + num.saturating_sub(2);
-        let high = kind * 9 + num.min(6);
-        // If there is a shuntsu that can cover the winning tile, then always
-        // put the winning tile into that shuntsu.
-        !(low..=high).any(|t| self.menzen_shuntsu.contains(&t))
-    }
-
-    /// The caller must assure `self.div.has_chitoi` holds.
-    fn chitoi_pairs(&self) -> impl Iterator<Item = u8> + '_ {
-        self.tile14.iter().take(7).copied()
-    }
-
-    fn all_kotsu_and_kantsu(&self) -> impl Iterator<Item = u8> + '_ {
-        self.menzen_kotsu
-            .iter()
-            .chain(self.sup.pons)
-            .chain(self.sup.minkans)
-            .chain(self.sup.ankans)
-            .copied()
-    }
-
-    fn all_shuntsu(&self) -> impl Iterator<Item = u8> + '_ {
-        self.menzen_shuntsu.iter().copied()
-    }
-
-    fn all_mentsu(&self) -> impl Iterator<Item = u8> + '_ {
-        self.all_kotsu_and_kantsu().chain(self.all_shuntsu())
-    }
 
     fn calc_fu(&self, has_pinfu: bool) -> u8 {
         if self.div.has_chitoi {
