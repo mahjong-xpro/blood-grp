@@ -520,7 +520,7 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
                             let assume_riichi = false; // Bloody Battle: No riichi (立直)
                             let win_double_riichi = false; // Bloody Battle: No double riichi (两立直)
                             let win_ippatsu = false; // Bloody Battle: No ippatsu
-                            let win_haitei = false; // Bloody Battle: No haitei
+                            let _win_haitei = false; // Bloody Battle: No haitei
                             let han_plus = 0; // Bloody Battle: No additional han from riichi (立直)/dora (宝牌)
 
                             win_probs[i] += prob;
