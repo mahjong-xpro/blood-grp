@@ -552,55 +552,74 @@ impl<'a> ObsEncoderContext<'a> {
 
         if self.version == 4 {
             if let Ok(SinglePlayerTables { max_ev_table }) = state.single_player_tables() {
-                // Get the max EV from the table that maximizes EV, which should
-                // be the global max EV.
-                //
-                // `max_ev_table` is already sorted.
-                let max_ev = max_ev_table
-                    .first()
-                    .and_then(|c| c.exp_values.first().copied())
-                    .unwrap_or_default();
-                self.encode_ev(max_ev);
+                // Handle empty max_ev_table (can happen in early game or special states)
+                if max_ev_table.is_empty() {
+                    // Skip encoding if table is empty, just advance idx to maintain shape
+                    // Bloody Battle: 27 tile kinds (no jihai)
+                    // Skip: max_ev encoding (2), required tiles encoding, SP table encoding
+                    if cans.can_discard {
+                        // max_ev (2) + required tiles (2 * 27) + max required tiles (2) + SP table (3 * MAX_NUM_TURNS + 2)
+                        self.idx += 2 + 2 * 27 + 2 + 3 * MAX_NUM_TURNS + 2;
+                    } else {
+                        // max_ev (2) + required tiles (2 * 27 + 1) + first required (1) + SP table (3 * MAX_NUM_TURNS)
+                        self.idx += 2 + 2 * 27 + 1 + 1 + 3 * MAX_NUM_TURNS;
+                    }
+                } else {
+                    // Get the max EV from the table that maximizes EV, which should
+                    // be the global max EV.
+                    //
+                    // `max_ev_table` is already sorted.
+                    let max_ev = max_ev_table
+                        .first()
+                        .and_then(|c| c.exp_values.first().copied())
+                        .unwrap_or_default();
+                    self.encode_ev(max_ev);
 
-                // Encode required tiles.
-                if cans.can_discard {
-                    for candidate in &max_ev_table {
-                        let discard_tid = candidate.tile.deaka().as_usize();
-                        for r in &candidate.required_tiles {
-                            let required_tid = r.tile.deaka().as_usize();
-                            if candidate.shanten_down {
-                                // Bloody Battle: 27 tile kinds (no jihai)
-                                self.arr
-                                    .assign(self.idx + 27 + discard_tid, required_tid, 1.);
-                            } else {
-                                self.arr.assign(self.idx + discard_tid, required_tid, 1.);
+                    // Encode required tiles.
+                    if cans.can_discard {
+                        for candidate in &max_ev_table {
+                            let discard_tid = candidate.tile.deaka().as_usize();
+                            for r in &candidate.required_tiles {
+                                let required_tid = r.tile.deaka().as_usize();
+                                if candidate.shanten_down {
+                                    // Bloody Battle: 27 tile kinds (no jihai)
+                                    self.arr
+                                        .assign(self.idx + 27 + discard_tid, required_tid, 1.);
+                                } else {
+                                    self.arr.assign(self.idx + discard_tid, required_tid, 1.);
+                                }
                             }
                         }
-                    }
-                    // Bloody Battle: 27 tile kinds (no jihai)
-                    self.idx += 2 * 27;
+                        // Bloody Battle: 27 tile kinds (no jihai)
+                        self.idx += 2 * 27;
 
-                    let max_required_tiles_tid = max_ev_table
-                        .iter()
-                        .max_by(|l, r| l.cmp(r, CandidateColumn::NotShantenDown))
-                        .unwrap()
-                        .tile
-                        .deaka()
-                        .as_usize();
-                    self.arr.assign(self.idx, max_required_tiles_tid, 1.);
-                    self.idx += 2;
-                } else {
-                    // Bloody Battle: 27 tile kinds (no jihai)
-                    self.idx += 2 * 27 + 1;
-                    for r in &max_ev_table[0].required_tiles {
-                        let required_tid = r.tile.deaka().as_usize();
-                        self.arr.assign(self.idx, required_tid, 1.);
+                        // Handle max required tiles
+                        if let Some(max_candidate) = max_ev_table
+                            .iter()
+                            .max_by(|l, r| l.cmp(r, CandidateColumn::NotShantenDown))
+                        {
+                            let max_required_tiles_tid = max_candidate
+                                .tile
+                                .deaka()
+                                .as_usize();
+                            self.arr.assign(self.idx, max_required_tiles_tid, 1.);
+                        }
+                        self.idx += 2;
+                    } else {
+                        // Bloody Battle: 27 tile kinds (no jihai)
+                        self.idx += 2 * 27 + 1;
+                        if let Some(first_candidate) = max_ev_table.first() {
+                            for r in &first_candidate.required_tiles {
+                                let required_tid = r.tile.deaka().as_usize();
+                                self.arr.assign(self.idx, required_tid, 1.);
+                            }
+                        }
+                        self.idx += 1;
                     }
-                    self.idx += 1;
+
+                    let ev_scale = if max_ev < 1. { 0. } else { 1. / max_ev };
+                    self.encode_sp_table(max_ev_table, cans.can_discard, ev_scale);
                 }
-
-                let ev_scale = if max_ev < 1. { 0. } else { 1. / max_ev };
-                self.encode_sp_table(max_ev_table, cans.can_discard, ev_scale);
             } else {
                 // Use the minimal tsumo agari point as the max EV. It is
                 // minimal because we assume no uradora.
