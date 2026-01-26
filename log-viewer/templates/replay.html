@@ -44,45 +44,58 @@
 
         <!-- Game Board -->
         <div class="game-board" id="game-board">
-            <!-- Player 0 (Bottom) -->
+            <!-- Player 0 (Bottom - Main Player) -->
             <div class="player-area player-0">
                 <div class="player-name" v-text="players[0]?.name || '玩家 0'"></div>
-                <div class="discard-area" id="discard-0"></div>
+                <div class="player-section-label">手牌</div>
                 <div class="hand-area" id="hand-0"></div>
+                <div class="player-section-label">打牌</div>
+                <div class="discard-area" id="discard-0"></div>
+                <div class="player-section-label">副露</div>
                 <div class="fuuro-area" id="fuuro-0"></div>
-                <div class="score" v-text="players[0]?.score || 25000"></div>
+                <div class="score" v-text="'分数: ' + (players[0]?.score || 25000)"></div>
             </div>
 
             <!-- Player 1 (Right) -->
             <div class="player-area player-1">
                 <div class="player-name" v-text="players[1]?.name || '玩家 1'"></div>
-                <div class="discard-area" id="discard-1"></div>
+                <div class="player-section-label">手牌</div>
                 <div class="hand-area" id="hand-1"></div>
+                <div class="player-section-label">打牌</div>
+                <div class="discard-area" id="discard-1"></div>
+                <div class="player-section-label">副露</div>
                 <div class="fuuro-area" id="fuuro-1"></div>
-                <div class="score" v-text="players[1]?.score || 25000"></div>
+                <div class="score" v-text="'分数: ' + (players[1]?.score || 25000)"></div>
             </div>
 
             <!-- Player 2 (Top) -->
             <div class="player-area player-2">
                 <div class="player-name" v-text="players[2]?.name || '玩家 2'"></div>
-                <div class="discard-area" id="discard-2"></div>
+                <div class="player-section-label">手牌</div>
                 <div class="hand-area" id="hand-2"></div>
+                <div class="player-section-label">打牌</div>
+                <div class="discard-area" id="discard-2"></div>
+                <div class="player-section-label">副露</div>
                 <div class="fuuro-area" id="fuuro-2"></div>
-                <div class="score" v-text="players[2]?.score || 25000"></div>
+                <div class="score" v-text="'分数: ' + (players[2]?.score || 25000)"></div>
             </div>
 
             <!-- Player 3 (Left) -->
             <div class="player-area player-3">
                 <div class="player-name" v-text="players[3]?.name || '玩家 3'"></div>
-                <div class="discard-area" id="discard-3"></div>
+                <div class="player-section-label">手牌</div>
                 <div class="hand-area" id="hand-3"></div>
+                <div class="player-section-label">打牌</div>
+                <div class="discard-area" id="discard-3"></div>
+                <div class="player-section-label">副露</div>
                 <div class="fuuro-area" id="fuuro-3"></div>
-                <div class="score" v-text="players[3]?.score || 25000"></div>
+                <div class="score" v-text="'分数: ' + (players[3]?.score || 25000)"></div>
             </div>
 
             <!-- Center Area -->
             <div class="center-area">
                 <div class="wall-info" v-text="'剩余: ' + tilesLeft"></div>
+                <div class="kyoku-info-center" v-text="'第 ' + currentKyoku + ' 局'"></div>
             </div>
         </div>
 
