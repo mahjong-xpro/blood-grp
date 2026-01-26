@@ -57,14 +57,12 @@ let gameState = {
 function updateDisplay() {
     // Update Vue app data (reactive)
     if (window.vueApp) {
-        // Update players
-        gameState.players.forEach((p, i) => {
-            if (window.vueApp.players[i]) {
-                window.vueApp.players[i].name = p.name;
-                window.vueApp.players[i].score = p.score;
-                window.vueApp.players[i].dingque = p.dingque;
-            }
-        });
+        // 直接替换整个数组以确保Vue响应式更新
+        window.vueApp.players = gameState.players.map(p => ({
+            name: p.name,
+            score: p.score,
+            dingque: p.dingque
+        }));
         window.vueApp.currentKyoku = gameState.currentKyoku;
         window.vueApp.tilesLeft = gameState.tilesLeft;
     }
@@ -91,9 +89,44 @@ function renderHand(playerId) {
     
     if (!player || !player.tehai) return;
     
-    player.tehai.forEach(tile => {
+    // 排序手牌以便更好地显示（按花色和数字）
+    const sortedTehai = [...player.tehai].sort((a, b) => {
+        // 先按花色排序：m(萬) < p(筒) < s(条) < 字牌
+        const getSuitOrder = (tile) => {
+            if (tile.match(/^[1-9]m/)) return 0;
+            if (tile.match(/^[1-9]p/)) return 1;
+            if (tile.match(/^[1-9]s/)) return 2;
+            return 3; // 字牌
+        };
+        const suitOrderA = getSuitOrder(a);
+        const suitOrderB = getSuitOrder(b);
+        if (suitOrderA !== suitOrderB) return suitOrderA - suitOrderB;
+        
+        // 同花色按数字排序
+        const numA = parseInt(a.match(/^([1-9])/)?.[1] || '0');
+        const numB = parseInt(b.match(/^([1-9])/)?.[1] || '0');
+        if (numA && numB) return numA - numB;
+        
+        // 字牌按字母顺序
+        return a.localeCompare(b);
+    });
+    
+    // 记录最后一张牌（新摸的牌）
+    const lastTile = player.tehai.length > 0 ? player.tehai[player.tehai.length - 1] : null;
+    const lastTileCount = lastTile ? player.tehai.filter(t => t === lastTile).length : 0;
+    let lastTileRendered = 0;
+    
+    sortedTehai.forEach((tile) => {
         const tileEl = document.createElement('div');
-        tileEl.className = getTileClass(tile) + ' tile-tsumo';
+        tileEl.className = getTileClass(tile) + ' tile';
+        // 标记最后一张牌（新摸的牌）为tsumo
+        // 如果最后一张牌有重复，只标记最后一个出现的
+        if (tile === lastTile) {
+            lastTileRendered++;
+            if (lastTileRendered === lastTileCount) {
+                tileEl.classList.add('tile-tsumo');
+            }
+        }
         tileEl.textContent = tileToText(tile);
         tileEl.title = tile;
         handArea.appendChild(tileEl);
@@ -147,6 +180,11 @@ function renderFuuro(playerId) {
 
 // Event processing
 function processEvent(event) {
+    if (!event || !event.type) {
+        console.warn('Invalid event:', event);
+        return;
+    }
+    
     const type = event.type;
     
     switch (type) {
@@ -157,11 +195,14 @@ function processEvent(event) {
             break;
             
         case 'start_kyoku':
-            gameState.currentKyoku = event.kyoku;
+            gameState.currentKyoku = event.kyoku || 0;
+            // 初始剩余牌数：136 - 4*13(手牌) - 14(王牌) = 70，但实际游戏可能不同
+            // 这里使用56作为默认值，实际应该根据游戏规则计算
             gameState.tilesLeft = 56;
             gameState.players.forEach((p, i) => {
-                p.score = event.scores[i];
-                p.tehai = event.tehais[i] || [];
+                p.score = event.scores[i] || 25000;
+                // 创建数组副本，避免引用问题
+                p.tehai = (event.tehais && event.tehais[i]) ? [...event.tehais[i]] : [];
                 p.kawa = [];
                 p.fuuro = [];
                 p.dingque = null;
@@ -176,58 +217,136 @@ function processEvent(event) {
             
         case 'tsumo':
             const tsumoPlayer = gameState.players[event.actor];
+            if (!tsumoPlayer || !event.pai) break;
             tsumoPlayer.tehai.push(event.pai);
-            gameState.tilesLeft--;
+            // 减少剩余牌数（但要注意杠牌后从王牌补牌的情况）
+            if (gameState.tilesLeft > 0) {
+                gameState.tilesLeft--;
+            }
             break;
             
         case 'dahai':
             const dahaiPlayer = gameState.players[event.actor];
-            const tileIndex = dahaiPlayer.tehai.indexOf(event.pai);
+            if (!dahaiPlayer || !event.pai) break;
+            
+            // 查找要打出的牌（从后往前找，因为通常打最后摸的牌）
+            let tileIndex = -1;
+            for (let i = dahaiPlayer.tehai.length - 1; i >= 0; i--) {
+                if (dahaiPlayer.tehai[i] === event.pai) {
+                    tileIndex = i;
+                    break;
+                }
+            }
+            
             if (tileIndex >= 0) {
                 dahaiPlayer.tehai.splice(tileIndex, 1);
                 dahaiPlayer.kawa.push(event.pai);
+            } else {
+                console.warn(`Player ${event.actor} tried to discard ${event.pai} but not found in hand:`, dahaiPlayer.tehai);
             }
             break;
             
         case 'pon':
             const ponPlayer = gameState.players[event.actor];
-            event.consumed.forEach(tile => {
-                const idx = ponPlayer.tehai.indexOf(tile);
-                if (idx >= 0) ponPlayer.tehai.splice(idx, 1);
+            if (!ponPlayer || !event.consumed || !Array.isArray(event.consumed)) break;
+            
+            // 移除手牌中的consumed牌（从后往前找，避免重复牌问题）
+            const consumedCopy = [...event.consumed];
+            consumedCopy.forEach(tile => {
+                let idx = -1;
+                for (let i = ponPlayer.tehai.length - 1; i >= 0; i--) {
+                    if (ponPlayer.tehai[i] === tile) {
+                        idx = i;
+                        break;
+                    }
+                }
+                if (idx >= 0) {
+                    ponPlayer.tehai.splice(idx, 1);
+                } else {
+                    console.warn(`Player ${event.actor} pon: tile ${tile} not found in hand`);
+                }
             });
             ponPlayer.fuuro.push([event.pai, ...event.consumed]);
             break;
             
         case 'daiminkan':
             const minkanPlayer = gameState.players[event.actor];
-            event.consumed.forEach(tile => {
-                const idx = minkanPlayer.tehai.indexOf(tile);
-                if (idx >= 0) minkanPlayer.tehai.splice(idx, 1);
+            if (!minkanPlayer || !event.consumed || !Array.isArray(event.consumed)) break;
+            
+            // 移除手牌中的consumed牌
+            const minkanConsumed = [...event.consumed];
+            minkanConsumed.forEach(tile => {
+                let idx = -1;
+                for (let i = minkanPlayer.tehai.length - 1; i >= 0; i--) {
+                    if (minkanPlayer.tehai[i] === tile) {
+                        idx = i;
+                        break;
+                    }
+                }
+                if (idx >= 0) {
+                    minkanPlayer.tehai.splice(idx, 1);
+                } else {
+                    console.warn(`Player ${event.actor} daiminkan: tile ${tile} not found in hand`);
+                }
             });
             minkanPlayer.fuuro.push([event.pai, ...event.consumed]);
+            // 杠牌会减少剩余牌数（从王牌中补一张）
+            // 但这里不减少tilesLeft，因为已经通过tsumo减少了
             break;
             
         case 'ankan':
             const ankanPlayer = gameState.players[event.actor];
-            event.consumed.forEach(tile => {
-                const idx = ankanPlayer.tehai.indexOf(tile);
-                if (idx >= 0) ankanPlayer.tehai.splice(idx, 1);
+            if (!ankanPlayer || !event.consumed || !Array.isArray(event.consumed)) break;
+            
+            // 移除手牌中的consumed牌（暗杠是4张相同的牌）
+            const ankanConsumed = [...event.consumed];
+            ankanConsumed.forEach(tile => {
+                let idx = -1;
+                for (let i = ankanPlayer.tehai.length - 1; i >= 0; i--) {
+                    if (ankanPlayer.tehai[i] === tile) {
+                        idx = i;
+                        break;
+                    }
+                }
+                if (idx >= 0) {
+                    ankanPlayer.tehai.splice(idx, 1);
+                } else {
+                    console.warn(`Player ${event.actor} ankan: tile ${tile} not found in hand`);
+                }
             });
-            ankanPlayer.fuuro.push(event.consumed);
+            ankanPlayer.fuuro.push([...event.consumed]); // 创建副本
             break;
             
         case 'kakan':
             const kakanPlayer = gameState.players[event.actor];
-            const kakanIdx = kakanPlayer.tehai.indexOf(event.pai);
+            if (!kakanPlayer || !event.pai) break;
+            
+            // 从手牌中移除要加杠的牌
+            let kakanIdx = -1;
+            for (let i = kakanPlayer.tehai.length - 1; i >= 0; i--) {
+                if (kakanPlayer.tehai[i] === event.pai) {
+                    kakanIdx = i;
+                    break;
+                }
+            }
+            
             if (kakanIdx >= 0) {
                 kakanPlayer.tehai.splice(kakanIdx, 1);
-                // Find the pon and convert to kan
+                // 查找对应的pon（3张牌的meld，且包含event.pai）
+                let found = false;
                 for (let meld of kakanPlayer.fuuro) {
-                    if (meld.length === 3 && meld[0] === event.pai) {
+                    if (meld.length === 3 && meld.includes(event.pai)) {
+                        // 找到对应的pon，添加第4张牌变成kan
                         meld.push(event.pai);
+                        found = true;
                         break;
                     }
                 }
+                if (!found) {
+                    console.warn(`Player ${event.actor} kakan: pon with ${event.pai} not found`);
+                }
+            } else {
+                console.warn(`Player ${event.actor} kakan: tile ${event.pai} not found in hand`);
             }
             break;
             
@@ -247,6 +366,23 @@ function processEvent(event) {
                     gameState.players[i].score += delta;
                 });
             }
+            break;
+            
+        case 'end_kyoku':
+            // 局结束，不需要特殊处理，状态保持
+            break;
+            
+        case 'end_game':
+            // 游戏结束
+            break;
+            
+        case 'none':
+            // 无操作事件，跳过
+            break;
+            
+        default:
+            // 未知事件类型，记录但不处理
+            console.warn('Unknown event type:', type, event);
             break;
     }
 }

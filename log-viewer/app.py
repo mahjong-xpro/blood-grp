@@ -316,10 +316,21 @@ def get_log(log_path):
         
         # If not in cache, try to load from file system (for manually specified files)
         # But first check if this is from the monitored directory - if so, file was deleted
-        if DEFAULT_LOG_DIR and str(log_path).startswith(str(DEFAULT_LOG_DIR)):
-            return jsonify({
-                'error': f'Log file not found in cache: {log_path}. The file may have been deleted from disk. Please refresh the log list to see cached logs.'
-            }), 404
+        if DEFAULT_LOG_DIR:
+            # Normalize paths for comparison
+            try:
+                log_path_normalized = str(Path(log_path).resolve())
+                default_dir_normalized = str(DEFAULT_LOG_DIR.resolve())
+                if log_path_normalized.startswith(default_dir_normalized):
+                    return jsonify({
+                        'error': f'Log file not found in cache: {log_path}. The file may have been deleted from disk. Please refresh the log list to see cached logs.'
+                    }), 404
+            except (OSError, ValueError):
+                # If path resolution fails, try string comparison
+                if str(log_path).startswith(str(DEFAULT_LOG_DIR)):
+                    return jsonify({
+                        'error': f'Log file not found in cache: {log_path}. The file may have been deleted from disk. Please refresh the log list to see cached logs.'
+                    }), 404
         
         log_file = None
         
