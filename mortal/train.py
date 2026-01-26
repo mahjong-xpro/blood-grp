@@ -369,7 +369,6 @@ def train():
                     writer.add_scalars('test_play/agari_point', {
                         'overall': stat.avg_point_per_agari,
                         'fuuro': stat.avg_point_per_fuuro_agari,
-                        'dama': stat.avg_point_per_dama_agari,
                     }, steps)
                     writer.add_scalar('test_play/houjuu_point', stat.avg_point_per_houjuu, steps)
                     writer.add_scalar('test_play/point_per_round', stat.avg_point_per_round, steps)
