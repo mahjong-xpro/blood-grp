@@ -363,6 +363,11 @@ body {
     transform: rotate(-90deg);
 }
 
+.player-area.player-1 .hand-row {
+    margin-bottom: -100px;
+    /* Push FAR out to the right screen edge */
+}
+
 /* Player 2 (Top) */
 .player-area.player-2 {
     transform: rotate(180deg);
@@ -371,6 +376,11 @@ body {
 /* Player 3 (Left) */
 .player-area.player-3 {
     transform: rotate(90deg);
+}
+
+.player-area.player-3 .hand-row {
+    margin-bottom: -100px;
+    /* Push FAR out to the left screen edge */
 }
 
 /* Hand & Discard Layouts */
