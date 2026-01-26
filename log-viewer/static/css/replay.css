@@ -228,13 +228,16 @@ body {
 }
 
 /* Center Info */
+/* Center Info: Shrunken to avoid blocking River */
 .center-info {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: 200px;
-    height: 200px;
+    width: 100px;
+    /* Formerly 200px */
+    height: 100px;
+    /* Formerly 200px */
     background: #1e1e1e;
     border: 2px solid #333;
     border-radius: 12px;
@@ -408,12 +411,13 @@ body {
 
 .kawa-area {
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    /* Change to 12 per row to flatten the river (make it wider, not taller) */
+    grid-template-columns: repeat(12, 1fr);
     grid-auto-rows: auto;
-    gap: 4px;
-    /* width: fit-content; */
-    /* Limits width to force wrapping */
-    max-width: 250px;
+    gap: 2px;
+    /* Allow wider grid */
+    max-width: 500px;
+    /* Formerly 250px */
     margin-bottom: 4px;
 }
 
@@ -502,23 +506,13 @@ body {
     background-color: #1a3c75;
 }
 
-/* Notes: Info Card Rotation */
-/* User requested "Consistent with hand direction".
+/* Notes: Info Card Rotation 
+   User requested "Consistent with hand direction".
    Since we use full-size rotated containers, the info card is naturally rotated 90deg/180deg etc.
    We REMOVE the counter-rotation logic.
    This means Side Players' info cards will be vertical on screen (horizontal relative to player).
 */
-.player-1 .player-info-card {
-    /* transform: rotate(90deg); Removed */
-}
-
-.player-2 .player-info-card {
-    /* transform: rotate(180deg); Removed based on user feedback */
-}
-
-.player-3 .player-info-card {
-    /* transform: rotate(-90deg); Removed */
-}
+/* Counter-rotation styles removed */
 
 
 .player-avatar {
