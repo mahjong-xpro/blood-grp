@@ -299,23 +299,27 @@ body {
     opacity: 0.7;
 }
 
-/* Flex Order: Kawa(1) -> Hand(2) -> Info(3) 
-   This ensures Info is always at the visual "Back" (Edge of screen) 
-   and Kawa is always at the visual "Front" (Center of screen)
-   regardless of rotation.
+/* Flex Order: Kawa(1) -> Info(2) -> Hand(3)
+   User Request: "Hand to edge, Info in middle".
+   This places the Hand at the visual "Back" (Screen Edge)
+   and Info Card between Hand and River.
 */
 .kawa-area {
     order: 1;
-    margin-bottom: 8px;
-}
-
-.hand-row {
-    order: 2;
-    margin-bottom: 12px;
+    margin-bottom: 4px;
+    /* Space between River and Info */
 }
 
 .player-info-card {
+    order: 2;
+    margin-bottom: 4px;
+    /* Space between Info and Hand */
+}
+
+.hand-row {
     order: 3;
+    margin-bottom: 0;
+    /* Hand is at the edge */
 }
 
 /* Layout Logic for 4 Players */
@@ -492,12 +496,7 @@ body {
 }
 
 .player-2 .player-info-card {
-    /* transform: rotate(180deg); Removed */
-    /* But 180deg text is upside down. Let's flip it back just for readability?
-       Or keep it strict. "Integral to hand direction". Top player sees it normal.
-       Spectator sees it upside down.
-       Let's keep it upside down to fully comply with "consistent with hand".
-    */
+    /* transform: rotate(180deg); Removed based on user feedback */
 }
 
 .player-3 .player-info-card {
