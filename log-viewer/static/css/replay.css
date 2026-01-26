@@ -242,13 +242,24 @@ body {
     box-shadow: 0 10px 30px #00000080;
 }
 
-.turn-indicator {
-    padding: 8px 16px;
-    background: var(--accent-color);
-    color: #000;
-    border-radius: 20px;
-    font-weight: 600;
-    box-shadow: 0 0 15px var(--accent-color);
+.turn-arrow-container {
+    width: 80px;
+    height: 80px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.turn-arrow-icon {
+    font-size: 48px;
+    color: var(--accent-color);
+    text-shadow: 0 0 15px var(--accent-color);
+}
+
+.center-logo {
+    font-size: 48px;
+    opacity: 0.5;
 }
 
 /* Players Positioning */
@@ -434,37 +445,38 @@ body {
     box-shadow: 1px 6px 3px rgba(0, 0, 0, 0.3);
 }
 
-.last-discard .tile {
-    /* Highlight last discard */
-    background: linear-gradient(135deg, #fffde7 0%, #fff9c4 100%);
-    box-shadow: 0 0 10px var(--accent-color);
-    border: 1px solid var(--accent-color);
+/* Ankan (Face Down) */
+.tile.facedown {
+    background: var(--tile-back-bg);
+    border-color: #1a3c75;
+    box-shadow: 1px 1px 0px #1a3c75, 2px 2px 3px rgba(0, 0, 0, 0.3);
 }
 
-/* Player Info Card */
-.player-info-card {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: #1e1e1eCC;
-    padding: 6px 12px;
-    border-radius: 8px;
-    border: 1px solid #444;
-    width: 240px;
+.tile.facedown::after {
+    background-color: #1a3c75;
 }
 
-/* Rotate info card back for side players so text is readable */
-/* Note: Since we reordered to bottom, we check margins */
+/* Notes: Info Card Rotation */
+/* User requested "Consistent with hand direction".
+   Since we use full-size rotated containers, the info card is naturally rotated 90deg/180deg etc.
+   We REMOVE the counter-rotation logic.
+   This means Side Players' info cards will be vertical on screen (horizontal relative to player).
+*/
 .player-1 .player-info-card {
-    transform: rotate(90deg);
+    /* transform: rotate(90deg); Removed */
 }
 
 .player-2 .player-info-card {
-    transform: rotate(180deg);
+    /* transform: rotate(180deg); Removed */
+    /* But 180deg text is upside down. Let's flip it back just for readability?
+       Or keep it strict. "Integral to hand direction". Top player sees it normal.
+       Spectator sees it upside down.
+       Let's keep it upside down to fully comply with "consistent with hand".
+    */
 }
 
 .player-3 .player-info-card {
-    transform: rotate(-90deg);
+    /* transform: rotate(-90deg); Removed */
 }
 
 

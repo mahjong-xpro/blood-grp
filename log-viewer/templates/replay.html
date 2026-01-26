@@ -76,9 +76,11 @@
                 <div class="game-board">
                     <!-- Center Info -->
                     <div class="center-info">
-                        <div class="turn-indicator" v-if="currentPlayer !== null">
-                            当前操作: {{ players[currentPlayer].name }}
+                        <div class="turn-arrow-container" v-if="currentPlayer !== null"
+                            :style="{ transform: 'rotate(' + arrowRotation + 'deg)' }">
+                            <span class="material-icons turn-arrow-icon">navigation</span>
                         </div>
+                        <div v-else class="center-logo">🀄</div>
                     </div>
 
                     <!-- Players -->
@@ -115,16 +117,6 @@
 
                         <!-- Hand & Fuuro -->
                         <div class="hand-row">
-                            <!-- Fuuro (Melds) -->
-                            <div class="fuuro-area">
-                                <div v-for="(meld, mIdx) in player.fuuro" :key="'meld-'+mIdx" class="meld-group">
-                                    <div v-for="(tile, fIdx) in meld" :key="'f-'+fIdx" class="tile small"
-                                        :class="getTileClass(tile)">
-                                        {{ getTileText(tile) }}
-                                    </div>
-                                </div>
-                            </div>
-
                             <!-- Tehai (Hand) -->
                             <div class="tehai-area">
                                 <div v-for="(tile, hIdx) in player.tehai" :key="'hand-'+hIdx" class="tile" :class="[
@@ -132,6 +124,20 @@
                                         { 'tsumo-tile': hIdx === player.tehai.length - 1 && player.lastAction === 'tsumo' }
                                      ]">
                                     {{ getTileText(tile) }}
+                                </div>
+                            </div>
+
+                            <!-- Fuuro (Melds) -->
+                            <div class="fuuro-area">
+                                <div v-for="(meld, mIdx) in player.fuuro" :key="'meld-'+mIdx" class="meld-group"
+                                    :class="meld.type">
+                                    <div v-for="(tile, fIdx) in meld" :key="'f-'+fIdx" class="tile small" :class="[
+                                            getTileClass(tile),
+                                            { 'facedown': meld.type === 'ankan' && (fIdx === 0 || fIdx === 3) }
+                                        ]">
+                                        {{ (meld.type === 'ankan' && (fIdx === 0 || fIdx === 3)) ? '' :
+                                        getTileText(tile) }}
+                                    </div>
                                 </div>
                             </div>
                         </div>
