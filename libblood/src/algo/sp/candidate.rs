@@ -136,12 +136,22 @@ impl Candidate {
             .map(|r| format!("{}@{}", r.tile, r.count))
             .collect::<Vec<_>>()
             .join(",");
+        
+        // Helper to safely get value or default
+        let get_val = |arr: &ArrayVec<[f32; MAX_TSUMOS_LEFT]>| -> f32 {
+            arr.first().copied().unwrap_or(0.0)
+        };
+
+        let ev = get_val(&self.exp_values);
+        let win = get_val(&self.win_probs);
+        let tenpai = get_val(&self.tenpai_probs);
+
         if can_discard {
             vec![
                 self.tile.to_string(),
-                format!("{:.03}", self.exp_values[0]),
-                format!("{:.03}", self.win_probs[0] * 100.),
-                format!("{:.03}", self.tenpai_probs[0] * 100.),
+                format!("{:.03}", ev),
+                format!("{:.03}", win * 100.),
+                format!("{:.03}", tenpai * 100.),
                 if self.shanten_down { "Yes" } else { "No" }.to_owned(),
                 self.required_tiles.len().to_string(),
                 self.num_required_tiles.to_string(),
@@ -149,9 +159,9 @@ impl Candidate {
             ]
         } else {
             vec![
-                format!("{:.03}", self.exp_values[0]),
-                format!("{:.03}", self.win_probs[0] * 100.),
-                format!("{:.03}", self.tenpai_probs[0] * 100.),
+                format!("{:.03}", ev),
+                format!("{:.03}", win * 100.),
+                format!("{:.03}", tenpai * 100.),
                 self.required_tiles.len().to_string(),
                 self.num_required_tiles.to_string(),
                 required_tiles,
