@@ -254,12 +254,27 @@ body {
 /* Players Positioning */
 .player-area {
     position: absolute;
+    width: 100%;
+    height: 100%;
+    left: 0;
+    top: 0;
     display: flex;
     flex-direction: column;
+    justify-content: flex-end;
+    /* Align to bottom (which becomes side after rotation) */
+    align-items: center;
+    /* Center along the edge */
+    padding-bottom: 20px;
+    /* Margin from edge */
+    pointer-events: none;
+    /* Let clicks pass through empty areas */
     gap: 8px;
-    /* border: 1px solid green; */
-    padding: 10px;
     transition: opacity 0.3s;
+}
+
+.player-area>* {
+    pointer-events: auto;
+    /* Re-enable clicks on content */
 }
 
 .player-area.is-turn {
@@ -292,41 +307,23 @@ body {
 /* Layout Logic for 4 Players */
 /* Player 0 (Bottom) */
 .player-area.player-0 {
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    align-items: center;
-    width: 80%;
+    /* No rotation needed, just use default flex layout */
+    transform: none;
 }
 
 /* Player 1 (Right) */
 .player-area.player-1 {
-    right: 20px;
-    top: 50%;
-    transform: translateY(-50%) rotate(-90deg);
-    align-items: center;
-    /* For side players, width dictates height when rotated */
-    width: 60%;
-    transform-origin: center right;
+    transform: rotate(-90deg);
 }
 
 /* Player 2 (Top) */
 .player-area.player-2 {
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%) rotate(180deg);
-    align-items: center;
-    width: 80%;
+    transform: rotate(180deg);
 }
 
 /* Player 3 (Left) */
 .player-area.player-3 {
-    left: 20px;
-    top: 50%;
-    transform: translateY(-50%) rotate(90deg);
-    align-items: center;
-    width: 60%;
-    transform-origin: center left;
+    transform: rotate(90deg);
 }
 
 /* Hand & Discard Layouts */
