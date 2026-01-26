@@ -5,23 +5,49 @@
 ## 1. 环境准备 (Prerequisites)
 
 ### 1.1 系统要求
-- **OS**: Linux (推荐 Ubuntu 20.04+) 或 macOS
+- **OS**: Linux (推荐 Ubuntu 24.04 LTS) 或 macOS
 - **Python**: 3.9+
 - **Rust**: Latest stable (用于编译 `libblood`)
 - **CUDA**: 11.x+ (推荐使用 GPU 训练)
 
-### 1.2 核心组件编译
-训练开始前，必须编译 Rust 核心库 `libblood` 并生成 Python 绑定。
+### 1.2 Ubuntu 24.04 依赖安装 (Ubuntu 24.04 Setup)
+在 Ubuntu 24.04 (Noble Numbat) 上，请执行以下命令安装必要依赖：
 
 ```bash
-# 进入 libblood 目录
+# 1. 更新系统包列表
+sudo apt update && sudo apt upgrade -y
+
+# 2. 安装构建工具和 Python 依赖
+sudo apt install -y build-essential pkg-config libssl-dev git \
+    python3-dev python3-pip python3-venv
+
+# 3. 安装 Rust (官方脚本)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+source "$HOME/.cargo/env"
+
+# 4. 验证安装
+rustc --version
+python3 --version
+```
+
+### 1.3 核心组件编译
+训练开始前，必须编译 Rust 核心库 `libblood` 并生成 Python 绑定。RECOMMEND: 使用 Python 虚拟环境。
+
+```bash
+# 1. 创建并激活虚拟环境 (推荐)
+python3 -m venv venv
+source venv/bin/activate
+
+# 2. 安装构建依赖
+pip install maturin tomli torch numpy
+
+# 3. 编译 libblood
 cd libblood
-
 # 编译并生成 wheel 包 (mortal 目录下)
-# 注意：生成的 whl 文件名可能因平台而异，请根据实际输出调整
-python3 -m maturin build --release --out ../mortal
+python -m maturin build --release --out ../mortal
 
-# 安装生成的包
+# 4. 安装生成的包
+# 注意：生成的 whl 文件名需根据实际输出调整
 pip3 install --force-reinstall ../mortal/libblood-*.whl
 ```
 
