@@ -131,7 +131,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 /// - Statistical works on mjai logs (via `stat.Stat`).
 /// - mjai interface (via `mjai.Bot`).
 #[pymodule]
-fn blood(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn libblood(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     pyo3_log::init();
     algo::shanten::ensure_init();
     algo::agari::ensure_init();
