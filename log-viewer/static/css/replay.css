@@ -278,8 +278,8 @@ body {
     /* Align to bottom (which becomes side after rotation) */
     align-items: center;
     /* Center along the edge */
-    padding-bottom: 20px;
-    /* Margin from edge */
+    padding-bottom: 0px;
+    /* Minimize margin from edge: User request "closer to edge" */
     pointer-events: none;
     /* Let clicks pass through empty areas */
     gap: 8px;
