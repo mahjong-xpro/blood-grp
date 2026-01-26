@@ -19,12 +19,15 @@
     --right-panel-width: 300px;
 
     /* Tile Specs */
-    --tile-width: 34px;
-    --tile-height: 48px;
-    --tile-depth: 4px;
+    --tile-width: 38px;
+    --tile-height: 52px;
+    --tile-depth: 5px;
     --tile-bg: linear-gradient(135deg, #fdfbf7 0%, #f3efe6 100%);
     --tile-back-bg: #2d5aa0;
-    /* Blue back */
+
+    /* POV Player (P0) Specs */
+    --pov-tile-width: 56px;
+    --pov-tile-height: 80px;
 }
 
 /* Reset & Base */
@@ -317,9 +320,31 @@ body {
 
 /* Layout Logic for 4 Players */
 /* Player 0 (Bottom) */
+/* Player 0 (Bottom/POV) */
 .player-area.player-0 {
-    /* No rotation needed, just use default flex layout */
     transform: none;
+    /* Move hand slightly closer to center? No, user wants more space. */
+    /* Adjust internal gap */
+    gap: 12px;
+}
+
+/* Enlarge P0 tiles */
+.player-area.player-0 .tile {
+    width: var(--pov-tile-width);
+    height: var(--pov-tile-height);
+    font-size: 32px;
+}
+
+.player-area.player-0 .tile.small {
+    /* Fuuro tiles for POV slightly larger too */
+    width: 36px;
+    height: 50px;
+    font-size: 20px;
+}
+
+.player-area.player-0 .hand-row {
+    /* Allow more width for larger hand */
+    gap: 24px;
 }
 
 /* Player 1 (Right) */
