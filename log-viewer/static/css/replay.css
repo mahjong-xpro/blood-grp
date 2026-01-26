@@ -212,6 +212,11 @@ body {
 .game-board {
     width: 100%;
     max-width: 900px;
+    /* Limit height to ensure footer is visible. 
+       Calculation: 100vh - Header(48) - Footer(80) - Padding(40) = ~168px gap
+       Safety margin included.
+    */
+    max-height: calc(100vh - 180px);
     aspect-ratio: 1/1;
     /* Square board */
     position: relative;
