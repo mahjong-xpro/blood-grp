@@ -137,7 +137,7 @@ fn libblood(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     algo::agari::ensure_init();
 
     let name = m.name()?;
-    let name = name.extract()?;
+    let name: &str = name.extract()?;
     if cfg!(debug_assertions) {
         eprintln!("{name}: this is a debug build.");
         m.add("__profile__", "debug")?;
@@ -146,12 +146,12 @@ fn libblood(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
 
-    consts::register_module(py, name, m)?;
-    state::register_module(py, name, m)?;
-    dataset::register_module(py, name, m)?;
-    arena::register_module(py, name, m)?;
-    stat::register_module(py, name, m)?;
-    mjai::register_module(py, name, m)?;
+    consts::register_module(py, "libblood", m)?;
+    state::register_module(py, "libblood", m)?;
+    dataset::register_module(py, "libblood", m)?;
+    arena::register_module(py, "libblood", m)?;
+    stat::register_module(py, "libblood", m)?;
+    mjai::register_module(py, "libblood", m)?;
 
     Ok(())
 }
