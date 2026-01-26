@@ -346,7 +346,7 @@ impl Gameplay {
                 }
                 Some(28) // Kan action (was 42)
             }
-            Event::Ryukyoku { .. } if cans.can_ryukyoku => Some(30), // Ryukyoku action (was 44)
+
             _ => {
                 let mut ret = None;
 

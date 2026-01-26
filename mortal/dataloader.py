@@ -129,7 +129,13 @@ class FileDatasetsIter(IterableDataset):
 
                 grp_feature = grp.take_feature()
                 rank_by_player = grp.take_rank_by_player()
-                kyoku_rewards = self.reward_calc.calc_delta_pt(player_id, grp_feature, rank_by_player)
+                # SWITCH TO SCORE BASED REWARD FOR SBR
+                # Original Rank-based:
+                # kyoku_rewards = self.reward_calc.calc_delta_pt(player_id, grp_feature, rank_by_player)
+                
+                # SBR Score-based (Maximize Points):
+                # Scale: 1.0 reward = 10000 points
+                kyoku_rewards = self.reward_calc.calc_delta_points(player_id, grp_feature, final_scores) / 10000.0
                 assert len(kyoku_rewards) >= at_kyoku[-1] + 1 # usually they are equal, unless there is no action in the last kyoku
 
                 final_scores = grp.take_final_scores()

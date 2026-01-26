@@ -171,19 +171,7 @@ impl<'a> ObsEncoderContext<'a> {
         }
         self.idx += 4;
 
-        let cap = match self.version {
-            1 | 4 => 10,
-            2 | 3 => 6,
-            _ => unreachable!(),
-        };
-        IntegerEncoder::new(0, cap)
-            .rescale(self.version == 4)
-            .rbf_intervals(3)
-            .encode(&mut self);
-        IntegerEncoder::new(0, cap)
-            .rescale(self.version == 4)
-            .rbf_intervals(3)
-            .encode(&mut self);
+
 
         self.idx += 2;
 
@@ -220,6 +208,17 @@ impl<'a> ObsEncoderContext<'a> {
                 }
             }
             self.idx += 3;
+        }
+
+        // Opponent Agari status (1 dimension per player × 3 players = 3 dimensions)
+        // Crucial for Bloody Battle: AI must know who has already won (and is thus safe/out).
+        for i in 0..3 {
+            // self.state.players_agari includes player 0 (self).
+            // We need 1, 2, 3 relative to self.
+            if state.players_agari[i + 1] {
+                self.arr.fill(self.idx, 1.);
+            }
+            self.idx += 1;
         }
 
         if matches!(self.version, 2 | 3 | 4) {
@@ -307,12 +306,7 @@ impl<'a> ObsEncoderContext<'a> {
         self.arr.fill(self.idx, v);
         self.idx += 1;
 
-        for _ in 0..4 {
-            IntegerEncoder::new(0, 12)
-                .rescale(true)
-                .rbf_intervals(3)
-                .encode(&mut self);
-        }
+
 
         // Removed doras_unseen encoding (Bloody Battle Mahjong has no dora)
         // This saves ~23 channels (IntegerEncoder with cap=23, rbf_intervals=4)
@@ -522,17 +516,7 @@ impl<'a> ObsEncoderContext<'a> {
         }
         self.idx += 1;
 
-        if cans.can_ryukyoku {
-            self.arr.fill(self.idx, 1.);
-            if !self.at_kan_select {
-                self.mask[30] = true; // ryukyoku action
-            } else if !cans.can_ankan && !cans.can_kakan {
-                // If at_kan_select is true but neither can_ankan nor can_kakan is true,
-                // we should still allow ryukyoku action (fallback to normal actions)
-                self.mask[30] = true; // ryukyoku action
-            }
-        }
-        self.idx += 1;
+
 
         if self.version == 4 {
             if let Ok(SinglePlayerTables { max_ev_table }) = state.single_player_tables(None) {
@@ -618,7 +602,7 @@ impl<'a> ObsEncoderContext<'a> {
                 // Use the minimal tsumo agari point as the max EV.
                 // Note: In Bloody Battle Mahjong, there is no uradora (里宝牌)
                 let min_tsumo_agari = state
-                    .agari_points(cans.can_ron_agari, &[])
+                    .agari_points(cans.can_ron_agari, false, false, false, &[])
                     .map(|p| p.tsumo_total(state.is_oya()) as f32)
                     .unwrap_or_default();
                 self.encode_ev(min_tsumo_agari);
@@ -666,7 +650,7 @@ impl<'a> ObsEncoderContext<'a> {
             let ding_que_info = state.ding_que.map(|s| format!("{:?}", s)).unwrap_or_else(|| "None".to_string());
             
             panic!(
-                "mask is all false: can_act()={}, can_discard={}, can_pon={}, can_kan()={}, can_agari()={}, can_ryukyoku={}, can_pass()={}. \
+                "mask is all false: can_act()={}, can_discard={}, can_pon={}, can_kan()={}, can_agari()={}, can_pass()={}. \
                 This indicates a bug: Agent was called when no actions are available. \
                 State: kyoku={}, at_turn={}, tiles_left={}, tehai_sum={}, tehai_nonzero_count={}. \
                 discard_candidates_count={}, forbidden_tiles_count={}, ding_que={}",
@@ -675,7 +659,6 @@ impl<'a> ObsEncoderContext<'a> {
                 cans.can_pon,
                 cans.can_kan(),
                 cans.can_agari(),
-                cans.can_ryukyoku,
                 cans.can_pass(),
                 state.kyoku + 1,
                 state.at_turn,

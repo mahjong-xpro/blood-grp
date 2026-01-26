@@ -211,7 +211,6 @@ impl BatchAgent for MortalBatchAgent {
             && !cans.can_tsumo_agari
             && !cans.can_ankan
             && !cans.can_kakan
-            && !cans.can_ryukyoku
         {
             // can_discard is already checked in the if condition above, so it's safe to call discard_candidates()
             let candidates = state.discard_candidates();
@@ -447,13 +446,7 @@ impl BatchAgent for MortalBatchAgent {
             }
 
             30 => {
-                ensure!(
-                    cans.can_ryukyoku,
-                    "failed ryukyoku check: {}",
-                    state.brief_info()
-                );
-
-                Event::Ryukyoku { deltas: None }
+                bail!("ryukyoku action not supported: {}", state.brief_info())
             }
 
             31 => Event::None,

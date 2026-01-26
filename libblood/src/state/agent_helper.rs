@@ -253,7 +253,7 @@ impl PlayerState {
 
                     let agari_calc = AgariCalculator {
                         tehai: &tehai_3n2,
-                        is_menzen: self.is_menzen,
+
                         exclude_gen_tile: None,
                         pons: &self.pons,
                         minkans: &self.minkans,
@@ -264,6 +264,9 @@ impl PlayerState {
                         is_after_kan: false,
                         is_kan_discard: false,
                         is_chankan: false,
+                        is_haidi: false,
+                        is_tianhu: false,
+                        is_dihu: false,
                     };
                     ret[discard] = agari_calc.has_yaku();
                 }
@@ -285,10 +288,8 @@ impl PlayerState {
     #[inline]
     #[must_use]
     pub fn rule_based_ryukyoku(&self) -> bool {
-        if !self.last_cans.can_ryukyoku {
-            return false;
-        }
-        self.rule_based_ryukyoku_slow()
+        return false;
+        // self.rule_based_ryukyoku_slow()
     }
 
     fn rule_based_ryukyoku_slow(&self) -> bool {
@@ -351,7 +352,8 @@ impl PlayerState {
             // TODO: This is a simplified calculation, may need improvement
             // Note: This is used for SPCalculator's expected value calculation
             // The simplified version should be sufficient for decision-making
-            self.agari_points(is_ron, &[]).unwrap()
+            // We pass is_haidi = false, is_tianhu = false, is_dihu = false here for simulation estimation
+            self.agari_points(is_ron, false, false, false, &[]).unwrap()
         };
 
         // Calculate the best post-hora situation for us.
@@ -389,7 +391,7 @@ impl PlayerState {
     /// This function should be called immediately, otherwise the state may
     /// change.
     /// 
-    pub fn agari_points(&self, is_ron: bool, _ura_indicators: &[Tile]) -> Result<Point> {
+    pub fn agari_points(&self, is_ron: bool, is_haidi: bool, is_tianhu: bool, is_dihu: bool, _ura_indicators: &[Tile]) -> Result<Point> {
         ensure!(
             is_ron && self.last_cans.can_ron_agari || self.last_cans.can_tsumo_agari,
             "cannot agari"
@@ -427,7 +429,7 @@ impl PlayerState {
         // The kakan player's gen exclusion is handled separately in handle_hora
         let agari_calc = AgariCalculator {
             tehai: &tehai,
-            is_menzen: self.is_menzen,
+
             pons: &self.pons,
             minkans: &self.minkans,
             ankans: &self.ankans,
@@ -438,6 +440,9 @@ impl PlayerState {
             is_kan_discard: is_kan_discard_from_dahai, // 杠上炮：杠后打出的牌（不包括抢杠）
             is_chankan, // 抢杠：在别人加杠时抢杠和牌
             exclude_gen_tile: None, // For winning player, no exclusion needed
+            is_haidi,
+            is_tianhu,
+            is_dihu,
         };
         let agari = agari_calc
             .agari()
@@ -448,7 +453,7 @@ impl PlayerState {
 
     /// Calculate agari points excluding gen for a specific tile (for chankan)
     /// This is used when calculating the payment amount for the kakan player in chankan
-    pub fn agari_points_exclude_gen(&self, is_ron: bool, exclude_tile: u8, _ura_indicators: &[Tile]) -> Result<Point> {
+    pub fn agari_points_exclude_gen(&self, is_ron: bool, exclude_tile: u8, is_haidi: bool, _ura_indicators: &[Tile]) -> Result<Point> {
         ensure!(
             is_ron && self.last_cans.can_ron_agari || self.last_cans.can_tsumo_agari,
             "cannot agari"
@@ -482,7 +487,7 @@ impl PlayerState {
         let is_kan_discard_from_dahai = is_ron && self.last_discard_was_after_kan && !is_chankan;
         let agari_calc = AgariCalculator {
             tehai: &tehai,
-            is_menzen: self.is_menzen,
+
             pons: &self.pons,
             minkans: &self.minkans,
             ankans: &self.ankans,
@@ -493,6 +498,9 @@ impl PlayerState {
             is_kan_discard: is_kan_discard_from_dahai,
             is_chankan,
             exclude_gen_tile: Some(exclude_tile), // Exclude this tile from gen count
+            is_haidi,
+            is_tianhu: false, // Chankan cannot be TianHu
+            is_dihu: false, // Chankan cannot be DiHu (DiHu is on first discard, Chankan is on Kan)
         };
         let agari = agari_calc
             .agari()
@@ -587,7 +595,7 @@ impl PlayerState {
             pons: &self.pons,
             minkans: &self.minkans,
             ankans: &self.ankans,
-            is_menzen: self.is_menzen,
+
             sort_result: true,
             maximize_win_prob: false,
             calc_tegawari: false,

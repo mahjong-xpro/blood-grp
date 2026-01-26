@@ -38,7 +38,7 @@ pub struct SPCalculator<'a> {
     pub pons: &'a [u8],
     pub minkans: &'a [u8],
     pub ankans: &'a [u8],
-    pub is_menzen: bool,
+
 
     pub sort_result: bool,
 
@@ -638,7 +638,7 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
     fn get_score(&self, win_tile: Tile) -> Option<[f32; 4]> {
         let calc = AgariCalculator {
             tehai: &self.state.tehai,
-            is_menzen: self.sup.is_menzen,
+
             pons: self.sup.pons,
             minkans: self.sup.minkans,
             ankans: self.sup.ankans,
@@ -649,6 +649,9 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
             is_kan_discard: false, // TODO: Track if this is from kan discard (for 杠上炮 calculation)
             is_chankan: false, // SPCalculator doesn't track chankan
             exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
         };
 
         let fan = match calc.agari()? {
@@ -691,7 +694,7 @@ mod test {
             pons: &[],
             minkans: &[],
             ankans: &[],
-            is_menzen: true,
+
             sort_result: true,
             maximize_win_prob: false,
             calc_tegawari: true,
@@ -704,6 +707,7 @@ mod test {
         let state = InitState {
             tehai,
             tiles_seen,
+            tiles_left: 108 - tiles_seen.iter().sum::<u8>(),
         };
         let can_discard = true;
         let tsumos_left = 8;
@@ -722,6 +726,7 @@ mod test {
         let state = InitState {
             tehai,
             tiles_seen,
+            tiles_left: 108 - tiles_seen.iter().sum::<u8>(),
         };
         let can_discard = true;
         let tsumos_left = 15;
@@ -746,7 +751,7 @@ mod test {
             pons: &[],
             minkans: &[],
             ankans: &[],
-            is_menzen: true,
+
             sort_result: true,
             maximize_win_prob: false,
             calc_tegawari: true,
@@ -759,6 +764,7 @@ mod test {
         let state = InitState {
             tehai,
             tiles_seen,
+            tiles_left: 108 - tiles_seen.iter().sum::<u8>(),
         };
         let can_discard = true;
         let tsumos_left = 15;
@@ -792,7 +798,7 @@ mod test {
             pons: &[],
             minkans: &[],
             ankans: &[],
-            is_menzen: true,
+
             sort_result: true,
             maximize_win_prob: false,
             calc_tegawari: true,
@@ -804,6 +810,7 @@ mod test {
         let state = InitState {
             tehai,
             tiles_seen,
+            tiles_left: 108 - tiles_seen.iter().sum::<u8>(),
         };
         let cur_shanten = CALC_SHANTEN_FN(&tehai, calc.tehai_len_div3);
         let can_discard = true;
@@ -834,7 +841,7 @@ mod test {
             pons: &[],
             minkans: &[],
             ankans: &[],
-            is_menzen: true,
+
             sort_result: true,
             maximize_win_prob: true,
             calc_tegawari: true,
@@ -851,6 +858,7 @@ mod test {
         let state = InitState {
             tehai,
             tiles_seen,
+            tiles_left: 108 - tiles_seen.iter().sum::<u8>(),
         };
         
         let cur_shanten = CALC_SHANTEN_FN(&tehai, calc.tehai_len_div3);

@@ -1,151 +1,215 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>血战到底麻将 - 日志回放</title>
+    <title>Bloody Battle Replay | 血战到底回放</title>
+    <!-- Icons -->
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <!-- Google Fonts -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap"
+        rel="stylesheet">
+    <!-- Custom CSS -->
     <link rel="stylesheet" href="/static/css/replay.css">
 </head>
-<body>
-    <div class="container">
-        <!-- Header -->
-        <header class="header">
-            <h1>血战到底麻将 - 日志回放</h1>
-            <div class="file-selector">
-                <input type="file" id="file-input" accept=".json,.json.gz" style="display: none;">
-                <button id="upload-btn" class="btn btn-primary">上传日志文件</button>
-                <input type="text" id="log-path-input" placeholder="或输入日志文件路径">
-                <button id="load-btn" class="btn btn-primary">加载</button>
-                <button id="refresh-logs-btn" class="btn btn-primary">刷新日志列表</button>
+
+<body class="dark-theme">
+    <div id="app" v-cloak>
+        <!-- Sidebar: Log List -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2><span class="logo-icon">🀄</span> Replay</h2>
+                <button class="btn-icon" @click="refreshLogs" title="刷新列表">
+                    <span class="material-icons">refresh</span>
+                </button>
             </div>
-        </header>
 
-        <!-- Log List -->
-        <div class="log-list-container" id="log-list-container" style="display: none;">
-            <h3>最新日志文件 (自动更新每10秒)</h3>
-            <div class="log-list-info" id="log-list-info"></div>
-            <div class="log-list" id="log-list"></div>
-        </div>
+            <div class="search-box">
+                <span class="material-icons">search</span>
+                <input type="text" v-model="searchQuery" placeholder="搜索日志...">
+            </div>
 
-        <!-- Game Info -->
-        <div class="game-info" id="game-info" style="display: none;">
-            <div class="players-info">
-                <div class="player-info" v-for="(player, idx) in players" :key="idx">
-                    <div class="player-name" v-text="player.name"></div>
-                    <div class="player-score" v-text="'分数: ' + player.score"></div>
-                    <div class="player-dingque" v-if="player.dingque" v-text="'定缺: ' + player.dingque"></div>
+            <div class="upload-area" @click="triggerUpload" @drop.prevent="handleDrop" @dragover.prevent>
+                <input type="file" ref="fileInput" @change="handleFileUpload" hidden accept=".json,.json.gz">
+                <span class="material-icons">cloud_upload</span>
+                <span>点击或拖拽上传</span>
+            </div>
+
+            <div class="log-list">
+                <div v-if="loadingLogs" class="loading-spinner">加载中...</div>
+                <div v-else-if="filteredLogs.length === 0" class="empty-state">无日志文件</div>
+
+                <div v-else v-for="log in filteredLogs" :key="log.path" class="log-item"
+                    :class="{ active: currentLogPath === (log.path || log.name) }"
+                    @click="loadLog(log.path || log.name)">
+                    <div class="log-title">{{ log.name }}</div>
+                    <div class="log-meta">
+                        <span>{{ log.mtime_str.split(' ')[1] }}</span>
+                        <span>{{ formatSize(log.size) }}</span>
+                    </div>
                 </div>
             </div>
-            <div class="kyoku-info">
-                <span v-text="'局: ' + currentKyoku"></span>
-                <span v-text="'剩余牌数: ' + tilesLeft"></span>
-            </div>
-        </div>
+        </aside>
 
-        <!-- Game Board -->
-        <div class="game-board" id="game-board">
-            <!-- Player 0 (Bottom - Main Player) -->
-            <div class="player-area player-0">
-                <div class="player-name" v-text="players[0]?.name || '玩家 0'"></div>
-                <div class="player-section-label">手牌</div>
-                <div class="hand-area" id="hand-0"></div>
-                <div class="player-section-label">打牌</div>
-                <div class="discard-area" id="discard-0"></div>
-                <div class="player-section-label">副露</div>
-                <div class="fuuro-area" id="fuuro-0"></div>
-                <div class="score" v-text="'分数: ' + (players[0]?.score || 25000)"></div>
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header: Game Stats -->
+            <header class="game-header" v-if="gameLoaded">
+                <div class="kyoku-display">
+                    <span class="material-icons">casino</span>
+                    <span>{{ currentKyokuDisplay }}</span>
+                </div>
+                <div class="wall-display">
+                    <span class="material-icons">layers</span>
+                    <span>剩余: {{ tilesLeft }}</span>
+                </div>
+                <div class="event-info">
+                    Step: {{ currentEventIndex }} / {{ totalEvents }}
+                </div>
+            </header>
+
+            <!-- Game Board -->
+            <div class="game-board-container" v-if="gameLoaded">
+                <div class="game-board">
+                    <!-- Center Info -->
+                    <div class="center-info">
+                        <div class="turn-indicator" v-if="currentPlayer !== null">
+                            当前操作: {{ players[currentPlayer].name }}
+                        </div>
+                    </div>
+
+                    <!-- Players -->
+                    <div v-for="(player, idx) in players" :key="idx" class="player-area"
+                        :class="['player-' + idx, { 'is-turn': currentPlayer === idx, 'is-agari': player.agari }]">
+
+                        <!-- Player Info -->
+                        <div class="player-info-card">
+                            <div class="player-avatar">{{ idx }}</div>
+                            <div class="player-details">
+                                <div class="name">{{ player.name }}</div>
+                                <div class="score"
+                                    :class="{ 'positive': player.score >= 25000, 'negative': player.score < 25000 }">
+                                    {{ player.score }}
+                                </div>
+                            </div>
+                            <div class="player-status">
+                                <span v-if="player.dingque" class="badge dingque" :class="player.dingque_suit">{{
+                                    player.dingque_char }}</span>
+                                <span v-if="player.agari" class="badge agari">胡</span>
+                                <span v-if="player.riichi" class="badge riichi">立</span>
+                            </div>
+                        </div>
+
+                        <!-- He (Discards) -->
+                        <div class="kawa-area">
+                            <div v-for="(tile, tIdx) in player.kawa" :key="'kawa-'+tIdx" class="tile-wrapper discarded"
+                                :class="{ 'last-discard': lastDiscard && lastDiscard.actor === idx && tIdx === player.kawa.length - 1 }">
+                                <div class="tile" :class="getTileClass(tile)">
+                                    {{ getTileText(tile) }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Hand & Fuuro -->
+                        <div class="hand-row">
+                            <!-- Fuuro (Melds) -->
+                            <div class="fuuro-area">
+                                <div v-for="(meld, mIdx) in player.fuuro" :key="'meld-'+mIdx" class="meld-group">
+                                    <div v-for="(tile, fIdx) in meld" :key="'f-'+fIdx" class="tile small"
+                                        :class="getTileClass(tile)">
+                                        {{ getTileText(tile) }}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Tehai (Hand) -->
+                            <div class="tehai-area">
+                                <div v-for="(tile, hIdx) in player.tehai" :key="'hand-'+hIdx" class="tile" :class="[
+                                        getTileClass(tile), 
+                                        { 'tsumo-tile': hIdx === player.tehai.length - 1 && player.lastAction === 'tsumo' }
+                                     ]">
+                                    {{ getTileText(tile) }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <!-- Player 1 (Right) -->
-            <div class="player-area player-1">
-                <div class="player-name" v-text="players[1]?.name || '玩家 1'"></div>
-                <div class="player-section-label">手牌</div>
-                <div class="hand-area" id="hand-1"></div>
-                <div class="player-section-label">打牌</div>
-                <div class="discard-area" id="discard-1"></div>
-                <div class="player-section-label">副露</div>
-                <div class="fuuro-area" id="fuuro-1"></div>
-                <div class="score" v-text="'分数: ' + (players[1]?.score || 25000)"></div>
+            <!-- Empty State for Board -->
+            <div v-else class="welcome-screen">
+                <div class="welcome-content">
+                    <h1>Blood Battle Replay</h1>
+                    <p>Select a log file from the left to start playback.</p>
+                </div>
             </div>
 
-            <!-- Player 2 (Top) -->
-            <div class="player-area player-2">
-                <div class="player-name" v-text="players[2]?.name || '玩家 2'"></div>
-                <div class="player-section-label">手牌</div>
-                <div class="hand-area" id="hand-2"></div>
-                <div class="player-section-label">打牌</div>
-                <div class="discard-area" id="discard-2"></div>
-                <div class="player-section-label">副露</div>
-                <div class="fuuro-area" id="fuuro-2"></div>
-                <div class="score" v-text="'分数: ' + (players[2]?.score || 25000)"></div>
+            <!-- Footer: Controls -->
+            <footer class="controls-bar" :class="{ 'disabled': !gameLoaded }">
+                <div class="slider-container">
+                    <input type="range" min="0" :max="totalEvents - 1" v-model.number="currentEventIndex"
+                        class="timeline-slider" @input="seekTo">
+                    <div class="slider-tooltip" :style="{ left: (currentEventIndex / (totalEvents-1) * 100) + '%' }">
+                        {{ currentEventIndex }}
+                    </div>
+                </div>
+
+                <div class="control-buttons">
+                    <button class="ctrl-btn" @click="firstEvent" title="Start"><span
+                            class="material-icons">skip_previous</span></button>
+                    <button class="ctrl-btn" @click="prevEvent" title="Prev"><span
+                            class="material-icons">fast_rewind</span></button>
+
+                    <button class="ctrl-btn main-play" @click="togglePlay">
+                        <span class="material-icons">{{ isPlaying ? 'pause' : 'play_arrow' }}</span>
+                    </button>
+
+                    <button class="ctrl-btn" @click="nextEvent" title="Next"><span
+                            class="material-icons">fast_forward</span></button>
+                    <button class="ctrl-btn" @click="lastEvent" title="End"><span
+                            class="material-icons">skip_next</span></button>
+                </div>
+
+                <div class="speed-control">
+                    <span class="material-icons" style="font-size: 16px;">speed</span>
+                    <select v-model.number="playbackSpeed">
+                        <option value="0.5">0.5x</option>
+                        <option value="1">1.0x</option>
+                        <option value="2">2.0x</option>
+                        <option value="5">5.0x</option>
+                        <option value="10">10x</option>
+                    </select>
+                </div>
+            </footer>
+        </main>
+
+        <!-- Right Panel: Log Details -->
+        <aside class="right-panel" :class="{ 'collapsed': !showRightPanel }">
+            <div class="panel-header">
+                <h3>Event Log</h3>
+                <button class="btn-icon small" @click="showRightPanel = !showRightPanel">
+                    <span class="material-icons">{{ showRightPanel ? 'chevron_right' : 'chevron_left' }}</span>
+                </button>
             </div>
 
-            <!-- Player 3 (Left) -->
-            <div class="player-area player-3">
-                <div class="player-name" v-text="players[3]?.name || '玩家 3'"></div>
-                <div class="player-section-label">手牌</div>
-                <div class="hand-area" id="hand-3"></div>
-                <div class="player-section-label">打牌</div>
-                <div class="discard-area" id="discard-3"></div>
-                <div class="player-section-label">副露</div>
-                <div class="fuuro-area" id="fuuro-3"></div>
-                <div class="score" v-text="'分数: ' + (players[3]?.score || 25000)"></div>
+            <div class="event-list" ref="eventListRef">
+                <div v-for="(event, idx) in visibleEvents" :key="idx" class="event-item"
+                    :class="{ 'current': event.index === currentEventIndex }" @click="seekTo(event.index)">
+                    <div class="event-idx">{{ event.index }}</div>
+                    <div class="event-content">
+                        <span class="event-type">{{ event.type }}</span>
+                        <span class="event-actor" v-if="event.actor !== undefined">P{{ event.actor }}</span>
+                        <span class="event-detail" v-if="event.detail">{{ event.detail }}</span>
+                    </div>
+                </div>
             </div>
-
-            <!-- Center Area -->
-            <div class="center-area">
-                <div class="wall-info" v-text="'剩余: ' + tilesLeft"></div>
-                <div class="kyoku-info-center" v-text="'第 ' + currentKyoku + ' 局'"></div>
-            </div>
-        </div>
-
-        <!-- Control Panel -->
-        <div class="control-panel">
-            <div class="playback-controls">
-                <button id="prev-btn" class="btn">⏮ 上一步</button>
-                <button id="play-pause-btn" class="btn btn-primary">▶ 播放</button>
-                <button id="next-btn" class="btn">⏭ 下一步</button>
-                <button id="first-btn" class="btn">⏪ 开始</button>
-                <button id="last-btn" class="btn">⏩ 结束</button>
-            </div>
-            <div class="speed-control">
-                <label>播放速度:</label>
-                <input type="range" id="speed-slider" min="0.5" max="5" step="0.5" value="1">
-                <span id="speed-value">1.0x</span>
-            </div>
-            <div class="event-info">
-                <div>事件: <span id="event-index">0</span> / <span id="event-total">0</span></div>
-                <div id="current-event">等待加载日志...</div>
-            </div>
-        </div>
-
-        <!-- Event Log -->
-        <div class="event-log" id="event-log">
-            <h3>事件日志</h3>
-            <div class="log-content" id="log-content"></div>
-        </div>
+        </aside>
     </div>
 
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <script>
-        // Vue app for reactive data binding
-        const { createApp } = Vue;
-        
-        window.vueApp = createApp({
-            data() {
-                return {
-                    players: [
-                        { name: '玩家 0', score: 25000, dingque: null },
-                        { name: '玩家 1', score: 25000, dingque: null },
-                        { name: '玩家 2', score: 25000, dingque: null },
-                        { name: '玩家 3', score: 25000, dingque: null },
-                    ],
-                    currentKyoku: 0,
-                    tilesLeft: 56,
-                };
-            },
-        }).mount('#game-board');
-    </script>
-    <script src="/static/js/replay.js"></script>
+    <!-- Logic -->
+    <script type="module" src="/static/js/replay.js"></script>
 </body>
+
 </html>

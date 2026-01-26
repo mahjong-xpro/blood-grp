@@ -45,7 +45,8 @@ pub struct PlayerState {
     pub(super) next_shanten_discards: [bool; 27],
 
     #[derivative(Default(value = "[false; 27]"))]
-    pub(super) forbidden_tiles: [bool; 27],
+    #[pyo3(get)]
+    pub forbidden_tiles: [bool; 27],
 
     /// Used for checking forbidden wins (similar to furiten in Japanese Mahjong).
     #[derivative(Default(value = "[false; 27]"))]
@@ -90,15 +91,20 @@ pub struct PlayerState {
     /// This is set in dahai() when intermediate_kan is not empty
     pub(super) last_discard_was_after_kan: bool,
 
+    /// Track which players have won (Agari).
+    /// In Bloody Battle, these players are effective "out" (stopped).
+    #[derivative(Default(value = "[false; 4]"))]
+    pub(super) players_agari: [bool; 4],
+
     pub(super) at_rinshan: bool,
 
     /// Used for 4-kan check.
     pub(super) kans_on_board: u8,
 
-    pub(super) is_menzen: bool,
-    pub(super) pons: ArrayVec<[u8; 4]>,
-    pub(super) minkans: ArrayVec<[u8; 4]>,
-    pub(super) ankans: ArrayVec<[u8; 4]>,
+
+    pub(crate) pons: ArrayVec<[u8; 4]>,
+    pub(crate) minkans: ArrayVec<[u8; 4]>,
+    pub(crate) ankans: ArrayVec<[u8; 4]>,
 
     pub has_agari: bool,
     #[cfg_attr(not(test), allow(dead_code))]

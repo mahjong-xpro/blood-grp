@@ -69,8 +69,7 @@ pub enum Agari {
 pub struct AgariCalculator<'a> {
     /// Must include the winning tile (i.e. must be 3n+2)
     pub tehai: &'a [u8; 27],
-    /// `self.pons.is_empty() && self.minkans.is_empty() && self.ankans.is_empty()`
-    pub is_menzen: bool,
+
     pub pons: &'a [u8],
     pub minkans: &'a [u8],
     pub ankans: &'a [u8],
@@ -87,6 +86,9 @@ pub struct AgariCalculator<'a> {
     pub is_chankan: bool,
     /// If Some, this tile will not be counted as gen even if it appears 4 times
     pub exclude_gen_tile: Option<u8>,
+    pub is_haidi: bool,
+    pub is_tianhu: bool,
+    pub is_dihu: bool,
 }
 
 impl From<u32> for Div {
@@ -207,6 +209,11 @@ impl AgariCalculator<'_> {
         if !self.is_ron {
             fan += 1;
         }
+
+        // 12. 海底捞月/海底炮（Haidi）：+1番
+        if self.is_haidi {
+            fan += 1;
+        }
         
         // Check hand structure
         let (tile14, key) = get_tile14_and_key(self.tehai);
@@ -222,8 +229,48 @@ impl AgariCalculator<'_> {
         
         // Find the best division for fan calculation
         let mut max_fan: u8 = 0;
+        
+        // 8. 四归一（SiGuiYi / 根）：+1番/根
+        // Count how many tiles appear 4 times (in hand or fuuro)
+        // Note: If exclude_gen_tile is set (for chankan), exclude that tile from gen count
+        // This is calculated once as it relies on tile counts, not division structure
+        let mut gen_count: u8 = 0;
+        
+        // Count tiles in hand that appear 4 times
+        for (tile_id, &count) in self.tehai.iter().enumerate() {
+            if count == 4 {
+                // Exclude the tile if it's the chankan kakan tile
+                if let Some(exclude_tile) = self.exclude_gen_tile {
+                    if tile_id == exclude_tile as usize {
+                        continue; // This tile was kakan'd and stolen, so it's not gen
+                    }
+                }
+                gen_count = gen_count.saturating_add(1);
+            }
+        }
+        
+        // Count tiles in fuuro that appear 4 times (ankans, minkans)
+        // Note: pons are 3 tiles, so they don't count as gen
+        // Ankans and minkans are 4 tiles each
+        // Exclude the tile if it's the chankan kakan tile
+        for &tile_id in self.ankans.iter() {
+            if let Some(exclude_tile) = self.exclude_gen_tile {
+                if tile_id == exclude_tile {
+                    continue; // This tile was kakan'd and stolen, so it's not gen
+                }
+            }
+            gen_count = gen_count.saturating_add(1);
+        }
+        for &tile_id in self.minkans.iter() {
+            if let Some(exclude_tile) = self.exclude_gen_tile {
+                if tile_id == exclude_tile {
+                    continue; // This tile was kakan'd and stolen, so it's not gen
+                }
+            }
+            gen_count = gen_count.saturating_add(1);
+        }
         for div in divs.iter() {
-            let mut div_fan: u8 = 0;
+            let mut div_fan: u8 = gen_count;
             
             // 3. 七对（QiDui）：+2番
             if div.has_chitoi {
@@ -233,13 +280,15 @@ impl AgariCalculator<'_> {
                 continue;
             }
             
-            // 4. 碰碰胡（ToiToi）：+1番 (4 kotsu + 1 pair, no shuntsu)
-            if div.shuntsu_idxs.is_empty() && div.kotsu_idxs.len() == 4 {
-                div_fan += 1;
-            }
-            
             // 5. 金钩钓（JinGouDiao）：+2番 (4 fuuro + single wait/tanki)
             let fuuro_count = self.pons.len() + self.minkans.len() + self.ankans.len();
+            
+            // 4. 碰碰胡（ToiToi）：+1番 (4 kotsu + 1 pair, no shuntsu)
+            // Note: Must count both hand kotsu and exposed fuuro
+            if div.shuntsu_idxs.is_empty() && (div.kotsu_idxs.len() + fuuro_count) == 4 {
+                div_fan += 1;
+            }
+
             if fuuro_count == 4 {
                 // Check if single wait (tanki): pair is the winning tile
                 let is_tanki = div.pair_idx < 14 && tile14[div.pair_idx as usize] == self.winning_tile;
@@ -353,46 +402,9 @@ impl AgariCalculator<'_> {
                 div_fan += 3;
             }
             
-            // 8. 四归一（SiGuiYi / 根）：+1番/根
-            // Count how many tiles appear 4 times (in hand or fuuro)
-            // Note: If exclude_gen_tile is set (for chankan), exclude that tile from gen count
-            let mut gen_count: u8 = 0;
+
             
-            // Count tiles in hand that appear 4 times
-            for (tile_id, &count) in self.tehai.iter().enumerate() {
-                if count == 4 {
-                    // Exclude the tile if it's the chankan kakan tile
-                    if let Some(exclude_tile) = self.exclude_gen_tile {
-                        if tile_id == exclude_tile as usize {
-                            continue; // This tile was kakan'd and stolen, so it's not gen
-                        }
-                    }
-                    gen_count = gen_count.saturating_add(1);
-                }
-            }
-            
-            // Count tiles in fuuro that appear 4 times (ankans, minkans)
-            // Note: pons are 3 tiles, so they don't count as gen
-            // Ankans and minkans are 4 tiles each
-            // Exclude the tile if it's the chankan kakan tile
-            for &tile_id in self.ankans.iter() {
-                if let Some(exclude_tile) = self.exclude_gen_tile {
-                    if tile_id == exclude_tile {
-                        continue; // This tile was kakan'd and stolen, so it's not gen
-                    }
-                }
-                gen_count = gen_count.saturating_add(1);
-            }
-            for &tile_id in self.minkans.iter() {
-                if let Some(exclude_tile) = self.exclude_gen_tile {
-                    if tile_id == exclude_tile {
-                        continue; // This tile was kakan'd and stolen, so it's not gen
-                    }
-                }
-                gen_count = gen_count.saturating_add(1);
-            }
-            
-            div_fan = div_fan.saturating_add(gen_count);
+
             
             max_fan = max_fan.max(div_fan);
         }
@@ -419,6 +431,12 @@ impl AgariCalculator<'_> {
             fan += 1;
         }
         
+        // 13. 天胡 (TianHu) / 地胡 (DiHu): Max Fan (5番)
+        if self.is_tianhu || self.is_dihu {
+            fan = 5;
+            // Early return or just let it be capped below (it is already 5)
+        }
+
         // 5番封顶
         fan = fan.min(5);
         
@@ -591,7 +609,7 @@ mod test {
         let tehai = hand("123456m 789p 11s 2m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
-            is_menzen: true,
+
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -602,6 +620,9 @@ mod test {
             is_kan_discard: false,
             is_chankan: false,
             exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 = 1 + 1 = 2番
@@ -611,7 +632,7 @@ mod test {
         let tehai = hand("123456m 789p 11s 2m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
-            is_menzen: true,
+
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -622,6 +643,9 @@ mod test {
             is_kan_discard: false,
             is_chankan: false,
             exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
         };
         let agari = calc.agari().unwrap();
         // 荣和 + 平胡 = 1番（荣和没有自摸番）
@@ -631,7 +655,7 @@ mod test {
         let tehai = hand("11223344556677m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
-            is_menzen: true,
+
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -642,6 +666,9 @@ mod test {
             is_kan_discard: false,
             is_chankan: false,
             exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 七对 = 1 + 1 + 2 = 4番
@@ -651,7 +678,7 @@ mod test {
         let tehai = hand("11133355577m 99p").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
-            is_menzen: true,
+
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -662,6 +689,9 @@ mod test {
             is_kan_discard: false,
             is_chankan: false,
             exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 碰碰胡 = 1 + 1 + 1 = 3番
@@ -671,7 +701,7 @@ mod test {
         let tehai = hand("1112345678999m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
-            is_menzen: true,
+
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -682,6 +712,9 @@ mod test {
             is_kan_discard: false,
             is_chankan: false,
             exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 清一色 = 1 + 1 + 2 = 4番
@@ -691,7 +724,7 @@ mod test {
         let tehai = hand("111999m 111999p 11s").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
-            is_menzen: true,
+
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -702,6 +735,9 @@ mod test {
             is_kan_discard: false,
             is_chankan: false,
             exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 带幺九 = 1 + 1 + 3 = 5番（封顶）
@@ -711,7 +747,7 @@ mod test {
         let tehai = hand("123456m 789p 11s 2m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
-            is_menzen: true,
+
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -722,6 +758,9 @@ mod test {
             is_kan_discard: false,
             is_chankan: false,
             exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 杠上花 = 1 + 1 + 1 = 3番
@@ -731,7 +770,7 @@ mod test {
         let tehai = hand("123456m 789p 11s 2m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
-            is_menzen: true,
+
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -742,6 +781,9 @@ mod test {
             is_kan_discard: true, // 杠上炮
             is_chankan: false,
             exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
         };
         let agari = calc.agari().unwrap();
         // 荣和 + 平胡 + 杠上炮 = 1 + 1 = 2番
@@ -751,7 +793,7 @@ mod test {
         let tehai = hand("111123456m 789p 11s").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
-            is_menzen: true,
+
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -762,6 +804,9 @@ mod test {
             is_kan_discard: false,
             is_chankan: false,
             exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 四归一(1根) = 1 + 1 + 1 = 3番
@@ -772,7 +817,7 @@ mod test {
         let tehai = hand("11m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
-            is_menzen: false,
+
             pons: &[tu8!(2m), tu8!(3m), tu8!(4m), tu8!(5m)], // 4 pons
             minkans: &[],
             ankans: &[],
@@ -783,6 +828,9 @@ mod test {
             is_kan_discard: false,
             is_chankan: false,
             exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 金钩钓 = 1 + 1 + 2 = 4番
@@ -793,7 +841,7 @@ mod test {
         let tehai = hand("11223344556677m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
-            is_menzen: true,
+
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -804,6 +852,9 @@ mod test {
             is_kan_discard: false,
             is_chankan: false,
             exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
         };
         let agari = calc.agari().unwrap();
         // 应该封顶在5番
@@ -813,7 +864,7 @@ mod test {
         let tehai = hand("123456m 789p 11s 2p").unwrap(); // Has pin tiles
         let calc = AgariCalculator {
             tehai: &tehai,
-            is_menzen: true,
+
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -824,6 +875,9 @@ mod test {
             is_kan_discard: false,
             is_chankan: false,
             exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
         };
         // 应该不能和牌（花猪）
         assert!(!calc.has_yaku());
@@ -837,7 +891,7 @@ mod test {
         let tehai = hand("123456m 789p 11s").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
-            is_menzen: true,
+
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -848,6 +902,9 @@ mod test {
             is_kan_discard: false, // 抢杠不是杠上炮
             is_chankan: true, // 这是抢杠
             exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
         };
         let agari = calc.agari().unwrap();
         // 荣和 + 平胡 + 抢杠 = 1 + 1 = 2番
@@ -858,7 +915,7 @@ mod test {
         let tehai = hand("1112345678999m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
-            is_menzen: true,
+
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -869,6 +926,9 @@ mod test {
             is_kan_discard: false,
             is_chankan: false,
             exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 清一色 = 1 + 1 + 2 = 4番
@@ -879,7 +939,7 @@ mod test {
         let tehai = hand("111999m 111999p 11s").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
-            is_menzen: true,
+
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -890,6 +950,9 @@ mod test {
             is_kan_discard: false,
             is_chankan: false,
             exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 带幺九 = 1 + 1 + 3 = 5番（封顶）
@@ -900,7 +963,7 @@ mod test {
         let tehai = hand("11223344556677m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
-            is_menzen: true,
+
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -911,6 +974,9 @@ mod test {
             is_kan_discard: false,
             is_chankan: false,
             exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 七对 = 1 + 1 + 2 = 4番（不是碰碰胡）
@@ -921,7 +987,7 @@ mod test {
         let tehai = hand("11m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
-            is_menzen: false, // 有副露
+
             pons: &[tu8!(2m), tu8!(3m), tu8!(4m), tu8!(5m)], // 4个碰
             minkans: &[],
             ankans: &[],
@@ -932,6 +998,9 @@ mod test {
             is_kan_discard: false,
             is_chankan: false,
             exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 金钩钓 = 1 + 1 + 2 = 4番
@@ -942,7 +1011,7 @@ mod test {
         let tehai = hand("111123456789m 11p").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
-            is_menzen: true,
+
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -953,6 +1022,9 @@ mod test {
             is_kan_discard: false,
             is_chankan: false,
             exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 四归一（1根）= 1 + 1 + 1 = 3番
@@ -963,7 +1035,7 @@ mod test {
         let tehai = hand("111444777999m 11m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
-            is_menzen: true,
+
             pons: &[],
             minkans: &[],
             ankans: &[],
@@ -974,60 +1046,67 @@ mod test {
             is_kan_discard: false,
             is_chankan: false,
             exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 清一色 + 碰碰胡 = 1 + 1 + 2 + 1 = 5番（封顶）
         assert_eq!(agari, Agari::Fan(5));
         
-        // Keep old tests below commented out
-        // These tests are intentionally unreachable to preserve them for future reference
-        #[allow(unreachable_code)]
-        {
-            return; // Early return to skip old tests
-            let _tehai = hand("2234455m 234p 234s 3m").unwrap();
-            let _calc = AgariCalculator {
-                tehai: &_tehai,
-                is_menzen: true,
-                pons: &[],
-                minkans: &[],
-                ankans: &[],
-                winning_tile: tu8!(3m),
-                is_ron: true,
-                ding_que: None,
-                is_after_kan: false,
-                is_kan_discard: false,
-                is_chankan: false,
-                exclude_gen_tile: None,
-            };
-            let _yaku = _calc.agari().unwrap();
-            assert!(matches!(_yaku, Agari::Fan(_)));
 
-            // Skipping this test for now
-            return;
-            
-            let _tehai2 = hand("12334m 345p 22s 2m").unwrap(); // Removed jihai
-            let _calc2 = AgariCalculator {
-                tehai: &_tehai2,
-                is_menzen: true,
-                pons: &[],
-                minkans: &[],
-                ankans: &[],
-                winning_tile: tu8!(3m),
-                is_ron: false,
-                ding_que: None,
-                is_after_kan: false,
-                is_kan_discard: false,
-                is_chankan: false,
-                exclude_gen_tile: None,
-            };
-            let _points = _calc2.agari().unwrap().point(false);
-            assert_eq!(
-                _points,
-                Point {
-                    ron: 7700,
-                    tsumo_ko: 2600
-                }
-            );
+        // These tests are intentionally unreachable to preserve them for future reference
+        }
+    }
+
+
+#[cfg(test)]
+mod additional_tests {
+    use super::*;
+
+    #[test]
+    fn test_long_qidui() {
+        // Construct 1122334455m 1111p (Long Qi Dui / Seven Pairs with 4 same tiles)
+        let mut tehai = [0u8; 27];
+        // 1122334455m -> 2 of each 1m-5m (indices 0-4)
+        for i in 0..5 {
+            tehai[i] = 2;
+        }
+        // 1111p -> 4 of 1p (index 9)
+        tehai[9] = 4;
+        
+        let calc = AgariCalculator {
+            tehai: &tehai,
+
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: 9, // 1p (index 9)
+            is_ron: false, // Tsumo
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
+        };
+        
+        let agari = calc.agari(); 
+        
+        // Should be Agari
+        // Expected Fan Calculation:
+        // Base (PingHu) = 1
+        // Tsumo = 1
+        // QiDui = 2
+        // Root (SiGuiYi) = 1 (for 1111p)
+        // Total = 5 Fan
+        
+        assert!(agari.is_some(), "Long Qi Dui (4 same tiles) should be valid Agari");
+        if let Some(Agari::Fan(fan)) = agari {
+             println!("Detected Fan: {}", fan);
+             assert!(fan >= 4, "Should be at least 4 Fan (Base+QiDui+Root)");
         }
     }
 }

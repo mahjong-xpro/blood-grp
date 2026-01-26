@@ -78,6 +78,7 @@ impl PlayerState {
 
             Event::Kakan { actor, pai, .. } => self.kakan(actor, pai)?,
             Event::Ankan { actor, consumed } => self.ankan(actor, consumed)?,
+            Event::Hora { actor, .. } => self.hora(actor)?,
 
             _ => (),
         };
@@ -97,7 +98,10 @@ impl PlayerState {
         self.tiles_seen.fill(0);
         self.keep_shanten_discards.fill(false);
         self.next_shanten_discards.fill(false);
+        self.keep_shanten_discards.fill(false);
+        self.next_shanten_discards.fill(false);
         self.forbidden_tiles.fill(false);
+        self.players_agari.fill(false);
         self.discarded_tiles.fill(false);
 
         self.oya = self.rel(oya) as u8;
@@ -122,7 +126,7 @@ impl PlayerState {
         self.pons.clear();
         self.minkans.clear();
         self.ankans.clear();
-        self.is_menzen = true;
+
         self.kans_on_board = 0;
         self.at_rinshan = false;
         
@@ -202,7 +206,7 @@ impl PlayerState {
             // Even for is_menzen, tiles_left == 0, or at_rinshan cases
             let agari_calc = AgariCalculator {
                 tehai: &self.tehai,
-                is_menzen: self.is_menzen,
+
                 pons: &self.pons,
                 minkans: &self.minkans,
                 ankans: &self.ankans,
@@ -213,6 +217,9 @@ impl PlayerState {
                 is_kan_discard: false,
                 is_chankan: false,
                 exclude_gen_tile: None,
+                is_haidi: self.tiles_left == 0,
+                is_tianhu: false,
+                is_dihu: false,
             };
             self.last_cans.can_tsumo_agari = agari_calc.has_yaku();
         }
@@ -227,12 +234,32 @@ impl PlayerState {
         self.ankan_candidates.clear();
         self.kakan_candidates.clear();
         if self.kans_on_board < 4 {
+            // Helper closure to check if a tile's suit matches the ding_que suit
+            let is_ding_que_suit = |tile: Tile| -> bool {
+                if let Some(ding_que_suit) = self.ding_que {
+                    let tile_suit = tile.as_usize() / 9;
+                    let ding_que_suit_id = match ding_que_suit {
+                        crate::mjai::Suit::Man => 0,
+                        crate::mjai::Suit::Pin => 1,
+                        crate::mjai::Suit::Sou => 2,
+                    };
+                    tile_suit == ding_que_suit_id
+                } else {
+                    false
+                }
+            };
+
             self.tehai
                 .iter()
                 .enumerate()
                 .filter(|&(_, &count)| count > 0)
                 .for_each(|(tid, &count)| {
                     let tile = must_tile!(tid);
+                    // 基础规则：定缺花色不能暗杠或加杠
+                    if is_ding_que_suit(tile) {
+                        return;
+                    }
+
                     if count == 4 {
                         self.last_cans.can_ankan = true;
                         let ankan_len = self.ankan_candidates.len();
@@ -261,6 +288,11 @@ impl PlayerState {
                         self.kakan_candidates.push(tile);
                     }
                 });
+        }
+
+        // Check Ding Que constraints and update forbidden_tiles
+        if self.player_id == actor {
+            self.update_ding_que_forbidden_tiles();
         }
 
         Ok(())
@@ -360,7 +392,7 @@ impl PlayerState {
 
             let agari_calc = AgariCalculator {
                 tehai: &tehai_with_winning_tile,
-                is_menzen: self.is_menzen,
+
                 pons: &self.pons,
                 minkans: &self.minkans,
                 ankans: &self.ankans,
@@ -370,7 +402,11 @@ impl PlayerState {
                 is_after_kan: false, // 荣和不是从岭上牌摸的
                 is_kan_discard: was_kan_before_discard, // 杠上炮：刚有人杠后打出的牌
                 is_chankan: false, // dahai()中的荣和不是抢杠
+
                 exclude_gen_tile: None,
+                is_haidi: self.tiles_left == 0,
+                is_tianhu: false,
+                is_dihu: false,
             };
             self.last_cans.can_ron_agari = agari_calc.has_yaku();
 
@@ -380,9 +416,28 @@ impl PlayerState {
             return Ok(());
         }
 
-        self.last_cans.can_pon = self.tehai[pai.as_usize()] >= 2;
-        self.last_cans.can_daiminkan =
-            self.kans_on_board < 4 && self.tehai[pai.as_usize()] == 3;
+        // Check if the discarded tile is the ding_que suit
+        let is_ding_que_tile = if let Some(ding_que_suit) = self.ding_que {
+            let tile_suit = pai.as_usize() / 9;
+            let ding_que_suit_id = match ding_que_suit {
+                crate::mjai::Suit::Man => 0,
+                crate::mjai::Suit::Pin => 1,
+                crate::mjai::Suit::Sou => 2,
+            };
+            tile_suit == ding_que_suit_id
+        } else {
+            false
+        };
+
+        // 基础规则：定缺花色不能碰或明杠
+        if !is_ding_que_tile {
+            self.last_cans.can_pon = self.tehai[pai.as_usize()] >= 2;
+            self.last_cans.can_daiminkan =
+                self.kans_on_board < 4 && self.tehai[pai.as_usize()] == 3;
+        } else {
+            self.last_cans.can_pon = false;
+            self.last_cans.can_daiminkan = false;
+        }
 
         Ok(())
     }
@@ -419,7 +474,6 @@ impl PlayerState {
         }
 
         self.last_cans.can_discard = true;
-        self.is_menzen = false;
         self.tehai_len_div3 = self.tehai_len_div3.saturating_sub(1);
         // Marked explicitly as `None` to let `Agent` impls set
         // `tsumogiri` to false in the Dahai after Pon
@@ -444,11 +498,24 @@ impl PlayerState {
             self.forbidden_tiles[pai.as_usize()] = true;
         }
 
+        // Enforce Ding Que rule: if holding Ding Que tiles, must discard them
+        self.update_ding_que_forbidden_tiles();
+
+
         // NOTES: this is 3n+2
         // The shanten can change after pon, for example 122334789 pon 2.
         self.update_shanten();
         self.update_shanten_discards();
 
+        self.update_shanten();
+        self.update_shanten_discards();
+
+        Ok(())
+    }
+
+    fn hora(&mut self, actor: u8) -> Result<()> {
+        let actor_rel = self.rel(actor);
+        self.players_agari[actor_rel] = true;
         Ok(())
     }
 
@@ -497,7 +564,7 @@ impl PlayerState {
         }
 
         self.at_rinshan = true;
-        self.is_menzen = false;
+
         self.tehai_len_div3 = self.tehai_len_div3.saturating_sub(1);
 
         for t in consumed {
@@ -564,7 +631,7 @@ impl PlayerState {
                 
                 let agari_calc = AgariCalculator {
                     tehai: &tehai_with_winning_tile,
-                    is_menzen: self.is_menzen,
+
                     pons: &self.pons,
                     minkans: &self.minkans,
                     ankans: &self.ankans,
@@ -575,6 +642,9 @@ impl PlayerState {
                     is_kan_discard: false, // 抢杠不是杠上炮
                     is_chankan: true, // 这是抢杠
                     exclude_gen_tile: None,
+                    is_haidi: self.tiles_left == 0,
+                    is_tianhu: false,
+                    is_dihu: false,
                 };
                 
                 // 只有通过定缺规则检查才能抢杠和牌
@@ -763,8 +833,30 @@ impl PlayerState {
     /// allow `-1` and it will be written as `0` in order for
     /// `_shanten_discards` to be calculated properly.
     pub(super) fn update_shanten(&mut self) {
+        // Check ding_que rule first
+        if let Some(ding_que_suit) = self.ding_que {
+            let ding_que_start = match ding_que_suit {
+                crate::mjai::Suit::Man => 0,
+                crate::mjai::Suit::Pin => 9,
+                crate::mjai::Suit::Sou => 18,
+            };
+            let ding_que_end = ding_que_start + 9;
+            
+            // Check if hand still has any ding_que suit tiles
+            let has_ding_que_tiles = (ding_que_start..ding_que_end)
+                .any(|i| self.tehai[i] > 0);
+                
+            if has_ding_que_tiles {
+                // If holding ding_que tiles, cannot agari/tenpai.
+                // Set shanten to 8 (infinity/invalid).
+                // Normal max shanten is 6.
+                self.shanten = 8;
+                return;
+            }
+        }
+
         self.shanten = shanten::calc_all(&self.tehai, self.tehai_len_div3).max(0);
-        debug_assert!(matches!(self.shanten, 0..=6));
+        debug_assert!(matches!(self.shanten, 0..=8));
     }
 
     /// Must be called at 3n+2.
@@ -832,4 +924,53 @@ impl PlayerState {
         };
         Rankings::new(scores_abs).rank_by_player[self.player_id as usize]
     }
+
+    /// Update forbidden_tiles based on Ding Que rule.
+    /// If the player has tiles of the Ding Que suit, they MUST discard them first.
+    /// In this case, all cards of other suits become forbidden.
+    fn update_ding_que_forbidden_tiles(&mut self) {
+        if let Some(ding_que_suit) = self.ding_que {
+            let ding_que_start = match ding_que_suit {
+                crate::mjai::Suit::Man => 0,
+                crate::mjai::Suit::Pin => 9,
+                crate::mjai::Suit::Sou => 18,
+            };
+            let ding_que_end = ding_que_start + 9;
+            
+            // Check if hand still has any ding_que suit tiles
+            let has_ding_que_tiles = (ding_que_start..ding_que_end)
+                .any(|i| self.tehai[i] > 0);
+                
+            if has_ding_que_tiles {
+                // Determine which tiles are forbidden (all non-DingQue tiles)
+                for i in 0..27 {
+                    if i < ding_que_start || i >= ding_que_end {
+                        self.forbidden_tiles[i] = true;
+                    }
+                }
+            } else {
+                 // Even if no Ding Que tiles left, you cannot discard Ding Que tiles (if you somehow drew one? 
+                 // But wait, if you drew one, has_ding_que_tiles would be true).
+                 // Logic check: if you don't have Ding Que tiles, you can discard anything 
+                 // (except forbidden_tiles set by Kuikae or other rules).
+                 // But wait, if you draw a Ding Que tile later, you MUST discard it.
+                 // So the above logic covers it: if has_ding_que_tiles is true, forbid others.
+                 
+                 // What if I DON'T have Ding Que tiles?
+                 // I should forbid Ding Que tiles? 
+                 // Valid Discard: Any tile I have.
+                 // But if I have a Ding Que tile, I MUST discard it.
+                 // If I DON'T have a Ding Que tile, I CANNOT discard a Ding Que tile (implied, as I don't have it).
+                 // What if I have a Ding Que tile but I shouldn't? (e.g. invalid state).
+                 // The constraints are simpler:
+                 // 1. If has_DQ_tiles: forbid NON-DQ tiles.
+                 // 2. If !has_DQ_tiles: forbid DQ tiles? (Practically redundant as I don't have them, but safe to set).
+                 
+                 for i in ding_que_start..ding_que_end {
+                     self.forbidden_tiles[i] = true;
+                 }
+            }
+        }
+    }
 }
+
