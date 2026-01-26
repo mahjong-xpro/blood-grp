@@ -252,274 +252,274 @@ const App = {
                     }
                     break;
                 // ... (rest of switch)
-            }
+
                 case 'hora': // Win
-    if(event.deltas) {
-        event.deltas.forEach((d, i) => players.value[i].score += d);
+                    if (event.deltas) {
+                        event.deltas.forEach((d, i) => players.value[i].score += d);
                     }
-if (p) {
-    p.agari = true;
-    p.lastAction = 'hora';
-}
-break;
+                    if (p) {
+                        p.agari = true;
+                        p.lastAction = 'hora';
+                    }
+                    break;
 
                 case 'ryukyoku':
-if (event.deltas) {
-    event.deltas.forEach((d, i) => players.value[i].score += d);
-}
-break;
+                    if (event.deltas) {
+                        event.deltas.forEach((d, i) => players.value[i].score += d);
+                    }
+                    break;
 
                 case 'reach': // Riichi (Sichuan doesn't have it, but for compatibility)
-if (p) p.riichi = true;
-break;
+                    if (p) p.riichi = true;
+                    break;
             }
         };
 
-const arrowRotation = computed(() => {
-    if (currentPlayer.value === null) return 0;
-    // 0: Bottom (180deg? No, let's say 0 is Up/Top P2).
-    // P0 (Bottom): 180deg
-    // P1 (Right): 90deg
-    // P2 (Top): 0deg
-    // P3 (Left): -90deg
+        const arrowRotation = computed(() => {
+            if (currentPlayer.value === null) return 0;
+            // 0: Bottom (180deg? No, let's say 0 is Up/Top P2).
+            // P0 (Bottom): 180deg
+            // P1 (Right): 90deg
+            // P2 (Top): 0deg
+            // P3 (Left): -90deg
 
-    // Wait, standard CSS rotation: 0 is usually Up or Right depending on icon.
-    // Let's assume standard Arrow Icon points UP.
+            // Wait, standard CSS rotation: 0 is usually Up or Right depending on icon.
+            // Let's assume standard Arrow Icon points UP.
 
-    switch (currentPlayer.value) {
-        case 0: return 180; // Bottom
-        case 1: return 90;  // Right
-        case 2: return 0;   // Top
-        case 3: return -90; // Left
-    }
-    return 0;
-});
+            switch (currentPlayer.value) {
+                case 0: return 180; // Bottom
+                case 1: return 90;  // Right
+                case 2: return 0;   // Top
+                case 3: return -90; // Left
+            }
+            return 0;
+        });
 
-// ... helpers
-
-
+        // ... helpers
 
 
 
-// --- Helpers ---
-const removeTile = (player, tile) => {
-    const idx = player.tehai.lastIndexOf(tile); // Remove last instance (usually tsumo)
-    if (idx >= 0) {
-        player.tehai.splice(idx, 1);
-    } else {
-        // Fallback: simple remove
-        const i = player.tehai.indexOf(tile);
-        if (i >= 0) player.tehai.splice(i, 1);
-    }
-};
 
-const sortHand = (player) => {
-    // Sort standard order: m < p < s < z
-    // Inside suit: 1 < 9
-    const su = (t) => {
-        const s = t.substr(1);
-        if (s === 'm') return 1;
-        if (s === 'p') return 2;
-        if (s === 's') return 3;
-        return 4; // z/ji
-    };
-    const val = (t) => {
-        const v = parseInt(t[0]);
-        return isNaN(v) ? 10 : v; // Honor tiles? E,S,W,N...
-    };
-    // Special map for honors if they use letters
-    const honorMap = { 'E': 0, 'S': 1, 'W': 2, 'N': 3, 'P': 4, 'F': 5, 'C': 6 };
 
-    const getOrder = (t) => {
-        if (honorMap[t] !== undefined) return 400 + honorMap[t];
+        // --- Helpers ---
+        const removeTile = (player, tile) => {
+            const idx = player.tehai.lastIndexOf(tile); // Remove last instance (usually tsumo)
+            if (idx >= 0) {
+                player.tehai.splice(idx, 1);
+            } else {
+                // Fallback: simple remove
+                const i = player.tehai.indexOf(tile);
+                if (i >= 0) player.tehai.splice(i, 1);
+            }
+        };
 
-        const s = t.substr(1);
-        const n = parseInt(t.substr(0, 1));
+        const sortHand = (player) => {
+            // Sort standard order: m < p < s < z
+            // Inside suit: 1 < 9
+            const su = (t) => {
+                const s = t.substr(1);
+                if (s === 'm') return 1;
+                if (s === 'p') return 2;
+                if (s === 's') return 3;
+                return 4; // z/ji
+            };
+            const val = (t) => {
+                const v = parseInt(t[0]);
+                return isNaN(v) ? 10 : v; // Honor tiles? E,S,W,N...
+            };
+            // Special map for honors if they use letters
+            const honorMap = { 'E': 0, 'S': 1, 'W': 2, 'N': 3, 'P': 4, 'F': 5, 'C': 6 };
 
-        let base = 0;
-        if (s === 'm') base = 100;
-        else if (s === 'p') base = 200;
-        else if (s === 's') base = 300;
+            const getOrder = (t) => {
+                if (honorMap[t] !== undefined) return 400 + honorMap[t];
 
-        return base + n;
-    };
+                const s = t.substr(1);
+                const n = parseInt(t.substr(0, 1));
 
-    player.tehai.sort((a, b) => getOrder(a) - getOrder(b));
-};
+                let base = 0;
+                if (s === 'm') base = 100;
+                else if (s === 'p') base = 200;
+                else if (s === 's') base = 300;
 
-// --- Playback Control ---
-const seekTo = (index) => {
-    // Optimization: If seeking forward, process from current. 
-    // If backward, full reset.
-    if (index < currentEventIndex.value) {
-        resetGameState();
-        currentEventIndex.value = 0;
-    }
+                return base + n;
+            };
 
-    // Process forward
-    while (currentEventIndex.value < index + 1 && currentEventIndex.value < totalEvents.value) {
-        const ev = events.value[currentEventIndex.value];
-        processEvent(ev);
-        currentEventIndex.value++;
-    }
+            player.tehai.sort((a, b) => getOrder(a) - getOrder(b));
+        };
 
-    // Auto-scroll event list
-    scrollToEvent(currentEventIndex.value - 1);
-};
+        // --- Playback Control ---
+        const seekTo = (index) => {
+            // Optimization: If seeking forward, process from current. 
+            // If backward, full reset.
+            if (index < currentEventIndex.value) {
+                resetGameState();
+                currentEventIndex.value = 0;
+            }
 
-const nextEvent = () => {
-    if (currentEventIndex.value < totalEvents.value) {
-        const ev = events.value[currentEventIndex.value];
-        processEvent(ev);
-        currentEventIndex.value++;
-        scrollToEvent(currentEventIndex.value - 1);
-    } else {
-        if (isPlaying.value) togglePlay(); // End of log
-    }
-};
+            // Process forward
+            while (currentEventIndex.value < index + 1 && currentEventIndex.value < totalEvents.value) {
+                const ev = events.value[currentEventIndex.value];
+                processEvent(ev);
+                currentEventIndex.value++;
+            }
 
-const prevEvent = () => seekTo(currentEventIndex.value - 1);
-const firstEvent = () => seekTo(0);
-const lastEvent = () => seekTo(totalEvents.value);
+            // Auto-scroll event list
+            scrollToEvent(currentEventIndex.value - 1);
+        };
 
-const togglePlay = () => {
-    if (isPlaying.value) {
-        clearInterval(playInterval);
-        playInterval = null;
-        isPlaying.value = false;
-    } else {
-        isPlaying.value = true;
-        playStep();
-    }
-};
+        const nextEvent = () => {
+            if (currentEventIndex.value < totalEvents.value) {
+                const ev = events.value[currentEventIndex.value];
+                processEvent(ev);
+                currentEventIndex.value++;
+                scrollToEvent(currentEventIndex.value - 1);
+            } else {
+                if (isPlaying.value) togglePlay(); // End of log
+            }
+        };
 
-const playStep = () => {
-    if (!isPlaying.value) return;
-    nextEvent();
-    if (currentEventIndex.value >= totalEvents.value) {
-        togglePlay();
-        return;
-    }
-    // Schedule next frame
-    // Dynamic speed: 1.0x = 1000ms ?? No, that's too slow.
-    // Let's say 1.0x = 500ms
-    const delay = 800 / playbackSpeed.value;
-    playInterval = setTimeout(playStep, delay);
-};
+        const prevEvent = () => seekTo(currentEventIndex.value - 1);
+        const firstEvent = () => seekTo(0);
+        const lastEvent = () => seekTo(totalEvents.value);
 
-const scrollToEvent = (idx) => {
-    if (!eventListRef.value) return;
-    // Simple logic: scroll so item is visible
-    // const item = eventListRef.value.children[idx]; // Might be virtualized later
-    // For now assume rendered:
-    // This is tricky if items are reactive.
-    // Let's scroll container.
-    const el = eventListRef.value.querySelector('.current');
-    if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-};
+        const togglePlay = () => {
+            if (isPlaying.value) {
+                clearInterval(playInterval);
+                playInterval = null;
+                isPlaying.value = false;
+            } else {
+                isPlaying.value = true;
+                playStep();
+            }
+        };
 
-// --- File Upload ---
-const fileInput = ref(null);
-const triggerUpload = () => fileInput.value.click();
-const handleFileUpload = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    uploadFile(file);
-};
-const handleDrop = async (event) => {
-    const file = event.dataTransfer.files[0];
-    if (!file) return;
-    uploadFile(file);
-};
-const uploadFile = async (file) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    try {
-        const res = await fetch('/api/upload', { method: 'POST', body: formData });
-        const data = await res.json();
-        if (data.path) {
-            // Start loading
-            await refreshLogs();
-            // Try to find the new log and load it?
-            // Just load directly
-            loadLog(data.path);
-        }
-    } catch (e) {
-        alert("Upload failed");
-    }
-};
+        const playStep = () => {
+            if (!isPlaying.value) return;
+            nextEvent();
+            if (currentEventIndex.value >= totalEvents.value) {
+                togglePlay();
+                return;
+            }
+            // Schedule next frame
+            // Dynamic speed: 1.0x = 1000ms ?? No, that's too slow.
+            // Let's say 1.0x = 500ms
+            const delay = 800 / playbackSpeed.value;
+            playInterval = setTimeout(playStep, delay);
+        };
 
-// --- Utilities for Template ---
-const getTileText = (tile) => {
-    if (!tile) return '';
-    const map = {
-        'E': '東', 'S': '南', 'W': '西', 'N': '北',
-        'P': '白', 'F': '發', 'C': '中'
-    };
-    if (map[tile]) return map[tile];
+        const scrollToEvent = (idx) => {
+            if (!eventListRef.value) return;
+            // Simple logic: scroll so item is visible
+            // const item = eventListRef.value.children[idx]; // Might be virtualized later
+            // For now assume rendered:
+            // This is tricky if items are reactive.
+            // Let's scroll container.
+            const el = eventListRef.value.querySelector('.current');
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        };
 
-    const num = tile[0];
-    const suit = tile[1];
-    const suitMap = { 'm': '萬', 'p': '筒', 's': '条' };
-    return num + (suitMap[suit] || '');
-};
+        // --- File Upload ---
+        const fileInput = ref(null);
+        const triggerUpload = () => fileInput.value.click();
+        const handleFileUpload = async (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            uploadFile(file);
+        };
+        const handleDrop = async (event) => {
+            const file = event.dataTransfer.files[0];
+            if (!file) return;
+            uploadFile(file);
+        };
+        const uploadFile = async (file) => {
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+                const res = await fetch('/api/upload', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.path) {
+                    // Start loading
+                    await refreshLogs();
+                    // Try to find the new log and load it?
+                    // Just load directly
+                    loadLog(data.path);
+                }
+            } catch (e) {
+                alert("Upload failed");
+            }
+        };
 
-const getTileClass = (tile) => {
-    if (!tile) return '';
-    if (tile.includes('m')) return 'man';
-    if (tile.includes('p')) return 'pin';
-    if (tile.includes('s')) return 'sou';
-    return 'ji';
-};
+        // --- Utilities for Template ---
+        const getTileText = (tile) => {
+            if (!tile) return '';
+            const map = {
+                'E': '東', 'S': '南', 'W': '西', 'N': '北',
+                'P': '白', 'F': '發', 'C': '中'
+            };
+            if (map[tile]) return map[tile];
 
-const getEventDetail = (e) => {
-    if (e.type === 'tsumo') return `Draw ${getTileText(e.pai)}`;
-    if (e.type === 'dahai') return `Discard ${getTileText(e.pai)}`;
-    if (e.type === 'pon') return `Pon ${getTileText(e.pai)}`;
-    if (e.type === 'hora') return `WIN! ${e.deltas ? e.deltas.join(',') : ''}`;
-    return '';
-};
+            const num = tile[0];
+            const suit = tile[1];
+            const suitMap = { 'm': '萬', 'p': '筒', 's': '条' };
+            return num + (suitMap[suit] || '');
+        };
 
-const formatSize = (bytes) => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-};
+        const getTileClass = (tile) => {
+            if (!tile) return '';
+            if (tile.includes('m')) return 'man';
+            if (tile.includes('p')) return 'pin';
+            if (tile.includes('s')) return 'sou';
+            return 'ji';
+        };
 
-// Init
-onMounted(() => {
-    refreshLogs();
-    // Start auto refresh
-    setInterval(refreshLogs, 10000);
-});
+        const getEventDetail = (e) => {
+            if (e.type === 'tsumo') return `Draw ${getTileText(e.pai)}`;
+            if (e.type === 'dahai') return `Discard ${getTileText(e.pai)}`;
+            if (e.type === 'pon') return `Pon ${getTileText(e.pai)}`;
+            if (e.type === 'hora') return `WIN! ${e.deltas ? e.deltas.join(',') : ''}`;
+            return '';
+        };
 
-// Watch speed to update interval
-watch(playbackSpeed, () => {
-    if (isPlaying.value) {
-        // Restart loop with new speed
-        clearTimeout(playInterval);
-        playStep();
-    }
-});
+        const formatSize = (bytes) => {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        };
 
-return {
-    searchQuery, filteredLogs, loadingLogs, currentLogPath,
-    refreshLogs, loadLog, formatSize,
-    triggerUpload, handleFileUpload, handleDrop, fileInput,
+        // Init
+        onMounted(() => {
+            refreshLogs();
+            // Start auto refresh
+            setInterval(refreshLogs, 10000);
+        });
 
-    gameLoaded, currentKyokuDisplay, tilesLeft, totalEvents, currentEventIndex,
-    players, currentPlayer, lastDiscard,
+        // Watch speed to update interval
+        watch(playbackSpeed, () => {
+            if (isPlaying.value) {
+                // Restart loop with new speed
+                clearTimeout(playInterval);
+                playStep();
+            }
+        });
 
-    showRightPanel, eventListRef, visibleEvents,
+        return {
+            searchQuery, filteredLogs, loadingLogs, currentLogPath,
+            refreshLogs, loadLog, formatSize,
+            triggerUpload, handleFileUpload, handleDrop, fileInput,
 
-    getTileText, getTileClass,
+            gameLoaded, currentKyokuDisplay, tilesLeft, totalEvents, currentEventIndex,
+            players, currentPlayer, lastDiscard, arrowRotation,
 
-    seekTo, nextEvent, prevEvent, firstEvent, lastEvent, togglePlay, isPlaying, playbackSpeed
-};
+            showRightPanel, eventListRef, visibleEvents,
+
+            getTileText, getTileClass,
+
+            seekTo, nextEvent, prevEvent, firstEvent, lastEvent, togglePlay, isPlaying, playbackSpeed
+        };
     }
 };
 
