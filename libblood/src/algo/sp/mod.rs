@@ -40,6 +40,11 @@ pub const MAX_TSUMOS_LEFT: usize = 18;
 pub const MAX_TSUMOS_LEFT: usize = 17;
 
 #[cfg(feature = "sp_reproduce_cpp_ver")]
-const CALC_SHANTEN_FN: fn(&[u8; 27], u8) -> i8 = super::shanten::calc_normal;
+fn calc_normal_wrapper(tiles: &[u8; 27], len_div3: u8, _ding_que: Option<crate::mjai::Suit>) -> i8 {
+    super::shanten::calc_normal(tiles, len_div3)
+}
+
+#[cfg(feature = "sp_reproduce_cpp_ver")]
+const CALC_SHANTEN_FN: fn(&[u8; 27], u8, Option<crate::mjai::Suit>) -> i8 = calc_normal_wrapper;
 #[cfg(not(feature = "sp_reproduce_cpp_ver"))]
-const CALC_SHANTEN_FN: fn(&[u8; 27], u8) -> i8 = super::shanten::calc_all;
+const CALC_SHANTEN_FN: fn(&[u8; 27], u8, Option<crate::mjai::Suit>) -> i8 = super::shanten::calc_all;

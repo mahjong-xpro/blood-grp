@@ -8,9 +8,9 @@ pub const ACTION_SPACE: usize = 27 // discard (27 tile kinds)
                               + 1  // pon
                               + 1  // kan (decide)
                               + 1  // agari
-                              + 1  // ryukyoku
-                              + 1; // pass
-// = 32
+                              + 1  // pass
+                              + 3; // ding que (Man, Pin, Sou)
+// = 34
 
 
 #[pyfunction]
@@ -25,7 +25,7 @@ pub const fn obs_shape(version: u32) -> (usize, usize) {
         1 => (964, 27), // 938 + 26 = 964 (ding que: 3+1+13+9)
         2 => (960, 27), // 944 + 16 = 960 (ding que: 3+1+3+9)
         3 => (952, 27), // 936 + 16 = 952 (ding que: 3+1+3+9)
-        4 => (1466, 27), // 修复后：移除死特征 (-6) + 移除Ryukyoku (-1) + 添加Agari (+3) = 1470 - 4 = 1466
+        4 => (479, 27), // Optimized: 506 - 28 + 1 (self tsumogiri only) = 479.
         _ => panic!("Unsupported version"),
     }
 }
@@ -36,7 +36,7 @@ pub const fn oracle_obs_shape(version: u32) -> (usize, usize) {
     // Calculated dimensions based on encode_oracle_obs function in board.rs and invisible.rs
     match version {
         1 => (128, 27), // Calculated: 128 rows × 27 tile kinds
-        2 | 3 | 4 => (134, 27), // Calculated: 134 rows × 27 tile kinds
+        2 | 3 | 4 => (118, 27), // Optimized: 48 (opp) + 56 (yama) + 14 (pad) = 118
         _ => unreachable!(),
     }
 }

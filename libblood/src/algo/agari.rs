@@ -500,7 +500,7 @@ fn get_tile14_and_key(tiles: &[u8; 27]) -> ([u8; 14], u32) {
 /// This function checks if performing ankan changes the tenpai shape or wait tiles.
 /// The behavior is undefined if `tehai` is not tenpai.
 #[must_use]
-pub fn check_ankan_in_tenpai(tehai: &[u8; 27], len_div3: u8, tile: Tile, strict: bool) -> bool {
+pub fn check_ankan_in_tenpai(tehai: &[u8; 27], len_div3: u8, tile: Tile, strict: bool, ding_que: Option<crate::mjai::Suit>) -> bool {
     let tile_id = tile.as_usize();
     if tile_id >= 27 || tehai[tile_id] != 4 {
         return false;
@@ -517,7 +517,7 @@ pub fn check_ankan_in_tenpai(tehai: &[u8; 27], len_div3: u8, tile: Tile, strict:
             // Get all waits of the original hand
             let mut tmp = tehai_before_tsumo;
             tmp[t] += 1;
-            shanten::calc_all(&tmp, len_div3) == -1
+            shanten::calc_all(&tmp, len_div3, ding_que) == -1
         })
         .all(|wait| {
             // Cannot kan a waited tile
@@ -569,7 +569,7 @@ mod test {
             let tile: Tile = tile_str.parse().unwrap();
             tehai[tile.as_usize()] += 1;
             assert_eq!(
-                check_ankan_in_tenpai(&tehai, len_div3, tile, strict),
+                check_ankan_in_tenpai(&tehai, len_div3, tile, strict, None),
                 expected,
                 "failed for {tehai_str} + {tile_str}, expected {expected}",
             );

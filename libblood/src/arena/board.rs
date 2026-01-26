@@ -1220,7 +1220,7 @@ impl BoardState {
             idx = encode_tile(idx, tile);
         }
         // Skip remaining yama slots (no aka encoding, so only 1 dimension per tile)
-        let max_yama_tiles = 69;
+        let max_yama_tiles = 56;
         idx += (max_yama_tiles - self.tiles_left as usize) * 1;
 
         idx += 4 * 1;

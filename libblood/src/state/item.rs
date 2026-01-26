@@ -13,6 +13,7 @@ pub(super) struct KawaItem {
 #[derive(Debug, Clone, Copy, Serialize)]
 pub(super) struct Sutehai {
     pub(super) tile: Tile,
+    pub(super) is_tsumogiri: bool,
 }
 
 impl fmt::Display for Sutehai {

@@ -201,7 +201,7 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
         // 打牌候補を取得する。
         let discard_tiles = self
             .state
-            .get_discard_tiles(shanten, self.sup.tehai_len_div3);
+            .get_discard_tiles(shanten, self.sup.tehai_len_div3, self.sup.ding_que);
 
         let mut candidates = Vec::with_capacity(discard_tiles.len());
         for DiscardTile { tile, shanten_diff } in discard_tiles {
@@ -211,7 +211,7 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
                 // shanten_diff == 0: 向听数不变（标准情况）
                 let new_shanten = (shanten as i16 + shanten_diff as i16).max(0) as i8;
                 self.state.discard(tile);
-                let required_tiles = self.state.get_required_tiles(self.sup.tehai_len_div3);
+                let required_tiles = self.state.get_required_tiles(self.sup.tehai_len_div3, self.sup.ding_que);
                 let values = self.draw(new_shanten);
                 self.state.undo_discard(tile);
 
@@ -235,7 +235,7 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
             } else if self.sup.calc_shanten_down && shanten_diff == 1 && shanten < SHANTEN_THRES {
                 // 向听落とし（向听数上升1）的特殊情况
                 self.state.discard(tile);
-                let required_tiles = self.state.get_required_tiles(self.sup.tehai_len_div3);
+                let required_tiles = self.state.get_required_tiles(self.sup.tehai_len_div3, self.sup.ding_que);
                 self.state.n_extra_tsumo += 1;
                 let values = self.draw(shanten + 1);
                 self.state.n_extra_tsumo -= 1;
@@ -259,7 +259,7 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
     }
 
     fn analyze_draw(&mut self, shanten: i8) -> Vec<Candidate> {
-        let required_tiles = self.state.get_required_tiles(self.sup.tehai_len_div3);
+        let required_tiles = self.state.get_required_tiles(self.sup.tehai_len_div3, self.sup.ding_que);
         let values = self.draw(shanten);
 
         let mut tenpai_probs = values.tenpai_probs;
@@ -285,12 +285,12 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
         // 打牌候補を取得する。
         let discard_tiles = self
             .state
-            .get_discard_tiles(shanten, self.sup.tehai_len_div3);
+            .get_discard_tiles(shanten, self.sup.tehai_len_div3, self.sup.ding_que);
         discard_tiles
             .into_iter()
             .map(|DiscardTile { tile, shanten_diff }| {
                 self.state.discard(tile);
-                let required_tiles = self.state.get_required_tiles(self.sup.tehai_len_div3);
+                let required_tiles = self.state.get_required_tiles(self.sup.tehai_len_div3, self.sup.ding_que);
                 self.state.undo_discard(tile);
 
                 Candidate::from(RawCandidate {
@@ -304,7 +304,7 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
     }
 
     fn analyze_draw_simple(&mut self) -> Vec<Candidate> {
-        let required_tiles = self.state.get_required_tiles(self.sup.tehai_len_div3);
+        let required_tiles = self.state.get_required_tiles(self.sup.tehai_len_div3, self.sup.ding_que);
         let candidate = Candidate::from(RawCandidate {
             tile: t!(?),
             required_tiles,
@@ -335,7 +335,7 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
         let mut exp_values = [0.; MAX_TSUMO];
 
         // 自摸候補を取得する。
-        let draw_tiles = self.state.get_draw_tiles(shanten, self.sup.tehai_len_div3);
+        let draw_tiles = self.state.get_draw_tiles(shanten, self.sup.tehai_len_div3, self.sup.ding_que);
 
         // 有効牌の合計枚数を計算する。【暫定対応】
         let sum_left_tiles = self.state.sum_left_tiles();
@@ -449,7 +449,7 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
         let mut exp_values = [0.; MAX_TSUMO];
 
         // 自摸候補を取得する。
-        let draw_tiles = self.state.get_draw_tiles(shanten, self.sup.tehai_len_div3);
+        let draw_tiles = self.state.get_draw_tiles(shanten, self.sup.tehai_len_div3, self.sup.ding_que);
 
         // 有効牌の合計枚数を計算する。
         let sum_required_tiles: u8 = draw_tiles
@@ -566,7 +566,7 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
         // 打牌候補を取得する。
         let discard_tiles = self
             .state
-            .get_discard_tiles(shanten, self.sup.tehai_len_div3);
+            .get_discard_tiles(shanten, self.sup.tehai_len_div3, self.sup.ding_que);
 
         // 期待値が最大となる打牌を選択する。
         let mut max_tenpai_probs = [f32::MIN; MAX_TSUMO];
@@ -711,7 +711,7 @@ mod test {
         };
         let can_discard = true;
         let tsumos_left = 8;
-        let cur_shanten = CALC_SHANTEN_FN(&tehai, calc.tehai_len_div3);
+        let cur_shanten = CALC_SHANTEN_FN(&tehai, calc.tehai_len_div3, calc.ding_que);
         let candidates = calc
             .calc(state, can_discard, tsumos_left, cur_shanten)
             .unwrap();
@@ -730,7 +730,7 @@ mod test {
         };
         let can_discard = true;
         let tsumos_left = 15;
-        let cur_shanten = CALC_SHANTEN_FN(&tehai, calc.tehai_len_div3);
+        let cur_shanten = CALC_SHANTEN_FN(&tehai, calc.tehai_len_div3, calc.ding_que);
         let candidates = calc
             .calc(state.clone(), can_discard, tsumos_left, cur_shanten)
             .unwrap();
@@ -768,7 +768,7 @@ mod test {
         };
         let can_discard = true;
         let tsumos_left = 15;
-        let cur_shanten = CALC_SHANTEN_FN(&tehai, calc.tehai_len_div3);
+        let cur_shanten = CALC_SHANTEN_FN(&tehai, calc.tehai_len_div3, calc.ding_que);
         let candidates = calc
             .calc(state, can_discard, tsumos_left, cur_shanten)
             .unwrap();
@@ -812,7 +812,7 @@ mod test {
             tiles_seen,
             tiles_left: 108 - tiles_seen.iter().sum::<u8>(),
         };
-        let cur_shanten = CALC_SHANTEN_FN(&tehai, calc.tehai_len_div3);
+        let cur_shanten = CALC_SHANTEN_FN(&tehai, calc.tehai_len_div3, calc.ding_que);
         let can_discard = true;
         let tsumos_left = 5;
         let candidates = calc
@@ -861,7 +861,7 @@ mod test {
             tiles_left: 108 - tiles_seen.iter().sum::<u8>(),
         };
         
-        let cur_shanten = CALC_SHANTEN_FN(&tehai, calc.tehai_len_div3);
+        let cur_shanten = CALC_SHANTEN_FN(&tehai, calc.tehai_len_div3, calc.ding_que);
         assert_eq!(cur_shanten, 0, "Hand should be tenpai");
         
         let can_discard = false; // 3n+1 state (after tsumo, before discard)

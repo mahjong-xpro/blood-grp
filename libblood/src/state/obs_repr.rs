@@ -11,8 +11,6 @@ use ndarray::prelude::*;
 use numpy::{PyArray1, PyArray2};
 use pyo3::prelude::*;
 
-const SELF_KAWA_ITEM_CHANNELS: usize = 4;
-const KAWA_ITEM_CHANNELS: usize = 8;
 const MAX_NUM_TURNS: usize = 17; // aka the actual practical `MAX_TSUMOS_LEFT`
 
 struct ObsEncoderContext<'a> {
@@ -150,7 +148,7 @@ impl<'a> ObsEncoderContext<'a> {
                     .rbf_intervals(10)
                     .encode(&mut self),
                 4 => {
-                    let v = score.clamp(0, 30_000) as f32 / 30_000.;
+                    let v = score.clamp(0, 100_000) as f32 / 100_000.;
                     self.arr.fill(self.idx, v);
                     self.idx += 1;
                 }
@@ -234,18 +232,16 @@ impl<'a> ObsEncoderContext<'a> {
             .iter()
             .take(6)
             .for_each(|kawa_item| self.encode_self_kawa(kawa_item.as_ref()));
-        // Fix: 补偿逻辑应该考虑最大情况（所有位置都有 item）
-        // 如果有 item，每个位置使用 6 行（2 + 4），如果没有 item，使用 4 行
-        // 补偿逻辑假设缺失的位置也有 item（使用 6 行），这样总行数始终是最大情况
-        self.idx += (6 - state.kawa[0].len().min(6)) * (SELF_KAWA_ITEM_CHANNELS + 2);
+        // Note: encode_self_kawa uses 2 channels per item
+        self.idx += (6 - state.kawa[0].len().min(6)) * 2;
 
         state.kawa[0]
             .iter()
             .rev()
             .take(18)
             .for_each(|kawa_item| self.encode_self_kawa(kawa_item.as_ref()));
-        // Fix: 同上，考虑最大情况
-        self.idx += (18 - state.kawa[0].len().min(18)) * (SELF_KAWA_ITEM_CHANNELS + 2);
+        // Note: encode_self_kawa uses 2 channels per item
+        self.idx += (18 - state.kawa[0].len().min(18)) * 2;
 
         let max_kawa_len = state.kawa.iter().map(|k| k.len()).max().unwrap();
         if matches!(self.version, 3 | 4) {
@@ -255,9 +251,12 @@ impl<'a> ObsEncoderContext<'a> {
                     let tid = sutehai.tile.as_usize();
                     let v = (-0.2 * (max_kawa_len - 1 - turn) as f32).exp();
                     self.arr.assign(self.idx, tid, v);
+                    if sutehai.is_tsumogiri {
+                        self.arr.assign(self.idx + 1, tid, v);
+                    }
                 }
             }
-            self.idx += 1;
+            self.idx += 2;
         }
 
         for player_kawa in &state.kawa[1..] {
@@ -265,18 +264,16 @@ impl<'a> ObsEncoderContext<'a> {
                 .iter()
                 .take(6)
                 .for_each(|kawa_item| self.encode_kawa(kawa_item.as_ref()));
-            // Fix: 补偿逻辑应该考虑最大情况（所有位置都有 item）
-            // 如果有 item，每个位置使用 14 行（2 + 4 + 8），如果没有 item，使用 8 行
-            // 补偿逻辑假设缺失的位置也有 item（使用 14 行），这样总行数始终是最大情况
-            self.idx += (6 - player_kawa.len().min(6)) * (KAWA_ITEM_CHANNELS + 6);
+            // Note: encode_kawa uses 2 channels per item
+            self.idx += (6 - player_kawa.len().min(6)) * 2;
 
             player_kawa
                 .iter()
                 .rev()
                 .take(18)
                 .for_each(|kawa_item| self.encode_kawa(kawa_item.as_ref()));
-            // Fix: 同上，考虑最大情况
-            self.idx += (18 - player_kawa.len().min(18)) * (KAWA_ITEM_CHANNELS + 6);
+            // Note: encode_kawa uses 2 channels per item
+            self.idx += (18 - player_kawa.len().min(18)) * 2;
 
             match self.version {
                 2 => {
@@ -296,7 +293,7 @@ impl<'a> ObsEncoderContext<'a> {
                             self.arr.assign(self.idx, tid, v);
                         }
                     }
-                    self.idx += 1; // Reduced from 3 (removed tedashi encoding)
+                    self.idx += 1; // Reduced from 3 (removed tedashi encoding) -> Increased to 2 (added tsumogiri) -> Reverted to 1 (opponent tsumogiri invisible)
                 }
                 _ => (),
             }
@@ -324,9 +321,9 @@ impl<'a> ObsEncoderContext<'a> {
                         .unwrap();
                     self.arr.assign(self.idx + i, tile_id, 1.);
                 }
-                self.idx += 5;
+                self.idx += 4;
             }
-            self.idx += (4 - player_fuuro.len()) * 5;
+            self.idx += (4 - player_fuuro.len()) * 4;
         }
 
         for player_ankan in &state.ankan_overview {
@@ -440,7 +437,7 @@ impl<'a> ObsEncoderContext<'a> {
 
         self.idx += 3;
 
-        // Action indices: 0-26 (discard), 27 (pon), 28 (kan), 29 (agari), 30 (ryukyoku), 31 (pass)
+        // Action indices: 0-26 (discard), 27 (pon), 28 (kan), 29 (agari), 30 (pass), 31-33 (ding que)
         if cans.can_pon {
             self.arr.fill(self.idx, 1.);
             if !self.at_kan_select {
@@ -515,6 +512,14 @@ impl<'a> ObsEncoderContext<'a> {
             }
         }
         self.idx += 1;
+
+        if cans.can_ding_que {
+            self.mask[31] = true; // Man
+            self.mask[32] = true; // Pin
+            self.mask[33] = true; // Sou
+            // Note: Ding Que has no specific feature input channel in this section, 
+            // the state itself (hand tiles) is enough to decide.
+        }
 
 
 
@@ -742,17 +747,21 @@ impl<'a> ObsEncoderContext<'a> {
     {
         let mut counts = [0; 27];
         for tile in tiles {
-                    let tile_id = tile.as_usize();
+            let tile_id = tile.as_usize();
             if tile_id >= 27 {
                 continue;
             }
 
             let i = &mut counts[tile_id];
+            if *i >= 4 {
+                // Safety check: max 4 copies of a tile
+                continue;
+            }
             self.arr.assign(self.idx + *i, tile_id, 1.);
             *i += 1;
 
         }
-        self.idx += 7;
+        self.idx += 4;
     }
 
     fn encode_self_kawa(&mut self, item: Option<&KawaItem>) {
@@ -765,29 +774,24 @@ impl<'a> ObsEncoderContext<'a> {
             }
 
             let sutehai = k.sutehai;
-                    let tile_id = sutehai.tile.as_usize();
+            let tile_id = sutehai.tile.as_usize();
             self.arr.assign(self.idx + 1, tile_id, 1.);
-            self.idx += 2;
         }
-        self.idx += SELF_KAWA_ITEM_CHANNELS;
+        self.idx += 2;
     }
 
     fn encode_kawa(&mut self, item: Option<&KawaItem>) {
         if let Some(k) = item {
-            // Pon info is included in fuuro_overview instead (Bloody Battle Mahjong has no chi)
-            self.idx += 2;
-
             for kan in k.kan {
                 let tile_id = kan.as_usize();
-                self.arr.assign(self.idx + 2, tile_id, 1.);
+                self.arr.assign(self.idx, tile_id, 1.);
             }
 
             let sutehai = k.sutehai;
-                    let tile_id = sutehai.tile.as_usize();
-            self.arr.assign(self.idx + 3, tile_id, 1.);
-            self.idx += 4;
+            let tile_id = sutehai.tile.as_usize();
+            self.arr.assign(self.idx + 1, tile_id, 1.);
         }
-        self.idx += KAWA_ITEM_CHANNELS;
+        self.idx += 2;
     }
 }
 

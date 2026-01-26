@@ -216,17 +216,40 @@ impl State {
         &self,
         shanten: i8,
         tehai_len_div3: u8,
+        ding_que: Option<crate::mjai::Suit>,
     ) -> ArrayVec<[DiscardTile; 14]> {
         let mut discard_tiles = ArrayVec::default();
 
         let mut tehai = self.tehai;
+
+        let mut ding_que_filter = false;
+        let mut ding_que_range = 0..0;
+
+        if let Some(dq) = ding_que {
+            let (start, end) = match dq {
+                crate::mjai::Suit::Man => (0, 9),
+                crate::mjai::Suit::Pin => (9, 18),
+                crate::mjai::Suit::Sou => (18, 27),
+            };
+            // Check if we have any ding que tiles
+            if (start..end).any(|i| tehai[i] > 0) {
+                ding_que_filter = true;
+                ding_que_range = start..end;
+            }
+        }
+
         for tid in 0..27 {
             if tehai[tid] == 0 {
                 continue;
             }
 
+            // Enforce Ding Que rule
+            if ding_que_filter && !ding_que_range.contains(&tid) {
+                continue;
+            }
+
             tehai[tid] -= 1;
-            let shanten_after = CALC_SHANTEN_FN(&tehai, tehai_len_div3);
+            let shanten_after = CALC_SHANTEN_FN(&tehai, tehai_len_div3, ding_que);
             tehai[tid] += 1;
 
             let shanten_diff = shanten_after - shanten;
@@ -243,6 +266,7 @@ impl State {
         &self,
         shanten: i8,
         tehai_len_div3: u8,
+        ding_que: Option<crate::mjai::Suit>,
     ) -> ArrayVec<[DrawTile; 27]> {
         let mut draw_tiles = ArrayVec::default();
 
@@ -253,7 +277,7 @@ impl State {
             }
 
             tehai[tid] += 1;
-            let shanten_after = CALC_SHANTEN_FN(&tehai, tehai_len_div3);
+            let shanten_after = CALC_SHANTEN_FN(&tehai, tehai_len_div3, ding_que);
             tehai[tid] -= 1;
 
             let shanten_diff = shanten_after - shanten;
@@ -269,10 +293,10 @@ impl State {
         draw_tiles
     }
 
-    pub(super) fn get_required_tiles(&self, tehai_len_div3: u8) -> ArrayVec<[RequiredTile; 27]> {
+    pub(super) fn get_required_tiles(&self, tehai_len_div3: u8, ding_que: Option<crate::mjai::Suit>) -> ArrayVec<[RequiredTile; 27]> {
         let mut tehai = self.tehai;
 
-        let shanten = CALC_SHANTEN_FN(&tehai, tehai_len_div3);
+        let shanten = CALC_SHANTEN_FN(&tehai, tehai_len_div3, ding_que);
         let mut required_tiles = ArrayVec::default();
 
         for (tid, &count) in self.tiles_in_wall.iter().enumerate() {
@@ -281,7 +305,7 @@ impl State {
             }
 
             tehai[tid] += 1;
-            let shanten_after = CALC_SHANTEN_FN(&tehai, tehai_len_div3);
+            let shanten_after = CALC_SHANTEN_FN(&tehai, tehai_len_div3, ding_que);
             tehai[tid] -= 1;
 
             if shanten_after < shanten {

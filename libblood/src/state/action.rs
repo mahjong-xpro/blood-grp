@@ -24,6 +24,8 @@ pub struct ActionCandidate {
     #[pyo3(get)]
     pub can_ron_agari: bool,
     #[pyo3(get)]
+    pub can_ding_que: bool,
+    #[pyo3(get)]
     pub target_actor: u8,
 }
 
@@ -58,6 +60,7 @@ impl ActionCandidate {
             || self.can_pon
             || self.can_kan()
             || self.can_agari()
+            || self.can_ding_que
     }
 
     fn __repr__(&self) -> String {
@@ -193,6 +196,11 @@ impl PlayerState {
                 } else {
                     ensure!(cans.can_ron_agari, "cannot ron agari");
                 }
+            }
+
+            Event::DingQue { actor, suit: _ } => {
+                ensure!(actor == self.player_id, "ding_que from others");
+                ensure!(cans.can_ding_que, "cannot ding_que");
             }
 
             Event::None => return Ok(()),

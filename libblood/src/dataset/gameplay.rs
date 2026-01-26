@@ -346,6 +346,13 @@ impl Gameplay {
                 }
                 Some(28) // Kan action (was 42)
             }
+            Event::DingQue { actor, suit } if actor == self.player_id => {
+                match suit {
+                    crate::mjai::Suit::Man => Some(31),
+                    crate::mjai::Suit::Pin => Some(32),
+                    crate::mjai::Suit::Sou => Some(33),
+                }
+            }
 
             _ => {
                 let mut ret = None;
@@ -372,7 +379,7 @@ impl Gameplay {
                     {
                         // Can pon/daiminkan/ron, but actively denied
                         // instead of being interrupted by other's ron.
-                        ret = Some(31); // Pass action (was 45)
+                        ret = Some(30); // Pass action (was 31, originally 45)
                     }
                 }
 

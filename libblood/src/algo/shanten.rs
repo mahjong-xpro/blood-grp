@@ -125,13 +125,43 @@ pub fn calc_kokushi(_tiles: &[u8; 27]) -> i8 {
 }
 
 #[must_use]
-pub fn calc_all(tiles: &[u8; 27], len_div3: u8) -> i8 {
-    let mut shanten = calc_normal(tiles, len_div3);
-    if shanten <= 0 || len_div3 < 4 {
-        return shanten;
-    }
+pub fn calc_all(tiles: &[u8; 27], len_div3: u8, ding_que: Option<crate::mjai::Suit>) -> i8 {
+    let (clean_tiles, void_count) = if let Some(suit) = ding_que {
+        let mut t = *tiles;
+        let range = match suit {
+            crate::mjai::Suit::Man => 0..9,
+            crate::mjai::Suit::Pin => 9..18,
+            crate::mjai::Suit::Sou => 18..27,
+        };
+        let count = range.map(|i| {
+            let c = t[i];
+            t[i] = 0;
+            c
+        }).sum();
+        (t, count)
+    } else {
+        (*tiles, 0)
+    };
 
-    shanten = shanten.min(calc_chitoi(tiles));
+    let clean_len_div3 = if void_count > 0 {
+        clean_tiles.iter().sum::<u8>() / 3
+    } else {
+        len_div3
+    };
+
+    let mut shanten = calc_normal(&clean_tiles, clean_len_div3);
+    if shanten <= 0 || clean_len_div3 < 4 {
+        // Continue to check other yaku types or just return?
+        // Logic says default return.
+    }
+    
+    // Add penalty
+    shanten = shanten.saturating_add(void_count as i8);
+
+    // Chitoi check (add penalty too)
+    let chitoi = calc_chitoi(&clean_tiles).saturating_add(void_count as i8);
+    shanten = shanten.min(chitoi);
+    
     shanten
 }
 
@@ -143,44 +173,44 @@ mod test {
     #[test]
     fn calc_3n_plus_1() {
         let tehai = hand("1111m 333p 222s").unwrap();
-        assert_eq!(calc_all(&tehai, 4), 1);
+        assert_eq!(calc_all(&tehai, 4, None), 1);
         let tehai = hand("147m 258p 369s").unwrap();
-        assert_eq!(calc_all(&tehai, 4), 6);
+        assert_eq!(calc_all(&tehai, 4, None), 6);
         let tehai = hand("468m 33346p 7s").unwrap();
-        assert_eq!(calc_all(&tehai, 3), 2);
+        assert_eq!(calc_all(&tehai, 3, None), 2);
         let tehai = hand("147m 258p 3s").unwrap();
-        assert_eq!(calc_all(&tehai, 2), 4);
+        assert_eq!(calc_all(&tehai, 2, None), 4);
         let tehai = hand("4455s").unwrap();
-        assert_eq!(calc_all(&tehai, 1), 0);
+        assert_eq!(calc_all(&tehai, 1, None), 0);
         let tehai = hand("15559m 19p 19s").unwrap();
-        assert_eq!(calc_all(&tehai, 4), 3);
+        assert_eq!(calc_all(&tehai, 4, None), 3);
         let tehai = hand("9999m 6677p 88s").unwrap();
-        assert_eq!(calc_all(&tehai, 4), 2);
+        assert_eq!(calc_all(&tehai, 4, None), 2);
         let tehai = hand("19m 19p 159s").unwrap();
-        assert_eq!(calc_all(&tehai, 4), 1);
+        assert_eq!(calc_all(&tehai, 4, None), 1);
     }
 
     #[test]
     fn calc_3n_plus_2() {
         let tehai = hand("2344456m 14p 127s 7p").unwrap();
-        assert_eq!(calc_all(&tehai, 4), 3);
+        assert_eq!(calc_all(&tehai, 4, None), 3);
         let tehai = hand("2344456m 14p 127s 5p").unwrap();
-        assert_eq!(calc_all(&tehai, 4), 2);
+        assert_eq!(calc_all(&tehai, 4, None), 2);
         let tehai = hand("344455667p 1139s 9m").unwrap();
-        assert_eq!(calc_all(&tehai, 4), 2);
+        assert_eq!(calc_all(&tehai, 4, None), 2);
         let tehai = hand("344455667p 1139s 9p").unwrap();
-        assert_eq!(calc_all(&tehai, 4), 1);
+        assert_eq!(calc_all(&tehai, 4, None), 1);
         let tehai = hand("122334m 678p 37s 5s").unwrap();
-        assert_eq!(calc_all(&tehai, 4), 0);
+        assert_eq!(calc_all(&tehai, 4, None), 0);
         let tehai = hand("122334m 678p 12s 4s").unwrap();
-        assert_eq!(calc_all(&tehai, 4), 0);
+        assert_eq!(calc_all(&tehai, 4, None), 0);
         let tehai = hand("12223456m 78889p 2m").unwrap();
-        assert_eq!(calc_all(&tehai, 4), -1);
+        assert_eq!(calc_all(&tehai, 4, None), -1);
         let tehai = hand("34778p").unwrap();
-        assert_eq!(calc_all(&tehai, 1), 0);
+        assert_eq!(calc_all(&tehai, 1, None), 0);
         let tehai = hand("34s").unwrap();
-        assert_eq!(calc_all(&tehai, 0), 0);
+        assert_eq!(calc_all(&tehai, 0, None), 0);
         let tehai = hand("55m").unwrap();
-        assert_eq!(calc_all(&tehai, 0), -1);
+        assert_eq!(calc_all(&tehai, 0, None), -1);
     }
 }

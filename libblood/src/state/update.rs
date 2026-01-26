@@ -165,6 +165,9 @@ impl PlayerState {
         self.tehai_len_div3 = (self.tehai.iter().sum::<u8>() % 3) as u8;
         self.update_shanten();
         
+        // At start of kyoku, player must choose Ding Que
+        self.last_cans.can_ding_que = true;
+        
         Ok(())
     }
     
@@ -172,6 +175,7 @@ impl PlayerState {
     fn ding_que(&mut self, actor: u8, suit: crate::mjai::Suit) -> Result<()> {
         if actor == self.player_id {
             self.ding_que = Some(suit);
+            self.last_cans.can_ding_que = false;
         } else {
             let actor_rel = self.rel(actor);
             if actor_rel < 3 {
@@ -298,7 +302,7 @@ impl PlayerState {
         Ok(())
     }
 
-    fn dahai(&mut self, actor: u8, pai: Tile, _tsumogiri: bool) -> Result<()> {
+    fn dahai(&mut self, actor: u8, pai: Tile, tsumogiri: bool) -> Result<()> {
         let actor_rel = self.rel(actor);
         if actor_rel == 0 {
             self.move_tile(pai, MoveType::Discard)?;
@@ -321,6 +325,7 @@ impl PlayerState {
         
         let sutehai = Sutehai {
             tile: pai,
+            is_tsumogiri: tsumogiri,
         };
         let kawa_item = KawaItem {
             kan: mem::take(&mut self.intermediate_kan),
@@ -855,7 +860,7 @@ impl PlayerState {
             }
         }
 
-        self.shanten = shanten::calc_all(&self.tehai, self.tehai_len_div3).max(0);
+        self.shanten = shanten::calc_all(&self.tehai, self.tehai_len_div3, self.ding_que).max(0);
         debug_assert!(matches!(self.shanten, 0..=8));
     }
 
@@ -878,7 +883,7 @@ impl PlayerState {
                 continue;
             }
             tehai[tid] -= 1;
-            let shanten_after = shanten::calc_all(&tehai, self.tehai_len_div3);
+            let shanten_after = shanten::calc_all(&tehai, self.tehai_len_div3, self.ding_que);
             tehai[tid] += 1;
             match shanten_after.cmp(&self.shanten) {
                 Ordering::Less => {
@@ -911,7 +916,7 @@ impl PlayerState {
             let mut tehai_after = self.tehai;
             tehai_after[t] += 1;
 
-            if shanten::calc_all(&tehai_after, self.tehai_len_div3) == -1 {
+            if shanten::calc_all(&tehai_after, self.tehai_len_div3, self.ding_que) == -1 {
                 *is_wait = self.tiles_seen[t] < 4;
             }
         }
