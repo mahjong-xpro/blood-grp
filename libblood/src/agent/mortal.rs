@@ -445,11 +445,18 @@ impl BatchAgent for MortalBatchAgent {
                 }
             }
 
-            30 => {
-                bail!("ryukyoku action not supported: {}", state.brief_info())
-            }
+            30 => Event::None, // Pass
 
-            31 => Event::None,
+            31 | 32 | 33 => {
+                ensure!(cans.can_ding_que, "failed ding que check: {}", state.brief_info());
+                let suit = match action {
+                    31 => crate::mjai::Suit::Man,
+                    32 => crate::mjai::Suit::Pin,
+                    33 => crate::mjai::Suit::Sou,
+                    _ => unreachable!(),
+                };
+                Event::DingQue { actor, suit }
+            }
 
             _ => bail!("invalid action: {} (ACTION_SPACE = {})", action, ACTION_SPACE),
         };

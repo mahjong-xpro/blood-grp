@@ -136,7 +136,7 @@ impl<'a> ObsEncoderContext<'a> {
             });
         self.idx += 4;
 
-        self.idx += 3;
+
 
         for &score in &state.scores {
             let v = score.clamp(0, 100_000) as f32 / 100_000.;
@@ -171,7 +171,7 @@ impl<'a> ObsEncoderContext<'a> {
 
 
 
-        self.idx += 2;
+
 
         // Ding que suit (3 dimensions: one-hot for Man/Pin/Sou)
         if let Some(suit) = state.ding_que {
@@ -219,12 +219,7 @@ impl<'a> ObsEncoderContext<'a> {
             self.idx += 1;
         }
 
-        if matches!(self.version, 2 | 3 | 4) {
-            let n = state.kyoku;
-            IntegerEncoder::new(n as usize, 7)
-                .rescale(true)
-                .encode(&mut self);
-        }
+
 
         self.encode_tile_set(std::iter::empty());
 
@@ -347,8 +342,7 @@ impl<'a> ObsEncoderContext<'a> {
             // No longer needed in Bloody Battle Mahjong
         }
 
-        self.idx += 3;
-        self.idx += 3;
+
 
         state
             .waits
@@ -358,12 +352,12 @@ impl<'a> ObsEncoderContext<'a> {
             .for_each(|(t, _)| self.arr.assign(self.idx, t, 1.));
         self.idx += 1;
 
-        self.idx += 1;
+
 
         let n = state.shanten as usize;
         IntegerEncoder::new(n, 6).one_hot(true).encode(&mut self);
 
-        self.idx += 1;
+
 
         if self.at_kan_select {
             self.arr.fill(self.idx, 1.);
@@ -433,9 +427,9 @@ impl<'a> ObsEncoderContext<'a> {
         }
         self.idx += 5;
 
-        self.idx += 1;
 
-        self.idx += 3;
+
+
 
         // Action indices: 0-26 (discard), 27 (pon), 28 (kan), 29 (agari), 30 (pass), 31-33 (ding que)
         if cans.can_pon {

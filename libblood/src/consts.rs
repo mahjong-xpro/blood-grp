@@ -25,7 +25,7 @@ pub const fn obs_shape(version: u32) -> (usize, usize) {
         1 => (964, 27), // 938 + 26 = 964 (ding que: 3+1+13+9)
         2 => (960, 27), // 944 + 16 = 960 (ding que: 3+1+3+9)
         3 => (952, 27), // 936 + 16 = 952 (ding que: 3+1+3+9)
-        4 => (479, 27), // Optimized: 506 - 28 + 1 (self tsumogiri only) = 479.
+        4 => (461, 27), // Optimized: 479 - 18 (padding removed) = 461.
         _ => panic!("Unsupported version"),
     }
 }

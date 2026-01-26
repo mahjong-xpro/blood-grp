@@ -478,6 +478,10 @@ const App = {
             if (e.type === 'tsumo') return `Draw ${getTileText(e.pai)}`;
             if (e.type === 'dahai') return `Discard ${getTileText(e.pai)}`;
             if (e.type === 'pon') return `Pon ${getTileText(e.pai)}`;
+            if (e.type === 'ding_que') {
+                const suitMap = { 'man': '萬', 'pin': '筒', 'sou': '条' };
+                return `Ding Que: ${suitMap[e.suit] || e.suit}`;
+            }
             if (e.type === 'hora') return `WIN! ${e.deltas ? e.deltas.join(',') : ''}`;
             return '';
         };

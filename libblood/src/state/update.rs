@@ -78,7 +78,8 @@ impl PlayerState {
 
             Event::Kakan { actor, pai, .. } => self.kakan(actor, pai)?,
             Event::Ankan { actor, consumed } => self.ankan(actor, consumed)?,
-            Event::Hora { actor, .. } => self.hora(actor)?,
+            Event::Hora { actor, deltas, .. } => self.hora(actor, deltas)?,
+            Event::Ryukyoku { deltas, .. } => self.ryukyoku(deltas)?,
 
             _ => (),
         };
@@ -518,9 +519,34 @@ impl PlayerState {
         Ok(())
     }
 
-    fn hora(&mut self, actor: u8) -> Result<()> {
+    fn hora(&mut self, actor: u8, deltas: Option<[i32; 4]>) -> Result<()> {
         let actor_rel = self.rel(actor);
         self.players_agari[actor_rel] = true;
+        
+        if let Some(d) = deltas {
+             // deltas is [i32; 4] absolute.
+             // self.scores is [i32; 4], relative to self.player_id.
+             // We need to rotate deltas to match self.scores (which is rotated left by self.player_id)
+             let mut d_rel = d;
+             d_rel.rotate_left(self.player_id as usize);
+             
+             for i in 0..4 {
+                 self.scores[i] += d_rel[i];
+             }
+        }
+        
+        Ok(())
+    }
+    
+    fn ryukyoku(&mut self, deltas: Option<[i32; 4]>) -> Result<()> {
+        if let Some(d) = deltas {
+             let mut d_rel = d;
+             d_rel.rotate_left(self.player_id as usize);
+             
+             for i in 0..4 {
+                 self.scores[i] += d_rel[i];
+             }
+        }
         Ok(())
     }
 

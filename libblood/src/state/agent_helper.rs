@@ -320,69 +320,17 @@ impl PlayerState {
     #[inline]
     #[must_use]
     pub fn rule_based_agari(&self) -> bool {
-        if !self.last_cans.can_agari() {
-            return false;
-        }
-        self.rule_based_agari_slow(
-            self.last_cans.can_ron_agari,
-            self.rel(self.last_cans.target_actor),
-        )
+        // In Bloody Battle, we almost always want to agari if possible.
+        // The standard logic of passing cheap hands to aim for top rank doesn't apply cleanly,
+        // and can be detrimental (paying for others' tsumo).
+        // We trust the model's decision (if model explicitly chooses Pass, it passes).
+        // This guard only prevents Agari if the model wants it but the rule says no.
+        // So we should relax this to allow Agari.
+        self.last_cans.can_agari()
     }
 
-    fn rule_based_agari_slow(&self, is_ron: bool, target_rel: usize) -> bool {
-        // Agari if we are oya ourselves, or we are not the last place at all.
-        if self.oya == 0 || self.rank < 3 {
-            return true;
-        }
-
-        // (This logic may need adjustment based on actual game flow)
-        if self.scores.iter().all(|&s| s < 30000) {
-            // Simplified agari condition
-            return true;
-        }
-
-        // Calculate the max theoretical score we can achieve through this agari.
-        let max_win_point = {
-            let mut tehai_full = self.tehai;
-            for t in &self.ankan_overview[0] {
-                tehai_full[t.as_usize()] += 4;
-            }
-
-            // Just calculate agari points directly
-            // TODO: This is a simplified calculation, may need improvement
-            // Note: This is used for SPCalculator's expected value calculation
-            // The simplified version should be sufficient for decision-making
-            // We pass is_haidi = false, is_tianhu = false, is_dihu = false here for simulation estimation
-            self.agari_points(is_ron, false, false, false, &[]).unwrap()
-        };
-
-        // Calculate the best post-hora situation for us.
-        let mut exp_scores = self.scores;
-        if is_ron {
-            exp_scores[0] += max_win_point.ron;
-            exp_scores[target_rel] -= max_win_point.ron;
-        } else {
-            let tsumo_total = max_win_point.tsumo_total(false);
-            exp_scores[0] += tsumo_total;
-            exp_scores
-                .iter_mut()
-                .enumerate()
-                .skip(1)
-                .for_each(|(_idx, s)| {
-                    *s -= max_win_point.tsumo_ko;
-                });
-        }
-
-        //
-        // Agari if 西入 or keeping 西入 is possible. This condition is sound
-        // and complete.
-        if exp_scores.iter().all(|&s| s < 30000) {
-            return true;
-        }
-
-        // Agari if the best post-hora situation in theory will make us avoid
-        // taking the last place.
-        self.get_rank(exp_scores) < 3
+    fn rule_based_agari_slow(&self, _is_ron: bool, _target_rel: usize) -> bool {
+        true
     }
 
     /// Err is returned if the hand cannot agari, or cannot retrieve the winning
