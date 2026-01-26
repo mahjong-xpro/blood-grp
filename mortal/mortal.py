@@ -5,11 +5,11 @@ import sys
 import json
 import torch
 from datetime import datetime, timezone
-from model import Brain, DQN, GRP
+from model import Brain, DQN
 from engine import MortalEngine
 from common import filtered_trimmed_lines
 from libblood.mjai import Bot
-from libblood.dataset import Grp
+# from libblood.dataset import Grp
 from config import config
 
 USAGE = '''Usage: python mortal.py <ID>
@@ -68,25 +68,9 @@ def main():
             print('{"type":"none","meta":{"mask_bits":0}}', flush=True)
 
     if review_mode:
-        grp = GRP(**config['grp']['network'])
-        grp_state = torch.load(config['grp']['state_file'], weights_only=True, map_location=torch.device('cpu'))
-        grp.load_state_dict(grp_state['model'])
-
-        ins = Grp.load_log('\n'.join(logs))
-        feature = ins.take_feature()
-        seq = list(map(
-            lambda idx: torch.as_tensor(feature[:idx+1], device=device),
-            range(len(feature)),
-        ))
-
-        with torch.inference_mode():
-            logits = grp(seq)
-        matrix = grp.calc_matrix(logits)
-        extra_data = {
-            'model_tag': tag,
-            'phi_matrix': matrix.tolist(),
-        }
-        print(json.dumps(extra_data), flush=True)
+        # GRP (Win Probability) calculation is removed for Bloody Battle
+        # print(json.dumps(extra_data), flush=True) 
+        pass
 
 if __name__ == '__main__':
     try:

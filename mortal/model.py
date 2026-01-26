@@ -5,7 +5,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_sequence
 from typing import *
 from functools import partial
 from itertools import permutations
-from libblood.consts import obs_shape, oracle_obs_shape, ACTION_SPACE, GRP_SIZE
+from libblood.consts import obs_shape, oracle_obs_shape, ACTION_SPACE
 
 TILE_KINDS = 27
 
@@ -232,59 +232,4 @@ class DQN(nn.Module):
         q = (v + a - a_mean).masked_fill(~mask, -torch.inf)
         return q
 
-class GRP(nn.Module):
-    def __init__(self, hidden_size=64, num_layers=2):
-        super().__init__()
-        self.rnn = nn.GRU(input_size=GRP_SIZE, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
-        self.fc = nn.Sequential(
-            nn.Linear(hidden_size * num_layers, hidden_size * num_layers),
-            nn.ReLU(inplace=True),
-            nn.Linear(hidden_size * num_layers, 24),
-        )
-        for mod in self.modules():
-            mod.to(torch.float64)
 
-        # perms are the permutations of all possible rank-by-player result
-        perms = torch.tensor(list(permutations(range(4))))
-        perms_t = perms.transpose(0, 1)
-        self.register_buffer('perms', perms)     # (24, 4)
-        self.register_buffer('perms_t', perms_t) # (4, 24)
-
-    # input: [kyoku, s[0], s[1], s[2], s[3], agari[0], agari[1], agari[2], agari[3], ding_que[0], ding_que[1], ding_que[2], ding_que[3]]
-    # kyoku: current kyoku (counts from 1)
-    # s[i]: score of player i / 10000
-    # agari[i]: 1.0 if player i has agari, 0.0 otherwise
-    # ding_que[i]: 0.0 for Man, 0.5 for Pin, 1.0 for Sou (normalized)
-    # s[0] is score of player id 0
-    def forward(self, inputs: List[Tensor]):
-        lengths = torch.tensor([t.shape[0] for t in inputs], dtype=torch.int64)
-        inputs = pad_sequence(inputs, batch_first=True)
-        packed_inputs = pack_padded_sequence(inputs, lengths, batch_first=True, enforce_sorted=False)
-        return self.forward_packed(packed_inputs)
-
-    def forward_packed(self, packed_inputs):
-        _, state = self.rnn(packed_inputs)
-        state = state.transpose(0, 1).flatten(1)
-        logits = self.fc(state)
-        return logits
-
-    # (N, 24) -> (N, player, rank_prob)
-    def calc_matrix(self, logits: Tensor):
-        batch_size = logits.shape[0]
-        probs = logits.softmax(-1)
-        matrix = torch.zeros(batch_size, 4, 4, dtype=probs.dtype)
-        for player in range(4):
-            for rank in range(4):
-                cond = self.perms_t[player] == rank
-                matrix[:, player, rank] = probs[:, cond].sum(-1)
-        return matrix
-
-    # (N, 4) -> (N)
-    def get_label(self, rank_by_player: Tensor):
-        batch_size = rank_by_player.shape[0]
-        perms = self.perms.expand(batch_size, -1, -1).transpose(0, 1)
-        mappings = (perms == rank_by_player).all(-1).nonzero()
-
-        labels = torch.zeros(batch_size, dtype=torch.int64, device=mappings.device)
-        labels[mappings[:, 1]] = mappings[:, 0]
-        return labels

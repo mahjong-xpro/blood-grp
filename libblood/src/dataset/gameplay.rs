@@ -1,4 +1,4 @@
-use super::{Grp, Invisible};
+use super::{GameScore, Invisible};
 use crate::mjai::Event;
 use crate::state::PlayerState;
 use std::array;
@@ -57,7 +57,7 @@ pub struct Gameplay {
     pub shantens: Vec<i8>,
 
     // per game
-    pub grp: Grp, // actually per kyoku though
+    pub game_score: GameScore,
     pub player_id: u8,
     pub player_name: String,
 }
@@ -230,8 +230,8 @@ impl Gameplay {
         mem::take(&mut self.shantens)
     }
 
-    fn take_grp(&mut self) -> Grp {
-        mem::take(&mut self.grp)
+    fn take_game_score(&mut self) -> GameScore {
+        mem::take(&mut self.game_score)
     }
 
     const fn take_player_id(&self) -> u8 {
@@ -246,10 +246,10 @@ impl Gameplay {
         player_id: u8,
         invisibles: Option<&[Invisible]>,
     ) -> Result<Self> {
-        let grp = Grp::load_events(events)?;
+        let game_score = GameScore::load_events(events)?;
 
         let mut data = Self {
-            grp,
+            game_score,
             player_id,
             ..Default::default()
         };

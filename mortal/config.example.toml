@@ -130,37 +130,3 @@ enabled = false
 dir = '/path/to/akochan'
 tactics = '/path/to/tactics.json'
 
-[grp]
-state_file = '/path/to/grp.pth'
-
-[grp.network]
-hidden_size = 64
-num_layers = 2
-
-[grp.control]
-device = 'cuda:0'
-enable_cudnn_benchmark = false
-tensorboard_dir = 'grp_v2/log'
-
-batch_size = 512
-save_every = 2000
-val_steps = 400
-
-[grp.dataset]
-train_globs = [
-    '/path/to/dataset/2019/**/*.json.gz',
-    '/path/to/dataset/2020/**/*.json.gz',
-    '/path/to/dataset/2021/01/**/*.json.gz',
-    '/path/to/dataset/2021/02/**/*.json.gz',
-    # ...
-]
-val_globs = [
-    '/path/to/dataset/2021/10/**/*.json.gz',
-    '/path/to/dataset/2021/11/**/*.json.gz',
-    # ...
-]
-file_index = '/path/to/grp_file_index.pth'
-file_batch_size = 50
-
-[grp.optim]
-lr = 1e-5

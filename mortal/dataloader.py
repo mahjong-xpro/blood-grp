@@ -25,7 +25,7 @@ except ImportError:
             sys.path.insert(0, project_root)
         import libblood
 
-from model import GRP
+# from model import GRP
 from reward_calculator import RewardCalculator
 from libblood.dataset import GameplayLoader
 from config import config
@@ -61,10 +61,10 @@ class FileDatasetsIter(IterableDataset):
 
     def build_iter(self):
         # do not put it in __init__, it won't work on Windows
-        self.grp = GRP(**config['grp']['network'])
-        grp_state = torch.load(config['grp']['state_file'], weights_only=True, map_location=torch.device('cpu'))
-        self.grp.load_state_dict(grp_state['model'])
-        self.reward_calc = RewardCalculator(self.grp, self.pts)
+        # self.grp = GRP(**config['grp']['network'])
+        # grp_state = torch.load(config['grp']['state_file'], weights_only=True, map_location=torch.device('cpu'))
+        # self.grp.load_state_dict(grp_state['model'])
+        self.reward_calc = RewardCalculator()
 
         for _ in range(self.num_epochs):
             yield from self.load_files(self.augmented_first)
@@ -122,28 +122,29 @@ class FileDatasetsIter(IterableDataset):
                 apply_gamma = game.take_apply_gamma()
 
                 # per game
-                grp = game.take_grp()
+                game_score = game.take_game_score()
                 player_id = game.take_player_id()
 
                 game_size = len(obs)
 
-                grp_feature = grp.take_feature()
-                rank_by_player = grp.take_rank_by_player()
+                # GameScore provides scores_history as list of lists (kyoku x 4)
+                # Convert to numpy array for easier slicing
+                scores_history_list = game_score.take_scores_history()
+                scores_history = np.array(scores_history_list, dtype=np.float64) # Float for division if needed, but int is fine. 
+                # actually calc_delta_points expects numpy array to slice.
+                
+                rank_by_player = game_score.take_rank_by_player()
+                final_scores = game_score.take_final_scores()
+
                 # SWITCH TO SCORE BASED REWARD FOR SBR
                 # Original Rank-based:
-                # kyoku_rewards = self.reward_calc.calc_delta_pt(player_id, grp_feature, rank_by_player)
                 
                 # SBR Score-based (Maximize Points):
                 # Scale: 1.0 reward = 10000 points
-                kyoku_rewards = self.reward_calc.calc_delta_points(player_id, grp_feature, final_scores) / 10000.0
+                kyoku_rewards = self.reward_calc.calc_delta_points(player_id, scores_history, final_scores) / 10000.0
                 assert len(kyoku_rewards) >= at_kyoku[-1] + 1 # usually they are equal, unless there is no action in the last kyoku
 
-                final_scores = grp.take_final_scores()
-                # GRP feature is [kyoku, score[0], score[1], score[2], score[3], agari[0], agari[1], agari[2], agari[3], ding_que[0], ding_que[1], ding_que[2], ding_que[3]]
-                # So score columns are indices 1, 2, 3, 4
-                # agari columns are indices 5, 6, 7, 8
-                # ding_que columns are indices 9, 10, 11, 12
-                scores_seq = np.concatenate((grp_feature[:, 1:5] * 1e4, [final_scores]))
+                scores_seq = np.concatenate((scores_history, [final_scores]))
                 rank_by_player_seq = (-scores_seq).argsort(-1, kind='stable').argsort(-1, kind='stable')
                 player_ranks = rank_by_player_seq[:, player_id]
 

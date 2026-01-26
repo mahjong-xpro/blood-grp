@@ -11,10 +11,7 @@ pub const ACTION_SPACE: usize = 27 // discard (27 tile kinds)
                               + 1  // ryukyoku
                               + 1; // pass
 // = 32
-// GRP_SIZE = [kyoku, [score[i] / 10000], [agari[i]], [ding_que[i]]] = 1 + 4 + 4 + 4 = 13
-// agari[i] = 1.0 if player i has agari, 0.0 otherwise
-// ding_que[i] = 0.0 for Man, 0.5 for Pin, 1.0 for Sou (normalized)
-pub const GRP_SIZE: usize = 13;
+
 
 #[pyfunction]
 #[inline]
@@ -54,6 +51,5 @@ pub(crate) fn register_module(
     m.add_function(wrap_pyfunction!(oracle_obs_shape, &m)?)?;
     m.add("MAX_VERSION", MAX_VERSION)?;
     m.add("ACTION_SPACE", ACTION_SPACE)?;
-    m.add("GRP_SIZE", GRP_SIZE)?;
     add_submodule(py, prefix, super_mod, &m)
 }
