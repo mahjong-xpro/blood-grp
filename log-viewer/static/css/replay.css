@@ -265,6 +265,25 @@ body {
     opacity: 0.7;
 }
 
+/* Flex Order: Kawa(1) -> Hand(2) -> Info(3) 
+   This ensures Info is always at the visual "Back" (Edge of screen) 
+   and Kawa is always at the visual "Front" (Center of screen)
+   regardless of rotation.
+*/
+.kawa-area {
+    order: 1;
+    margin-bottom: 8px;
+}
+
+.hand-row {
+    order: 2;
+    margin-bottom: 12px;
+}
+
+.player-info-card {
+    order: 3;
+}
+
 /* Layout Logic for 4 Players */
 /* Player 0 (Bottom) */
 .player-area.player-0 {
@@ -336,7 +355,7 @@ body {
     /* width: fit-content; */
     /* Limits width to force wrapping */
     max-width: 250px;
-    margin-bottom: 10px;
+    margin-bottom: 4px;
 }
 
 /* Rotate kawa for visual correctness? usually kawa is just a grid in front of player */
@@ -433,9 +452,9 @@ body {
 }
 
 /* Rotate info card back for side players so text is readable */
+/* Note: Since we reordered to bottom, we check margins */
 .player-1 .player-info-card {
     transform: rotate(90deg);
-    margin-bottom: 50px;
 }
 
 .player-2 .player-info-card {
@@ -444,7 +463,6 @@ body {
 
 .player-3 .player-info-card {
     transform: rotate(-90deg);
-    margin-bottom: 50px;
 }
 
 
