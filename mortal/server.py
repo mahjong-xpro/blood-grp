@@ -36,17 +36,14 @@ S = None
 class Handler(BaseRequestHandler):
     def handle(self):
         msg = self.recv_msg()
-        match msg['type']:
-            # called by workers
-            case 'get_param':
-                self.handle_get_param(msg)
-            case 'submit_replay':
-                self.handle_submit_replay(msg)
-            # called by trainer
-            case 'submit_param':
-                self.handle_submit_param(msg)
-            case 'drain':
-                self.handle_drain()
+        if msg['type'] == 'get_param':
+            self.handle_get_param(msg)
+        elif msg['type'] == 'submit_replay':
+            self.handle_submit_replay(msg)
+        elif msg['type'] == 'submit_param':
+            self.handle_submit_param(msg)
+        elif msg['type'] == 'drain':
+            self.handle_drain()
 
     def handle_get_param(self, msg):
         with S.dir_lock:

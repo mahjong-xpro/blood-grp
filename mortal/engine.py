@@ -51,23 +51,35 @@ class MortalEngine:
             raise Exception(f'{ex}\n{traceback.format_exc()}')
 
     def _react_batch(self, obs, masks, invisible_obs):
-        obs = torch.as_tensor(np.stack(obs, axis=0), device=self.device)
-        masks = torch.as_tensor(np.stack(masks, axis=0), device=self.device)
+        # Optimization: If input is already a list, stack it. If it's already an array/tensor, directly convert.
+        if isinstance(obs, list):
+            obs = torch.as_tensor(np.stack(obs, axis=0), device=self.device)
+        else:
+            obs = torch.as_tensor(obs, device=self.device)
+
+        if isinstance(masks, list):
+            masks = torch.as_tensor(np.stack(masks, axis=0), device=self.device)
+        else:
+            masks = torch.as_tensor(masks, device=self.device)
+
         if invisible_obs is not None:
-            invisible_obs = torch.as_tensor(np.stack(invisible_obs, axis=0), device=self.device)
+            if isinstance(invisible_obs, list):
+                invisible_obs = torch.as_tensor(np.stack(invisible_obs, axis=0), device=self.device)
+            else:
+                invisible_obs = torch.as_tensor(invisible_obs, device=self.device)
+        
         batch_size = obs.shape[0]
 
-        match self.version:
-            case 1:
-                mu, logsig = self.brain(obs, invisible_obs)
-                if self.stochastic_latent:
-                    latent = Normal(mu, logsig.exp() + 1e-6).sample()
-                else:
-                    latent = mu
-                q_out = self.dqn(latent, masks)
-            case 2 | 3 | 4:
-                phi = self.brain(obs)
-                q_out = self.dqn(phi, masks)
+        if self.version == 1:
+            mu, logsig = self.brain(obs, invisible_obs)
+            if self.stochastic_latent:
+                latent = Normal(mu, logsig.exp() + 1e-6).sample()
+            else:
+                latent = mu
+            q_out = self.dqn(latent, masks)
+        elif self.version in (2, 3, 4):
+            phi = self.brain(obs)
+            q_out = self.dqn(phi, masks)
 
         if self.boltzmann_epsilon > 0:
             is_greedy = torch.full((batch_size,), 1-self.boltzmann_epsilon, device=self.device).bernoulli().to(torch.bool)

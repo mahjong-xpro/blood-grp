@@ -124,25 +124,38 @@ impl MortalBatchAgent {
         self.last_batch_size = sync_fields.states.len();
 
         (self.actions, self.q_values, self.masks_recv, self.is_greedy) = Python::with_gil(|py| {
-            let states: Vec<_> = sync_fields
-                .states
-                .drain(..)
-                .map(|v| PyArray2::from_owned_array(py, v))
-                .collect();
-            let masks: Vec<_> = sync_fields
-                .masks
-                .drain(..)
-                .map(|v| PyArray1::from_owned_array(py, v))
-                .collect();
-            let invisible_states: Option<Vec<_>> = self.is_oracle.then(|| {
-                sync_fields
-                    .invisible_states
-                    .drain(..)
-                    .map(|v| PyArray2::from_owned_array(py, v))
-                    .collect()
-            });
+            let states = mem::take(&mut sync_fields.states);
+            let masks = mem::take(&mut sync_fields.masks);
+            let invisible_states = mem::take(&mut sync_fields.invisible_states);
+            drop(sync_fields); // Release lock early
 
-            let args = (states, masks, invisible_states);
+            let state_views: Vec<_> = states.iter().map(|a| a.view()).collect();
+            let stacked_states = ndarray::stack(Axis(0), &state_views)
+                .context("failed to stack states")?;
+            let py_states = PyArray3::from_owned_array(py, stacked_states);
+
+            let mask_views: Vec<_> = masks.iter().map(|a| a.view()).collect();
+            let stacked_masks = ndarray::stack(Axis(0), &mask_views)
+                .context("failed to stack masks")?;
+            let py_masks = PyArray2::from_owned_array(py, stacked_masks);
+
+            let py_invisible_states = if self.is_oracle {
+                let invisible_views: Vec<_> = invisible_states.iter().map(|a| a.view()).collect();
+                let stacked = ndarray::stack(Axis(0), &invisible_views)
+                    .context("failed to stack invisible states")?;
+                Some(PyArray3::from_owned_array(py, stacked).into_py(py))
+            } else {
+                None
+            };
+            
+            // Re-acquire lock to clear fields (though they are already empty due to take)
+            // Actually, we took the vectors, so the struct has empty vectors.
+            // We need to put the capacities back? No, just let them re-allocate or be empty.
+            // The next usage will push to them.
+            // Wait, we need to ensure the vectors in the mutex are usable.
+            // mem::take replaces with default (empty vec), so they are usable.
+
+            let args = (py_states, py_masks, py_invisible_states);
             self.engine
                 .bind_borrowed(py)
                 .call_method1(intern!(py, "react_batch"), args)
