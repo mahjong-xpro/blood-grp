@@ -32,8 +32,8 @@ submit_every = 400
 [train_play.default]
 games = 800  # 每次自对局局数（初期可以设置 400-800，后期可以增加到 2000+）
 log_dir = '/data/mortal/train_play'  # 自对局数据保存目录
-boltzmann_epsilon = 0.2  # 探索率（初期设置为 0.2 以打破定缺偏差，后期降低到 0.001-0.005）
-boltzmann_temp = 0.05  # 温度参数
+boltzmann_epsilon = 0.2  # 探索率 (初期: 0.2-0.5 | 后期/稳定期建议降至: 0.001-0.005)
+boltzmann_temp = 1.0     # 温度参数 (初期: 1.0 | 后期/稳定期建议降至: 0.05-0.1 以增强对弈强度)
 top_p = 1.0
 repeats = 1
 
