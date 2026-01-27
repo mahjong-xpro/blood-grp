@@ -413,9 +413,9 @@ impl BoardState {
                  
                  // If max_points is 0 (can't agari even if tenpai? e.g. no yaku?), treat as No-Ten?
                  // We'll trust `max_points`.
-                 if max_points > 0 {
-                     tenpai_details.push((i, max_points));
-                 }
+                 // Even if max_points is 0 (No Yaku), we count them as Tenpai to avoid Tui Shui (Refund).
+                 // They just won't receive Cha Da Jiao payment (or receive 0).
+                 tenpai_details.push((i, max_points));
              }
         }
         
