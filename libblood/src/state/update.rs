@@ -899,10 +899,11 @@ impl PlayerState {
             }
         }
 
-        self.shanten = shanten::calc_all(&self.tehai, self.tehai_len_div3, self.ding_que).max(0);
+        // Use dynamic calculation instead of fragile state variable
+        // This fixes the bug where Kan (Gang) operations caused tehai_len_div3 to desync
+        let current_len_div3 = (self.tehai.iter().sum::<u8>() / 3) as u8;
+        self.shanten = shanten::calc_all(&self.tehai, current_len_div3, self.ding_que).max(0);
         
-
-
         debug_assert!(matches!(self.shanten, 0..=8));
     }
 
