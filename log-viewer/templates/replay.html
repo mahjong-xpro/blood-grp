@@ -47,9 +47,9 @@
                     @click="loadLog(log.path || log.name)">
                     <div class="log-title">
                         {{ log.name }}
-                        <span v-if="log.p0_agari_count !== undefined && log.p0_agari_count > 0"
-                            class="badge text-bg-warning p0-tag"
-                            style="font-size: 0.8em; margin-left: 5px; background: #ff9800; color: #000; padding: 1px 5px; border-radius: 4px;">
+                        <span v-if="log.p0_agari_count !== undefined" class="badge p0-tag"
+                            :class="log.p0_agari_count > 0 ? 'text-bg-warning' : 'text-bg-secondary'"
+                            :style="log.p0_agari_count > 0 ? 'font-size: 0.8em; margin-left: 5px; background: #ff9800; color: #000; padding: 1px 5px; border-radius: 4px;' : 'font-size: 0.8em; margin-left: 5px; background: #6c757d; color: #fff; padding: 1px 5px; border-radius: 4px;'">
                             P0:{{ log.p0_agari_count }}胡
                         </span>
                     </div>
