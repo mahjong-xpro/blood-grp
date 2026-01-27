@@ -507,18 +507,16 @@ impl<'a> ObsEncoderContext<'a> {
         }
         self.idx += 1;
 
-        if cans.can_ding_que {
-            // Robustness check: Ding Que is only allowed at the very start of the kyoku.
-            // tiles_left starts at 56 (108 total - 13*4 given).
-            // First Tsumo reduces it to 55.
-            // If tiles_left < 56, we must be past the Ding Que phase, regardless of what can_ding_que says.
-            if state.tiles_left == 56 {
-                self.mask[31] = true; // Man
-                self.mask[32] = true; // Pin
-                self.mask[33] = true; // Sou
-            }
-            // Note: Ding Que has no specific feature input channel in this section, 
-            // the state itself (hand tiles) is enough to decide.
+        // Feature 31-33: Ding Que
+        // Robustness check: Ding Que is only allowed at the very start of the kyoku.
+        // tiles_left starts at 56 (108 total - 13*4 given).
+        // First Tsumo reduces it to 55.
+        // We strictly check tiles_left == 56 AND that we haven't selected Ding Que yet.
+        // This prevents state desync issues where can_ding_que might be stale.
+        if state.tiles_left == 56 && state.ding_que.is_none() {
+            self.mask[31] = true; // Man
+            self.mask[32] = true; // Pin
+            self.mask[33] = true; // Sou
         }
 
 
