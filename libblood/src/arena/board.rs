@@ -240,7 +240,7 @@ impl BoardState {
         // Flow: 1. Check 查花猪 (huazhu), 2. Check 查大叫 (tenpai)
         let mut final_deltas = [0; 4];
 
-        log::info!("Exhaustive Ryukyoku Debug: Gang History Len: {}", self.gang_history.len());
+
 
 
         // Step 1: 查花猪 (Check Huazhu - players with ding_que suit tiles remaining)
