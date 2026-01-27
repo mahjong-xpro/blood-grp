@@ -163,7 +163,7 @@ impl PlayerState {
             self.witness_tile(tile)?;
         }
         
-        self.tehai_len_div3 = (self.tehai.iter().sum::<u8>() % 3) as u8;
+        self.tehai_len_div3 = (self.tehai.iter().sum::<u8>() / 3) as u8;
         self.update_shanten();
         
         // At start of kyoku, player must choose Ding Que

@@ -240,6 +240,9 @@ impl BoardState {
         // Flow: 1. Check 查花猪 (huazhu), 2. Check 查大叫 (tenpai)
         let mut final_deltas = [0; 4];
 
+        log::info!("Exhaustive Ryukyoku Debug: Gang History Len: {}", self.gang_history.len());
+
+
         // Step 1: 查花猪 (Check Huazhu - players with ding_que suit tiles remaining)
         // 花猪的定义：选择了定缺，但手牌中还有定缺花色的牌
         // 如果玩家没有选择定缺（ding_que == None），不应该被认为是花猪
