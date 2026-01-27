@@ -124,7 +124,9 @@ impl<'a> ObsEncoderContext<'a> {
     fn encode_obs(mut self) -> (Array2<f32>, Array1<bool>) {
         let state = self.state;
         let cans = state.last_cans;
-
+        if state.tiles_left == 56 && state.tehai.iter().sum::<u8>() == 0 {
+             log::error!("Ding Que Phase (Turn 0) but Tehai is EMPTY! Player: {}. This causes deterministic AI failure (All inputs zero -> Output constant bias).", state.player_id);
+        }
         state
             .tehai
             .iter()
