@@ -1055,6 +1055,12 @@ impl BoardState {
                     actor,
                     deltas: payment_deltas,
                 });
+                
+                // Add explicit score update to event so client knows
+                match &mut ev.event {
+                    Event::Ankan { deltas, .. } => *deltas = Some(payment_deltas),
+                    _ => unreachable!(),
+                }
             }
 
             Event::Daiminkan { actor, target, .. } => {
@@ -1083,6 +1089,12 @@ impl BoardState {
                     actor,
                     deltas: payment_deltas,
                 });
+                
+                // Add explicit score update to event so client knows
+                match &mut ev.event {
+                    Event::Daiminkan { deltas, .. } => *deltas = Some(payment_deltas),
+                    _ => unreachable!(),
+                }
             }
 
             Event::Kakan { actor, .. } => {
@@ -1114,6 +1126,12 @@ impl BoardState {
                     actor,
                     deltas: payment_deltas,
                 });
+                
+                // Add explicit score update to event so client knows
+                match &mut ev.event {
+                    Event::Kakan { deltas, .. } => *deltas = Some(payment_deltas),
+                    _ => unreachable!(),
+                }
             }
 
             Event::Hora { .. } => {

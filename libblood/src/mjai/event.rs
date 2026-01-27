@@ -73,17 +73,23 @@ pub enum Event {
         target: u8,
         pai: Tile,
         consumed: [Tile; 3],
+        #[serde(default)]
+        deltas: Option<[i32; 4]>,
     },
     Kakan {
         #[serde_as(deserialize_as = "TryFromInto<Actor>")]
         actor: u8,
         pai: Tile,
         consumed: [Tile; 3],
+        #[serde(default)]
+        deltas: Option<[i32; 4]>,
     },
     Ankan {
         #[serde_as(deserialize_as = "TryFromInto<Actor>")]
         actor: u8,
         consumed: [Tile; 4],
+        #[serde(default)]
+        deltas: Option<[i32; 4]>,
     },
 
     DingQue {

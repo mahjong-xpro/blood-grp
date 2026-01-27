@@ -74,10 +74,11 @@ impl PlayerState {
                 target,
                 pai,
                 consumed,
-            } => self.daiminkan(actor, target, pai, consumed)?,
+                deltas,
+            } => self.daiminkan(actor, target, pai, consumed, deltas)?,
 
-            Event::Kakan { actor, pai, .. } => self.kakan(actor, pai)?,
-            Event::Ankan { actor, consumed } => self.ankan(actor, consumed)?,
+            Event::Kakan { actor, pai, deltas, .. } => self.kakan(actor, pai, deltas)?,
+            Event::Ankan { actor, consumed, deltas } => self.ankan(actor, consumed, deltas)?,
             Event::Hora { actor, deltas, .. } => self.hora(actor, deltas)?,
             Event::Ryukyoku { deltas, .. } => self.ryukyoku(deltas)?,
 
@@ -563,7 +564,15 @@ impl PlayerState {
         Ok(())
     }
 
-    fn daiminkan(&mut self, actor: u8, target: u8, pai: Tile, consumed: [Tile; 3]) -> Result<()> {
+    fn daiminkan(&mut self, actor: u8, target: u8, pai: Tile, consumed: [Tile; 3], deltas: Option<[i32; 4]>) -> Result<()> {
+        if let Some(d) = deltas {
+             let mut d_rel = d;
+             d_rel.rotate_left(self.player_id as usize);
+             for i in 0..4 {
+                 self.scores[i] += d_rel[i];
+             }
+        }
+
         let actor_rel = self.rel(actor);
         let full_set = consumed.into_iter().chain(iter::once(pai)).collect();
         let fuuro_len = self.fuuro_overview[actor_rel].len();
@@ -626,7 +635,15 @@ impl PlayerState {
         Ok(())
     }
 
-    fn kakan(&mut self, actor: u8, pai: Tile) -> Result<()> {
+    fn kakan(&mut self, actor: u8, pai: Tile, deltas: Option<[i32; 4]>) -> Result<()> {
+        if let Some(d) = deltas {
+             let mut d_rel = d;
+             d_rel.rotate_left(self.player_id as usize);
+             for i in 0..4 {
+                 self.scores[i] += d_rel[i];
+             }
+        }
+
         let actor_rel = self.rel(actor);
         for fuuro in &mut self.fuuro_overview[actor_rel] {
             if fuuro[0] == pai {
@@ -732,7 +749,15 @@ impl PlayerState {
         Ok(())
     }
 
-    fn ankan(&mut self, actor: u8, consumed: [Tile; 4]) -> Result<()> {
+    fn ankan(&mut self, actor: u8, consumed: [Tile; 4], deltas: Option<[i32; 4]>) -> Result<()> {
+        if let Some(d) = deltas {
+             let mut d_rel = d;
+             d_rel.rotate_left(self.player_id as usize);
+             for i in 0..4 {
+                 self.scores[i] += d_rel[i];
+             }
+        }
+
         let actor_rel = self.rel(actor);
         let tile = consumed[0];
         let ankan_len = self.ankan_overview[actor_rel].len();
