@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail, ensure};
 use crossbeam::sync::WaitGroup;
 use ndarray::prelude::*;
-use numpy::{PyArray1, PyArray2};
+use numpy::{PyArray1, PyArray2, PyArray3};
 use parking_lot::Mutex;
 use pyo3::intern;
 use pyo3::prelude::*;
