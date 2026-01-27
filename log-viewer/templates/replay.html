@@ -45,10 +45,13 @@
                 <div v-else v-for="log in filteredLogs" :key="log.path" class="log-item"
                     :class="{ active: currentLogPath === (log.path || log.name) }"
                     @click="loadLog(log.path || log.name)">
-                    <div class="log-title">
-                        {{ log.name }}
+                    <div class="log-title" style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 5px;"
+                            :title="log.name">
+                            {{ log.name }}
+                        </span>
                         <span v-if="log.p0_agari_count !== undefined"
-                            style="display: inline-block; font-size: 11px; margin-left: 8px; padding: 2px 6px; border-radius: 4px; font-weight: bold;"
+                            style="display: inline-block; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: bold; flex-shrink: 0;"
                             :style="log.p0_agari_count > 0 ? 'background-color: #ff9800; color: #000;' : 'background-color: #424242; color: #aaa;'">
                             P0: {{ log.p0_agari_count }}胡
                         </span>
