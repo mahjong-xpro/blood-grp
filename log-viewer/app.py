@@ -264,7 +264,7 @@ def list_logs():
                 'mtime_str': log_entry['mtime_str'],
                 'cached': True,  # Indicate this is cached in memory
                 'cache_key': log_entry['path'],  # Use full path as cache key
-                'p0_agari_count': log_entry.get('game_info', {}).get('p0_agari_count'),
+                'p0_agari_count': log_entry.get('game_info', {}).get('p0_agari_count', 0),
             })
         
         return jsonify({
