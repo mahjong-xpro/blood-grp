@@ -198,6 +198,7 @@ impl PlayerState {
         if actor != self.player_id {
             return Ok(());
         }
+        self.forbidden_tiles.fill(false);
         self.at_turn += 1;
 
         self.last_cans.can_discard = true;
@@ -479,6 +480,7 @@ impl PlayerState {
             return Ok(());
         }
 
+        self.forbidden_tiles.fill(false);
         self.last_cans.can_discard = true;
         self.tehai_len_div3 = self.tehai_len_div3.saturating_sub(1);
         // Marked explicitly as `None` to let `Agent` impls set
