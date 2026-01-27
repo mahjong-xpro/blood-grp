@@ -19,21 +19,30 @@ enable_amp = true  # 混合精度训练，节省显存
 enable_compile = false  # PyTorch 2.0+ 编译优化（可选）
 
 # 训练参数
-batch_size = 512
+batch_size = 2048  # RTX 3090 (24GB) 可以轻松承受 2048 甚至更大
 opt_step_every = 1
 
 # 保存和测试频率
-save_every = 400
-test_every = 20000
-submit_every = 400
+save_every = 1000 # 2000 Samples/Step * 1000 Steps = 2M Samples (约3-5分钟存一次)
+test_every = 5000   # 5000 Steps = 10M Samples (约15-25分钟测一次，监控恢复进度)
+submit_every = 1000
 
 # 自对局配置（用于生成训练数据）
 # 使用环境变量 TRAIN_PLAY_PROFILE 可以选择不同的配置
 [train_play.default]
-games = 800  # 每次自对局局数（初期可以设置 400-800，后期可以增加到 2000+）
+games = 3200  # RTX 3090 建议 3200+ 并行局数以占满 GPU 算力
 log_dir = '/data/mortal/train_play'  # 自对局数据保存目录
-boltzmann_epsilon = 0.2  # 探索率 (初期: 0.2-0.5 | 后期/稳定期建议降至: 0.001-0.005)
-boltzmann_temp = 1.0     # 温度参数 (初期: 1.0 | 后期/稳定期建议降至: 0.05-0.1 以增强对弈强度)
+boltzmann_epsilon = 0.5  # 探索率
+                     # 阶段建议:
+                     # 1. 初期/崩溃恢复 (当前): 0.5 (强力随机，打破定缺偏差)
+                     # 2. 中期 (胜率上升): 0.1-0.2
+                     # 3. 后期 (稳定收敛): 0.001-0.005
+
+boltzmann_temp = 5.0     # 温度参数
+                     # 阶段建议:
+                     # 1. 初期/崩溃恢复 (当前): 5.0 (宽分布，防止 Softmax 极化)
+                     # 2. 中期: 1.0
+                     # 3. 后期: 0.05-0.1 (增强对弈强度)
 top_p = 1.0
 repeats = 1
 
@@ -49,7 +58,7 @@ globs = ['/data/mortal/train_play/**/*.json.gz']  # 自对局数据路径
 file_index = '/data/mortal/file_index.pth'
 file_batch_size = 15
 reserve_ratio = 0.0
-num_workers = 4  # 根据 CPU 核心数调整（建议为 CPU 核心数）
+num_workers = 16  # Threadripper 3970X (32核/64线程)，建议 16-24 以加速数据加载
 player_names_files = []  # 自博弈训练可以留空
 num_epochs = 1
 enable_augmentation = false
@@ -67,7 +76,12 @@ num_blocks = 40
 
 # CQL (Conservative Q-Learning) 配置
 [cql]
-min_q_weight = 5
+min_q_weight = 1.0
+                     # CQL 权重 (压制未见动作的力度)
+                     # 阶段建议:
+                     # 1. 初期/崩溃恢复 (当前): 1.0 (放松压制，允许探索新花色)
+                     # 2. 中期: 2.0-3.0
+                     # 3. 后期: 5.0 (只相信已学到的策略)
 
 # 辅助任务配置
 [aux]
