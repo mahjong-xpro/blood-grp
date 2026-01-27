@@ -374,13 +374,13 @@ impl<'a> ObsEncoderContext<'a> {
 
             // pass
             if !self.at_kan_select {
-                self.mask[ACTION_SPACE - 1] = true;
+                self.mask[30] = true;
             } else if cans.can_daiminkan {
                 self.mask[tile_id] = true;
             } else if !cans.can_ankan && !cans.can_kakan {
                 // If at_kan_select is true but neither can_ankan nor can_kakan is true,
                 // we should still allow pass action (fallback to normal actions)
-                self.mask[ACTION_SPACE - 1] = true;
+                self.mask[30] = true;
             }
         }
         self.idx += 3;
