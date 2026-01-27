@@ -333,44 +333,43 @@ impl BatchAgent for MortalBatchAgent {
 
         let event = match action {
             0..=26 => {
-                if !cans.can_discard {
-                    log::warn!("failed discard check: {}", state.brief_info());
-                    Event::None
-                } else {
-                    let pai = must_tile!(action);
-                    let tsumogiri = state.last_self_tsumo().is_some_and(|t| t == pai);
-                    Event::Dahai {
-                        actor,
-                        pai,
-                        tsumogiri,
-                    }
+                ensure!(
+                    cans.can_discard,
+                    "failed discard check: {}",
+                    state.brief_info()
+                );
+
+                let pai = must_tile!(action);
+                let tsumogiri = state.last_self_tsumo().is_some_and(|t| t == pai);
+                Event::Dahai {
+                    actor,
+                    pai,
+                    tsumogiri,
                 }
             }
 
             27 => {
-                if !cans.can_pon {
-                    log::warn!("failed pon check: {}", state.brief_info());
-                    Event::None
-                } else {
-                    let pai = state
-                        .last_kawa_tile()
-                        .context("invalid state: no last kawa tile")?;
+                ensure!(cans.can_pon, "failed pon check: {}", state.brief_info());
 
-                    let consumed = [pai; 2];
-                    Event::Pon {
-                        actor,
-                        target: cans.target_actor,
-                        pai,
-                        consumed,
-                    }
+                let pai = state
+                    .last_kawa_tile()
+                    .context("invalid state: no last kawa tile")?;
+
+                let consumed = [pai; 2];
+                Event::Pon {
+                    actor,
+                    target: cans.target_actor,
+                    pai,
+                    consumed,
                 }
             }
 
             28 => {
-                if !cans.can_daiminkan && !cans.can_ankan && !cans.can_kakan {
-                    log::warn!("failed kan check: {}", state.brief_info());
-                    Event::None
-                } else {
+                ensure!(
+                    cans.can_daiminkan || cans.can_ankan || cans.can_kakan,
+                    "failed kan check: {}",
+                    state.brief_info()
+                );
 
                 if cans.can_daiminkan {
                     let tile = state
@@ -430,37 +429,33 @@ impl BatchAgent for MortalBatchAgent {
                 } else {
                     bail!("no kan action available: {}", state.brief_info())
                 }
-                }
             }
 
             29 => {
-                if !cans.can_agari() {
-                    log::warn!("failed hora check: {}", state.brief_info());
-                    Event::None
-                } else {
-                    Event::Hora {
-                        actor,
-                        target: cans.target_actor,
-                        deltas: None,
-                    }
+                ensure!(
+                    cans.can_agari(),
+                    "failed hora check: {}",
+                    state.brief_info(),
+                );
+
+                Event::Hora {
+                    actor,
+                    target: cans.target_actor,
+                    deltas: None,
                 }
             }
 
             30 => Event::None, // Pass
 
             31 | 32 | 33 => {
-                if !cans.can_ding_que {
-                    log::warn!("failed ding que check: {}", state.brief_info());
-                    Event::None
-                } else {
-                    let suit = match action {
-                        31 => crate::mjai::Suit::Man,
-                        32 => crate::mjai::Suit::Pin,
-                        33 => crate::mjai::Suit::Sou,
-                        _ => unreachable!(),
-                    };
-                    Event::DingQue { actor, suit }
-                }
+                ensure!(cans.can_ding_que, "failed ding que check: {}", state.brief_info());
+                let suit = match action {
+                    31 => crate::mjai::Suit::Man,
+                    32 => crate::mjai::Suit::Pin,
+                    33 => crate::mjai::Suit::Sou,
+                    _ => unreachable!(),
+                };
+                Event::DingQue { actor, suit }
             }
 
             _ => bail!("invalid action: {} (ACTION_SPACE = {})", action, ACTION_SPACE),

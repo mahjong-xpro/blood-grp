@@ -48,7 +48,7 @@ python -m maturin build --release --out ../mortal
 
 # 4. 安装生成的包
 # 注意：生成的 whl 文件名需根据实际输出调整
-pip3 install --force-reinstall ../mortal/libblood-*.whl
+pip install --force-reinstall ../mortal/libblood-*.whl
 ```
 
 ## 2. 配置文件 (Configuration)
