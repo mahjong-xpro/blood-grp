@@ -900,6 +900,9 @@ impl PlayerState {
         }
 
         self.shanten = shanten::calc_all(&self.tehai, self.tehai_len_div3, self.ding_que).max(0);
+        
+
+
         debug_assert!(matches!(self.shanten, 0..=8));
     }
 
