@@ -214,6 +214,9 @@ const App = {
                         p.fuuro.push(meld);
                         p.lastAction = 'ankan';
                     }
+                    if (event.deltas) {
+                        event.deltas.forEach((d, i) => players.value[i].score += d);
+                    }
                     break;
 
                 case 'daiminkan':
@@ -224,6 +227,9 @@ const App = {
                         p.fuuro.push(meld);
                         p.lastAction = 'daiminkan';
                         currentPlayer.value = actor;
+                    }
+                    if (event.deltas) {
+                        event.deltas.forEach((d, i) => players.value[i].score += d);
                     }
                     break;
 
@@ -249,6 +255,9 @@ const App = {
                             pon.type = 'kakan';
                         }
                         p.lastAction = 'kakan';
+                    }
+                    if (event.deltas) {
+                        event.deltas.forEach((d, i) => players.value[i].score += d);
                     }
                     break;
                 // ... (rest of switch)
