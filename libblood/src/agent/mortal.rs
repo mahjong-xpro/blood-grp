@@ -132,18 +132,18 @@ impl MortalBatchAgent {
             let state_views: Vec<_> = states.iter().map(|a| a.view()).collect();
             let stacked_states = ndarray::stack(Axis(0), &state_views)
                 .context("failed to stack states")?;
-            let py_states = PyArray3::from_owned_array(py, stacked_states);
+            let py_states = PyArray3::from_owned_array(py, stacked_states).unbind();
 
             let mask_views: Vec<_> = masks.iter().map(|a| a.view()).collect();
             let stacked_masks = ndarray::stack(Axis(0), &mask_views)
                 .context("failed to stack masks")?;
-            let py_masks = PyArray2::from_owned_array(py, stacked_masks);
+            let py_masks = PyArray2::from_owned_array(py, stacked_masks).unbind();
 
             let py_invisible_states = if self.is_oracle {
                 let invisible_views: Vec<_> = invisible_states.iter().map(|a| a.view()).collect();
                 let stacked = ndarray::stack(Axis(0), &invisible_views)
                     .context("failed to stack invisible states")?;
-                Some(PyArray3::from_owned_array(py, stacked).into_py(py))
+                Some(PyArray3::from_owned_array(py, stacked).unbind())
             } else {
                 None
             };
