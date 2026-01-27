@@ -76,8 +76,6 @@ def load_log_content(file_path):
             if event.get('type') == 'start_game':
                 game_info['names'] = event.get('names', ['Player 0', 'Player 1', 'Player 2', 'Player 3'])
                 game_info['seed'] = event.get('seed')
-                game_info['names'] = event.get('names', ['Player 0', 'Player 1', 'Player 2', 'Player 3'])
-                game_info['seed'] = event.get('seed')
                 break
         
         # Count P0 Agari
@@ -85,6 +83,7 @@ def load_log_content(file_path):
         for event in events:
             if event.get('type') == 'hora' and event.get('actor') == 0:
                 p0_agari += 1
+        print(f"DEBUG: Loaded {file_path.name}, P0 Wins: {p0_agari}")
         game_info['p0_agari_count'] = p0_agari
         
         return {
