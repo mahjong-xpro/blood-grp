@@ -38,7 +38,7 @@ boltzmann_epsilon = 0.5  # 探索率
                      # 2. 中期 (胜率上升): 0.1-0.2
                      # 3. 后期 (稳定收敛): 0.001-0.005
 
-boltzmann_temp = 5.0     # 温度参数
+boltzmann_temp = 1.0     # 温度参数
                      # 阶段建议:
                      # 1. 初期/崩溃恢复 (当前): 5.0 (宽分布，防止 Softmax 极化)
                      # 2. 中期: 1.0
@@ -76,7 +76,7 @@ num_blocks = 40
 
 # CQL (Conservative Q-Learning) 配置
 [cql]
-min_q_weight = 1.0
+min_q_weight = 0.0
                      # CQL 权重 (压制未见动作的力度)
                      # 阶段建议:
                      # 1. 初期/崩溃恢复 (当前): 1.0 (放松压制，允许探索新花色)
