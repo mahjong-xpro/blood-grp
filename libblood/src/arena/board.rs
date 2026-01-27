@@ -461,7 +461,7 @@ impl BoardState {
                          final_deltas[i] -= record.deltas[i];
                      }
                  }
-                 log::info!("Tui Shui: Player {} refunds Gang (Revenue: {})", record.actor, record.deltas[record.actor as usize]);
+                 log::debug!("Tui Shui: Player {} refunds Gang (Revenue: {})", record.actor, record.deltas[record.actor as usize]);
              }
         }
 
