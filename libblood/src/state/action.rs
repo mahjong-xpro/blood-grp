@@ -166,6 +166,7 @@ impl PlayerState {
                 target,
                 pai,
                 consumed,
+                ..
             } => {
                 ensure!(target != actor, "daiminkan from itself");
                 ensure!(

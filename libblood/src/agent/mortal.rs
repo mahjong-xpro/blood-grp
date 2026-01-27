@@ -394,6 +394,7 @@ impl BatchAgent for MortalBatchAgent {
                         target: cans.target_actor,
                         pai: tile,
                         consumed,
+                        deltas: None,
                     }
                 } else if cans.can_ankan || cans.can_kakan {
                     let ankan_candidates = state.ankan_candidates();
@@ -418,12 +419,14 @@ impl BatchAgent for MortalBatchAgent {
                         Event::Ankan {
                             actor,
                             consumed: [tile; 4],
+                            deltas: None,
                         }
                     } else if cans.can_kakan && kakan_candidates.contains(&tile) {
                         Event::Kakan {
                             actor,
                             pai: tile,
                             consumed: [tile; 3],
+                            deltas: None,
                         }
                     } else {
                         bail!(

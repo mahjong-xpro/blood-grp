@@ -1027,9 +1027,6 @@ impl BoardState {
             }
 
             Event::Ankan { actor, .. } => {
-                self.broadcast(&ev.event);
-                self.add_log(ev.clone());
-
                 self.tsumo_actor = actor;
                 self.kans += 1;
 
@@ -1056,23 +1053,24 @@ impl BoardState {
                     deltas: payment_deltas,
                 });
                 
-                // Add explicit score update to event so client knows
-                match &mut ev.event {
+                // Construct modified event with deltas and broadcast
+                let mut new_event = ev.event.clone();
+                match &mut new_event {
                     Event::Ankan { deltas, .. } => *deltas = Some(payment_deltas),
                     _ => unreachable!(),
                 }
+                self.broadcast(&new_event);
+                
+                let mut new_ev_ext = ev.clone();
+                new_ev_ext.event = new_event;
+                self.add_log(new_ev_ext);
             }
 
             Event::Daiminkan { actor, target, .. } => {
-                self.broadcast(&ev.event);
-                self.add_log(ev.clone());
-
                 self.tsumo_actor = actor;
                 self.kans += 1;
                 
                 // Instant Payment (Gua Feng - Ming Kan): Discarder pays 2000 points
-                // Only if discarder has not agari (usually true, but check just in case?)
-                // Actually, discarder just played, so they are active.
                 let mut payment_deltas = [0i32; 4];
                 let payment = 2000;
                 
@@ -1090,17 +1088,20 @@ impl BoardState {
                     deltas: payment_deltas,
                 });
                 
-                // Add explicit score update to event so client knows
-                match &mut ev.event {
+                // Construct modified event with deltas and broadcast
+                let mut new_event = ev.event.clone();
+                match &mut new_event {
                     Event::Daiminkan { deltas, .. } => *deltas = Some(payment_deltas),
                     _ => unreachable!(),
                 }
+                self.broadcast(&new_event);
+                
+                let mut new_ev_ext = ev.clone();
+                new_ev_ext.event = new_event;
+                self.add_log(new_ev_ext);
             }
 
             Event::Kakan { actor, .. } => {
-                self.broadcast(&ev.event);
-                self.add_log(ev.clone());
-
                 self.tsumo_actor = actor;
                 self.kans += 1;
                 
@@ -1127,11 +1128,17 @@ impl BoardState {
                     deltas: payment_deltas,
                 });
                 
-                // Add explicit score update to event so client knows
-                match &mut ev.event {
+                // Construct modified event with deltas and broadcast
+                let mut new_event = ev.event.clone();
+                match &mut new_event {
                     Event::Kakan { deltas, .. } => *deltas = Some(payment_deltas),
                     _ => unreachable!(),
                 }
+                self.broadcast(&new_event);
+                
+                let mut new_ev_ext = ev.clone();
+                new_ev_ext.event = new_event;
+                self.add_log(new_ev_ext);
             }
 
             Event::Hora { .. } => {
