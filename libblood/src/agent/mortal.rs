@@ -382,49 +382,41 @@ impl BatchAgent for MortalBatchAgent {
                         pai: tile,
                         consumed,
                     }
-                } else if cans.can_ankan {
+                } else if cans.can_ankan || cans.can_kakan {
                     let ankan_candidates = state.ankan_candidates();
-                    let tile = if let Some(kan_idx) = kan_select_idx {
-                        let tile = must_tile!(self.actions[kan_idx]);
-                        ensure!(
-                            ankan_candidates.contains(&tile),
-                            "kan choice not in ankan candidates: player (abs): {}\nankan_candidates: {:?}\nselected tile: {:?}\nkan_idx: {:?}\nstate: {}",
-                            actor,
-                            ankan_candidates.iter().map(|t| t.to_string()).collect::<Vec<_>>(),
-                            tile,
-                            kan_idx,
-                            state.brief_info()
-                        );
-                        tile
-                    } else {
-                        ensure!(
-                            !ankan_candidates.is_empty(),
-                            "ankan_candidates is empty but can_ankan is true: {}",
-                            state.brief_info()
-                        );
-                        ankan_candidates[0]
-                    };
-                    Event::Ankan {
-                        actor,
-                        consumed: [tile; 4],
-                    }
-                } else if cans.can_kakan {
                     let kakan_candidates = state.kakan_candidates();
+
                     let tile = if let Some(kan_idx) = kan_select_idx {
                         let tile = must_tile!(self.actions[kan_idx]);
-                        ensure!(
-                            kakan_candidates.contains(&tile),
-                            "kan choice not in kakan candidates: {}",
-                            state.brief_info()
-                        );
                         tile
                     } else {
-                        kakan_candidates[0]
+                        // Priority: Ankan > Kakan for default (greedy/auto) behavior?
+                        // Or just pick first available.
+                        if !ankan_candidates.is_empty() {
+                            ankan_candidates[0]
+                        } else if !kakan_candidates.is_empty() {
+                            kakan_candidates[0]
+                        } else {
+                             bail!("no kan candidates but flags are true: {}", state.brief_info())
+                        }
                     };
-                    Event::Kakan {
-                        actor,
-                        pai: tile,
-                        consumed: [tile; 3],
+
+                    if cans.can_ankan && ankan_candidates.contains(&tile) {
+                        Event::Ankan {
+                            actor,
+                            consumed: [tile; 4],
+                        }
+                    } else if cans.can_kakan && kakan_candidates.contains(&tile) {
+                        Event::Kakan {
+                            actor,
+                            pai: tile,
+                            consumed: [tile; 3],
+                        }
+                    } else {
+                        bail!(
+                            "kan choice {:?} not in candidates. ankan: {:?}, kakan: {:?}. state: {}", 
+                            tile, ankan_candidates, kakan_candidates, state.brief_info()
+                        );
                     }
                 } else {
                     bail!("no kan action available: {}", state.brief_info())

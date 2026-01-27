@@ -198,6 +198,12 @@ impl PlayerState {
         if actor != self.player_id {
             return Ok(());
         }
+        
+        // Safety check: specific to Blood Battle. A player who has won cannot act.
+        if self.has_agari {
+            return Ok(());
+        }
+
         self.forbidden_tiles.fill(false);
         self.at_turn += 1;
 
@@ -388,6 +394,11 @@ impl PlayerState {
             }
             self.update_waits();
 
+            return Ok(());
+        }
+
+        // If the player has already won, they cannot take any actions
+        if self.has_agari {
             return Ok(());
         }
 
