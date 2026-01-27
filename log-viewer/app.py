@@ -76,7 +76,16 @@ def load_log_content(file_path):
             if event.get('type') == 'start_game':
                 game_info['names'] = event.get('names', ['Player 0', 'Player 1', 'Player 2', 'Player 3'])
                 game_info['seed'] = event.get('seed')
+                game_info['names'] = event.get('names', ['Player 0', 'Player 1', 'Player 2', 'Player 3'])
+                game_info['seed'] = event.get('seed')
                 break
+        
+        # Count P0 Agari
+        p0_agari = 0
+        for event in events:
+            if event.get('type') == 'hora' and event.get('actor') == 0:
+                p0_agari += 1
+        game_info['p0_agari_count'] = p0_agari
         
         return {
             'content': raw_log,
@@ -256,6 +265,7 @@ def list_logs():
                 'mtime_str': log_entry['mtime_str'],
                 'cached': True,  # Indicate this is cached in memory
                 'cache_key': log_entry['path'],  # Use full path as cache key
+                'p0_agari_count': log_entry.get('game_info', {}).get('p0_agari_count'),
             })
         
         return jsonify({

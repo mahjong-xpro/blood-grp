@@ -45,7 +45,14 @@
                 <div v-else v-for="log in filteredLogs" :key="log.path" class="log-item"
                     :class="{ active: currentLogPath === (log.path || log.name) }"
                     @click="loadLog(log.path || log.name)">
-                    <div class="log-title">{{ log.name }}</div>
+                    <div class="log-title">
+                        {{ log.name }}
+                        <span v-if="log.p0_agari_count !== undefined && log.p0_agari_count > 0"
+                            class="badge text-bg-warning p0-tag"
+                            style="font-size: 0.8em; margin-left: 5px; background: #ff9800; color: #000; padding: 1px 5px; border-radius: 4px;">
+                            P0:{{ log.p0_agari_count }}胡
+                        </span>
+                    </div>
                     <div class="log-meta">
                         <span>{{ log.mtime_str.split(' ')[1] }}</span>
                         <span>{{ formatSize(log.size) }}</span>
