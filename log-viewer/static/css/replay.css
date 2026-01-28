@@ -356,9 +356,9 @@ body {
 
 /* Reset P0 Kawa tile size (do not inherit large size) */
 .player-area.player-0 .kawa-area .tile {
-    width: var(--tile-width);
-    height: var(--tile-height);
-    font-size: 20px;
+    width: 28px;
+    height: 39px;
+    font-size: 16px;
 }
 
 /* Player 1 (Right) */
@@ -426,6 +426,13 @@ body {
 /* Tiles */
 .tile-wrapper {
     position: relative;
+}
+
+/* Specific Kawa Tile Size */
+.kawa-area .tile {
+    width: 28px;
+    height: 39px;
+    font-size: 16px;
 }
 
 .tile {
