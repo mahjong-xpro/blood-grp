@@ -443,39 +443,22 @@ body {
     box-shadow: 1px 1px 0px #ccc, 2px 2px 3px rgba(0, 0, 0, 0.3);
     border: 1px solid #dcdcdc;
     display: flex;
-    flex-direction: column;
-    /* Stack vertically! */
     justify-content: center;
     align-items: center;
-    font-weight: bold;
-    font-size: 20px;
-    color: #333;
     user-select: none;
     position: relative;
     /* 3D height effect */
     margin-bottom: var(--tile-depth);
-    line-height: normal;
+    padding: 2px;
+    /* Small padding so image doesn't touch border? Or 0. Contain handles it. */
+    overflow: hidden;
 }
 
-.tile-num {
-    line-height: 1;
-    transform: translateY(2px);
-    /* Slight nudge down? */
-}
-
-.tile-suit {
-    font-size: 0.6em;
-    /* Smaller suit char */
-    line-height: 1;
-}
-
-/* Adjust sizes for small tiles */
-.tile.small .tile-num {
-    font-size: 14px;
-}
-
-.tile.small .tile-suit {
-    font-size: 10px;
+.tile-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
 }
 
 /* Kawa adjustments */

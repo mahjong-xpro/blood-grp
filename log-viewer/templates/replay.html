@@ -120,9 +120,7 @@
                             <div v-for="(tile, tIdx) in player.kawa" :key="'kawa-'+tIdx" class="tile-wrapper discarded"
                                 :class="{ 'last-discard': lastDiscard && lastDiscard.actor === idx && tIdx === player.kawa.length - 1 }">
                                 <div class="tile" :class="getTileClass(tile)">
-                                    <div class="tile-num">{{ getTileNum(tile) }}</div>
-                                    <div class="tile-suit" v-if="getTileSuitChar(tile)">{{ getTileSuitChar(tile) }}
-                                    </div>
+                                    <img :src="getTileImage(tile)" class="tile-img">
                                 </div>
                             </div>
                         </div>
@@ -135,9 +133,7 @@
                                             getTileClass(tile), 
                                             { 'tsumo-tile': hIdx === player.tehai.length - 1 && player.lastAction === 'tsumo' }
                                          ]">
-                                    <div class="tile-num">{{ getTileNum(tile) }}</div>
-                                    <div class="tile-suit" v-if="getTileSuitChar(tile)">{{ getTileSuitChar(tile) }}
-                                    </div>
+                                    <img :src="getTileImage(tile)" class="tile-img">
                                 </div>
                             </div>
 
@@ -149,11 +145,9 @@
                                             getTileClass(tile),
                                             { 'facedown': meld.type === 'ankan' && (fIdx === 0 || fIdx === 3) }
                                         ]">
-                                        <template v-if="!(meld.type === 'ankan' && (fIdx === 0 || fIdx === 3))">
-                                            <div class="tile-num">{{ getTileNum(tile) }}</div>
-                                            <div class="tile-suit" v-if="getTileSuitChar(tile)">{{ getTileSuitChar(tile)
-                                                }}</div>
-                                        </template>
+                                        <img v-if="meld.type === 'ankan' && (fIdx === 0 || fIdx === 3)"
+                                            src="/static/images/tiles/Back.png" class="tile-img">
+                                        <img v-else :src="getTileImage(tile)" class="tile-img">
                                     </div>
                                 </div>
                             </div>

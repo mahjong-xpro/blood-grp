@@ -516,6 +516,33 @@ const App = {
             return '';
         };
 
+        const getTileImage = (tile) => {
+            if (!tile) return '';
+            // Map tile code to filename
+            // m, p, s -> Man, Pin, Sou
+            // E, S, W, N -> Ton, Nan, Shaa, Pei
+            // P, F, C -> Haku, Hatsu, Chun
+
+            const honorMap = {
+                'E': 'Ton', 'S': 'Nan', 'W': 'Shaa', 'N': 'Pei',
+                'P': 'Haku', 'F': 'Hatsu', 'C': 'Chun'
+            };
+            if (honorMap[tile]) return `/static/images/tiles/${honorMap[tile]}.png`;
+
+            const suitMap = { 'm': 'Man', 'p': 'Pin', 's': 'Sou' };
+            const num = tile[0];
+            const suit = tile[1];
+            if (suitMap[suit]) {
+                // Check if red 5? Usually logic handles it. 
+                // Currently only 'Man5-Dora.png' exists but we just standard 'Man5.png'.
+                // If tile is 5 and 'r' or similar, we might need logic.
+                // But simulator outputs '5m', '0m'? 5mr?
+                // Assuming standard '5m'.
+                return `/static/images/tiles/${suitMap[suit]}${num}.png`;
+            }
+            return '';
+        };
+
         const getTileClass = (tile) => {
             if (!tile) return '';
             if (tile.includes('m')) return 'man';
@@ -570,7 +597,7 @@ const App = {
 
             showRightPanel, eventListRef, visibleEvents,
 
-            getTileText, getTileClass, getTileNum, getTileSuitChar,
+            getTileText, getTileClass, getTileNum, getTileSuitChar, getTileImage,
 
             seekTo, nextEvent, prevEvent, firstEvent, lastEvent, togglePlay, isPlaying, playbackSpeed
         };
