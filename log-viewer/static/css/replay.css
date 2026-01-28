@@ -443,6 +443,8 @@ body {
     box-shadow: 1px 1px 0px #ccc, 2px 2px 3px rgba(0, 0, 0, 0.3);
     border: 1px solid #dcdcdc;
     display: flex;
+    flex-direction: column;
+    /* Stack vertically! */
     justify-content: center;
     align-items: center;
     font-weight: bold;
@@ -452,6 +454,37 @@ body {
     position: relative;
     /* 3D height effect */
     margin-bottom: var(--tile-depth);
+    line-height: normal;
+}
+
+.tile-num {
+    line-height: 1;
+    transform: translateY(2px);
+    /* Slight nudge down? */
+}
+
+.tile-suit {
+    font-size: 0.6em;
+    /* Smaller suit char */
+    line-height: 1;
+}
+
+/* Adjust sizes for small tiles */
+.tile.small .tile-num {
+    font-size: 14px;
+}
+
+.tile.small .tile-suit {
+    font-size: 10px;
+}
+
+/* Kawa adjustments */
+.kawa-area .tile .tile-num {
+    font-size: 14px;
+}
+
+.kawa-area .tile .tile-suit {
+    font-size: 10px;
 }
 
 .tile::after {

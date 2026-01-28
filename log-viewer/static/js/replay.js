@@ -499,6 +499,23 @@ const App = {
             return num + (suitMap[suit] || '');
         };
 
+        const getTileNum = (tile) => {
+            if (!tile) return '';
+            const map = {
+                'E': '東', 'S': '南', 'W': '西', 'N': '北',
+                'P': '白', 'F': '發', 'C': '中'
+            };
+            if (map[tile]) return map[tile];
+            return tile[0];
+        };
+
+        const getTileSuitChar = (tile) => {
+            if (!tile) return '';
+            const suitMap = { 'm': '萬', 'p': '筒', 's': '条' };
+            if (tile.length > 1 && suitMap[tile[1]]) return suitMap[tile[1]];
+            return '';
+        };
+
         const getTileClass = (tile) => {
             if (!tile) return '';
             if (tile.includes('m')) return 'man';
@@ -553,7 +570,7 @@ const App = {
 
             showRightPanel, eventListRef, visibleEvents,
 
-            getTileText, getTileClass,
+            getTileText, getTileClass, getTileNum, getTileSuitChar,
 
             seekTo, nextEvent, prevEvent, firstEvent, lastEvent, togglePlay, isPlaying, playbackSpeed
         };

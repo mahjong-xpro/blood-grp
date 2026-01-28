@@ -120,7 +120,9 @@
                             <div v-for="(tile, tIdx) in player.kawa" :key="'kawa-'+tIdx" class="tile-wrapper discarded"
                                 :class="{ 'last-discard': lastDiscard && lastDiscard.actor === idx && tIdx === player.kawa.length - 1 }">
                                 <div class="tile" :class="getTileClass(tile)">
-                                    {{ getTileText(tile) }}
+                                    <div class="tile-num">{{ getTileNum(tile) }}</div>
+                                    <div class="tile-suit" v-if="getTileSuitChar(tile)">{{ getTileSuitChar(tile) }}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -130,10 +132,12 @@
                             <!-- Tehai (Hand) -->
                             <div class="tehai-area">
                                 <div v-for="(tile, hIdx) in player.tehai" :key="'hand-'+hIdx" class="tile" :class="[
-                                        getTileClass(tile), 
-                                        { 'tsumo-tile': hIdx === player.tehai.length - 1 && player.lastAction === 'tsumo' }
-                                     ]">
-                                    {{ getTileText(tile) }}
+                                            getTileClass(tile), 
+                                            { 'tsumo-tile': hIdx === player.tehai.length - 1 && player.lastAction === 'tsumo' }
+                                         ]">
+                                    <div class="tile-num">{{ getTileNum(tile) }}</div>
+                                    <div class="tile-suit" v-if="getTileSuitChar(tile)">{{ getTileSuitChar(tile) }}
+                                    </div>
                                 </div>
                             </div>
 
@@ -145,8 +149,11 @@
                                             getTileClass(tile),
                                             { 'facedown': meld.type === 'ankan' && (fIdx === 0 || fIdx === 3) }
                                         ]">
-                                        {{ (meld.type === 'ankan' && (fIdx === 0 || fIdx === 3)) ? '' :
-                                        getTileText(tile) }}
+                                        <template v-if="!(meld.type === 'ankan' && (fIdx === 0 || fIdx === 3))">
+                                            <div class="tile-num">{{ getTileNum(tile) }}</div>
+                                            <div class="tile-suit" v-if="getTileSuitChar(tile)">{{ getTileSuitChar(tile)
+                                                }}</div>
+                                        </template>
                                     </div>
                                 </div>
                             </div>
