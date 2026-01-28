@@ -142,6 +142,19 @@ class FileDatasetsIter(IterableDataset):
                 # SBR Score-based (Maximize Points):
                 # Scale: 1.0 reward = 10000 points
                 kyoku_rewards = self.reward_calc.calc_delta_points(player_id, scores_history, final_scores) / 10000.0
+                
+                # Add Ding Que quality bonus
+                # Quality: +1.0 (best), 0.0 (middle), -1.0 (worst)
+                # Scale: ±0.02 = ±200 points equivalent
+                ding_que_quality = game_score.take_ding_que_quality()
+                if len(ding_que_quality) > 0:
+                    ding_que_quality_arr = np.array(ding_que_quality, dtype=np.float64)
+                    # Get this player's quality scores for each kyoku
+                    player_dq_quality = ding_que_quality_arr[:, player_id]
+                    # Scale and add to rewards (ensure same length)
+                    min_len = min(len(kyoku_rewards), len(player_dq_quality))
+                    kyoku_rewards[:min_len] += player_dq_quality[:min_len] * 0.02
+                
                 assert len(kyoku_rewards) >= at_kyoku[-1] + 1 # usually they are equal, unless there is no action in the last kyoku
 
                 scores_seq = np.concatenate((scores_history, [final_scores]))
