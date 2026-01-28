@@ -91,9 +91,11 @@ pub enum Poll {
 impl Board {
     pub fn init_from_seed(&mut self, game_seed: (u64, u64)) {
         let (nonce, key) = game_seed;
+        // Include kyoku number in seed to ensure different shuffle each kyoku
         let kyoku_seed = Sha3_256::new()
             .chain_update(nonce.to_le_bytes())
             .chain_update(key.to_le_bytes())
+            .chain_update(self.kyoku.to_le_bytes())  // Add kyoku number!
             .finalize()
             .into();
         let mut rng = ChaCha12Rng::from_seed(kyoku_seed);
