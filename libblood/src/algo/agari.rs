@@ -293,7 +293,11 @@ impl AgariCalculator<'_> {
                 // Check if single wait (tanki): pair is the winning tile
                 let is_tanki = div.pair_idx < 14 && tile14[div.pair_idx as usize] == self.winning_tile;
                 if is_tanki {
-                    div_fan += 2;
+                    // Jin Gou Diao (Single Wait with 4 Melds).
+                    // In Bloody Battle, this stacks with ToiToi.
+                    // Base (1) + ToiToi (1) + JGD (1) = 3 Fan (4000).
+                    // (Previously was 2, resulted in 4 Fan / 8000).
+                    div_fan += 1;
                 }
             }
             

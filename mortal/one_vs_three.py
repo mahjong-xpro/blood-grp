@@ -93,7 +93,7 @@ def main():
             )
         rankings = np.array(rankings)
         avg_rank = rankings @ np.arange(1, 5) / rankings.sum()
-        avg_pt = rankings @ np.array([90, 45, 0, -135]) / rankings.sum()
+        avg_pt = rankings @ np.array([6, 4, 2, 0]) / rankings.sum()
         print(f'challenger rankings: {rankings} ({avg_rank}, {avg_pt}pt)')
 
 if __name__ == '__main__':

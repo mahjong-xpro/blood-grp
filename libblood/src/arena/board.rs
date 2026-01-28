@@ -382,10 +382,9 @@ impl BoardState {
                              minkans: &state.minkans,
                              ankans: &state.ankans,
                              winning_tile: tid as u8,
-                             is_ron: false, // Assume Tsumo for max value? 
-                             // Usually "Retreat" based on what? 
-                             // Cha Da Jiao usually pays according to Tsumo-like scores or Ron-like?
-                             // Rule: "Pei (Pay)". Effectively Ron payment X players?
+                             is_ron: true, // Treat as Ron to get "Hand Value" without "Menzen Tsumo" fan.
+                             // Cha Da Jiao pays based on the hand's shape value (Agari points).
+                             // If we set is_ron: false, agari.rs adds +1 Fan for "Tsumo", which is incorrect for a theoretical check.
                              // Sichuan scoring is consistent (Ron = Tsumo_Ko).
                              // So just calc Point.
                              ding_que: state.ding_que,

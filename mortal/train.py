@@ -347,7 +347,9 @@ def train():
                     mortal.train()
                     dqn.train()
 
-                    avg_pt = stat.avg_pt([90, 45, 0, -135]) # for display only, never used in training
+                    # Use linear weights for Bloody Battle: 1st=6, 2nd=4, 3rd=2, 4th=0
+                    # Average is 3.0. If > 3.0, model is better than random.
+                    avg_pt = stat.avg_pt([6, 4, 2, 0])
                     better = avg_pt >= best_perf['avg_pt'] and stat.avg_rank <= best_perf['avg_rank']
                     if better:
                         past_best = best_perf.copy()
