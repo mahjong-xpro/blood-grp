@@ -166,8 +166,8 @@
             <!-- Footer: Controls -->
             <footer class="controls-bar" :class="{ 'disabled': !gameLoaded }">
                 <div class="slider-container">
-                    <input type="range" min="0" :max="totalEvents - 1" v-model.number="currentEventIndex"
-                        class="timeline-slider" @input="seekTo">
+                    <input type="range" min="0" :max="totalEvents - 1" :value="currentEventIndex"
+                        class="timeline-slider" @input="seekTo(+$event.target.value)">
                     <div class="slider-tooltip" :style="{ left: (currentEventIndex / (totalEvents-1) * 100) + '%' }">
                         {{ currentEventIndex }}
                     </div>

@@ -366,7 +366,7 @@ const App = {
             }
 
             // Process forward
-            while (currentEventIndex.value < index + 1 && currentEventIndex.value < totalEvents.value) {
+            while (currentEventIndex.value < index && currentEventIndex.value < totalEvents.value) {
                 const ev = events.value[currentEventIndex.value];
                 processEvent(ev);
                 currentEventIndex.value++;
@@ -388,8 +388,32 @@ const App = {
         };
 
         const prevEvent = () => seekTo(currentEventIndex.value - 1);
-        const firstEvent = () => seekTo(0);
-        const lastEvent = () => seekTo(totalEvents.value);
+        const firstEvent = () => {
+            // Find previous start_kyoku
+            let prevKyokuIdx = 0;
+            for (let i = currentEventIndex.value - 1; i >= 0; i--) {
+                if (events.value[i].type === 'start_kyoku') {
+                    prevKyokuIdx = i;
+                    break;
+                }
+            }
+            seekTo(prevKyokuIdx);
+        };
+        const lastEvent = () => {
+            // Find next start_kyoku
+            let nextKyokuIdx = -1;
+            for (let i = currentEventIndex.value + 1; i < totalEvents.value; i++) {
+                if (events.value[i].type === 'start_kyoku') {
+                    nextKyokuIdx = i;
+                    break;
+                }
+            }
+            if (nextKyokuIdx !== -1) {
+                seekTo(nextKyokuIdx);
+            } else {
+                seekTo(totalEvents.value);
+            }
+        };
 
         const togglePlay = () => {
             if (isPlaying.value) {
