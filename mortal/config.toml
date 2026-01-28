@@ -30,7 +30,7 @@ submit_every = 1000
 # 自对局配置（用于生成训练数据）
 # 使用环境变量 TRAIN_PLAY_PROFILE 可以选择不同的配置
 [train_play.default]
-games = 3200  # RTX 3090 建议 3200+ 并行局数以占满 GPU 算力
+games = 4800  # RTX 3090 + 3970X: 增加到 4800 提升 GPU 利用率
 log_dir = '/data/mortal/train_play'  # 自对局数据保存目录
 boltzmann_epsilon = 0.2  # 探索率 (中期)
                      # 阶段建议:
@@ -56,9 +56,9 @@ log_dir = '/data/mortal/test_play'
 [dataset]
 globs = ['/data/mortal/train_play/**/*.json.gz']  # 自对局数据路径
 file_index = '/data/mortal/file_index.pth'
-file_batch_size = 15
+file_batch_size = 20  # 增加文件批次大小
 reserve_ratio = 0.0
-num_workers = 16  # Threadripper 3970X (32核/64线程)，建议 16-24 以加速数据加载
+num_workers = 24  # Threadripper 3970X (32核/64线程): 24 workers 平衡 CPU 和数据加载
 player_names_files = []  # 自博弈训练可以留空
 num_epochs = 1
 enable_augmentation = false
