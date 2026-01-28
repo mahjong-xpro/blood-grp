@@ -99,15 +99,13 @@
 
                         <!-- Player Info -->
                         <div class="player-info-card">
-                            <div class="player-avatar">{{ idx }}</div>
-                            <div class="player-details">
-                                <div class="name">{{ player.name }}</div>
-                                <div class="score"
-                                    :class="{ 'positive': player.score >= 25000, 'negative': player.score < 25000 }">
-                                    {{ player.score }}
-                                </div>
+                            <div class="name">{{ player.name }}</div>
+                            <div class="score"
+                                :class="{ 'positive': player.score >= 25000, 'negative': player.score < 25000 }">
+                                {{ player.score }}
                             </div>
-                            <div class="player-status">
+                            <div class="player-status-row">
+                                <div class="player-avatar">{{ idx }}</div>
                                 <span v-if="player.dingque" class="badge dingque" :class="player.dingque_suit">{{
                                     player.dingque_char }}</span>
                                 <span v-if="player.agari" class="badge agari">胡</span>

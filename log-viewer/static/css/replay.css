@@ -538,44 +538,78 @@ body {
 /* Counter-rotation styles removed */
 
 
-.player-avatar {
-    width: 32px;
-    height: 32px;
-    background: #333;
-    border-radius: 50%;
+/* Info Card Layout */
+.player-info-card {
+    /* order: 2 */
     display: flex;
-    justify-content: center;
+    flex-direction: column;
     align-items: center;
-    font-weight: bold;
-    color: #888;
-}
-
-.player-details {
-    flex: 1;
+    /* Horizontally center everything */
+    justify-content: center;
+    gap: 4px;
+    padding: 8px;
+    /* Improve spacing */
+    background: rgba(0, 0, 0, 0.4);
+    /* Subtle background for readability */
+    border-radius: 8px;
+    min-width: 120px;
+    /* Ensure space for names */
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(2px);
 }
 
 .name {
-    font-size: 13px;
-    font-weight: 500;
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
 }
 
 .score {
-    font-size: 14px;
-    font-family: monospace;
-    font-weight: bold;
+    font-size: 18px;
+    /* Larger score */
+    font-family: 'Roboto Mono', monospace;
+    /* Monospace for numbers */
+    font-weight: 700;
+}
+
+.player-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 2px;
+}
+
+.player-avatar {
+    width: 24px;
+    /* Smaller avatar */
+    height: 24px;
+    font-size: 12px;
+    border: 1px solid #555;
+    background: #222;
 }
 
 .score.positive {
-    color: var(--text-primary);
+    color: #81c784;
+    /* Softer green */
 }
 
 .score.negative {
-    color: var(--danger-color);
+    color: #e57373;
+    /* Softer red */
 }
 
-.player-status {
-    display: flex;
-    gap: 4px;
+/* Badges */
+.badge {
+    font-size: 10px;
+    padding: 2px 5px;
+    border-radius: 4px;
+    color: #fff;
+    font-weight: bold;
+    line-height: 1.2;
 }
 
 .badge {
