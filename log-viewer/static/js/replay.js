@@ -61,6 +61,13 @@ const App = {
             }));
         });
 
+        const pov = ref(0); // Index of the player at the bottom (viewer's perspective)
+
+        const getVisualPosition = (playerIdx) => {
+            // Calculate visual position (0=Bottom, 1=Right, 2=Top, 3=Left)
+            return (playerIdx - pov.value + 4) % 4;
+        };
+
         // --- Methods: Data Loading ---
         const refreshLogs = async () => {
             loadingLogs.value = true;
@@ -95,6 +102,13 @@ const App = {
                 gameInfo.value = data;
                 gameLoaded.value = true;
                 currentLogPath.value = path;
+
+                // Set POV to Hero if available
+                if (data.hero_index !== undefined) {
+                    pov.value = data.hero_index;
+                } else {
+                    pov.value = 0;
+                }
 
                 // Parse Names
                 if (data.names) {
@@ -286,16 +300,8 @@ const App = {
 
         const arrowRotation = computed(() => {
             if (currentPlayer.value === null) return 0;
-            // 0: Bottom (180deg? No, let's say 0 is Up/Top P2).
-            // P0 (Bottom): 180deg
-            // P1 (Right): 90deg
-            // P2 (Top): 0deg
-            // P3 (Left): -90deg
-
-            // Wait, standard CSS rotation: 0 is usually Up or Right depending on icon.
-            // Let's assume standard Arrow Icon points UP.
-
-            switch (currentPlayer.value) {
+            const pos = getVisualPosition(currentPlayer.value);
+            switch (pos) {
                 case 0: return 180; // Bottom
                 case 1: return 90;  // Right
                 case 2: return 0;   // Top
@@ -599,7 +605,9 @@ const App = {
 
             getTileText, getTileClass, getTileNum, getTileSuitChar, getTileImage,
 
-            seekTo, nextEvent, prevEvent, firstEvent, lastEvent, togglePlay, isPlaying, playbackSpeed
+            seekTo, nextEvent, prevEvent, firstEvent, lastEvent, togglePlay, isPlaying, playbackSpeed,
+
+            pov, getVisualPosition
         };
     }
 };

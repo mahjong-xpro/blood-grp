@@ -53,7 +53,7 @@
                         <span v-if="log.p0_agari_count !== undefined"
                             style="display: inline-block; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: bold; flex-shrink: 0;"
                             :style="log.p0_agari_count > 0 ? 'background-color: #ff9800; color: #000;' : 'background-color: #424242; color: #aaa;'">
-                            P0: {{ log.p0_agari_count }}胡
+                            {{ log.p0_agari_count }}胡
                         </span>
                     </div>
                     <div class="log-meta">
@@ -95,7 +95,7 @@
 
                     <!-- Players -->
                     <div v-for="(player, idx) in players" :key="idx" class="player-area"
-                        :class="['player-' + idx, { 'is-turn': currentPlayer === idx, 'is-agari': player.agari }]">
+                        :class="['player-' + getVisualPosition(idx), { 'is-turn': currentPlayer === idx, 'is-agari': player.agari }]">
 
                         <!-- Player Info -->
                         <div class="player-info-card">

@@ -78,13 +78,24 @@ def load_log_content(file_path):
                 game_info['seed'] = event.get('seed')
                 break
         
-        # Count P0 Agari
-        p0_agari = 0
+        # Find Hero Index (trainee or mortal)
+        hero_index = 0 # Default to P0
+        names = game_info.get('names', [])
+        for i, name in enumerate(names):
+            name_lower = name.lower()
+            if 'trainee' in name_lower or 'mortal' in name_lower:
+                hero_index = i
+                break
+        game_info['hero_index'] = hero_index
+
+        # Count Hero Agari
+        hero_agari = 0
         for event in events:
-            if event.get('type') == 'hora' and event.get('actor') == 0:
-                p0_agari += 1
-        print(f"DEBUG: Loaded {file_path.name}, P0 Wins: {p0_agari}")
-        game_info['p0_agari_count'] = p0_agari
+            if event.get('type') == 'hora' and event.get('actor') == hero_index:
+                hero_agari += 1
+        
+        print(f"DEBUG: Loaded {file_path.name}, Hero({names[hero_index] if names else 'P0'}) Wins: {hero_agari}")
+        game_info['hero_agari_count'] = hero_agari
         
         return {
             'content': raw_log,
@@ -264,7 +275,9 @@ def list_logs():
                 'mtime_str': log_entry['mtime_str'],
                 'cached': True,  # Indicate this is cached in memory
                 'cache_key': log_entry['path'],  # Use full path as cache key
-                'p0_agari_count': log_entry.get('game_info', {}).get('p0_agari_count', 0),
+                'cache_key': log_entry['path'],  # Use full path as cache key
+                'p0_agari_count': log_entry.get('game_info', {}).get('hero_agari_count', 0), # Use Hero count for display
+                'hero_index': log_entry.get('game_info', {}).get('hero_index', 0),
             })
         
         return jsonify({
