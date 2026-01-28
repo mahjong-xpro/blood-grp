@@ -1,5 +1,5 @@
-use blood::mjai::Event;
-use blood::state::{ActionCandidate, PlayerState};
+use libblood::mjai::Event;
+use libblood::state::{ActionCandidate, PlayerState};
 use std::convert::identity;
 use std::env;
 use std::fs::File;
@@ -110,7 +110,7 @@ fn process_path(path: &Path) -> Result<()> {
                     states[*actor as usize].brief_info(),
                 );
             }
-            Event::Ankan { actor, consumed } => {
+            Event::Ankan { actor, consumed, .. } => {
                 ensure!(
                     cans[*actor as usize].can_ankan,
                     "fails can_ankan at line {line}\naction: {ev:?}\nstate:\n{}",

@@ -1,7 +1,7 @@
 use super::board::{Board, BoardState, Poll};
 use super::result::GameResult;
 use crate::agent::BatchAgent;
-use crate::mjai::{Event, EventExt};
+use crate::mjai::EventExt;
 use std::time::Duration;
 use std::{array, mem};
 

@@ -1,7 +1,7 @@
 use std::env;
 
 use anyhow::{Context, Result};
-use blood::stat::Stat;
+use libblood::stat::Stat;
 
 const USAGE: &str = "Usage: stat <DIR> <PLAYER_NAME>";
 

@@ -4,55 +4,9 @@ use crate::algo::point::Point;
 use crate::algo::shanten;
 use crate::algo::sp::{InitState, SPCalculator};
 use crate::tile::Tile;
-use crate::vec_ops::vec_add_assign;
 use crate::tuz; // Used in yaokyuu_kind_count
 
 use anyhow::{Context, Result, ensure};
-
-/// Compute global tiles_seen from all players' states.
-/// This counts ALL tiles that are out of the wall:
-/// - All players' private hands (tehai)
-/// - All discarded tiles (kawa_overview)
-/// - All melded tiles (fuuro_overview)
-/// - All concealed kans (ankan_overview)
-///
-/// This is the accurate global count needed for SPCalculator's tiles_in_wall calculation.
-pub fn compute_global_tiles_seen(player_states: &[PlayerState; 4]) -> [u8; 27] {
-    let mut global_tiles_seen = [0u8; 27];
-    
-    // Count all players' private hands
-    for player_state in player_states.iter() {
-        for (tid, &count) in player_state.tehai.iter().enumerate() {
-            global_tiles_seen[tid] += count;
-        }
-    }
-    
-    // Count all discarded tiles (from kawa_overview)
-    for player_state in player_states.iter() {
-        for &tile in player_state.kawa_overview.iter().flatten() {
-            global_tiles_seen[tile.as_usize()] += 1;
-        }
-    }
-    
-    // Count all melded tiles (from fuuro_overview)
-    for player_state in player_states.iter() {
-        for meld in player_state.fuuro_overview.iter().flatten() {
-            for &tile in meld.iter() {
-                global_tiles_seen[tile.as_usize()] += 1;
-            }
-        }
-    }
-    
-    // Count all concealed kans (from ankan_overview)
-    for player_state in player_states.iter() {
-        for &tile in player_state.ankan_overview.iter().flatten() {
-            // Ankan uses 4 tiles of the same type
-            global_tiles_seen[tile.as_usize()] += 4;
-        }
-    }
-    
-    global_tiles_seen
-}
 
 impl PlayerState {
     /// Compute a partial global tiles_seen from this player's perspective.
@@ -288,49 +242,15 @@ impl PlayerState {
     #[inline]
     #[must_use]
     pub fn rule_based_ryukyoku(&self) -> bool {
-        return false;
-        // self.rule_based_ryukyoku_slow()
-    }
-
-    fn rule_based_ryukyoku_slow(&self) -> bool {
-        // Do not ryukyoku if the hand is already <= 2 shanten.
-        if shanten::calc_all(&self.tehai, self.tehai_len_div3, self.ding_que) <= 2 {
-            return false;
-        }
-
-        // (This logic may need adjustment based on actual game flow)
-
-        // Simplified logic: allow ryukyoku if we are oya or we are not the last
-        // Ryukyoku if we are oya or we are not the last,
-        // because it is hard to decide whether it is appropriate to not
-        // ryukyoku.
-        if self.oya == 0 || self.rank < 3 {
-            return true;
-        }
-
-        // At all-last, we are the last and we are not oya. If even a
-        // haneman tsumo cannot let us avoid the last, then do not ryukyoku.
-        let mut scores = [-3000; 4];
-        scores[0] = 12000;
-        scores[self.oya as usize] = -6000;
-        vec_add_assign(&mut scores, &self.scores);
-        self.get_rank(scores) < 3
+        // In Bloody Battle, ryukyoku (流局) logic is simplified
+        false
     }
 
     #[inline]
     #[must_use]
     pub fn rule_based_agari(&self) -> bool {
         // In Bloody Battle, we almost always want to agari if possible.
-        // The standard logic of passing cheap hands to aim for top rank doesn't apply cleanly,
-        // and can be detrimental (paying for others' tsumo).
-        // We trust the model's decision (if model explicitly chooses Pass, it passes).
-        // This guard only prevents Agari if the model wants it but the rule says no.
-        // So we should relax this to allow Agari.
         self.last_cans.can_agari()
-    }
-
-    fn rule_based_agari_slow(&self, _is_ron: bool, _target_rel: usize) -> bool {
-        true
     }
 
     /// Err is returned if the hand cannot agari, or cannot retrieve the winning

@@ -510,12 +510,9 @@ impl<'a> ObsEncoderContext<'a> {
         self.idx += 1;
 
         // Feature 31-33: Ding Que
-        // Robustness check: Ding Que is only allowed at the very start of the kyoku.
-        // tiles_left starts at 56 (108 total - 13*4 given).
-        // First Tsumo reduces it to 55.
-        // We strictly check tiles_left == 56 AND that we haven't selected Ding Que yet.
-        // This prevents state desync issues where can_ding_que might be stale.
-        if state.tiles_left == 56 && state.ding_que.is_none() {
+        // 使用 can_ding_que 作为权威判断条件，而非硬编码的 tiles_left == 56 && ding_que.is_none()
+        // 这确保了掩码生成与 ActionCandidate 状态一致
+        if cans.can_ding_que {
             self.mask[31] = true; // Man
             self.mask[32] = true; // Pin
             self.mask[33] = true; // Sou

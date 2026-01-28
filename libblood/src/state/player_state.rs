@@ -10,7 +10,7 @@ use anyhow::Result;
 use derivative::Derivative;
 use pyo3::prelude::*;
 use serde_json as json;
-use tinyvec::{ArrayVec, TinyVec};
+use tinyvec::ArrayVec;
 
 /// `PlayerState` is the core of the lib, which holds all the observable game
 /// state information from a specific seat's perspective with the ability to
@@ -232,7 +232,17 @@ single player table (max EV):
 }
 
 impl PlayerState {
-    /// Check if ding que (定缺) is complete (no ding_que suit tiles in hand)
+    /// Check if the player has cleared all tiles of their chosen Ding Que suit from hand.
+    ///
+    /// # Returns
+    /// - `true` if a Ding Que suit has been selected AND no tiles of that suit remain in hand
+    /// - `false` if no Ding Que suit has been selected (selection phase not completed)
+    /// - `false` if Ding Que suit is selected but tiles of that suit still remain in hand
+    ///
+    /// # Note
+    /// This function returning `false` when `ding_que.is_none()` is intentional:
+    /// "clearing" the Ding Que suit is only meaningful after a suit has been chosen.
+    /// Before selection, the concept of "完成定缺" does not apply.
     #[must_use]
     pub fn check_ding_que_complete(&self) -> bool {
         if let Some(suit) = self.ding_que {
@@ -243,7 +253,7 @@ impl PlayerState {
             };
             (start..end).all(|i| self.tehai[i] == 0)
         } else {
-            false // No ding_que selected
+            false // No ding_que selected, so "completion" is not applicable
         }
     }
 

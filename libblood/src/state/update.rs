@@ -4,13 +4,12 @@ use super::item::{KawaItem, Sutehai};
 use crate::algo::agari::AgariCalculator;
 use crate::algo::shanten;
 use crate::mjai::Event;
-use crate::rankings::Rankings;
 use crate::tile::Tile;
 use crate::must_tile;
 use std::cmp::Ordering;
 use std::{iter, mem};
 
-use anyhow::{Context, Result, ensure, bail};
+use anyhow::{Context, Result, ensure};
 
 #[derive(Clone, Copy)]
 pub(super) enum MoveType {
@@ -98,8 +97,6 @@ impl PlayerState {
         self.tehai.fill(0);
         self.waits.fill(false);
         self.tiles_seen.fill(0);
-        self.keep_shanten_discards.fill(false);
-        self.next_shanten_discards.fill(false);
         self.keep_shanten_discards.fill(false);
         self.next_shanten_discards.fill(false);
         self.forbidden_tiles.fill(false);
@@ -988,14 +985,6 @@ impl PlayerState {
                 *is_wait = self.tiles_seen[t] < 4;
             }
         }
-    }
-
-    pub(super) fn get_rank(&self, mut scores_rel: [i32; 4]) -> u8 {
-        let scores_abs = {
-            scores_rel.rotate_right(self.player_id as usize);
-            scores_rel
-        };
-        Rankings::new(scores_abs).rank_by_player[self.player_id as usize]
     }
 
     /// Update forbidden_tiles based on Ding Que rule.

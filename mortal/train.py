@@ -252,7 +252,24 @@ def train():
             steps_to_done = steps_to_done.to(dtype=torch.int64, device=device)
             kyoku_rewards = kyoku_rewards.to(dtype=torch.float64, device=device)
             player_ranks = player_ranks.to(dtype=torch.int64, device=device)
-            assert masks[range(batch_size), actions].all()
+
+            # Skip batch if any (state, action) pair is invalid (action not allowed by mask).
+            # This can happen when logs contain moves from a buggy version (e.g. discard before
+            # ding_que) or when replay state diverges from the state when the action was recorded.
+            valid = masks[range(batch_size), actions]
+            if not valid.all():
+                invalid_count = (~valid).sum().item()
+                first_invalid = (~valid).nonzero(as_tuple=True)[0][0].item()
+                logging.warning(
+                    "Skipping batch at step %s: %s/%s samples have action not allowed by mask "
+                    "(first invalid idx=%s, action=%s). Likely bad log or ding_que replay bug.",
+                    steps + 1,
+                    invalid_count,
+                    batch_size,
+                    first_invalid,
+                    actions[first_invalid].item(),
+                )
+                return
 
             q_target_mc = gamma ** steps_to_done * kyoku_rewards
             q_target_mc = q_target_mc.to(torch.float32)
