@@ -96,6 +96,13 @@ pub struct PlayerState {
     #[derivative(Default(value = "[false; 4]"))]
     pub(super) players_agari: [bool; 4],
 
+    /// Guo Shou Hu (Temporary Furiten) flag.
+    /// If a player passes a winning tile (Ron), they cannot Ron again until
+    /// their hand state changes (Draw/Pon/Kan).
+    #[derivative(Default(value = "false"))]
+    #[pyo3(get)]
+    pub temporary_furiten: bool,
+
     pub(super) at_rinshan: bool,
 
     /// Used for 4-kan check.

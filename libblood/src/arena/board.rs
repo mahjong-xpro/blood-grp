@@ -628,6 +628,47 @@ impl BoardState {
                                  self.gang_history.pop();
                              }
                          }
+
+                         // CRITICAL FIX: Revert the Kakan state in PlayerState
+                         // The victim (kan_actor) technically never successfully Kong-ed because it was robbed.
+                         // They should have a Pon (3 tiles) and lost the 4th tile to the winner.
+                         // Currently they have a MinKan (4 tiles) which creates a "Ghost Tile" and invalid Root/Gen scoring.
+                         {
+                             // We need to know which tile was kakan'd. 
+                             // We can get it from the winner's state (chankan_kakan_tile) or derive it.
+                             // Since we are inside the 'is_chankan' block and 'single_actor' is the winner:
+                             let winner_state = &self.player_states[single_actor as usize];
+                             if let Some(tile) = winner_state.chankan_kakan_tile {
+                                 let victim_state = &mut self.player_states[kan_actor as usize];
+                                 
+                                 // Check if this tile exists in minkans (it should)
+                                 // Note: minkans stores u8 tile IDs.
+                                 let mut found_idx = None;
+                                 for (i, &t) in victim_state.minkans.iter().enumerate() {
+                                     if t == tile {
+                                         found_idx = Some(i);
+                                         break;
+                                     }
+                                 }
+                                 
+                                 if let Some(idx) = found_idx {
+                                     // Revert MinKan -> Pon
+                                     victim_state.minkans.remove(idx);
+                                     victim_state.pons.push(tile);
+                                     
+                                     // State changed, must update caches
+                                     victim_state.update_shanten();
+                                     victim_state.update_shanten_discards(); // Optional but safe
+                                     victim_state.update_waits();
+                                     
+                                     log::info!("ChanKan State Fix: Reverted Player {}'s MinKan of tile {} to Pon", kan_actor, tile);
+                                 } else {
+                                     log::warn!("ChanKan State Fix: Failed to find MinKan for tile {} in Player {}'s state. Consistency might be broken.", tile, kan_actor);
+                                 }
+                             } else {
+                                  log::warn!("ChanKan State Fix: Winner {} context missing chankan_kakan_tile", single_actor);
+                             }
+                         }
                      }
                  }
             }
@@ -720,15 +761,8 @@ impl BoardState {
                         Event::DingQue { actor: actor as u8, suit }
                     };
                     
-                    // 更新玩家状态
-                    self.player_states[actor]
-                        .update(&ding_que_event)
-                        .with_context(|| {
-                            format!(
-                                "failed to update player {} state with DingQue event",
-                                actor
-                            )
-                        })?;
+                    // 广播定缺事件（修复：必须广播，否则其他玩家无法知道该玩家的定缺选择）
+                    self.broadcast(&ding_que_event);
                     
                     // 标记该玩家已选择定缺
                     self.ding_que_selected[actor] = true;
@@ -742,6 +776,15 @@ impl BoardState {
             if self.ding_que_selected.iter().all(|&x| x) {
                 // 所有玩家都选择了定缺，退出定缺选择阶段，开始第一轮摸牌
                 self.ding_que_phase = false;
+
+                // 防御性断言：确保所有玩家的 can_ding_que 已经被置为 false
+                // 如果还有玩家 can_ding_que 为 true，说明状态更新有问题，会导致后续逻辑错误
+                debug_assert!(
+                    self.player_states.iter().all(|s| !s.last_cans().can_ding_que),
+                    "DingQue phase ended but some players still can_ding_que. This indicates a bug in state update logic."
+                );
+
+                
                 
                 let tile = self
                     .board
@@ -1176,6 +1219,14 @@ impl BoardState {
             Event::Ryukyoku { .. } => {
                 // 九種九牌 - 血战到底不支持中途流局
                 bail!("Unexpected Event::Ryukyoku in Bloody Battle");
+            }
+            
+            Event::DingQue { .. } => {
+                // 如果在非定缺阶段收到DingQue事件，理论上也是不合法的（应该在step开头部分处理）
+                // 但为了避免崩溃（Crash instead of Deadlock），我们这里将其视为无操作
+                // 这种情况可能发生在状态不同步时：can_ding_que=true 但 ding_que_phase=false
+                // 我们记录警告但不panic
+                log::warn!("Ignored unexpected DingQue event in step() main match block (not in ding_que_phase). Event: {:?}", ev.event);
             }
 
             _ => {

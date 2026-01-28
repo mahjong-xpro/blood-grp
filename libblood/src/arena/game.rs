@@ -179,11 +179,10 @@ impl Game {
         let ctx = self.board.agent_context();
         for (player_id, state) in ctx.player_states.iter().enumerate() {
             // Determine if the agent needs to act
-            let needs_reaction = if self.board.is_ding_que_phase() {
-                !self.board.ding_que_selected(player_id)
-            } else {
-                state.last_cans().can_act()
-            };
+            // Determine if the agent needs to act
+            // 修复：统一使用 can_act() 作为判断标准，包括定缺阶段
+            // PlayerState 已经正确维护了 can_ding_que 状态
+            let needs_reaction = state.last_cans().can_act();
 
             if !needs_reaction {
                 continue;

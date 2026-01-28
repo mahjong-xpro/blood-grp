@@ -13,7 +13,7 @@ best_state_file = '/data/mortal/best.pth'
 tensorboard_dir = '/data/mortal/logs'
 
 # 计算设备配置
-device = 'cuda:0'  # 如果有 GPU，否则改为 'cpu'
+device = 'cuda:0'  # 如果有 GPU，否则改为 'cuda:0'
 enable_cudnn_benchmark = true  # GPU 训练时建议启用
 enable_amp = true  # 混合精度训练，节省显存
 enable_compile = false  # PyTorch 2.0+ 编译优化（可选）
@@ -109,12 +109,12 @@ max_steps = 0  # 0 表示不限制最大步数
 # Baseline 模型配置（用于自对局）
 # 第一次训练时，如果 baseline 文件不存在，系统会使用当前模型作为 baseline
 [baseline.train]
-device = 'cuda:0'  # 或 'cpu'
+device = 'cuda:0'  # 或 'cuda:0'
 enable_compile = false
 state_file = '/data/mortal/baseline.pth'  # 如果不存在，会使用当前模型
 
 [baseline.test]
-device = 'cuda:0'  # 或 'cpu'
+device = 'cuda:0'  # 或 'cuda:0'
 enable_compile = false
 state_file = '/data/mortal/baseline.pth'
 

@@ -30,6 +30,19 @@ impl PlayerState {
         event: &Event,
     ) -> Result<ActionCandidate> {
         if !event.is_in_game_announce() {
+            // Guo Shou Hu (Temporary Furiten) Detection
+            // If we could Ron previously, but didn't (and the new event is not our own Win),
+            // then we missed it. Set temporary_furiten.
+            if self.last_cans.can_ron_agari {
+                let passed = match event {
+                    Event::Hora { actor, .. } => *actor != self.player_id,
+                    _ => true,
+                };
+                if passed {
+                    self.temporary_furiten = true;
+                }
+            }
+
             self.last_cans = ActionCandidate {
                 target_actor: event.actor().unwrap_or(self.player_id),
                 ..Default::default()
@@ -96,6 +109,7 @@ impl PlayerState {
     ) -> Result<()> {
         self.tehai.fill(0);
         self.waits.fill(false);
+        self.temporary_furiten = false;
         self.tiles_seen.fill(0);
         self.keep_shanten_discards.fill(false);
         self.next_shanten_discards.fill(false);
@@ -203,6 +217,7 @@ impl PlayerState {
         }
 
         self.forbidden_tiles.fill(false);
+        self.temporary_furiten = false;
         self.at_turn += 1;
 
         self.last_cans.can_discard = true;
@@ -424,8 +439,12 @@ impl PlayerState {
                 is_tianhu: false,
                 is_dihu: false,
             };
-            self.last_cans.can_ron_agari = agari_calc.has_yaku();
-
+            let has_yaku = agari_calc.has_yaku();
+            self.last_cans.can_ron_agari = if self.temporary_furiten {
+                false
+            } else {
+                has_yaku
+            };
         }
 
         if self.tiles_left == 0 {
@@ -490,6 +509,7 @@ impl PlayerState {
         }
 
         self.forbidden_tiles.fill(false);
+        self.temporary_furiten = false;
         self.last_cans.can_discard = true;
         self.tehai_len_div3 = self.tehai_len_div3.saturating_sub(1);
         // Marked explicitly as `None` to let `Agent` impls set
@@ -614,6 +634,7 @@ impl PlayerState {
         }
 
         self.at_rinshan = true;
+        self.temporary_furiten = false;
 
         self.tehai_len_div3 = self.tehai_len_div3.saturating_sub(1);
 
@@ -719,6 +740,7 @@ impl PlayerState {
         }
 
         self.at_rinshan = true;
+        self.temporary_furiten = false;
         self.move_tile(pai, MoveType::FuuroConsume)?;
         self.pons.retain(|&t| t != pai.as_u8());
         let minkans_len = self.minkans.len();
@@ -783,6 +805,7 @@ impl PlayerState {
         }
 
         self.at_rinshan = true;
+        self.temporary_furiten = false;
         self.tehai_len_div3 = self.tehai_len_div3.saturating_sub(1);
         for t in consumed {
             self.move_tile(t, MoveType::FuuroConsume)?;
@@ -898,7 +921,7 @@ impl PlayerState {
     /// For 3n+2, the return value of `shanten::calc_all` may be `-1`. We don't
     /// allow `-1` and it will be written as `0` in order for
     /// `_shanten_discards` to be calculated properly.
-    pub(super) fn update_shanten(&mut self) {
+    pub(crate) fn update_shanten(&mut self) {
         // Check ding_que rule first
         if let Some(ding_que_suit) = self.ding_que {
             let ding_que_start = match ding_que_suit {
@@ -930,7 +953,7 @@ impl PlayerState {
     }
 
     /// Must be called at 3n+2.
-    pub(super) fn update_shanten_discards(&mut self) {
+    pub(crate) fn update_shanten_discards(&mut self) {
         assert!(self.last_cans.can_discard, "tehai is not 3n+2");
 
         self.next_shanten_discards.fill(false);
@@ -963,9 +986,9 @@ impl PlayerState {
         }
     }
 
-    /// Caller must assure current tehai is 3n+1, and `self.shanten` must be up
-    /// to date and correct.
-    pub(super) fn update_waits(&mut self) {
+    // Caller must assure current tehai is 3n+1, and `self.shanten` must be up
+    // to date and correct.
+    pub(crate) fn update_waits(&mut self) {
         assert!(!self.last_cans.can_discard, "tehai is not 3n+1");
 
         self.waits.fill(false);
