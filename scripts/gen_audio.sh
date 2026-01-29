@@ -2,7 +2,7 @@
 set -e
 
 # Voice to use (zh_CN)
-VOICE="Ting-Ting"
+VOICE="Tingting"
 
 # Output directory
 OUT_DIR="log-viewer/static/audio"
