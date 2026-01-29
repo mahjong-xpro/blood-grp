@@ -244,7 +244,6 @@ const App = {
                         const meld = [...event.consumed];
                         meld.type = 'ankan';
                         p.fuuro.push(meld);
-                        p.fuuro.push(meld);
                         p.lastAction = 'ankan';
                         if (!silent) playSound('kan.m4a');
                     }
@@ -304,7 +303,6 @@ const App = {
                         event.deltas.forEach((d, i) => players.value[i].score += d);
                     }
                     if (p) {
-                        p.agari = true;
                         p.agari = true;
                         p.lastAction = 'hora';
                         if (!silent) {
