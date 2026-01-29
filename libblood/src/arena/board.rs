@@ -751,12 +751,12 @@ impl BoardState {
                 // Shanten: Descending (High shanten = Bad = Drop). 
                 //          Tuple sort is Ascending. So we need to negate Shanten? 
                 //          Or simply implement custom comparator.
-                // Potential: Ascending (Low potential = Bad = Drop). -> CORRECT.
-                
+                // Potential: Ascending (Low potential = Bad = Drop). ->                // Helper to evaluate a suit's quality using Shanten calculator
                 let eval_suit = |start_idx: usize| -> (u8, i8, i32) {
                     let mut count = 0u8;
                     let mut potential_score = 0i32;
-                    let mut dummy_tehai = [0u8; 34];
+                    // shanten::calc_all expects [u8; 27] (no honors in Blood Battle shanten lib?)
+                    let mut dummy_tehai = [0u8; 27];
                     let suit_tiles = &state.tehai[start_idx..start_idx + 9];
                     
                     for i in 0..9 {
@@ -771,10 +771,6 @@ impl BoardState {
                             } else if c == 2 {
                                 potential_score += 4;  // Pair bonus
                             }
-                            // Edge/Terminal bonus? 
-                            // Usually 1/9 are harder to use for sequences, but good for 19.
-                            // In Bloody Battle, Tanyao is common, 19 is often worse?
-                            // Let's stick to Structure (Pairs/Triplets) which definitely helps Big Hands.
                         }
                     }
                     
@@ -784,7 +780,8 @@ impl BoardState {
                         return (0, 127, 0); 
                     }
 
-                    let len_div3 = (count / 3) as usize;
+                    // Count sets: 1-2 tiles (0), 3-5 (1), 6-8 (2), 9-11 (3), 12-14 (4)
+                    let len_div3 = (count / 3) as u8;
                     // Note: calc_all treats 0-8 as Man.
                     let shanten = crate::algo::shanten::calc_all(&dummy_tehai, len_div3, None);
                     
