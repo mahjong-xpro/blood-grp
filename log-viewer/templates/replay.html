@@ -188,6 +188,9 @@
                 </div>
 
                 <div class="speed-control">
+                    <button class="btn-icon small" @click="testAudio" title="测试音效" style="margin-right: 5px;">
+                        <span class="material-icons" style="font-size: 16px;">volume_up</span>
+                    </button>
                     <span class="material-icons" style="font-size: 16px;">speed</span>
                     <select v-model.number="playbackSpeed">
                         <option value="0.5">0.5x</option>

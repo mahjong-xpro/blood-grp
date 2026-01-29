@@ -148,9 +148,18 @@ const App = {
 
         // --- Audio ---
         const playSound = (filename) => {
-            const audio = new Audio(`/static/audio/${filename}`);
-            audio.volume = 1.0; // Can be linked to a volume control later
-            audio.play().catch(e => console.warn("Audio play failed", e));
+            const url = `/static/audio/${filename}`;
+            console.log(`[Audio] Attempting to play: ${url}`);
+            const audio = new Audio(url);
+            audio.volume = 1.0;
+            audio.play()
+                .then(() => console.log(`[Audio] Playing: ${url}`))
+                .catch(e => console.warn(`[Audio] Failed to play ${url}:`, e));
+        };
+
+        const testAudio = () => {
+            console.log("[Audio] Test triggered manually");
+            playSound('pon.m4a');
         };
 
         const processEvent = (event, silent = false) => {
@@ -626,7 +635,7 @@ const App = {
 
             seekTo, nextEvent, prevEvent, firstEvent, lastEvent, togglePlay, isPlaying, playbackSpeed,
 
-            pov, getVisualPosition
+            pov, getVisualPosition, testAudio
         };
     }
 };
