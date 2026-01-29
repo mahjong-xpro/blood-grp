@@ -732,94 +732,136 @@ impl BoardState {
         // 处理定缺选择阶段（基础规则：血战到底必须在打牌前选择定缺）
         if self.ding_que_phase {
             // 处理所有玩家的定缺选择
-            for (actor, ev) in reactions.iter().enumerate() {
-                if !self.ding_que_selected[actor] {
-                    // 如果玩家还没有选择定缺
-                    let ding_que_event = if let Event::DingQue { actor: ev_actor, suit } = ev.event {
-                        // Agent返回了DingQue事件，验证actor匹配
-                        ensure!(
-                            ev_actor == actor as u8,
-                            "DingQue event actor mismatch: expected {}, got {}",
-                            actor,
-                            ev_actor
-                        );
-                        Event::DingQue { actor: actor as u8, suit }
-                    } else {
-                        // Agent没有返回DingQue事件，自动为Agent选择定缺
-                        // 选择手牌中最少的花色作为定缺
-                        let state = &self.player_states[actor];
-                        let man_count: u8 = (0..9).map(|i| state.tehai[i]).sum();
-                        let pin_count: u8 = (9..18).map(|i| state.tehai[i]).sum();
-                        let sou_count: u8 = (18..27).map(|i| state.tehai[i]).sum();
-                        
-                        let suit = if man_count <= pin_count && man_count <= sou_count {
-                            crate::mjai::Suit::Man
-                        } else if pin_count <= sou_count {
-                            crate::mjai::Suit::Pin
-                        } else {
-                            crate::mjai::Suit::Sou
-                        };
-                        
-                        Event::DingQue { actor: actor as u8, suit }
-                    };
-                    
-                    // 广播定缺事件（修复：必须广播，否则其他玩家无法知道该玩家的定缺选择）
-                    self.broadcast(&ding_que_event);
-                    
-                    // 标记该玩家已选择定缺
-                    self.ding_que_selected[actor] = true;
-                    
-                    // 记录日志
-                    self.add_log(EventExt::no_meta(ding_que_event));
-                }
-            }
+            // 自动定缺逻辑 (Algorithm V4: Count > Shanten > Potential)
+            // 策略：
+            // 1. [Speed] 数量 (Count): 最优先。少的一门打掉，多的留着做清一色。
+            // 2. [Speed] 向听数 (Shanten): 在数量相同时，打掉向听数高（距离听牌远）的烂牌。
+            // 3. [Value] 潜力分 (Potential): 在向听数也相同时，打掉潜力分低（无对子、无刻子、无幺九）的牌。
+            //    - 刻子 (Triplets): +10 (碰碰胡/带根潜力)
+            //    - 对子 (Pairs): +4 (七对/碰碰胡潜力)
+            //    - 幺九/中张权重: 暂不引入过于复杂的权重，主要关注牌型结构。
             
-            // 检查是否所有玩家都选择了定缺
-            if self.ding_que_selected.iter().all(|&x| x) {
-                // 所有玩家都选择了定缺，退出定缺选择阶段，开始第一轮摸牌
-                self.ding_que_phase = false;
+            for actor in 0..4 {
+                let state = &self.player_states[actor];
+                
+                // Return tuple: (Count, Shanten, PotentialScore)
+                // We want to DROP the suit that minimizes this tuple (Lexicographical sort):
+                // Wait... 
+                // Count: Ascending (Low count = Drop) -> CORRECT.
+                // Shanten: Descending (High shanten = Bad = Drop). 
+                //          Tuple sort is Ascending. So we need to negate Shanten? 
+                //          Or simply implement custom comparator.
+                // Potential: Ascending (Low potential = Bad = Drop). -> CORRECT.
+                
+                let eval_suit = |start_idx: usize| -> (u8, i8, i32) {
+                    let mut count = 0u8;
+                    let mut potential_score = 0i32;
+                    let mut dummy_tehai = [0u8; 34];
+                    let suit_tiles = &state.tehai[start_idx..start_idx + 9];
+                    
+                    for i in 0..9 {
+                        let c = suit_tiles[i];
+                        if c > 0 {
+                            count += c;
+                            dummy_tehai[i] = c; // Map to Man (0-8) for calc_all
+                            
+                            // Potential Assessment
+                            if c >= 3 {
+                                potential_score += 10; // Triplet bonus
+                            } else if c == 2 {
+                                potential_score += 4;  // Pair bonus
+                            }
+                            // Edge/Terminal bonus? 
+                            // Usually 1/9 are harder to use for sequences, but good for 19.
+                            // In Bloody Battle, Tanyao is common, 19 is often worse?
+                            // Let's stick to Structure (Pairs/Triplets) which definitely helps Big Hands.
+                        }
+                    }
+                    
+                    if count == 0 {
+                        // Empty suit: Count 0, Shanten Max, Potential 0.
+                        // Ideally strictly picked first.
+                        return (0, 127, 0); 
+                    }
 
-                // 防御性断言：确保所有玩家的 can_ding_que 已经被置为 false
-                // 如果还有玩家 can_ding_que 为 true，说明状态更新有问题，会导致后续逻辑错误
-                debug_assert!(
-                    self.player_states.iter().all(|s| !s.last_cans().can_ding_que),
-                    "DingQue phase ended but some players still can_ding_que. This indicates a bug in state update logic."
-                );
-
-                
-                
-                let tile = self
-                    .board
-                    .yama
-                    .pop()
-                    .context("invalid yama: empty at init")?;
-                self.tiles_left -= 1;
-                
-                // 基础规则：tiles_left 和 yama.len() 必须保持一致
-                assert_eq!(
-                    self.tiles_left as usize,
-                    self.board.yama.len(),
-                    "After initial tsumo, tiles_left ({}) and yama.len() ({}) are inconsistent. This indicates a fundamental bug in game state management.",
-                    self.tiles_left,
-                    self.board.yama.len()
-                );
-                
-                let first_tsumo = Event::Tsumo {
-                    actor: self.oya,
-                    pai: tile,
+                    let len_div3 = (count / 3) as usize;
+                    // Note: calc_all treats 0-8 as Man.
+                    let shanten = crate::algo::shanten::calc_all(&dummy_tehai, len_div3, None);
+                    
+                    (count, shanten, potential_score)
                 };
-                self.broadcast(&first_tsumo);
-                self.add_log_no_meta(first_tsumo);
-                
-                // 初始化tsumo_actor为oya（第一轮摸牌后，下一个摸牌的是oya）
-                self.tsumo_actor = self.oya;
-                
-                // 第一轮摸牌后，摸牌的玩家应该可以打牌，所以can_act()应该返回true
-                // 直接返回InGame，让poll()检查can_act()
-                return Ok(Poll::InGame);
+
+                let man_eval = eval_suit(0);   
+                let pin_eval = eval_suit(9);   
+                let sou_eval = eval_suit(18);  
+
+                let evals = [
+                    (crate::mjai::Suit::Man, man_eval),
+                    (crate::mjai::Suit::Pin, pin_eval),
+                    (crate::mjai::Suit::Sou, sou_eval),
+                ];
+
+                // Sort logic to find the "Worst" suit to drop.
+                // We pick the first element after sorting.
+                let best_choice = evals
+                    .iter()
+                    .min_by(|a, b| {
+                        let (_, (count_a, shanten_a, score_a)) = a;
+                        let (_, (count_b, shanten_b, score_b)) = b;
+                        
+                        // 1. Count: Ascending (Fewer is worse/drop target)
+                        match count_a.cmp(count_b) {
+                            std::cmp::Ordering::Equal => {
+                                // 2. Shanten: Descending (Higher is worse/drop target)
+                                match shanten_b.cmp(shanten_a) {
+                                    std::cmp::Ordering::Equal => {
+                                        // 3. Potential: Ascending (Lower score is worse/drop target)
+                                        score_a.cmp(score_b)
+                                    },
+                                    other => other
+                                }
+                            },
+                            other => other,
+                        }
+                    })
+                    .map(|(suit, _)| *suit)
+                    .unwrap_or(crate::mjai::Suit::Man);
+
+                let ding_que_event = Event::DingQue { actor: actor as u8, suit: best_choice };
+                self.broadcast(&ding_que_event);
+                self.add_log_no_meta(ding_que_event);
+                self.ding_que_selected[actor] = true;
             }
+
+            // 所有玩家定缺完成，退出定缺阶段
+            self.ding_que_phase = false;
+
+            // 庄家摸第一张牌 (Deal 13 + 1 logic)
+            // 此时游戏正式开始，庄家持有 14 张牌，等待切牌
+            let tile = self
+                .board
+                .yama
+                .pop()
+                .context("invalid yama: empty at init")?;
+            self.tiles_left -= 1;
             
-            // 如果还在定缺选择阶段，返回 InGame 等待更多玩家选择
+            assert_eq!(
+                self.tiles_left as usize,
+                self.board.yama.len(),
+                "After initial tsumo, tiles_left ({}) and yama.len() ({}) are inconsistent.",
+                self.tiles_left,
+                self.board.yama.len()
+            );
+            
+            let first_tsumo = Event::Tsumo {
+                actor: self.oya,
+                pai: tile,
+            };
+            self.broadcast(&first_tsumo);
+            self.add_log_no_meta(first_tsumo);
+            
+            self.tsumo_actor = self.oya;
+            
             return Ok(Poll::InGame);
         }
 
