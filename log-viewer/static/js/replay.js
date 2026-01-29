@@ -146,7 +146,14 @@ const App = {
             lastDiscard.value = null;
         };
 
-        const processEvent = (event) => {
+        // --- Audio ---
+        const playSound = (filename) => {
+            const audio = new Audio(`/static/audio/${filename}`);
+            audio.volume = 1.0; // Can be linked to a volume control later
+            audio.play().catch(e => console.warn("Audio play failed", e));
+        };
+
+        const processEvent = (event, silent = false) => {
             const type = event.type;
             const actor = event.actor;
             const p = actor !== undefined ? players.value[actor] : null;
@@ -192,6 +199,7 @@ const App = {
                         p.dingque = event.suit;
                         p.dingque_char = suitMap[event.suit] || event.suit[0].toUpperCase();
                         p.dingque_suit = colorMap[event.suit] || '';
+                        if (!silent) playSound('dingque.m4a');
                     }
                     break;
 
@@ -212,6 +220,7 @@ const App = {
                         p.lastAction = 'dahai';
                         currentPlayer.value = actor;
                         lastDiscard.value = { actor, tile: event.pai };
+                        if (!silent) playSound(`${event.pai}.m4a`);
                     }
                     break;
 
@@ -226,7 +235,9 @@ const App = {
                         const meld = [...event.consumed];
                         meld.type = 'ankan';
                         p.fuuro.push(meld);
+                        p.fuuro.push(meld);
                         p.lastAction = 'ankan';
+                        if (!silent) playSound('kan.m4a');
                     }
                     if (event.deltas) {
                         event.deltas.forEach((d, i) => players.value[i].score += d);
@@ -241,6 +252,7 @@ const App = {
                         p.fuuro.push(meld);
                         p.lastAction = 'daiminkan';
                         currentPlayer.value = actor;
+                        if (!silent) playSound('kan.m4a');
                     }
                     if (event.deltas) {
                         event.deltas.forEach((d, i) => players.value[i].score += d);
@@ -256,6 +268,7 @@ const App = {
                         p.fuuro.push(meld);
                         p.lastAction = type;
                         currentPlayer.value = actor;
+                        if (!silent) playSound(type === 'pon' ? 'pon.m4a' : 'kan.m4a'); // chi is not in blood, fallback
                     }
                     break;
 
@@ -269,6 +282,7 @@ const App = {
                             pon.type = 'kakan';
                         }
                         p.lastAction = 'kakan';
+                        if (!silent) playSound('kan.m4a');
                     }
                     if (event.deltas) {
                         event.deltas.forEach((d, i) => players.value[i].score += d);
@@ -282,7 +296,12 @@ const App = {
                     }
                     if (p) {
                         p.agari = true;
+                        p.agari = true;
                         p.lastAction = 'hora';
+                        if (!silent) {
+                            if (event.actor === event.target) playSound('tsumo.m4a');
+                            else playSound('ron.m4a');
+                        }
                     }
                     break;
 
@@ -374,7 +393,7 @@ const App = {
             // Process forward
             while (currentEventIndex.value < index && currentEventIndex.value < totalEvents.value) {
                 const ev = events.value[currentEventIndex.value];
-                processEvent(ev);
+                processEvent(ev, true);
                 currentEventIndex.value++;
             }
 
