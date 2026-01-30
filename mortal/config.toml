@@ -105,7 +105,7 @@ max_grad_norm = 0  # 0 表示不进行梯度裁剪
 peak = 1e-4  # 峰值学习率
 final = 1e-4  # 最终学习率
 warm_up_steps = 1000  # 预热步数 (防止梯度爆炸)
-max_steps = 0  # 0 表示不限制最大步数
+max_steps = 1000000  # 设置为较大的值以支持长时间训练 (需 > warm_up_steps)
 
 # Baseline 模型配置（用于自对局）
 # 第一次训练时，如果 baseline 文件不存在，系统会使用当前模型作为 baseline
