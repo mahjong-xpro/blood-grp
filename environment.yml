@@ -8,8 +8,8 @@ dependencies:
   - pip
   - pip:
     # PyTorch Ecosystem (CUDA 12.4 for RTX 4090)
-    # Using specific index-url to ensure CUDA 12.4 version
-    - --index-url https://download.pytorch.org/whl/cu124
+    # Use --extra-index-url so standard packages (maturin, etc.) are found on PyPI
+    - --extra-index-url https://download.pytorch.org/whl/cu124
     - torch
     - torchvision
     - torchaudio
