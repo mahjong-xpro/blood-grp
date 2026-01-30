@@ -32,20 +32,20 @@ submit_every = 1000
 [train_play.default]
 games = 6400  # RTX 3090 + 3970X: 增加到 6400 进一步提升 GPU 利用率
 log_dir = '/data/mortal/train_play'  # 自对局数据保存目录
-boltzmann_epsilon = 0.5  # 探索率 (初期强力探索)
+boltzmann_epsilon = 0.5  # 探索率 (初期: 0.5 - 用户指示重回 Zero Start)
                      # 阶段建议:
-                     # 1. 初期/崩溃恢复: 0.5 (强力随机，打破定缺偏差)
-                     # 2. 中期 (当前): 0.1-0.2
-                     # 3. 后期 (稳定收敛): 0.001-0.005
+                     # 1. 初期: 0.5 (当前)
+                     # 2. 中期: 0.15
+                     # 3. 后期: 0.005
 
-boltzmann_temp = 0.5     # 温度参数 (中期)
+boltzmann_temp = 0.5     # 温度参数 (初期: 0.5)
                      # 阶段建议:
-                     # 1. 初期/崩溃恢复: 5.0 (宽分布，防止 Softmax 极化)
-                     # 2. 中期 (当前): 0.5-1.0
-                     # 3. 后期: 0.05-0.1 (增强对弈强度)
+                     # 1. 初期: 0.5 (当前)
+                     # 2. 中期: 0.2
+                     # 3. 后期: 0.05
 top_p = 1.0
 repeats = 1
-keep_data = true  # 是否保留历史自对局数据 (Zero-Start 必须为 true)
+keep_data = true
 
 # 测试对局配置
 [test_play]
@@ -55,20 +55,20 @@ log_dir = '/data/mortal/test_play'
 # 数据集配置
 # 自博弈训练：指向自对局生成的数据目录
 [dataset]
-globs = ['/data/mortal/train_play/**/*.json.gz']  # 自对局数据路径
+globs = ['/data/mortal/train_play/**/*.json.gz']
 file_index = '/data/mortal/file_index.pth'
-file_batch_size = 20  # 增加文件批次大小
+file_batch_size = 20
 reserve_ratio = 0.0
-num_workers = 24  # Threadripper 3970X (32核/64线程): 24 workers 平衡 CPU 和数据加载
-player_names_files = []  # 自博弈训练可以留空
+num_workers = 24
+player_names_files = []
 num_epochs = 1
 enable_augmentation = false
 augmented_first = false
 
 # 环境配置
 [env]
-gamma = 1  # 折扣因子
-pts = [6.0, 4.0, 2.0, 0.0]  # 排名对应的分数（1位、2位、3位、4位）
+gamma = 0.95  # 折扣因子 (激进调整: 0.95, 强迫 AI 重视眼前收益，拒绝并在)
+pts = [6.0, 4.0, 2.0, 0.0]
 
 # ResNet 模型配置
 [resnet]
