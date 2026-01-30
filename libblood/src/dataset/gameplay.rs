@@ -418,6 +418,7 @@ impl Gameplay {
         self.obs.push(feature);
         self.actions.push(label as i64);
         self.masks.push(mask);
+        
         self.at_kyoku.push(ctx.kyoku_idx as u8);
         // only discard and kan will discount
         self.apply_gamma.push(label <= 37);
