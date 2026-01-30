@@ -96,6 +96,7 @@ mortal = false
 [optim]
 eps = 1e-8
 betas = [0.9, 0.999]
+weight_decay = 0.1
 max_grad_norm = 1.0  # 启用梯度裁剪 (1.0)，防止无 CQL 时梯度主要爆炸
 
 # 学习率调度器配置
