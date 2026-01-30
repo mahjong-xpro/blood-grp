@@ -313,10 +313,18 @@ impl<'a> ObsEncoderContext<'a> {
             for f in player_fuuro {
                 for tile in f {
                     let tile_id = tile.as_usize();
-                    let i = (0..4)
-                        .find(|&i| self.arr.get(self.idx + i, tile_id) == 0.)
-                        .unwrap();
-                    self.arr.assign(self.idx + i, tile_id, 1.);
+                    if let Some(i) = (0..4).find(|&i| self.arr.get(self.idx + i, tile_id) == 0.)
+                    {
+                        self.arr.assign(self.idx + i, tile_id, 1.);
+                    } else {
+                        // Should be unreachable (a tile kind should not appear >4 times),
+                        // but guard to avoid panics on malformed state/logs.
+                        log::warn!(
+                            "fuuro_overview encoding overflow at idx={}, tile_id={}",
+                            self.idx,
+                            tile_id
+                        );
+                    }
                 }
                 self.idx += 4;
             }

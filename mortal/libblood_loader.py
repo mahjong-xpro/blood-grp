@@ -12,8 +12,12 @@ import platform
 
 def load_libblood():
     """加载 libblood 模块"""
-    # 如果已经加载，直接返回
+    # 如果已经加载，直接返回（兼容两种模块名：blood / libblood）
+    if 'blood' in sys.modules:
+        sys.modules.setdefault('libblood', sys.modules['blood'])
+        return sys.modules['blood']
     if 'libblood' in sys.modules:
+        sys.modules.setdefault('blood', sys.modules['libblood'])
         return sys.modules['libblood']
     
     # 查找 libblood 模块文件
@@ -45,7 +49,7 @@ def load_libblood():
             os.path.join(project_root, 'target', 'debug'),
         ]
     
-    # 查找 libblood 模块文件
+    # 查找扩展模块文件
     for search_path in search_paths:
         for ext in extensions:
             # 尝试不同的文件名格式
@@ -56,25 +60,36 @@ def load_libblood():
             for name in possible_names:
                 libblood_path = os.path.join(search_path, name)
                 if os.path.exists(libblood_path):
-                    # 使用 ExtensionFileLoader 加载扩展模块
-                    loader = importlib.machinery.ExtensionFileLoader('libblood', libblood_path)
-                    spec = importlib.machinery.ModuleSpec('libblood', loader, origin=libblood_path)
-                    libblood = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(libblood)
-                    sys.modules['libblood'] = libblood
-                    return libblood
+                    # IMPORTANT:
+                    # The actual pyo3 module name is `blood` (exports PyInit_blood).
+                    # Some parts of this repo import `libblood`, so we load as `blood`
+                    # and then alias it to `libblood` for compatibility.
+                    loader = importlib.machinery.ExtensionFileLoader('blood', libblood_path)
+                    spec = importlib.machinery.ModuleSpec('blood', loader, origin=libblood_path)
+                    blood = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(blood)
+                    sys.modules['blood'] = blood
+                    sys.modules['libblood'] = blood
+                    return blood
     
     # 如果找不到，尝试直接导入（可能已经安装为 Python 包）
     try:
-        import libblood
-        sys.modules['libblood'] = libblood
-        return libblood
+        import blood
+        sys.modules['blood'] = blood
+        sys.modules['libblood'] = blood
+        return blood
     except ImportError:
-        pass
+        try:
+            import libblood
+            sys.modules['libblood'] = libblood
+            sys.modules.setdefault('blood', libblood)
+            return libblood
+        except ImportError:
+            pass
     
     raise ImportError(
-        f"libblood module not found. Please build libblood first:\n"
-        f"  cargo build --lib --release\n"
+        f"libblood/blood module not found. Please build it first:\n"
+        f"  cargo build -p libblood --release --lib\n"
         f"Searched in: {', '.join(search_paths)}\n"
         f"Looking for extensions: {', '.join(extensions)}"
     )

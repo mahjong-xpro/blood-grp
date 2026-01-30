@@ -59,7 +59,7 @@ globs = ['/data/mortal/train_play/**/*.json.gz']
 file_index = '/data/mortal/file_index.pth'
 file_batch_size = 20
 reserve_ratio = 0.0
-num_workers = 24
+num_workers = 4
 player_names_files = []
 num_epochs = 1
 enable_augmentation = false
@@ -77,12 +77,11 @@ num_blocks = 40
 
 # CQL (Conservative Q-Learning) 配置
 [cql]
-min_q_weight = 1.0
+min_q_weight = 0.0
                      # CQL 权重 (压制未见动作的力度)
                      # 阶段建议:
-                     # 1. 初期/崩溃恢复: 0.5-1.0 (放松压制，允许探索)
-                     # 2. 中期 (当前): 1.0-2.0
-                     # 3. 后期: 3.0-5.0 (只相信已学到的策略)
+                     # 1. Zero Start: 0.0 (关闭 CQL，鼓励自由探索，避免初期过度悲观)
+                     # 2. 稳定期: 0.5-1.0 (防止 Q 值发散)
 
 # 辅助任务配置
 [aux]
@@ -97,8 +96,7 @@ mortal = false
 [optim]
 eps = 1e-8
 betas = [0.9, 0.999]
-weight_decay = 0.1
-max_grad_norm = 0  # 0 表示不进行梯度裁剪
+max_grad_norm = 1.0  # 启用梯度裁剪 (1.0)，防止无 CQL 时梯度主要爆炸
 
 # 学习率调度器配置
 [optim.scheduler]

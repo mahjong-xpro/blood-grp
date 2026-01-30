@@ -225,7 +225,9 @@ class DQN(nn.Module):
             a = self.a_head(phi)
         a_sum = a.masked_fill(~mask, 0.).sum(-1, keepdim=True)
         mask_sum = mask.sum(-1, keepdim=True)
-        a_mean = a_sum / mask_sum
+        # Guard against invalid states where all actions are masked.
+        # In that case a_sum is 0, and we want a_mean=0 (avoid NaN/Inf).
+        a_mean = a_sum / mask_sum.clamp(min=1)
         q = (v + a - a_mean).masked_fill(~mask, -torch.inf)
         return q
 

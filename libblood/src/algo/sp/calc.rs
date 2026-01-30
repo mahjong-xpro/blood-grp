@@ -339,6 +339,16 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
 
         // 有効牌の合計枚数を計算する。【暫定対応】
         let sum_left_tiles = self.state.sum_left_tiles();
+        if sum_left_tiles == 0 {
+            // No tiles left to draw: probabilities should be zero.
+            let values = Rc::new(Values {
+                tenpai_probs,
+                win_probs,
+                exp_values,
+            });
+            self.draw_cache[shanten as usize].insert(self.state.clone(), Rc::clone(&values));
+            return values;
+        }
 
         for &DrawTile {
             tile,

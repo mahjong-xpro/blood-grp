@@ -1,61 +1,67 @@
-import blood
 import json
+import os
 import sys
 
-print(f"Checking blood module...")
-try:
-    shape = blood.consts.obs_shape(4)
-    print(f"blood.consts.obs_shape(4): {shape}")
-    if shape != (478, 27):
-        print(f"FAILURE: Expected (478, 27), got {shape}")
-        sys.exit(1)
-    else:
-        print("SUCCESS: obs_shape matches expected value.")
-except Exception as e:
-    print(f"Error checking obs_shape: {e}")
-    sys.exit(1)
+# Ensure we can import the project-local loader
+sys.path.append(os.path.join(os.getcwd(), "mortal"))
 
-# Minimal log to trigger encoding
-# We need enough events to trigger at least one encode_obs call (e.g. discard)
+print("Initializing libblood...")
+try:
+    import prelude  # loads libblood via libblood_loader on macOS
+    import libblood as blood
+except Exception as e:
+    raise SystemExit(
+        "Failed to import libblood. Build it first:\n"
+        "  cargo build -p libblood --release\n"
+        f"Original error: {e}"
+    )
+
+print("Checking obs_shape(4)...")
+shape = blood.consts.obs_shape(4)
+print(f"libblood.consts.obs_shape(4): {shape}")
+if shape != (461, 27):
+    raise SystemExit(f"FAILURE: Expected (461, 27), got {shape}")
+print("SUCCESS: obs_shape matches expected value.")
+
+# Minimal log to trigger encoding (must include DingQue stage for Bloody Battle logs)
 dummy_log = [
-    {"type": "start_game", "names": ["p0", "p1", "p2", "p3"]},
-    {"type": "start_kyoku", "kyoku": 1, "oya": 0, "scores": [25000, 25000, 25000, 25000], 
-     "tehais": [["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"], 
-                ["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"], 
-                ["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"], 
-                ["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"]]},
+    {"type": "start_game", "names": ["p0", "p1", "p2", "p3"], "seed": [1, 1]},
+    {
+        "type": "start_kyoku",
+        "kyoku": 1,
+        "oya": 0,
+        "scores": [25000, 25000, 25000, 25000],
+        "tehais": [
+            ["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"],
+            ["1p","2p","3p","4p","5p","6p","7p","8p","9p","1s","2s","3s","4s"],
+            ["1s","2s","3s","4s","5s","6s","7s","8s","9s","1m","2m","3m","4m"],
+            ["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"],
+        ],
+    },
+    {"type": "ding_que", "actor": 0, "suit": "man"},
+    {"type": "ding_que", "actor": 1, "suit": "pin"},
+    {"type": "ding_que", "actor": 2, "suit": "sou"},
+    {"type": "ding_que", "actor": 3, "suit": "man"},
     {"type": "tsumo", "actor": 0, "pai": "5p"},
     {"type": "dahai", "actor": 0, "pai": "5p", "tsumogiri": True},
     {"type": "end_kyoku"},
-    {"type": "end_game"}
+    {"type": "end_game"},
 ]
 
-# Convert to string format expected by load_log (one json per line)
 log_str = "\n".join(json.dumps(ev) for ev in dummy_log)
 
-print("Testing GameplayLoader...")
-try:
-    loader = blood.dataset.GameplayLoader(4) # Version 4
-    
-    games = loader.load_log(log_str)
-    print(f"Loaded {len(games)} gameplay objects")
-    
-    for i, game in enumerate(games):
-        print(f"Checking game {i}...")
-        # Access properties to trigger lazy evaluation or just check pre-computed
-        # obs is Vec<Array2<f32>>, accessible via take_obs()
-        obs_list = game.take_obs()
-        print(f"  Obs count: {len(obs_list)}")
-        if len(obs_list) > 0:
-            print(f"  Obs shape: {obs_list[0].shape}")
-            if obs_list[0].shape != (478, 27):
-                 print(f"FAILURE: Obs shape {obs_list[0].shape} mismatch!")
-                 sys.exit(1)
-        
-    print("SUCCESS: Encoding finished without panic and shapes match.")
+print("Testing GameplayLoader encoding...")
+loader = blood.dataset.GameplayLoader(version=4, oracle=False)
+games = loader.load_log(log_str)
+print(f"Loaded {len(games)} gameplay objects")
 
-except Exception as e:
-    print(f"Error during loading/encoding: {e}")
-    import traceback
-    traceback.print_exc()
-    sys.exit(1)
+for i, game in enumerate(games):
+    obs_list = game.take_obs()
+    print(f"game[{i}] obs_count={len(obs_list)}")
+    if len(obs_list) > 0:
+        got = obs_list[0].shape
+        print(f"game[{i}] obs_shape={got}")
+        if got != (461, 27):
+            raise SystemExit(f"FAILURE: Obs shape {got} mismatch (expected (461, 27))")
+
+print("SUCCESS: Encoding finished without panic and shapes match.")
