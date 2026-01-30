@@ -401,6 +401,23 @@ impl Gameplay {
         self.obs.push(feature);
         self.actions.push(label as i64);
         self.masks.push(mask);
+        
+        // Debug Mask Mismatch for Agari
+        if label == 29 && !mask[29] {
+             panic!(
+                "Mask Mismatch detected for Agari (Action 29)! Player: {}, Kyoku: {}, Turn: {}, Shanten: {}, DingQue: {:?}, CanRon: {}, CanTsumo: {}, Furiten: {}, Forbidden: {:?}",
+                self.player_id,
+                ctx.kyoku_idx,
+                ctx.state.at_turn(),
+                ctx.state.shanten(),
+                ctx.state.ding_que,
+                ctx.state.last_cans().can_ron_agari,
+                ctx.state.last_cans().can_tsumo_agari,
+                ctx.state.temporary_furiten,
+                ctx.state.forbidden_tiles
+             );
+        }
+
         self.at_kyoku.push(ctx.kyoku_idx as u8);
         // only discard and kan will discount
         self.apply_gamma.push(label <= 37);
