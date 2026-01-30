@@ -6,6 +6,7 @@ import torch
 import numpy as np
 import time
 import gc
+import os
 from os import path
 from model import Brain, DQN
 from player import TrainPlayer
@@ -77,6 +78,14 @@ def main():
                 'param_version': param_version,
             })
             logging.info('logs have been submitted')
+        
+        # Cleanup submitted logs to save disk space
+        for filename in file_list:
+            try:
+                os.remove(filename)
+            except OSError as e:
+                logging.error(f"Error deleting {filename}: {e}")
+
         gc.collect()
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
