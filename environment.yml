@@ -1,25 +1,31 @@
 name: blood
 channels:
-  - pytorch
-  - nvidia
+  # TUNA (Tsinghua University) Mirrors for Conda
+  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/pytorch/
+  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main/
+  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/free/
   - defaults
 dependencies:
   - python=3.12
   - pip
   - pip:
-    # PyTorch Ecosystem (CUDA 12.4 for RTX 4090)
-    # Use --extra-index-url so standard packages (maturin, etc.) are found on PyPI
-    - --extra-index-url https://download.pytorch.org/whl/cu124
+    # 1. Main PyPI Mirror (TUNA) - Accelerates maturin, numpy, tqdm
+    - -i https://pypi.tuna.tsinghua.edu.cn/simple
+    
+    # 2. PyTorch Wheels Mirror (TUNA) - Accelerates torch download (2GB+)
+    # Note: If cu124 fails, try changing to cu121 (Both support RTX 4090)
+    - --extra-index-url https://mirrors.tuna.tsinghua.edu.cn/pytorch-wheels/cu124
+    
     - torch
     - torchvision
     - torchaudio
     
-    # Compilation & Rust Integration
-    - triton          # Required for torch.compile
-    - maturin         # Required for building libblood (Rust extension)
+    # Compilation & Rust
+    - triton
+    - maturin
     
     # Data & Logging
-    - numpy<2.0       # Pin numpy < 2.0 to avoid compatibility issues with some libs
+    - numpy<2.0
     - tensorboard
     - tqdm
     
@@ -32,11 +38,3 @@ dependencies:
     - black
     - isort
     - pytest
-
-# Usage:
-# 1. Create: conda env create -f environment.yml
-# 2. Activate: conda activate blood
-# 3. Build Rust extension: maturin develop --release
-# 4. Set Env Vars (Crucial for 4090):
-#    export TORCH_CUDA_ARCH_LIST="8.9"
-#    export NCCL_P2P_DISABLE=1
