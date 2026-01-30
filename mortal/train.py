@@ -403,14 +403,20 @@ def train():
                     writer.flush()
 
                     if better:
+                        # Update best.pth
                         torch.save(state, state_file)
+                        baseline_file = config['baseline']['train']['state_file']
+                        
                         logging.info(
-                            'a new record has been made, '
+                            'a new record has been made! '
                             f'pt: {past_best["avg_pt"]:.4} -> {best_perf["avg_pt"]:.4}, '
-                            f'rank: {past_best["avg_rank"]:.4} -> {best_perf["avg_rank"]:.4}, '
-                            f'saving to {best_state_file}'
+                            f'rank: {past_best["avg_rank"]:.4} -> {best_perf["avg_rank"]:.4}. '
+                            f'Updating {best_state_file} AND {baseline_file} (Evolution Step)'
                         )
                         shutil.copy(state_file, best_state_file)
+                        # CRITICAL: Evolve the baseline! 
+                        # This ensures the AI fights a stronger version of itself next time.
+                        shutil.copy(state_file, baseline_file)
                     if online:
                         # BUG: This is a bug with unknown reason. When training
                         # in online mode, the process will get stuck here. This
