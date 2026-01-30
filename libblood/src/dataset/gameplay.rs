@@ -398,6 +398,23 @@ impl Gameplay {
 
     fn add_entry(&mut self, ctx: &LoaderContext<'_>, at_kan_select: bool, label: usize) {
         let (feature, mask) = ctx.state.encode_obs(ctx.config.version, at_kan_select);
+        // Action indices: 0-26 (discard), 27 (pon), 28 (kan), 29 (agari), 30 (pass), 31-33 (ding que)
+        // Check mask BEFORE moving it into vector
+        if label == 29 && !mask[29] {
+             panic!(
+                "Mask Mismatch detected for Agari (Action 29)! Player: {}, Kyoku: {}, Turn: {}, Shanten: {}, DingQue: {:?}, CanRon: {}, CanTsumo: {}, Furiten: {}, Forbidden: {:?}",
+                self.player_id,
+                ctx.kyoku_idx,
+                ctx.state.at_turn(),
+                ctx.state.shanten(),
+                ctx.state.ding_que,
+                ctx.state.last_cans().can_ron_agari,
+                ctx.state.last_cans().can_tsumo_agari,
+                ctx.state.temporary_furiten,
+                ctx.state.forbidden_tiles
+             );
+        }
+
         self.obs.push(feature);
         self.actions.push(label as i64);
         self.masks.push(mask);
