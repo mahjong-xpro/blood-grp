@@ -124,7 +124,7 @@ history_window = 50
 enable_compile = false
 
 [online.remote]
-host = '127.0.0.1'
+host = '0.0.0.0'
 port = 5000
 
 [online.server]
