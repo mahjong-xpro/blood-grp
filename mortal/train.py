@@ -260,16 +260,12 @@ def train():
             if not valid.all():
                 invalid_count = (~valid).sum().item()
                 first_invalid = (~valid).nonzero(as_tuple=True)[0][0].item()
-                logging.warning(
-                    "Skipping batch at step %s: %s/%s samples have action not allowed by mask "
-                    "(first invalid idx=%s, action=%s). Likely bad log or ding_que replay bug.",
-                    steps + 1,
-                    invalid_count,
-                    batch_size,
-                    first_invalid,
-                    actions[first_invalid].item(),
-                )
-                return
+                # Raise RuntimeError to force debugging
+                msg = (f"Skipping batch at step {steps + 1}: {invalid_count}/{batch_size} samples have action not allowed by mask "
+                       f"(first invalid idx={first_invalid}, action={actions[first_invalid].item()}). "
+                       f"Likely bad log or ding_que replay bug.")
+                logging.error(msg)
+                raise RuntimeError(msg)
 
             q_target_mc = gamma ** steps_to_done * kyoku_rewards
             q_target_mc = q_target_mc.to(torch.float32)
