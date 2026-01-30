@@ -55,7 +55,7 @@ log_dir = '/data/mortal/test_play'
 # 数据集配置
 # 自博弈训练：指向自对局生成的数据目录
 [dataset]
-globs = ['/data/mortal/train_play/**/*.json.gz']
+globs = ['/data/mortal/drain/**/*.json.gz']
 file_index = '/data/mortal/file_index.pth'
 file_batch_size = 20
 reserve_ratio = 0.0
