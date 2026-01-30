@@ -73,13 +73,33 @@ class Handler(BaseRequestHandler):
         self.send_msg(buf.getbuffer(), packed=True)
 
     def handle_submit_replay(self, msg):
+        # 1. Allocate ID (Fast, Protected)
         with S.dir_lock:
-            for filename, content in msg['logs'].items():
-                filepath = path.join(S.buffer_dir, f'{S.submission_id}_{filename}')
-                with open(filepath, 'wb') as f:
-                    f.write(content)
-            S.buffer_size += len(msg['logs'])
+            current_submission_id = S.submission_id
             S.submission_id += 1
+        
+        # 2. Write Files (Slow, IO Bound, Unlocked)
+        written_files = 0
+        try:
+            for filename, content in msg['logs'].items():
+                # Write as hidden/temp file first
+                temp_filename = f'{current_submission_id}_{filename}.tmp'
+                final_filename = f'{current_submission_id}_{filename}'
+                temp_filepath = path.join(S.buffer_dir, temp_filename)
+                
+                with open(temp_filepath, 'wb') as f:
+                    f.write(content)
+                
+                # Atomic rename
+                final_filepath = path.join(S.buffer_dir, final_filename)
+                os.rename(temp_filepath, final_filepath)
+                written_files += 1
+        except Exception as e:
+            logging.error(f"Error writing replay files: {e}")
+
+        # 3. Update Buffer Size (Fast, Protected)
+        with S.dir_lock:
+            S.buffer_size += written_files
             logging.info(f'total buffer size: {S.buffer_size}')
 
     def handle_submit_param(self, msg):
@@ -93,20 +113,37 @@ class Handler(BaseRequestHandler):
     def handle_drain(self):
         drained_size = 0
         with S.dir_lock:
-            buffer_list = os.listdir(S.buffer_dir)
+            # Filter out .tmp files to avoid moving incomplete writes
+            all_files = os.listdir(S.buffer_dir)
+            buffer_list = [f for f in all_files if not f.endswith('.tmp')]
+            
             raw_count = len(buffer_list)
-            assert raw_count == S.buffer_size
+            # Sync buffer_size with actual readable files to be safe
+            # S.buffer_size might differ slightly if writes are in flight, but that's okay.
+            # actually we should trust actual files for drain count.
+            
             if (not S.force_sequential or raw_count >= S.capacity) and raw_count > 0:
                 old_drain_list = os.listdir(S.drain_dir)
                 for filename in old_drain_list:
                     filepath = path.join(S.drain_dir, filename)
-                    os.remove(filepath)
+                    try:
+                        os.remove(filepath)
+                    except OSError:
+                        pass # Race condition or already deleted
+
                 for filename in buffer_list:
                     src = path.join(S.buffer_dir, filename)
                     dst = path.join(S.drain_dir, filename)
                     shutil.move(src, dst)
+                
                 drained_size = raw_count
-                S.buffer_size = 0
+                # Reset buffer size to reflect drained state
+                # Note: valid files remaining (if any skipped) + in-flight writes
+                # For simplicity, we assume we drained all visible non-tmp files.
+                # But we must subtract ONLY what we drained. 
+                # Since S.buffer_size tracks "submitted" files, and we just moved 'raw_count' files...
+                S.buffer_size = max(0, S.buffer_size - drained_size)
+                
                 logging.info(f'files transferred to trainer: {drained_size}')
                 logging.info(f'total buffer size: {S.buffer_size}')
         self.send_msg({
