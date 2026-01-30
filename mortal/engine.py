@@ -61,6 +61,7 @@ class MortalEngine:
             masks = torch.as_tensor(np.stack(masks, axis=0), device=self.device)
         else:
             masks = torch.as_tensor(masks, device=self.device)
+        masks = masks.to(torch.bool)
 
         if invisible_obs is not None:
             if isinstance(invisible_obs, list):
@@ -69,6 +70,13 @@ class MortalEngine:
                 invisible_obs = torch.as_tensor(invisible_obs, device=self.device)
         
         batch_size = obs.shape[0]
+        if masks.shape[0] != batch_size:
+            raise ValueError(f"batch size mismatch: obs.shape[0]={batch_size}, masks.shape[0]={masks.shape[0]}")
+
+        valid_counts = masks.sum(-1)
+        if (valid_counts == 0).any():
+            bad = (valid_counts == 0).nonzero(as_tuple=False).flatten().tolist()
+            raise ValueError(f"invalid action mask: no valid actions for batch indices {bad}")
 
         if self.version == 1:
             mu, logsig = self.brain(obs, invisible_obs)
@@ -82,6 +90,8 @@ class MortalEngine:
             q_out = self.dqn(phi, masks)
 
         if self.boltzmann_epsilon > 0:
+            if self.boltzmann_temp <= 0:
+                raise ValueError(f"boltzmann_temp must be > 0, got {self.boltzmann_temp}")
             is_greedy = torch.full((batch_size,), 1-self.boltzmann_epsilon, device=self.device).bernoulli().to(torch.bool)
             logits = (q_out / self.boltzmann_temp).masked_fill(~masks, -torch.inf)
             sampled = sample_top_p(logits, self.top_p)

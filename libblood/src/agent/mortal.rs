@@ -117,6 +117,15 @@ impl MortalBatchAgent {
         let mut sync_fields = self.sync_fields.lock();
 
         if sync_fields.states.is_empty() {
+            // Keep internal buffers consistent to avoid stale data or panics in get_reaction().
+            self.actions.clear();
+            self.q_values.clear();
+            self.masks_recv.clear();
+            self.is_greedy.clear();
+            self.last_batch_size = 0;
+            self.last_eval_elapsed = Duration::ZERO;
+            sync_fields.invisible_states.clear();
+            sync_fields.masks.clear();
             return Ok(());
         }
 
@@ -314,6 +323,25 @@ impl BatchAgent for MortalBatchAgent {
 
         let actor = self.player_ids[index];
         let cans = state.last_cans();
+
+        ensure!(
+            action_idx < self.actions.len(),
+            "invalid action_idx {} (actions.len()={}) for player index {}. last_batch_size={}, evaluated={}",
+            action_idx,
+            self.actions.len(),
+            index,
+            self.last_batch_size,
+            self.evaluated,
+        );
+        if let Some(kan_idx) = kan_select_idx {
+            ensure!(
+                kan_idx < self.actions.len(),
+                "invalid kan_select_idx {} (actions.len()={}) for player index {}",
+                kan_idx,
+                self.actions.len(),
+                index,
+            );
+        }
 
         let orig_action = self.actions[action_idx];
         let action =

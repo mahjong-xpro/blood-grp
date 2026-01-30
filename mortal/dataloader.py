@@ -144,16 +144,17 @@ class FileDatasetsIter(IterableDataset):
                 kyoku_rewards = self.reward_calc.calc_delta_points(player_id, scores_history, final_scores) / 10000.0
                 
                 # Add Ding Que quality bonus
-                # Quality: +1.0 (best), 0.0 (middle), -1.0 (worst)
-                # Scale: ±0.02 = ±200 points equivalent
-                ding_que_quality = game_score.take_ding_que_quality()
-                if len(ding_que_quality) > 0:
-                    ding_que_quality_arr = np.array(ding_que_quality, dtype=np.float64)
-                    # Get this player's quality scores for each kyoku
-                    player_dq_quality = ding_que_quality_arr[:, player_id]
-                    # Scale and add to rewards (ensure same length)
-                    min_len = min(len(kyoku_rewards), len(player_dq_quality))
-                    kyoku_rewards[:min_len] += player_dq_quality[:min_len] * 0.02
+                # REMOVED: Since Ding Que is algorithm-controlled, we should rely solely on true score.
+                # Heuristic rewards can introduce noise/bias against the ground truth.
+                # 
+                # ding_que_quality = game_score.take_ding_que_quality()
+                # if len(ding_que_quality) > 0:
+                #     ding_que_quality_arr = np.array(ding_que_quality, dtype=np.float64)
+                #     # Get this player's quality scores for each kyoku
+                #     player_dq_quality = ding_que_quality_arr[:, player_id]
+                #     # Scale and add to rewards (ensure same length)
+                #     min_len = min(len(kyoku_rewards), len(player_dq_quality))
+                #     kyoku_rewards[:min_len] += player_dq_quality[:min_len] * 0.02
                 
                 assert len(kyoku_rewards) >= at_kyoku[-1] + 1 # usually they are equal, unless there is no action in the last kyoku
 
@@ -162,18 +163,30 @@ class FileDatasetsIter(IterableDataset):
                 player_ranks = rank_by_player_seq[:, player_id]
 
                 steps_to_done = np.zeros(game_size, dtype=np.int64)
+                # steps_to_done[i] depends on i+1, so compute with a running accumulator
+                # to avoid out-of-bounds when i == game_size - 1.
+                steps = 0
                 for i in reversed(range(game_size)):
-                    if not dones[i]:
-                        steps_to_done[i] = steps_to_done[i + 1] + int(apply_gamma[i])
+                    if dones[i]:
+                        steps = 0
+                    else:
+                        steps += int(apply_gamma[i])
+                    steps_to_done[i] = steps
 
                 for i in range(game_size):
+                    # player_ranks is based on scores_history + final_scores, so it usually has
+                    # length = (#kyoku + 1). Some logs may mark actions with at_kyoku==#kyoku
+                    # (final/terminal), so clamp to the last valid index.
+                    next_kyoku_idx = int(at_kyoku[i]) + 1
+                    if next_kyoku_idx >= len(player_ranks):
+                        next_kyoku_idx = len(player_ranks) - 1
                     entry = [
                         obs[i],
                         actions[i],
                         masks[i],
                         steps_to_done[i],
                         kyoku_rewards[at_kyoku[i]],
-                        player_ranks[at_kyoku[i] + 1],
+                        player_ranks[next_kyoku_idx],
                     ]
                     if self.oracle:
                         entry.insert(1, invisible_obs[i])
