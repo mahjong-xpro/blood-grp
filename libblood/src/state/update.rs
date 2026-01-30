@@ -32,8 +32,9 @@ impl PlayerState {
         if !event.is_in_game_announce() {
             // Guo Shou Hu (Temporary Furiten) Detection
             // If we could Ron previously, but didn't (and the new event is not our own Win),
+            // OR if we could Tsumo previously, but didn't (pass Tsumo implies Furiten until next turn),
             // then we missed it. Set temporary_furiten.
-            if self.last_cans.can_ron_agari {
+            if self.last_cans.can_ron_agari || self.last_cans.can_tsumo_agari {
                 let passed = match event {
                     Event::Hora { actor, .. } => *actor != self.player_id,
                     _ => true,
