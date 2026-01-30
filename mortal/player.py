@@ -188,6 +188,7 @@ class TrainPlayer:
         self.boltzmann_epsilon = cfg['boltzmann_epsilon']
         self.boltzmann_temp = cfg['boltzmann_temp']
         self.top_p = cfg['top_p']
+        self.keep_data = cfg.get('keep_data', False)
 
         self.repeats = cfg['repeats']
         self.repeat_counter = 0
@@ -207,7 +208,7 @@ class TrainPlayer:
             name = 'trainee',
         )
 
-        if path.isdir(self.log_dir):
+        if path.isdir(self.log_dir) and not self.keep_data:
             shutil.rmtree(self.log_dir)
 
         env = OneVsThree(

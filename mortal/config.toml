@@ -32,7 +32,7 @@ submit_every = 1000
 [train_play.default]
 games = 6400  # RTX 3090 + 3970X: 增加到 6400 进一步提升 GPU 利用率
 log_dir = '/data/mortal/train_play'  # 自对局数据保存目录
-boltzmann_epsilon = 0.2  # 探索率 (中期)
+boltzmann_epsilon = 0.5  # 探索率 (初期强力探索)
                      # 阶段建议:
                      # 1. 初期/崩溃恢复: 0.5 (强力随机，打破定缺偏差)
                      # 2. 中期 (当前): 0.1-0.2
@@ -45,6 +45,7 @@ boltzmann_temp = 0.5     # 温度参数 (中期)
                      # 3. 后期: 0.05-0.1 (增强对弈强度)
 top_p = 1.0
 repeats = 1
+keep_data = true  # 是否保留历史自对局数据 (Zero-Start 必须为 true)
 
 # 测试对局配置
 [test_play]
@@ -103,7 +104,7 @@ max_grad_norm = 0  # 0 表示不进行梯度裁剪
 [optim.scheduler]
 peak = 1e-4  # 峰值学习率
 final = 1e-4  # 最终学习率
-warm_up_steps = 0  # 预热步数
+warm_up_steps = 1000  # 预热步数 (防止梯度爆炸)
 max_steps = 0  # 0 表示不限制最大步数
 
 # Baseline 模型配置（用于自对局）
