@@ -1,10 +1,42 @@
-name: mortal
+name: blood
 channels:
-  - conda-forge
+  - pytorch
+  - nvidia
+  - defaults
 dependencies:
   - python=3.12
   - pip
   - pip:
-    - tqdm
-    - toml
+    # PyTorch Ecosystem (CUDA 12.4 for RTX 4090)
+    # Using specific index-url to ensure CUDA 12.4 version
+    - --index-url https://download.pytorch.org/whl/cu124
+    - torch
+    - torchvision
+    - torchaudio
+    
+    # Compilation & Rust Integration
+    - triton          # Required for torch.compile
+    - maturin         # Required for building libblood (Rust extension)
+    
+    # Data & Logging
+    - numpy<2.0       # Pin numpy < 2.0 to avoid compatibility issues with some libs
     - tensorboard
+    - tqdm
+    
+    # Utilities
+    - psutil
+    - colorlog
+    - toml
+    
+    # Development
+    - black
+    - isort
+    - pytest
+
+# Usage:
+# 1. Create: conda env create -f environment.yml
+# 2. Activate: conda activate blood
+# 3. Build Rust extension: maturin develop --release
+# 4. Set Env Vars (Crucial for 4090):
+#    export TORCH_CUDA_ARCH_LIST="8.9"
+#    export NCCL_P2P_DISABLE=1
