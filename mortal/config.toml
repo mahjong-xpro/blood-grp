@@ -5,7 +5,7 @@
 
 [control]
 version = 4
-online = false
+online = true
 
 # 模型文件路径
 state_file = '/data/mortal/mortal.pth'
@@ -45,7 +45,7 @@ boltzmann_temp = 0.5     # 温度参数 (初期: 0.5)
                      # 3. 后期: 0.05
 top_p = 1.0
 repeats = 1
-keep_data = true
+keep_data = false
 
 # 测试对局配置
 [test_play]
