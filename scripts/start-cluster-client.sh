@@ -36,22 +36,26 @@ export MORTAL_CFG=mortal/config.toml
 # On Clients, replace '127.0.0.1' with Master IP in config.toml before running.
 # OR use a temp config file.
 
-echo "Creating temporary client config for Master IP: $MASTER_IP..."
-cp mortal/config.toml mortal/config_client.toml
-# Replace host='127.0.0.1' with host='$MASTER_IP'
-if [[ "$OSTYPE" == "darwin"* ]]; then
-  sed -i '' "s/host = '127.0.0.1'/host = '$MASTER_IP'/g" mortal/config_client.toml
-else
-  sed -i "s/host = '127.0.0.1'/host = '$MASTER_IP'/g" mortal/config_client.toml
-fi
-
-export MORTAL_CFG=mortal/config_client.toml
-
-echo "Starting clients on GPUs $START_GPU to $END_GPU connecting to $MASTER_IP..."
-
 for gpu in $(seq $START_GPU $END_GPU); do
     echo "Launching Client on GPU $gpu..."
-    CUDA_VISIBLE_DEVICES=$gpu python3 mortal/client.py &
+    
+    # Create unique config for this GPU worker to isolate log directories
+    CLIENT_CFG="mortal/config_client_${gpu}.toml"
+    cp mortal/config.toml "$CLIENT_CFG"
+    
+    # 1. Update Master IP
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' "s/host = '127.0.0.1'/host = '$MASTER_IP'/g" "$CLIENT_CFG"
+        # 2. Update Log Directory to be unique (e.g. data/mortal/train_play_0)
+        # Assuming config has: log_dir = 'data/mortal/train_play'
+        sed -i '' "s|data/mortal/train_play|data/mortal/train_play_${gpu}|g" "$CLIENT_CFG"
+    else
+        sed -i "s/host = '127.0.0.1'/host = '$MASTER_IP'/g" "$CLIENT_CFG"
+        sed -i "s|data/mortal/train_play|data/mortal/train_play_${gpu}|g" "$CLIENT_CFG"
+    fi
+    
+    # Run in background with unique config
+    MORTAL_CFG="$CLIENT_CFG" CUDA_VISIBLE_DEVICES=$gpu python3 mortal/client.py &
 done
 
 wait
