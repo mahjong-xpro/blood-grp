@@ -192,8 +192,9 @@ impl PlayerState {
             self.last_cans.can_ding_que = false;
         } else {
             let actor_rel = self.rel(actor);
-            if actor_rel < 3 {
-                self.other_ding_que[actor_rel] = Some(suit);
+            if actor_rel > 0 {
+                // map relative 1, 2, 3 to index 0, 1, 2
+                self.other_ding_que[actor_rel as usize - 1] = Some(suit);
             }
         }
         Ok(())
