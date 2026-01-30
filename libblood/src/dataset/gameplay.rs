@@ -402,7 +402,7 @@ impl Gameplay {
         // Check mask BEFORE moving it into vector
         if label == 29 && !mask[29] {
              panic!(
-                "Mask Mismatch detected for Agari (Action 29)! Player: {}, Kyoku: {}, Turn: {}, Shanten: {}, DingQue: {:?}, CanRon: {}, CanTsumo: {}, Furiten: {}, Forbidden: {:?}",
+                "Mask Mismatch detected for Agari (Action 29)! Player: {}, Kyoku: {}, Turn: {}, Shanten: {}, DingQue: {:?}, CanRon: {}, CanTsumo: {}, Furiten: {}, Forbidden: {:?}, Tehai: {:?}",
                 self.player_id,
                 ctx.kyoku_idx,
                 ctx.state.at_turn(),
@@ -411,7 +411,8 @@ impl Gameplay {
                 ctx.state.last_cans().can_ron_agari,
                 ctx.state.last_cans().can_tsumo_agari,
                 ctx.state.temporary_furiten,
-                ctx.state.forbidden_tiles
+                ctx.state.forbidden_tiles,
+                ctx.state.tehai
              );
         }
 
