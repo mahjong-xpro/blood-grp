@@ -65,31 +65,52 @@ def train():
     mortal = Brain(version=version, **config['resnet']).to(device)
     dqn = DQN(version=version).to(device)
     aux_net = AuxNet((4,)).to(device)
+    
+    # Check for multiple GPUs
+    if torch.cuda.device_count() > 1:
+        logging.info(f"Using {torch.cuda.device_count()} GPUs for training!")
+        mortal = nn.DataParallel(mortal)
+        dqn = nn.DataParallel(dqn)
+        aux_net = nn.DataParallel(aux_net)
+        
     all_models = (mortal, dqn, aux_net)
     if enable_compile:
+        # Compile underlying modules if DataParallel is used, or the model itself
         for m in all_models:
-            m.compile()
+            if isinstance(m, nn.DataParallel):
+                m.module.compile()
+            else:
+                m.compile()
 
     logging.info(f'version: {version}')
     logging.info(f'obs shape: {obs_shape(version)}')
-    logging.info(f'mortal params: {parameter_count(mortal):,}')
-    logging.info(f'dqn params: {parameter_count(dqn):,}')
-    logging.info(f'aux params: {parameter_count(aux_net):,}')
+    
+    # Access underlying module for param counting if DataParallel
+    def get_module(m):
+        return m.module if isinstance(m, nn.DataParallel) else m
 
-    mortal.freeze_bn(config['freeze_bn']['mortal'])
+    logging.info(f'mortal params: {parameter_count(get_module(mortal)):,}')
+    logging.info(f'dqn params: {parameter_count(get_module(dqn)):,}')
+    logging.info(f'aux params: {parameter_count(get_module(aux_net)):,}')
+
+    get_module(mortal).freeze_bn(config['freeze_bn']['mortal'])
 
     decay_params = []
     no_decay_params = []
     for model in all_models:
         params_dict = {}
         to_decay = set()
-        for mod_name, mod in model.named_modules():
+        # Use underlying module for parameter iteration
+        real_model = get_module(model)
+        for mod_name, mod in real_model.named_modules():
             for name, param in mod.named_parameters(prefix=mod_name, recurse=False):
                 params_dict[name] = param
                 if isinstance(mod, (nn.Linear, nn.Conv1d)) and name.endswith('weight'):
                     to_decay.add(name)
-        decay_params.extend(params_dict[name] for name in sorted(to_decay))
-        no_decay_params.extend(params_dict[name] for name in sorted(params_dict.keys() - to_decay))
+        # Verify keys exist before access (DataParallel safe)
+        decay_params.extend(params_dict[name] for name in sorted(to_decay) if name in params_dict)
+        no_decay_params.extend(params_dict[name] for name in sorted(params_dict.keys() - to_decay) if name in params_dict)
+    
     param_groups = [
         {'params': decay_params, 'weight_decay': weight_decay},
         {'params': no_decay_params},
@@ -110,9 +131,18 @@ def train():
         state = torch.load(state_file, weights_only=True, map_location=device)
         timestamp = datetime.fromtimestamp(state['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
         logging.info(f'loaded: {timestamp}')
-        mortal.load_state_dict(state['mortal'])
-        dqn.load_state_dict(state['current_dqn'])
-        aux_net.load_state_dict(state['aux_net'])
+        
+        # Helper to load state dict handling DataParallel prefix
+        def load_sd(model, sd):
+            if isinstance(model, nn.DataParallel):
+                model.module.load_state_dict(sd)
+            else:
+                model.load_state_dict(sd)
+
+        load_sd(mortal, state['mortal'])
+        load_sd(dqn, state['current_dqn'])
+        load_sd(aux_net, state['aux_net'])
+        
         if not online or state['config']['control']['online']:
             optimizer.load_state_dict(state['optimizer'])
             scheduler.load_state_dict(state['scheduler'])
@@ -130,7 +160,8 @@ def train():
         logging.info(f'device: {device}')
 
     if online:
-        submit_param(mortal, dqn, is_idle=True)
+        # Submit underlying models
+        submit_param(get_module(mortal), get_module(dqn), is_idle=True)
         logging.info('param has been submitted')
 
     writer = SummaryWriter(config['control']['tensorboard_dir'])
@@ -311,7 +342,7 @@ def train():
             pb.update(1)
 
             if online and steps % submit_every == 0:
-                submit_param(mortal, dqn, is_idle=False)
+                submit_param(get_module(mortal), get_module(dqn), is_idle=False)
                 logging.info('param has been submitted')
 
             if steps % save_every == 0:
@@ -338,9 +369,9 @@ def train():
                 logging.info(f'total steps: {steps:,} (~{before_next_test_play:,})')
 
                 state = {
-                    'mortal': mortal.state_dict(),
-                    'current_dqn': dqn.state_dict(),
-                    'aux_net': aux_net.state_dict(),
+                    'mortal': get_module(mortal).state_dict(),
+                    'current_dqn': get_module(dqn).state_dict(),
+                    'aux_net': get_module(aux_net).state_dict(),
                     'optimizer': optimizer.state_dict(),
                     'scheduler': scheduler.state_dict(),
                     'scaler': scaler.state_dict(),
@@ -352,7 +383,7 @@ def train():
                 torch.save(state, state_file)
 
                 if online and steps % submit_every != 0:
-                    submit_param(mortal, dqn, is_idle=False)
+                    submit_param(get_module(mortal), get_module(dqn), is_idle=False)
                     logging.info('param has been submitted')
 
                 if steps % test_every == 0:
@@ -414,9 +445,16 @@ def train():
                             f'Updating {best_state_file} AND {baseline_file} (Evolution Step)'
                         )
                         shutil.copy(state_file, best_state_file)
-                        # CRITICAL: Evolve the baseline! 
-                        # This ensures the AI fights a stronger version of itself next time.
                         shutil.copy(state_file, baseline_file)
+                        
+                        # CRITICAL FIX: Reset best_perf after updating baseline!
+                        # The opponent just got harder (it's us!). We don't need to beat the OLD score (e.g. 4.5 vs Random),
+                        # we just need to beat the NEW baseline (score > 3.0).
+                        best_perf = {
+                            'avg_rank': 2.5,
+                            'avg_pt': 3.0,
+                        }
+                        logging.info(f"Baseline Updated. Resetting target score to {best_perf['avg_pt']} for next round.")
                     if online:
                         # BUG: This is a bug with unknown reason. When training
                         # in online mode, the process will get stuck here. This

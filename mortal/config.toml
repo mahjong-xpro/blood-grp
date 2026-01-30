@@ -23,9 +23,9 @@ batch_size = 4096  # RTX 4090 Cluster Optimization: Saturate Trainer GPU
 opt_step_every = 1
 
 # 保存和测试频率
-save_every = 2000 # 2000 Steps checkpoint = Safe
+save_every = 500 # 500 Steps checkpoint = Drain Every ~2.5 Minutes (Fresh Data)
 test_every = 50000   # 50000 Steps = ~200M Samples. 降低测试频率，让集群专注跑分 (约1.5小时测一次)
-submit_every = 1000 # 关键修正: Cluster模式下，生成速度极快。必须高频(1000步)同步模型，否则 Client 总是用旧模型跑数据(Off-Policy Lag)
+submit_every = 100 # Tuning: Sync params very fast (every ~30s) so Clients are On-Policy
 
 # 自对局配置（用于生成训练数据）
 # 使用环境变量 TRAIN_PLAY_PROFILE 可以选择不同的配置
