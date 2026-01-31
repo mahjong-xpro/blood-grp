@@ -101,53 +101,70 @@ class FileDatasetsIter(IterableDataset):
         self.buffer.clear()
 
     def populate_buffer(self, file_list):
-        try:
-            data = self.loader.load_gz_log_files(file_list)
-        except Exception as e:
-            # Log the error and skip this batch of files
-            # This can happen if game logs contain invalid data (e.g., kawa capacity overflow)
-            logging.warning(f"Failed to load game logs from {len(file_list)} files, skipping: {e}")
-            return
+        from libblood.dataset import BinaryLoader
         
-        for file in data:
-            for game in file:
-                # New Optimized Rust API:
-                # take_batch() returns list of (obs, action, mask, steps, reward, rank)
-                # Calculated internally in Rust (Zero Python Overhead)
-                samples = game.take_batch()
-                
-                if self.oracle:
-                    invisible_obs = game.take_invisible_obs()
-                    # take_batch returned samples without invisible_obs
-                    # We need to inject it.
-                    # Wait, invisible_obs is per-step.
-                    # samples[i] is a tuple. Tuples are immutable.
-                    # We have to reconstruct the tuple or modify Rust to include it.
-                    # Modifying Rust `take_batch` is cleaner but I already wrote it.
-                    # Let's verify `invisible_obs` length matches `samples` length.
-                    
-                    if len(samples) != len(invisible_obs):
-                         # Should match
-                         pass
-                    
-                    # Reconstruct samples with invisible_obs inserted at index 1
-                    new_samples = []
-                    for i, sample in enumerate(samples):
-                        # sample is (obs, action, mask, steps, reward, rank)
-                        # target is (obs, invisible_obs, action, mask, steps, reward, rank)
-                        new_sample = (
-                            sample[0],
-                            invisible_obs[i],
-                            sample[1],
-                            sample[2],
-                            sample[3],
-                            sample[4],
-                            sample[5]
-                        )
-                        new_samples.append(new_sample)
-                    samples = new_samples
+        # Partition file list: Binary Chunks vs Legacy JSON
+        binary_files = [f for f in file_list if f.endswith('.bin.lz4')]
+        legacy_files = [f for f in file_list if not f.endswith('.bin.lz4')]
 
-                self.buffer.extend(samples)
+        # 1. Fast Path: Binary Chunks
+        for bin_file in binary_files:
+            try:
+                # BinaryLoader returns list[Gameplay] directly
+                games = BinaryLoader.load_chunk(bin_file)
+                # Process games (extract training samples)
+                for game in games:
+                    samples = game.take_batch()
+                    if self.oracle:
+                         invisible_obs = game.take_invisible_obs()
+                         if len(samples) == len(invisible_obs):
+                             new_samples = []
+                             for i, sample in enumerate(samples):
+                                 new_sample = (
+                                     sample[0],
+                                     invisible_obs[i],
+                                     sample[1],
+                                     sample[2],
+                                     sample[3],
+                                     sample[4],
+                                     sample[5]
+                                 )
+                                 new_samples.append(new_sample)
+                             samples = new_samples
+                    self.buffer.extend(samples)
+            except Exception as e:
+                logging.warning(f"Failed to load binary chunk {bin_file}: {e}")
+
+        # 2. Legacy Path: JSON GZ Files
+        if legacy_files:
+            try:
+                data = self.loader.load_gz_log_files(legacy_files)
+                for file in data:
+                    for game in file:
+                         samples = game.take_batch()
+                         if self.oracle:
+                             invisible_obs = game.take_invisible_obs()
+                             if len(samples) == len(invisible_obs):
+                                 new_samples = []
+                                 for i, sample in enumerate(samples):
+                                     new_sample = (
+                                         sample[0],
+                                         invisible_obs[i],
+                                         sample[1],
+                                         sample[2],
+                                         sample[3],
+                                         sample[4],
+                                         sample[5]
+                                     )
+                                     new_samples.append(new_sample)
+                                 samples = new_samples
+                         self.buffer.extend(samples)
+
+            except Exception as e:
+                logging.warning(f"Failed to load legacy logs: {e}")
+                return
+        
+
 
     def __iter__(self):
         if self.iterator is None:

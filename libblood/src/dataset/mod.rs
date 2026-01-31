@@ -1,8 +1,10 @@
+mod binary_loader;
 mod gameplay;
 mod grp;
 mod invisible;
 
 use crate::py_helper::add_submodule;
+pub use binary_loader::BinaryLoader;
 pub use gameplay::{Gameplay, GameplayLoader};
 // Re-export GameScore from grp module
 pub use grp::GameScore;
@@ -18,6 +20,7 @@ pub(crate) fn register_module(
     let m = PyModule::new(py, "dataset")?;
     m.add_class::<Gameplay>()?;
     m.add_class::<GameplayLoader>()?;
+    m.add_class::<BinaryLoader>()?;
     m.add_class::<GameScore>()?;
     add_submodule(py, prefix, super_mod, &m)
 }
