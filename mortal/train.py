@@ -589,6 +589,10 @@ def main():
         time.sleep(3)
 
 if __name__ == '__main__':
+    # Fix Multiprocessing Deadlock with CUDA/Rust: Use 'spawn' instead of 'fork'
+    import multiprocessing
+    multiprocessing.set_start_method('spawn', force=True)
+
     try:
         main()
     except KeyboardInterrupt:
