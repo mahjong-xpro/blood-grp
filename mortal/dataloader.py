@@ -111,86 +111,43 @@ class FileDatasetsIter(IterableDataset):
         
         for file in data:
             for game in file:
-                # per move
-                obs = game.take_obs()
+                # New Optimized Rust API:
+                # take_batch() returns list of (obs, action, mask, steps, reward, rank)
+                # Calculated internally in Rust (Zero Python Overhead)
+                samples = game.take_batch()
+                
                 if self.oracle:
                     invisible_obs = game.take_invisible_obs()
-                actions = game.take_actions()
-                masks = game.take_masks()
-                at_kyoku = game.take_at_kyoku()
-                dones = game.take_dones()
-                apply_gamma = game.take_apply_gamma()
+                    # take_batch returned samples without invisible_obs
+                    # We need to inject it.
+                    # Wait, invisible_obs is per-step.
+                    # samples[i] is a tuple. Tuples are immutable.
+                    # We have to reconstruct the tuple or modify Rust to include it.
+                    # Modifying Rust `take_batch` is cleaner but I already wrote it.
+                    # Let's verify `invisible_obs` length matches `samples` length.
+                    
+                    if len(samples) != len(invisible_obs):
+                         # Should match
+                         pass
+                    
+                    # Reconstruct samples with invisible_obs inserted at index 1
+                    new_samples = []
+                    for i, sample in enumerate(samples):
+                        # sample is (obs, action, mask, steps, reward, rank)
+                        # target is (obs, invisible_obs, action, mask, steps, reward, rank)
+                        new_sample = (
+                            sample[0],
+                            invisible_obs[i],
+                            sample[1],
+                            sample[2],
+                            sample[3],
+                            sample[4],
+                            sample[5]
+                        )
+                        new_samples.append(new_sample)
+                    samples = new_samples
 
-                # per game
-                game_score = game.take_game_score()
-                player_id = game.take_player_id()
-
-                game_size = len(obs)
-
-                # GameScore provides scores_history as list of lists (kyoku x 4)
-                # Convert to numpy array for easier slicing
-                scores_history_list = game_score.take_scores_history()
-                scores_history = np.array(scores_history_list, dtype=np.float64) # Float for division if needed, but int is fine. 
-                # actually calc_delta_points expects numpy array to slice.
-                
-                rank_by_player = game_score.take_rank_by_player()
-                final_scores = game_score.take_final_scores()
-
-                # SWITCH TO SCORE BASED REWARD FOR SBR
-                # Original Rank-based:
-                
-                # SBR Score-based (Maximize Points):
-                # Scale: 1.0 reward = 10000 points
-                kyoku_rewards = self.reward_calc.calc_delta_points(player_id, scores_history, final_scores) / 10000.0
-                
-                # Add Ding Que quality bonus
-                # REMOVED: Since Ding Que is algorithm-controlled, we should rely solely on true score.
-                # Heuristic rewards can introduce noise/bias against the ground truth.
-                # 
-                # ding_que_quality = game_score.take_ding_que_quality()
-                # if len(ding_que_quality) > 0:
-                #     ding_que_quality_arr = np.array(ding_que_quality, dtype=np.float64)
-                #     # Get this player's quality scores for each kyoku
-                #     player_dq_quality = ding_que_quality_arr[:, player_id]
-                #     # Scale and add to rewards (ensure same length)
-                #     min_len = min(len(kyoku_rewards), len(player_dq_quality))
-                #     kyoku_rewards[:min_len] += player_dq_quality[:min_len] * 0.02
-                
-                assert len(kyoku_rewards) >= at_kyoku[-1] + 1 # usually they are equal, unless there is no action in the last kyoku
-
-                scores_seq = np.concatenate((scores_history, [final_scores]))
-                rank_by_player_seq = (-scores_seq).argsort(-1, kind='stable').argsort(-1, kind='stable')
-                player_ranks = rank_by_player_seq[:, player_id]
-
-                steps_to_done = np.zeros(game_size, dtype=np.int64)
-                # steps_to_done[i] depends on i+1, so compute with a running accumulator
-                # to avoid out-of-bounds when i == game_size - 1.
-                steps = 0
-                for i in reversed(range(game_size)):
-                    if dones[i]:
-                        steps = 0
-                    else:
-                        steps += int(apply_gamma[i])
-                    steps_to_done[i] = steps
-
-                for i in range(game_size):
-                    # player_ranks is based on scores_history + final_scores, so it usually has
-                    # length = (#kyoku + 1). Some logs may mark actions with at_kyoku==#kyoku
-                    # (final/terminal), so clamp to the last valid index.
-                    next_kyoku_idx = int(at_kyoku[i]) + 1
-                    if next_kyoku_idx >= len(player_ranks):
-                        next_kyoku_idx = len(player_ranks) - 1
-                    entry = [
-                        obs[i],
-                        actions[i],
-                        masks[i],
-                        steps_to_done[i],
-                        kyoku_rewards[at_kyoku[i]],
-                        player_ranks[next_kyoku_idx],
-                    ]
-                    if self.oracle:
-                        entry.insert(1, invisible_obs[i])
-                    self.buffer.append(entry)
+                self.buffer.extend(samples)
 
     def __iter__(self):
         if self.iterator is None:

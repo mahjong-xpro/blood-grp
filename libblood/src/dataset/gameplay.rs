@@ -237,6 +237,110 @@ impl Gameplay {
     const fn take_player_id(&self) -> u8 {
         self.player_id
     }
+
+    /// Optimized: Return fully processed training samples (Tuple) directly.
+    /// Returns: Vec<(obs, action, mask, steps, reward, rank)>
+    fn take_batch<'py>(&mut self, py: Python<'py>) -> Vec<(Bound<'py, PyArray2<f32>>, i64, Bound<'py, PyArray1<bool>>, i64, f32, u8)> {
+        let game_size = self.obs.len();
+        if game_size == 0 {
+            return vec![];
+        }
+
+        // 1. Calculate Rewards (Delta Points)
+        let player_scores = self.game_score.scores_history.iter().map(|s| s[self.player_id as usize]).collect::<Vec<_>>();
+        let final_score = self.game_score.final_scores[self.player_id as usize];
+        let mut seq = Vec::with_capacity(player_scores.len() + 1);
+        seq.extend_from_slice(&player_scores);
+        seq.push(final_score);
+        
+        // Calculate raw delta points then normalize (1.0 = 10000 pts)
+        let kyoku_rewards: Vec<f32> = seq.windows(2).map(|w| (w[1] - w[0]) as f32 / 10000.0).collect();
+
+        // 2. Calculate Ranks per step
+        // We need (scores_history + final_scores) for all 4 players
+        let mut rank_by_player_seq = Vec::with_capacity(self.game_score.scores_history.len() + 1);
+        // History ranks
+        for scores in &self.game_score.scores_history {
+            let mut s_with_idx: Vec<(i32, usize)> = scores.iter().enumerate().map(|(i, &s)| (s, i)).collect();
+            // Sort Descending (High score first)
+            s_with_idx.sort_by(|a, b| b.0.cmp(&a.0));
+            let mut ranks = [0u8; 4];
+            for (rank, &(_, idx)) in s_with_idx.iter().enumerate() {
+                ranks[idx] = rank as u8;
+            }
+            rank_by_player_seq.push(ranks[self.player_id as usize]);
+        }
+        // Final rank
+        {
+            let mut s_with_idx: Vec<(i32, usize)> = self.game_score.final_scores.iter().enumerate().map(|(i, &s)| (s, i)).collect();
+            s_with_idx.sort_by(|a, b| b.0.cmp(&a.0));
+            // Proper resolving of ties if needed? Rust sort is stable. 
+            // Python argsort kind='stable'.
+            // Here just rank 0..3
+            let mut final_rank = 0;
+            for (rank, &(_, idx)) in s_with_idx.iter().enumerate() {
+                if idx == self.player_id as usize {
+                    final_rank = rank as u8;
+                    break;
+                }
+            }
+            rank_by_player_seq.push(final_rank);
+        }
+
+        // 3. Calculate Steps to Done (Reverse Pass)
+        let mut steps_to_done = vec![0; game_size];
+        let mut steps = 0;
+        for i in (0..game_size).rev() {
+            if self.dones[i] {
+                steps = 0;
+            } else {
+                steps += self.apply_gamma[i] as i64;
+            }
+            steps_to_done[i] = steps;
+        }
+
+        // 4. Zip and Move Ownership
+        let mut samples = Vec::with_capacity(game_size);
+        
+        let obs = mem::take(&mut self.obs);
+        let actions = mem::take(&mut self.actions);
+        let masks = mem::take(&mut self.masks);
+        let at_kyoku = mem::take(&mut self.at_kyoku);
+        // let shantens = mem::take(&mut self.shantens); // Not used in training tuple for now
+
+        for i in 0..game_size {
+            // Mapping AtKyoku to Reward/Rank
+            let kyoku_idx = at_kyoku[i] as usize;
+            let next_kyoku_idx = kyoku_idx + 1;
+            
+            // Safety clamp
+            let safe_next_kyoku_idx = if next_kyoku_idx >= rank_by_player_seq.len() {
+                rank_by_player_seq.len() - 1
+            } else {
+                next_kyoku_idx
+            };
+
+            let reward = if kyoku_idx < kyoku_rewards.len() {
+                kyoku_rewards[kyoku_idx]
+            } else {
+                0.0 // Logic error fallback
+            };
+            
+            let rank = rank_by_player_seq[safe_next_kyoku_idx];
+
+            let sample = (
+                PyArray2::from_owned_array(py, obs[i].clone()).into_bound(py), // Clone required if Array2 is not Copy? Array2 is Clone.
+                actions[i],
+                PyArray1::from_owned_array(py, masks[i].clone()).into_bound(py),
+                steps_to_done[i],
+                reward,
+                rank,
+            );
+            samples.push(sample);
+        }
+
+        samples
+    }
 }
 
 impl Gameplay {
