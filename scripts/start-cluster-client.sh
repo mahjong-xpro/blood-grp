@@ -44,13 +44,16 @@ for gpu in $(seq $START_GPU $END_GPU); do
     cp mortal/config.toml "$CLIENT_CFG"
     
     # 1. Update Master IP
+    # Try replacing both 127.0.0.1 and 0.0.0.0 patterns to be safe
     if [[ "$OSTYPE" == "darwin"* ]]; then
         sed -i '' "s/host = '127.0.0.1'/host = '$MASTER_IP'/g" "$CLIENT_CFG"
+        sed -i '' "s/host = '0.0.0.0'/host = '$MASTER_IP'/g" "$CLIENT_CFG"
         # 2. Update Log Directory to be unique (e.g. data/mortal/train_play_0)
         # Assuming config has: log_dir = 'data/mortal/train_play'
         sed -i '' "s|data/mortal/train_play|data/mortal/train_play_${gpu}|g" "$CLIENT_CFG"
     else
         sed -i "s/host = '127.0.0.1'/host = '$MASTER_IP'/g" "$CLIENT_CFG"
+        sed -i "s/host = '0.0.0.0'/host = '$MASTER_IP'/g" "$CLIENT_CFG"
         sed -i "s|data/mortal/train_play|data/mortal/train_play_${gpu}|g" "$CLIENT_CFG"
     fi
     
