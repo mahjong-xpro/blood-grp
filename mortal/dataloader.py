@@ -101,8 +101,6 @@ class FileDatasetsIter(IterableDataset):
         self.buffer.clear()
 
     def populate_buffer(self, file_list):
-        from libblood.dataset import BinaryLoader
-        
         # Partition file list: Binary Chunks vs Legacy JSON
         binary_files = [f for f in file_list if f.endswith('.bin.lz4')]
         legacy_files = [f for f in file_list if not f.endswith('.bin.lz4')]
@@ -110,8 +108,8 @@ class FileDatasetsIter(IterableDataset):
         # 1. Fast Path: Binary Chunks
         for bin_file in binary_files:
             try:
-                # BinaryLoader returns list[Gameplay] directly
-                games = BinaryLoader.load_chunk(bin_file)
+                # BinaryLoader logic moved to GameplayLoader instance method
+                games = self.loader.load_binary_chunk(bin_file)
                 # Process games (extract training samples)
                 for game in games:
                     samples = game.take_batch()

@@ -16,6 +16,13 @@ use pyo3::prelude::*;
 use rayon::prelude::*;
 use serde_json as json;
 use tinyvec::ArrayVec;
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct PackedChunk {
+    version: u32,
+    games: Vec<Vec<Event>>,
+}
 
 #[pyclass]
 #[derive(Derivative)]
@@ -129,6 +136,42 @@ impl GameplayLoader {
     #[pyo3(name = "load_gz_log_files")]
     fn load_gz_log_files_py(&self, gzip_filenames: Vec<String>) -> Result<Vec<Vec<Gameplay>>> {
         self.load_gz_log_files(gzip_filenames)
+    }
+
+    #[pyo3(name = "load_binary_chunk")]
+    fn load_binary_chunk(&self, path: String) -> Result<Vec<Gameplay>> {
+        let file = File::open(&path).with_context(|| format!("failed to open packed chunk: {}", path))?;
+        let reader = std::io::BufReader::new(file);
+        let decoder = lz4::Decoder::new(reader)?;
+        
+        let chunk: PackedChunk = bincode::deserialize_from(decoder)
+            .with_context(|| format!("failed to deserialize packed chunk: {}", path))?;
+
+        if chunk.version != 1 {
+            anyhow::bail!("unsupported chunk version: {}", chunk.version);
+        }
+
+        let mut games = Vec::with_capacity(chunk.games.len());
+        for events in chunk.games {
+             // Re-use existing load_events logic
+             let invisibles = self.oracle.then(|| Invisible::new(&events, self.trust_seed));
+
+             let [Event::StartGame { names, .. }, ..] = events.as_slice() else {
+                 continue; // fail silently or log?
+             };
+             if names.len() != 4 { continue; }
+
+            // Logic copied from load_events but non-parallel for now (chunk is already big)
+            // Actually, we can just call self.load_events(&events) but it returns Vec<Gameplay> (4 players)
+            // But here we iterate over many games.
+            // Wait, load_events processes ONE game (events slice) and returns 4 Gameplays (one per player).
+            // Yes.
+            
+            let loaded = self.load_events(&events)?;
+            games.extend(loaded);
+        }
+
+        Ok(games)
     }
 
     fn __repr__(&self) -> String {
