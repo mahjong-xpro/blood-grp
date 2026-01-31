@@ -115,7 +115,7 @@ fn flush_buffer(output_dir: &Path, buffer: &mut Vec<Vec<Event>>) -> Result<()> {
     log::info!("Flushing {} games to {:?}", buffer.len(), path);
 
     let file = File::create(&temp_path)?;
-    let mut writer = BufWriter::new(file);
+    let writer = BufWriter::new(file);
     
     // LZ4 Compression
     let mut encoder = lz4::EncoderBuilder::new()
