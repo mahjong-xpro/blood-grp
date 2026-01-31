@@ -259,7 +259,9 @@ def train():
             batch_size = batch_size,
             drop_last = False,
             num_workers = num_workers,
-            pin_memory = False,
+            pin_memory = True,  # Speed up Host -> Device transfer
+            prefetch_factor = 2 if num_workers > 0 else None,  # Pre-load batches
+            persistent_workers = True if num_workers > 0 else False,  # Avoid respawn overhead
             worker_init_fn = worker_init_fn,
         ))
 
