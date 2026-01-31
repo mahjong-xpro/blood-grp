@@ -36,29 +36,41 @@ export MORTAL_CFG=mortal/config.toml
 # On Clients, replace '127.0.0.1' with Master IP in config.toml before running.
 # OR use a temp config file.
 
+# Number of processes per GPU (Optimization for 128-thread CPU)
+# 8 GPUs * 2 Procs = 16 Processes. 128 Threads / 16 = 8 Threads per Proc.
+PROCS_PER_GPU=2
+THREADS_PER_PROC=8
+
 for gpu in $(seq $START_GPU $END_GPU); do
-    echo "Launching Client on GPU $gpu..."
-    
-    # Create unique config for this GPU worker to isolate log directories
-    CLIENT_CFG="mortal/config_client_${gpu}.toml"
-    cp mortal/config.toml "$CLIENT_CFG"
-    
-    # 1. Update Master IP
-    # Try replacing both 127.0.0.1 and 0.0.0.0 patterns to be safe
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        sed -i '' "s/host = '127.0.0.1'/host = '$MASTER_IP'/g" "$CLIENT_CFG"
-        sed -i '' "s/host = '0.0.0.0'/host = '$MASTER_IP'/g" "$CLIENT_CFG"
-        # 2. Update Log Directory to be unique (e.g. data/mortal/train_play_0)
-        # Assuming config has: log_dir = 'data/mortal/train_play'
-        sed -i '' "s|data/mortal/train_play|data/mortal/train_play_${gpu}|g" "$CLIENT_CFG"
-    else
-        sed -i "s/host = '127.0.0.1'/host = '$MASTER_IP'/g" "$CLIENT_CFG"
-        sed -i "s/host = '0.0.0.0'/host = '$MASTER_IP'/g" "$CLIENT_CFG"
-        sed -i "s|data/mortal/train_play|data/mortal/train_play_${gpu}|g" "$CLIENT_CFG"
-    fi
-    
-    # Run in background with unique config
-    MORTAL_CFG="$CLIENT_CFG" CUDA_VISIBLE_DEVICES=$gpu python3 mortal/client.py &
+    for proc in $(seq 1 $PROCS_PER_GPU); do
+        CLIENT_CFG="mortal/config_client_${gpu}_${proc}.toml"
+        # Create a copy of config
+        cp mortal/config.toml "$CLIENT_CFG"
+        
+        # 1. Update Master IP
+        # Try replacing both 127.0.0.1 and 0.0.0.0 patterns to be safe
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' "s/host = '127.0.0.1'/host = '$MASTER_IP'/g" "$CLIENT_CFG"
+            sed -i '' "s/host = '0.0.0.0'/host = '$MASTER_IP'/g" "$CLIENT_CFG"
+            # 2. Update Log Directory to be unique (e.g. data/mortal/train_play_0_1)
+            sed -i '' "s|data/mortal/train_play|data/mortal/train_play_${gpu}_${proc}|g" "$CLIENT_CFG"
+        else
+            sed -i "s/host = '127.0.0.1'/host = '$MASTER_IP'/g" "$CLIENT_CFG"
+            sed -i "s/host = '0.0.0.0'/host = '$MASTER_IP'/g" "$CLIENT_CFG"
+            sed -i "s|data/mortal/train_play|data/mortal/train_play_${gpu}_${proc}|g" "$CLIENT_CFG"
+        fi
+        
+        # Run in background with unique config
+        # LIMIT THREADS to prevent CPU Thrashing
+        echo "Starting Client on GPU $gpu (Proc $proc) with $THREADS_PER_PROC threads..."
+        MORTAL_CFG="$CLIENT_CFG" \
+        CUDA_VISIBLE_DEVICES=$gpu \
+        RAYON_NUM_THREADS=$THREADS_PER_PROC \
+        python3 mortal/client.py &
+        
+        # Stagger start to prevent thundering herd on Server
+        sleep 2
+    done
 done
 
 wait
