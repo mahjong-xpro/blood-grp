@@ -548,8 +548,8 @@ impl Gameplay {
         // Action indices: 0-26 (discard), 27 (pon), 28 (kan), 29 (agari), 30 (pass), 31-33 (ding que)
         // Check mask BEFORE moving it into vector
         if label == 29 && !mask[29] {
-             panic!(
-                "Mask Mismatch detected for Agari (Action 29)! Player: {}, Kyoku: {}, Turn: {}, Shanten: {}, DingQue: {:?}, CanRon: {}, CanTsumo: {}, Furiten: {}, Forbidden: {:?}, Tehai: {:?}",
+             log::error!(
+                "Mask Mismatch detected for Agari (Action 29)! Skipping sample. Player: {}, Kyoku: {}, Turn: {}, Shanten: {}, DingQue: {:?}, CanRon: {}, CanTsumo: {}, Furiten: {}, Forbidden: {:?}, Tehai: {:?}",
                 self.player_id,
                 ctx.kyoku_idx,
                 ctx.state.at_turn(),
@@ -561,6 +561,7 @@ impl Gameplay {
                 ctx.state.forbidden_tiles,
                 ctx.state.tehai
              );
+             return;
         }
 
         self.obs.push(feature);
