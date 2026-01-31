@@ -329,9 +329,9 @@ impl Gameplay {
             let rank = rank_by_player_seq[safe_next_kyoku_idx];
 
             let sample = (
-                PyArray2::from_owned_array(py, obs[i].clone()).into_bound(py), // Clone required if Array2 is not Copy? Array2 is Clone.
+                PyArray2::from_owned_array(py, obs[i].clone()), // Clone required if Array2 is not Copy? Array2 is Clone.
                 actions[i],
-                PyArray1::from_owned_array(py, masks[i].clone()).into_bound(py),
+                PyArray1::from_owned_array(py, masks[i].clone()),
                 steps_to_done[i],
                 reward,
                 rank,
