@@ -59,7 +59,7 @@ globs = ['/data/mortal/drain/**/*.json.gz']
 file_index = '/data/mortal/file_index.pth'
 file_batch_size = 100 # Optimization: Reduce Rust-Python boundary overhead (5000 samples/yield)
 reserve_ratio = 0.0
-num_workers = 16 # Optimization: 16 Workers (Stable I/O) * 100 Files = High Throughput
+num_workers = 8 # Optimization: 8 Workers * 4 Threads = 32 Threads (No Oversubscription)
 player_names_files = []
 num_epochs = 1
 enable_augmentation = false

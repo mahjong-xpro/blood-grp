@@ -155,6 +155,13 @@ class FileDatasetsIter(IterableDataset):
         return self.iterator
 
 def worker_init_fn(*args, **kwargs):
+    # Prevent Rayon Thread Oversubscription
+    # Default Rayon launches 128 threads per worker. 
+    # 16 Workers * 128 Threads = 2048 Threads -> CPU Thrashing.
+    # Limit to 4 threads per worker (16 * 4 = 64 threads total).
+    import os
+    os.environ['RAYON_NUM_THREADS'] = '4'
+
     # Ensure libblood module is available in worker processes
     # This is necessary when using 'spawn' multiprocessing method
     # Import prelude to ensure libblood is properly initialized
