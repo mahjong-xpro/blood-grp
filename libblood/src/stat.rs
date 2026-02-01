@@ -221,6 +221,17 @@ impl Stat {
                 fuuro_num += 1;
             }
 
+            Event::Daiminkan { deltas, .. }
+            | Event::Kakan { deltas, .. }
+            | Event::Ankan { deltas, .. } => {
+                // Bloody Battle includes "instant payment" scoring on kans.
+                // These deltas must be applied to reconstruct correct final scores,
+                // otherwise Δscore / rank metrics become wrong.
+                if let Some(deltas) = deltas {
+                    vec_add_assign(&mut cur_scores, &deltas);
+                }
+            }
+
 
             Event::Hora {
                 actor,

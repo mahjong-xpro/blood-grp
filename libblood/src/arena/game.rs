@@ -52,15 +52,12 @@ impl Game {
         }
 
         if !self.kyoku_started {
-            // after W4
-            // or, after all-last
-            //   and, oya is not in renchan (if oya is in renchan, it would already have been ended in the renchan owari check)
-            //   and, anyone has more than 30k
-            if self.kyoku >= self.length + 4
-                || self.kyoku >= self.length
-                    && !self.in_renchan
-                    && self.scores.iter().any(|&s| s >= 30000)
-            {
+            // Bloody Battle "game" is modeled as a fixed number of kyoku (hands).
+            // `BoardState` already contains the end condition within a kyoku:
+            // it ends when 3 players have agari or the wall is exhausted.
+            //
+            // So at this layer we must NOT apply riichi-style "all-last / 30k / extra rounds" rules.
+            if self.kyoku >= self.length {
                 self.ended = true;
                 return Ok(());
             }
@@ -206,7 +203,8 @@ impl Game {
 impl BatchGame {
     pub const fn standard_game(disable_progress_bar: bool) -> Self {
         Self {
-            length: 8,
+            // Bloody Battle: one kyoku (one deal) per game/episode.
+            length: 1,
             init_scores: [25000; 4],
             disable_progress_bar,
         }

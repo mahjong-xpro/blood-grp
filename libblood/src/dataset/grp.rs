@@ -203,10 +203,17 @@ impl GameScore {
         // Reverse pass to find final scores (existing logic)
         for ev in events.iter().rev() {
             match *ev {
-                Event::Hora { deltas, .. } | Event::Ryukyoku { deltas, .. } => {
+                // Bloody Battle scoring events can happen outside Hora/Ryukyoku.
+                // In particular, kan events carry "instant payment" deltas, which must be
+                // included to reconstruct the true final scores (and thus correct rewards).
+                Event::Hora { deltas, .. }
+                | Event::Ryukyoku { deltas, .. }
+                | Event::Daiminkan { deltas, .. }
+                | Event::Kakan { deltas, .. }
+                | Event::Ankan { deltas, .. } => {
                     if rank_by_player_opt.is_none() {
                         let ds = deltas.context(
-                            "invalid log: field `deltas` is required for Hora and Ryukyoku of AL",
+                            "invalid log: field `deltas` is required for scoring events",
                         )?;
                         vec_add_assign(&mut final_deltas, &ds);
                     }
@@ -232,7 +239,7 @@ impl GameScore {
         }
 
         let rank_by_player =
-            rank_by_player_opt.context("invalid log: no Hora or Ryukyoku after a StartKyoku")?;
+            rank_by_player_opt.context("invalid log: no scoring event found after a StartKyoku")?;
 
         Ok(Self {
             scores_history,
@@ -240,5 +247,50 @@ impl GameScore {
             rank_by_player,
             ding_que_quality,
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::t;
+
+    #[test]
+    fn final_scores_include_kan_deltas() {
+        let events = vec![
+            Event::StartGame {
+                names: [
+                    "A".to_string(),
+                    "B".to_string(),
+                    "C".to_string(),
+                    "D".to_string(),
+                ],
+                seed: Some((1, 2)),
+            },
+            Event::StartKyoku {
+                kyoku: 1,
+                oya: 0,
+                scores: [25000, 25000, 25000, 25000],
+                tehais: [[t!(1m); 13]; 4],
+            },
+            // Ankan: instant payment (+6000 to actor, -2000 each from others)
+            Event::Ankan {
+                actor: 0,
+                consumed: [t!(9m), t!(9m), t!(9m), t!(9m)],
+                deltas: Some([6000, -2000, -2000, -2000]),
+            },
+            // End by ryukyoku with 0 deltas (keeps only kan deltas)
+            Event::Ryukyoku {
+                deltas: Some([0, 0, 0, 0]),
+            },
+            Event::EndKyoku,
+            Event::EndGame,
+        ];
+
+        let gs = GameScore::load_events(&events).unwrap();
+        assert_eq!(gs.scores_history, vec![[25000, 25000, 25000, 25000]]);
+        assert_eq!(gs.final_scores, [31000, 23000, 23000, 23000]);
+        // rank_by_player is 0 for top, 3 for last
+        assert_eq!(gs.rank_by_player[0], 0);
     }
 }

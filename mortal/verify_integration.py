@@ -9,17 +9,15 @@ import numpy as np
 sys.path.append(os.path.join(os.getcwd(), 'mortal'))
 
 try:
-    import blood
-    # Alias for compatibility with code expecting libblood
-    sys.modules['libblood'] = blood
-    import prelude # Should init using the aliased module or just work
-    from blood import dataset
+    import prelude  # Initializes libblood (prefers local build via libblood_loader)
+    import libblood
+    from libblood import dataset
     GameplayLoader = dataset.GameplayLoader
     GameScore = dataset.GameScore
-    from blood import consts
-    print("Successfully imported blood modules.")
+    from libblood import consts
+    print("Successfully imported libblood modules.")
 except ImportError as e:
-    print(f"Failed to import blood modules: {e}")
+    print(f"Failed to import libblood modules: {e}")
     sys.exit(1)
 
 def run_test():
@@ -80,7 +78,7 @@ def run_test():
         print(f"Final Scores: {final_scores}")
         
         # In this mock, we had one Hora with deltas [-1000, 1000, 0, 0]
-        # And Ryukyoku with [0,0,0,0]
+        # and Ryukyoku with [0,0,0,0]
         # Base: 25000.
         # Expected Final: [24000, 26000, 25000, 25000]
         
@@ -103,6 +101,23 @@ def run_test():
         import traceback
         traceback.print_exc()
         sys.exit(1)
+
+    # 5. Verify GameScore includes kan deltas (scoring reconstruction)
+    mock_score_log = """
+{"type":"start_game","names":["A","B","C","D"],"seed":[1,2]}
+{"type":"start_kyoku","kyoku":1,"oya":0,"scores":[25000,25000,25000,25000],"tehais":[["1m","1m","1m","1m","1m","1m","1m","1m","1m","1m","1m","1m","1m"],["2m","2m","2m","2m","2m","2m","2m","2m","2m","2m","2m","2m","2m"],["3m","3m","3m","3m","3m","3m","3m","3m","3m","3m","3m","3m","3m"],["4m","4m","4m","4m","4m","4m","4m","4m","4m","4m","4m","4m","4m"]]}
+{"type":"ankan","actor":0,"consumed":["9m","9m","9m","9m"],"deltas":[6000,-2000,-2000,-2000]}
+{"type":"ryukyoku","deltas":[0,0,0,0]}
+{"type":"end_kyoku"}
+{"type":"end_game"}
+    """
+    gs2 = GameScore.load_log(mock_score_log.strip())
+    final_scores2 = gs2.take_final_scores()
+    expected_final2 = [31000, 23000, 23000, 23000]
+    if list(final_scores2) == expected_final2:
+        print("SUCCESS: GameScore includes kan deltas.")
+    else:
+        print(f"FAILURE: GameScore missing kan deltas. Expected {expected_final2}, got {list(final_scores2)}")
 
     print("Integration Test Completed Successfully.")
 

@@ -420,8 +420,15 @@ impl Gameplay {
         self.masks.push(mask);
         
         self.at_kyoku.push(ctx.kyoku_idx as u8);
-        // only discard and kan will discount
-        self.apply_gamma.push(label <= 37);
+        // Only "mainline" decisions should advance the discount horizon.
+        // - Discard: 0-26 (at_kan_select=false)
+        // - Kan: 28 (at_kan_select=false)
+        //
+        // Do NOT discount on:
+        // - kan_select entries (at_kan_select=true): treat as part of the same decision
+        // - pon/agari/pass/ding_que: non-advancing or terminal-like actions for value target
+        let apply_gamma = !at_kan_select && (label <= 26 || label == 28);
+        self.apply_gamma.push(apply_gamma);
         self.at_turns.push(ctx.state.at_turn());
         self.shantens.push(ctx.state.shanten());
 

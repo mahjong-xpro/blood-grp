@@ -13,12 +13,12 @@ import platform
 def load_libblood():
     """加载 libblood 模块"""
     # 如果已经加载，直接返回（兼容两种模块名：blood / libblood）
-    if 'blood' in sys.modules:
-        sys.modules.setdefault('libblood', sys.modules['blood'])
-        return sys.modules['blood']
     if 'libblood' in sys.modules:
         sys.modules.setdefault('blood', sys.modules['libblood'])
         return sys.modules['libblood']
+    if 'blood' in sys.modules:
+        sys.modules.setdefault('libblood', sys.modules['blood'])
+        return sys.modules['blood']
     
     # 查找 libblood 模块文件
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -54,6 +54,9 @@ def load_libblood():
         for ext in extensions:
             # 尝试不同的文件名格式
             possible_names = [
+                # Cargo `cdylib` output for crate name `libblood` is `liblibblood.*`
+                # (lib + crate_name + ext). Prefer local build if present.
+                f'liblibblood{ext}',
                 f'libblood{ext}',
                 f'blood{ext}',
             ]
@@ -61,16 +64,15 @@ def load_libblood():
                 libblood_path = os.path.join(search_path, name)
                 if os.path.exists(libblood_path):
                     # IMPORTANT:
-                    # The actual pyo3 module name is `blood` (exports PyInit_blood).
-                    # Some parts of this repo import `libblood`, so we load as `blood`
-                    # and then alias it to `libblood` for compatibility.
-                    loader = importlib.machinery.ExtensionFileLoader('blood', libblood_path)
-                    spec = importlib.machinery.ModuleSpec('blood', loader, origin=libblood_path)
-                    blood = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(blood)
-                    sys.modules['blood'] = blood
-                    sys.modules['libblood'] = blood
-                    return blood
+                    # The pyo3 module name is `libblood` (exports PyInit_libblood).
+                    # Some parts of this repo historically imported `blood`, so we alias it too.
+                    loader = importlib.machinery.ExtensionFileLoader('libblood', libblood_path)
+                    spec = importlib.machinery.ModuleSpec('libblood', loader, origin=libblood_path)
+                    libblood_mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(libblood_mod)
+                    sys.modules['libblood'] = libblood_mod
+                    sys.modules.setdefault('blood', libblood_mod)
+                    return libblood_mod
     
     # 如果找不到，尝试直接导入（可能已经安装为 Python 包）
     try:
