@@ -962,6 +962,12 @@ impl PlayerState {
         self.keep_shanten_discards.fill(false);
         self.has_next_shanten_discard = false;
 
+        // `tehai_len_div3` can desync after kan/pon flows; derive it from tehai shape instead.
+        // At 3n+2, every candidate discard produces a 3n+1 hand, so the divisor is constant.
+        let tehai_sum: u8 = self.tehai.iter().sum();
+        debug_assert!(tehai_sum >= 1, "tehai sum must be >= 1 at 3n+2");
+        let len_div3_after_discard: u8 = ((tehai_sum.saturating_sub(1)) / 3) as u8;
+
         let mut tehai = self.tehai;
         for (tid, &count) in self.tehai.iter().enumerate() {
             // `self.forbidden_tiles[tid]` is not checked here, but it is
@@ -973,7 +979,7 @@ impl PlayerState {
                 continue;
             }
             tehai[tid] -= 1;
-            let shanten_after = shanten::calc_all(&tehai, self.tehai_len_div3, self.ding_que);
+            let shanten_after = shanten::calc_all(&tehai, len_div3_after_discard, self.ding_que);
             tehai[tid] += 1;
             match shanten_after.cmp(&self.shanten) {
                 Ordering::Less => {
@@ -999,6 +1005,11 @@ impl PlayerState {
             return;
         }
 
+        // `tehai_len_div3` can desync after kan/pon flows; derive it from tehai shape instead.
+        // At 3n+1, every candidate wait adds one tile to make a 3n+2 hand, so the divisor is constant.
+        let tehai_sum: u8 = self.tehai.iter().sum();
+        let len_div3_after_draw: u8 = ((tehai_sum.saturating_add(1)) / 3) as u8;
+
         for (t, is_wait) in self.waits.iter_mut().enumerate() {
             if self.tehai[t] == 4 {
                 continue;
@@ -1006,7 +1017,7 @@ impl PlayerState {
             let mut tehai_after = self.tehai;
             tehai_after[t] += 1;
 
-            if shanten::calc_all(&tehai_after, self.tehai_len_div3, self.ding_que) == -1 {
+            if shanten::calc_all(&tehai_after, len_div3_after_draw, self.ding_que) == -1 {
                 *is_wait = self.tiles_seen[t] < 4;
             }
         }

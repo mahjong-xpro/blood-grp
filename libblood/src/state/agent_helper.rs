@@ -157,9 +157,13 @@ impl PlayerState {
             // All valid waits can agari
             ret[last_self_tsumo.as_usize()] = true;
             return ret;
-        } else if shanten::calc_all(&self.tehai, self.tehai_len_div3, self.ding_que) == -1 {
+        } else {
+            // `tehai_len_div3` can desync after kan/pon flows; derive it from tehai shape instead.
+            let len_div3 = (self.tehai.iter().sum::<u8>() / 3) as u8;
+            if shanten::calc_all(&self.tehai, len_div3, self.ding_que) == -1 {
             // Ditto but for discard after pon (Bloody Battle Mahjong has no chi)
             return ret;
+            }
         }
 
         let tenpai_discards = if self.shanten == 1 {
@@ -185,7 +189,9 @@ impl PlayerState {
 
                     let mut tehai_3n2 = tehai_3n1;
                     tehai_3n2[tsumo] += 1;
-                    if shanten::calc_all(&tehai_3n2, self.tehai_len_div3, self.ding_que) > -1 {
+                    // `tehai_len_div3` can desync after kan/pon flows; derive it from tehai shape instead.
+                    let len_div3_3n2 = (tehai_3n2.iter().sum::<u8>() / 3) as u8;
+                    if shanten::calc_all(&tehai_3n2, len_div3_3n2, self.ding_que) > -1 {
                         continue;
                     }
 
@@ -416,7 +422,9 @@ impl PlayerState {
         // becomes 0 because `update_shanten` clamps the value to be >= 0. The
         // actual shanten is -1.
         // Note: Bloody Battle Mahjong has no chi (吃牌)
-        shanten::calc_all(&self.tehai, self.tehai_len_div3, self.ding_que)
+        // `tehai_len_div3` can desync after kan/pon flows; derive it from tehai shape instead.
+        let len_div3 = (self.tehai.iter().sum::<u8>() / 3) as u8;
+        shanten::calc_all(&self.tehai, len_div3, self.ding_que)
     }
 
     /// Can be called at both 3n+1 and 3n+2, but `self.real_time_shanten` must
