@@ -126,13 +126,53 @@ impl Agari {
 }
 
 impl AgariCalculator<'_> {
+    /// Build a 14-tile view of the hand for AGARI_TABLE / division logic.
+    ///
+    /// `self.tehai` is the concealed tile counter and must already include the winning tile
+    /// (i.e. be 3n+2). In Bloody Battle Mahjong, open melds are only pons/kans (no chi), so we
+    /// can treat each meld as a triplet for hand-structure purposes (a kan is still one kotsu,
+    /// the 4th tile is not needed for division).
+    ///
+    /// Returns `None` if the reconstructed hand is not a valid 14-tile multiset (e.g. counts > 4
+    /// or sum != 14), which indicates an inconsistent state/log.
+    #[inline]
+    fn hand14_for_division(&self) -> Option<[u8; 27]> {
+        let mut tiles = *self.tehai;
+
+        // Add exposed sets back as triplets so the total becomes 14.
+        for &tile_id in self
+            .pons
+            .iter()
+            .chain(self.minkans.iter())
+            .chain(self.ankans.iter())
+        {
+            let idx = tile_id as usize;
+            if idx >= 27 {
+                return None;
+            }
+            tiles[idx] = tiles[idx].saturating_add(3);
+            if tiles[idx] > 4 {
+                return None;
+            }
+        }
+
+        if tiles.iter().sum::<u8>() != 14 {
+            return None;
+        }
+
+        Some(tiles)
+    }
+
     /// Check if the hand can agari (和牌)
     /// 
     /// But must check Ding Que rule: cannot agari if hand still has ding_que suit tiles
     #[inline]
     #[must_use]
     pub fn has_yaku(&self) -> bool {
-        let (_, key) = get_tile14_and_key(self.tehai);
+        let Some(hand14) = self.hand14_for_division() else {
+            return false;
+        };
+        let (_, key) = get_tile14_and_key(&hand14);
         let has_valid_structure = AGARI_TABLE.get(&key).is_some();
         
         if !has_valid_structure {
@@ -215,8 +255,10 @@ impl AgariCalculator<'_> {
             fan += 1;
         }
         
-        // Check hand structure
-        let (tile14, key) = get_tile14_and_key(self.tehai);
+        // Check hand structure (must be a valid 14-tile multiset for AGARI_TABLE)
+        let hand14 = self.hand14_for_division()?;
+        let tile14_len: usize = hand14.iter().filter(|&&c| c > 0).count();
+        let (tile14, key) = get_tile14_and_key(&hand14);
         let divs = match AGARI_TABLE.get(&key) {
             Some(d) => d,
             None => {
@@ -284,8 +326,9 @@ impl AgariCalculator<'_> {
             let fuuro_count = self.pons.len() + self.minkans.len() + self.ankans.len();
             
             // 4. 碰碰胡（ToiToi）：+1番 (4 kotsu + 1 pair, no shuntsu)
-            // Note: Must count both hand kotsu and exposed fuuro
-            if div.shuntsu_idxs.is_empty() && (div.kotsu_idxs.len() + fuuro_count) == 4 {
+            // Division is computed on the full 14-tile hand (concealed + fuuro as triplets),
+            // so `div.kotsu_idxs.len()` already includes exposed pons/kans.
+            if div.shuntsu_idxs.is_empty() && div.kotsu_idxs.len() == 4 {
                 div_fan += 1;
             }
 
@@ -306,8 +349,8 @@ impl AgariCalculator<'_> {
             let mut suit_kind: Option<u8> = None;
             let mut is_qingyise = true;
             
-            // Check hand tiles
-            for &tile_id in &tile14 {
+            // Check hand tiles (only the filled prefix of `tile14` is meaningful)
+            for &tile_id in &tile14[..tile14_len] {
                 if tile_id >= 27 {
                     continue; // Skip invalid tiles
                 }
