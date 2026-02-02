@@ -13,13 +13,20 @@ best_state_file = '/data/mortal/best.pth'
 tensorboard_dir = '/data/mortal/logs'
 
 # 计算设备配置
-device = 'cuda:0'  # 如果有 GPU，否则改为 'cuda:0'
+#
+# 单机 8×4090 推荐用法（online 模式）：
+# - 训练器（trainer）进程：CUDA_VISIBLE_DEVICES=0 -> 这里保持 cuda:0
+# - 每个客户端（client）进程：CUDA_VISIBLE_DEVICES=<物理卡号> -> 这里同样保持 cuda:0
+#   （因为每个进程只“看见”自己那 1 张卡）
+device = 'cuda:0'
 enable_cudnn_benchmark = true  # GPU 训练时建议启用
 enable_amp = true  # 混合精度训练，节省显存
 enable_compile = false  # PyTorch 2.0+ 编译优化（可选）
 
 # 训练参数
-batch_size = 2048  # RTX 3090 (24GB) 可以轻松承受 2048 甚至更大
+# 4090 (24GB) 单卡训练建议从 2048 起步，视显存/吞吐可尝试 3072/4096。
+# 该项目当前 trainer 是“单进程单 GPU”，8 卡的主要收益来自多 client 并发自对局产数。
+batch_size = 2048
 opt_step_every = 1
 
 # 保存和测试频率
@@ -30,7 +37,9 @@ submit_every = 1000
 # 自对局配置（用于生成训练数据）
 # 使用环境变量 TRAIN_PLAY_PROFILE 可以选择不同的配置
 [train_play.default]
-games = 25600  # RTX 3090 + 3970X: 增加到 6400 进一步提升 GPU 利用率
+# 8×4090（7 个 client 并发）建议降低单个 client 的 games，
+# 以更快拉取新参数、提高整体迭代速度；总吞吐由 client 数量补回来。
+games = 6400
 log_dir = '/data/mortal/train_play'  # 自对局数据保存目录
 boltzmann_epsilon = 0.5  # 探索率 (初期: 0.5 - 用户指示重回 Zero Start)
                      # 阶段建议:
@@ -57,9 +66,10 @@ log_dir = '/data/mortal/test_play'
 [dataset]
 globs = ['/data/mortal/train_play/**/*.json.gz']
 file_index = '/data/mortal/file_index.pth'
-file_batch_size = 20
+file_batch_size = 32
 reserve_ratio = 0.0
-num_workers = 4
+# num_workers 与 CPU/存储强相关；8×GPU 通常配更强 CPU，可先从 8 试起。
+num_workers = 8
 player_names_files = []
 num_epochs = 1
 enable_augmentation = false
@@ -132,7 +142,9 @@ buffer_dir = '/data/mortal/buffer'
 drain_dir = '/data/mortal/drain'
 sample_reuse_rate = 0
 sample_reuse_threshold = 0
-capacity = 1600
+# 多 client 并发提交日志时，capacity 太小会频繁出现 "samples overflow"。
+# 7 个 client 并发建议 >= 20000；磁盘够的话可更大。
+capacity = 20000
 force_sequential = false
 
 # 1v3 测试配置（用于评估模型）

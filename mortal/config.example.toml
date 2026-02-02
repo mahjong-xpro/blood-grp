@@ -101,6 +101,20 @@ sample_reuse_threshold = 0
 capacity = 1600
 force_sequential = false
 
+# -----
+# 单机 8×4090 参考（online 模式）
+#
+# 建议运行方式：
+# - server：./scripts/blood-server.sh start
+# - clients：./scripts/blood-client.sh start-many --num 7 --gpu-start 1
+# - trainer：CUDA_VISIBLE_DEVICES=0 ./scripts/blood-train.sh online
+#
+# 注意：各进程里都可以保持 device='cuda:0'，
+# 因为用 CUDA_VISIBLE_DEVICES 把“物理 GPU”映射成进程内的 cuda:0。
+#
+# capacity：多 client 并发提交时需要更大，比如 20000+
+# train_play.default.games：多 client 并发时建议每个 client 降低 games（如 6400），加快参数更新频率。
+
 [1v3]
 seed_key = -1
 games_per_iter = 2000
