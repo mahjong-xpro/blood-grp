@@ -46,7 +46,7 @@ if [ -f "$CONFIG_FILE" ]; then
 fi
 
 # Override with command line argument if provided
-if [ -n "$1" ]; then
+if [ -n "${1:-}" ]; then
     TENSORBOARD_DIR="$1"
 fi
 
