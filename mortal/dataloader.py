@@ -104,9 +104,18 @@ class FileDatasetsIter(IterableDataset):
         try:
             data = self.loader.load_gz_log_files(file_list)
         except Exception as e:
-            # Log the error and skip this batch of files
-            # This can happen if game logs contain invalid data (e.g., kawa capacity overflow)
-            logging.warning(f"Failed to load game logs from {len(file_list)} files, skipping: {e}")
+            # Dataset construction must be replayable and self-consistent:
+            # - labels must always be allowed by the computed action mask
+            # - ding_que / kan_select windows must be legal
+            #
+            # If libblood reports a "Dataset mismatch" / "Mask mismatch", do NOT hide it by skipping;
+            # fail fast so we can fix the underlying replay/labeling bug.
+            msg = str(e)
+            logging.error(f"Failed to load game logs from {len(file_list)} files: {msg}")
+            if ("Dataset mismatch" in msg) or ("Mask mismatch" in msg):
+                raise
+            # For other issues (corrupt gz / parse errors), keep current behavior and skip this batch.
+            logging.warning("Skipping this file batch due to non-fatal load error.")
             return
         
         for file in data:

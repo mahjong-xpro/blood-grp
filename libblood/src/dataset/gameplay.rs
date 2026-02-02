@@ -281,15 +281,6 @@ impl Gameplay {
         ctx: &mut LoaderContext<'_>,
         wnd: &[Event; 4],
     ) -> Result<()> {
-        let LoaderContext {
-            config,
-            invisibles,
-            state,
-            kyoku_idx,
-            opponent_states,
-            yama_idx,
-        } = ctx;
-
         let cur = &wnd[0];
         let next = &wnd[1];
 
@@ -297,52 +288,52 @@ impl Gameplay {
             Event::StartGame { names, .. } => {
                 self.player_name.clone_from(&names[self.player_id as usize]);
             }
-            Event::EndKyoku => *kyoku_idx += 1,
+            Event::EndKyoku => ctx.kyoku_idx += 1,
             _ => (),
         }
 
-        if invisibles.is_some() {
+        if ctx.invisibles.is_some() {
             match cur {
                 Event::EndKyoku => {
-                    *yama_idx = 0;
+                    ctx.yama_idx = 0;
                 }
                 Event::Tsumo { .. } => {
-                    *yama_idx += 1;
+                    ctx.yama_idx += 1;
                 }
                 Event::Ankan { .. } | Event::Kakan { .. } | Event::Daiminkan { .. } => {
                 }
                 _ => (),
             };
 
-            for s in opponent_states {
+            for s in &mut ctx.opponent_states {
                 s.update(cur)?;
             }
         }
 
-        let cans = state.update(cur)?;
+        let cans = ctx.state.update(cur)?;
         if !cans.can_act() {
             return Ok(());
         }
 
-        let version = config.version;
+        let version = ctx.config.version;
         let mut kan_select = None;
         let label_opt = match *next {
             Event::Dahai { pai, .. } => Some(pai.as_usize()),
             Event::Pon { actor, .. } if actor == self.player_id => Some(27), // Pon action (was 41)
             Event::Daiminkan { actor, pai, .. } if actor == self.player_id => {
-                if config.always_include_kan_select {
+                if ctx.config.always_include_kan_select {
                     kan_select = Some(pai.as_usize());
                 }
                 Some(28) // Kan action (was 42)
             }
             Event::Kakan { pai, .. } => {
-                if config.always_include_kan_select || state.kakan_candidates().len() > 1 {
+                if ctx.config.always_include_kan_select || ctx.state.kakan_candidates().len() > 1 {
                     kan_select = Some(pai.as_usize());
                 }
                 Some(28) // Kan action (was 42)
             }
             Event::Ankan { consumed, .. } => {
-                if config.always_include_kan_select || state.ankan_candidates().len() > 1 {
+                if ctx.config.always_include_kan_select || ctx.state.ankan_candidates().len() > 1 {
                     kan_select = Some(consumed[0].as_usize());
                 }
                 Some(28) // Kan action (was 42)
@@ -350,7 +341,7 @@ impl Gameplay {
             Event::DingQue { actor, suit } if actor == self.player_id => {
                 // Assert legality: DingQue should only appear when can_ding_que is true.
                 if !cans.can_ding_que {
-                    panic!(
+                    bail!(
                         "Dataset mismatch: DingQue labeled when can_ding_que=false.\n\
                          player: {}, kyoku: {}, turn: {}\n\
                          cur: {:?}\n\
@@ -358,12 +349,12 @@ impl Gameplay {
                          next: {:?}\n\
                          state:\n{}",
                         self.player_id,
-                        *kyoku_idx,
-                        state.at_turn(),
+                        ctx.kyoku_idx,
+                        ctx.state.at_turn(),
                         cur,
                         wnd,
                         next,
-                        state.brief_info(),
+                        ctx.state.brief_info(),
                     );
                 }
                 match suit {
@@ -420,10 +411,10 @@ impl Gameplay {
             // When this fails, it indicates either a non-replayable log (state correction not encoded)
             // or a bug in legality / mask generation.
             if label == 29 {
-                let (_feature_dbg, mask_normal) = state.encode_obs(version, false);
-                let (_feature_dbg2, mask_kan) = state.encode_obs(version, true);
+                let (_feature_dbg, mask_normal) = ctx.state.encode_obs(version, false);
+                let (_feature_dbg2, mask_kan) = ctx.state.encode_obs(version, true);
                 if !mask_normal[29] && !mask_kan[29] {
-                    panic!(
+                    bail!(
                         "Mask Mismatch detected for Agari (Action 29) at window boundary.\n\
                          player: {}, kyoku: {}, turn: {}\n\
                          cur: {:?}\n\
@@ -431,21 +422,21 @@ impl Gameplay {
                          next: {:?}\n\
                          state:\n{}",
                         self.player_id,
-                        *kyoku_idx,
-                        state.at_turn(),
+                        ctx.kyoku_idx,
+                        ctx.state.at_turn(),
                         cur,
                         wnd,
                         next,
-                        state.brief_info(),
+                        ctx.state.brief_info(),
                     );
                 }
             }
 
             if let Some(kan) = kan_select {
                 // Assert kan-select label is allowed by the kan-select mask.
-                let (_feature_dbg, mask_dbg) = state.encode_obs(version, true);
+                let (_feature_dbg, mask_dbg) = ctx.state.encode_obs(version, true);
                 if !mask_dbg[kan] {
-                    panic!(
+                    bail!(
                         "Dataset mismatch: kan_select label not allowed by mask.\n\
                          player: {}, kyoku: {}, turn: {}, kan: {}\n\
                          cur: {:?}\n\
@@ -453,42 +444,89 @@ impl Gameplay {
                          next: {:?}\n\
                          state:\n{}",
                         self.player_id,
-                        *kyoku_idx,
-                        state.at_turn(),
+                        ctx.kyoku_idx,
+                        ctx.state.at_turn(),
                         kan,
                         cur,
                         wnd,
                         next,
-                        state.brief_info(),
+                        ctx.state.brief_info(),
                     );
                 }
             }
 
-            self.add_entry(ctx, false, label);
+            let ctx_msg = {
+                let turn = ctx.state.at_turn();
+                let state_info = ctx.state.brief_info();
+                format!(
+                    "Dataset mismatch: action label not allowed by mask.\n\
+                     player: {}, kyoku: {}, turn: {}\n\
+                     label: {}\n\
+                     cur: {:?}\n\
+                     wnd: {:?}\n\
+                     next: {:?}\n\
+                     state:\n{}",
+                    self.player_id,
+                    ctx.kyoku_idx,
+                    turn,
+                    label,
+                    cur,
+                    wnd,
+                    next,
+                    state_info,
+                )
+            };
+            self.add_entry(ctx, false, label).with_context(|| ctx_msg.clone())?;
             if let Some(kan) = kan_select {
-                self.add_entry(ctx, true, kan);
+                let ctx_msg = {
+                    let turn = ctx.state.at_turn();
+                    let state_info = ctx.state.brief_info();
+                    format!(
+                        "Dataset mismatch: kan_select label not allowed by mask.\n\
+                         player: {}, kyoku: {}, turn: {}\n\
+                         kan: {}\n\
+                         cur: {:?}\n\
+                         wnd: {:?}\n\
+                         next: {:?}\n\
+                         state:\n{}",
+                        self.player_id,
+                        ctx.kyoku_idx,
+                        turn,
+                        kan,
+                        cur,
+                        wnd,
+                        next,
+                        state_info,
+                    )
+                };
+                self.add_entry(ctx, true, kan).with_context(|| ctx_msg.clone())?;
             }
         }
         Ok(())
     }
 
-    fn add_entry(&mut self, ctx: &LoaderContext<'_>, at_kan_select: bool, label: usize) {
+    fn add_entry(&mut self, ctx: &LoaderContext<'_>, at_kan_select: bool, label: usize) -> Result<()> {
         let (feature, mask) = ctx.state.encode_obs(ctx.config.version, at_kan_select);
         // Action indices: 0-26 (discard), 27 (pon), 28 (kan), 29 (agari), 30 (pass), 31-33 (ding que)
-        // Check mask BEFORE moving it into vector
-        if label == 29 && !mask[29] {
-             panic!(
-                "Mask Mismatch detected for Agari (Action 29)! Player: {}, Kyoku: {}, Turn: {}, Shanten: {}, DingQue: {:?}, CanRon: {}, CanTsumo: {}, Furiten: {}, Forbidden: {:?}",
+        // Strict invariant: label must be allowed by the mask computed from the same state.
+        // If this fails, it indicates a replay divergence or an event-window labeling bug.
+        if label >= mask.len() || !mask[label] {
+            bail!(
+                "Mask mismatch: label not allowed by mask.\n\
+                 player: {}, kyoku: {}, turn: {}, at_kan_select: {}\n\
+                 label: {}, shanten: {}, ding_que: {:?}\n\
+                 cans: {:?}\n\
+                 state:\n{}",
                 self.player_id,
                 ctx.kyoku_idx,
                 ctx.state.at_turn(),
+                at_kan_select,
+                label,
                 ctx.state.shanten(),
                 ctx.state.ding_que,
-                ctx.state.last_cans().can_ron_agari,
-                ctx.state.last_cans().can_tsumo_agari,
-                ctx.state.temporary_furiten,
-                ctx.state.forbidden_tiles
-             );
+                ctx.state.last_cans(),
+                ctx.state.brief_info(),
+            );
         }
 
         self.obs.push(feature);
@@ -517,5 +555,6 @@ impl Gameplay {
             );
             self.invisible_obs.push(invisible_obs);
         }
+        Ok(())
     }
 }
