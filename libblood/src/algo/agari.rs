@@ -178,21 +178,10 @@ impl AgariCalculator<'_> {
         if !has_valid_structure {
             return false;
         }
-        
-        if let Some(ding_que_suit) = self.ding_que {
-            let ding_que_start = match ding_que_suit {
-                crate::mjai::Suit::Man => 0,
-                crate::mjai::Suit::Pin => 9,
-                crate::mjai::Suit::Sou => 18,
-            };
-            let ding_que_end = ding_que_start + 9;
-            
-            // Check if hand still has any ding_que suit tiles
-            for i in ding_que_start..ding_que_end {
-                if self.tehai[i] > 0 {
-                    return false; // Cannot agari if hand still has ding_que suit tiles (花猪)
-                }
-            }
+
+        // DingQue rule (花猪): cannot agari if DingQue suit tiles remain.
+        if !crate::ding_que::can_agari(self.tehai, self.ding_que) {
+            return false;
         }
         
         true
@@ -224,23 +213,9 @@ impl AgariCalculator<'_> {
     ///     - 杠上炮：杠牌后打出的牌和牌，+1番（平胡1番 + 杠上炮1番 = 2番）
     #[must_use]
     pub fn agari(&self) -> Option<Agari> {
-        // This check should be done before checking AGARI_TABLE, because if the hand has ding_que
-        // suit tiles, it cannot agari (花猪) regardless of hand structure
-        if let Some(ding_que_suit) = self.ding_que {
-            let ding_que_start = match ding_que_suit {
-                crate::mjai::Suit::Man => 0,
-                crate::mjai::Suit::Pin => 9,
-                crate::mjai::Suit::Sou => 18,
-            };
-            let ding_que_end = ding_que_start + 9;
-            
-            // Check if hand still has any ding_que suit tiles
-            for i in ding_que_start..ding_que_end {
-                if self.tehai[i] > 0 {
-                    // Cannot agari if hand still has ding_que suit tiles (花猪)
-                    return None;
-                }
-            }
+        // DingQue rule (花猪): cannot agari if DingQue suit tiles remain.
+        if !crate::ding_que::can_agari(self.tehai, self.ding_que) {
+            return None;
         }
         
         let mut fan: u8 = 1;

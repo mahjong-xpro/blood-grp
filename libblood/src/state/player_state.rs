@@ -259,11 +259,7 @@ impl PlayerState {
     #[must_use]
     pub fn check_ding_que_complete(&self) -> bool {
         if let Some(suit) = self.ding_que {
-            let (start, end) = match suit {
-                crate::mjai::Suit::Man => (0, 9),
-                crate::mjai::Suit::Pin => (9, 18),
-                crate::mjai::Suit::Sou => (18, 27),
-            };
+            let (start, end) = crate::ding_que::suit_range(suit);
             (start..end).all(|i| self.tehai[i] == 0)
         } else {
             false // No ding_que selected, so "completion" is not applicable
@@ -274,11 +270,7 @@ impl PlayerState {
     #[must_use]
     pub fn count_ding_que_tiles(&self) -> u8 {
         if let Some(suit) = self.ding_que {
-            let (start, end) = match suit {
-                crate::mjai::Suit::Man => (0, 9),
-                crate::mjai::Suit::Pin => (9, 18),
-                crate::mjai::Suit::Sou => (18, 27),
-            };
+            let (start, end) = crate::ding_que::suit_range(suit);
             (start..end).map(|i| self.tehai[i]).sum()
         } else {
             0 // No ding_que selected

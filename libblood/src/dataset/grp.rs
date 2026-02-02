@@ -3,6 +3,8 @@ use crate::mjai::{Event, Suit};
 use crate::rankings::Rankings;
 use crate::tile::Tile;
 use crate::vec_ops::vec_add_assign;
+use std::array;
+
 use anyhow::{Context, Result};
 use pyo3::prelude::*;
 use serde_json as json;
@@ -165,7 +167,8 @@ impl GameScore {
         
         // For Ding Que quality tracking
         let mut ding_que_quality: Vec<[f32; 4]> = vec![];
-        let mut current_tehais: Option<[[Tile; 13]; 4]> = None;
+        // Track the effective hand at DingQue time (庄家在定缺前会多一张补牌)
+        let mut current_tehais: Option<[[u8; 27]; 4]> = None;
         let mut current_kyoku_quality = [0.0f32; 4];
 
         // Forward pass to collect scores and Ding Que quality
@@ -179,15 +182,26 @@ impl GameScore {
                     
                     // Reset for new kyoku
                     scores_history.push(*scores);
-                    current_tehais = Some(*tehais);
+                    current_tehais = Some(array::from_fn(|i| tiles_to_tehai(&tehais[i])));
                     current_kyoku_quality = [0.0f32; 4]; // Default neutral
+                }
+                Event::Tsumo { actor, pai } => {
+                    if let Some(ref mut tehais) = current_tehais {
+                        let player_idx = *actor as usize;
+                        if player_idx < 4 {
+                            let tid = pai.as_usize();
+                            if tid < 27 {
+                                tehais[player_idx][tid] += 1;
+                            }
+                        }
+                    }
                 }
                 Event::DingQue { actor, suit } => {
                     if let Some(ref tehais) = current_tehais {
                         let player_idx = *actor as usize;
                         if player_idx < 4 {
-                            let tehai = tiles_to_tehai(&tehais[player_idx]);
-                            current_kyoku_quality[player_idx] = evaluate_ding_que_quality(&tehai, *suit);
+                            current_kyoku_quality[player_idx] =
+                                evaluate_ding_que_quality(&tehais[player_idx], *suit);
                         }
                     }
                 }

@@ -50,6 +50,12 @@ impl PlayerState {
             };
             self.ankan_candidates.clear();
             self.kakan_candidates.clear();
+
+            // DingQue availability must persist until chosen, regardless of turn/actor.
+            // This is critical because DingQue selection can happen after the dealer's initial tsumo.
+            if self.ding_que.is_none() {
+                self.last_cans.can_ding_que = true;
+            }
         }
 
         match *event {
@@ -198,6 +204,21 @@ impl PlayerState {
                 self.other_ding_que[actor_rel as usize - 1] = Some(suit);
             }
         }
+
+        // If all players have selected DingQue, enable the dealer's first discard (14 tiles).
+        // This is required because DingQue selection can happen after the dealer's initial tsumo.
+        let all_selected = self.ding_que.is_some() && self.other_ding_que.iter().all(|s| s.is_some());
+        if all_selected && self.is_oya() {
+            let tehai_sum: u8 = self.tehai.iter().sum();
+            if tehai_sum % 3 == 2 {
+                // From this POV, it's now the dealer's discard turn.
+                self.last_cans.target_actor = self.player_id;
+                self.last_cans.can_discard = true;
+                self.update_ding_que_forbidden_tiles();
+                self.update_shanten();
+                self.update_shanten_discards();
+            }
+        }
         Ok(())
     }
 
@@ -223,13 +244,23 @@ impl PlayerState {
         self.temporary_furiten = false;
         self.at_turn += 1;
 
-        self.last_cans.can_discard = true;
         self.last_self_tsumo = Some(pai);
         // If we successfully kakan'd/ankan'd before this draw, it is no longer pending.
         self.pending_kakan_tile = None;
         self.witness_tile(pai)?;
         self.move_tile(pai, MoveType::Tsumo)?;
 
+        // DingQue selection must happen before any play actions (discard/agari/kan).
+        // During DingQue phase, the player can only select DingQue.
+        if self.ding_que.is_none() {
+            self.last_cans.can_ding_que = true;
+            self.last_cans.can_discard = false;
+            // Keep shanten roughly up-to-date for observation features.
+            self.update_shanten();
+            return Ok(());
+        }
+
+        self.last_cans.can_discard = true;
         self.update_shanten_discards();
 
         if self.waits[pai.as_usize()] {
@@ -264,21 +295,6 @@ impl PlayerState {
         self.ankan_candidates.clear();
         self.kakan_candidates.clear();
         if self.kans_on_board < 4 {
-            // Helper closure to check if a tile's suit matches the ding_que suit
-            let is_ding_que_suit = |tile: Tile| -> bool {
-                if let Some(ding_que_suit) = self.ding_que {
-                    let tile_suit = tile.as_usize() / 9;
-                    let ding_que_suit_id = match ding_que_suit {
-                        crate::mjai::Suit::Man => 0,
-                        crate::mjai::Suit::Pin => 1,
-                        crate::mjai::Suit::Sou => 2,
-                    };
-                    tile_suit == ding_que_suit_id
-                } else {
-                    false
-                }
-            };
-
             self.tehai
                 .iter()
                 .enumerate()
@@ -286,7 +302,7 @@ impl PlayerState {
                 .for_each(|(tid, &count)| {
                     let tile = must_tile!(tid);
                     // 基础规则：定缺花色不能暗杠或加杠
-                    if is_ding_que_suit(tile) {
+                    if crate::ding_que::is_ding_que_tile(tile.as_usize(), self.ding_que) {
                         return;
                     }
 
@@ -457,17 +473,7 @@ impl PlayerState {
         }
 
         // Check if the discarded tile is the ding_que suit
-        let is_ding_que_tile = if let Some(ding_que_suit) = self.ding_que {
-            let tile_suit = pai.as_usize() / 9;
-            let ding_que_suit_id = match ding_que_suit {
-                crate::mjai::Suit::Man => 0,
-                crate::mjai::Suit::Pin => 1,
-                crate::mjai::Suit::Sou => 2,
-            };
-            tile_suit == ding_que_suit_id
-        } else {
-            false
-        };
+        let is_ding_que_tile = crate::ding_que::is_ding_que_tile(pai.as_usize(), self.ding_que);
 
         // 基础规则：定缺花色不能碰或明杠
         if !is_ding_que_tile {
@@ -970,26 +976,11 @@ impl PlayerState {
     /// allow `-1` and it will be written as `0` in order for
     /// `_shanten_discards` to be calculated properly.
     pub(crate) fn update_shanten(&mut self) {
-        // Check ding_que rule first
-        if let Some(ding_que_suit) = self.ding_que {
-            let ding_que_start = match ding_que_suit {
-                crate::mjai::Suit::Man => 0,
-                crate::mjai::Suit::Pin => 9,
-                crate::mjai::Suit::Sou => 18,
-            };
-            let ding_que_end = ding_que_start + 9;
-            
-            // Check if hand still has any ding_que suit tiles
-            let has_ding_que_tiles = (ding_que_start..ding_que_end)
-                .any(|i| self.tehai[i] > 0);
-                
-            if has_ding_que_tiles {
-                // If holding ding_que tiles, cannot agari/tenpai.
-                // Set shanten to 8 (infinity/invalid).
-                // Normal max shanten is 6.
-                self.shanten = 8;
-                return;
-            }
+        // Check ding_que rule first: if holding DingQue suit tiles, cannot agari/tenpai.
+        // Set shanten to 8 (infinity/invalid). Normal max shanten is 6.
+        if crate::ding_que::has_ding_que_tiles(&self.tehai, self.ding_que) {
+            self.shanten = 8;
+            return;
         }
 
         // Use dynamic calculation instead of fragile state variable
@@ -1074,16 +1065,10 @@ impl PlayerState {
     /// In this case, all cards of other suits become forbidden.
     fn update_ding_que_forbidden_tiles(&mut self) {
         if let Some(ding_que_suit) = self.ding_que {
-            let ding_que_start = match ding_que_suit {
-                crate::mjai::Suit::Man => 0,
-                crate::mjai::Suit::Pin => 9,
-                crate::mjai::Suit::Sou => 18,
-            };
-            let ding_que_end = ding_que_start + 9;
+            let (ding_que_start, ding_que_end) = crate::ding_que::suit_range(ding_que_suit);
             
             // Check if hand still has any ding_que suit tiles
-            let has_ding_que_tiles = (ding_que_start..ding_que_end)
-                .any(|i| self.tehai[i] > 0);
+            let has_ding_que_tiles = crate::ding_que::has_suit_tiles(&self.tehai, ding_que_suit);
                 
             if has_ding_que_tiles {
                 // Determine which tiles are forbidden (all non-DingQue tiles)
@@ -1092,27 +1077,6 @@ impl PlayerState {
                         self.forbidden_tiles[i] = true;
                     }
                 }
-            } else {
-                 // Even if no Ding Que tiles left, you cannot discard Ding Que tiles (if you somehow drew one? 
-                 // But wait, if you drew one, has_ding_que_tiles would be true).
-                 // Logic check: if you don't have Ding Que tiles, you can discard anything 
-                 // (except forbidden_tiles set by Kuikae or other rules).
-                 // But wait, if you draw a Ding Que tile later, you MUST discard it.
-                 // So the above logic covers it: if has_ding_que_tiles is true, forbid others.
-                 
-                 // What if I DON'T have Ding Que tiles?
-                 // I should forbid Ding Que tiles? 
-                 // Valid Discard: Any tile I have.
-                 // But if I have a Ding Que tile, I MUST discard it.
-                 // If I DON'T have a Ding Que tile, I CANNOT discard a Ding Que tile (implied, as I don't have it).
-                 // What if I have a Ding Que tile but I shouldn't? (e.g. invalid state).
-                 // The constraints are simpler:
-                 // 1. If has_DQ_tiles: forbid NON-DQ tiles.
-                 // 2. If !has_DQ_tiles: forbid DQ tiles? (Practically redundant as I don't have them, but safe to set).
-                 
-                 for i in ding_que_start..ding_que_end {
-                     self.forbidden_tiles[i] = true;
-                 }
             }
         }
     }

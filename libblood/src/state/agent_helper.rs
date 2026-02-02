@@ -86,17 +86,10 @@ impl PlayerState {
         let mut ret = [false; 27];
 
         if let Some(ding_que_suit) = self.ding_que {
-            let ding_que_suit_id = match ding_que_suit {
-                crate::mjai::Suit::Man => 0,
-                crate::mjai::Suit::Pin => 1,
-                crate::mjai::Suit::Sou => 2,
-            };
-            let ding_que_start = ding_que_suit_id * 9;
-            let ding_que_end = ding_que_start + 9;
+            let (ding_que_start, ding_que_end) = crate::ding_que::suit_range(ding_que_suit);
             
             // Check if hand still has any ding_que suit tiles
-            let has_ding_que_tiles = (ding_que_start..ding_que_end)
-                .any(|i| self.tehai[i] > 0);
+            let has_ding_que_tiles = crate::ding_que::has_suit_tiles(&self.tehai, ding_que_suit);
             
             if has_ding_que_tiles {
                 // Must discard ding_que suit tiles first - only allow ding_que suit tiles

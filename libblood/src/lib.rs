@@ -96,6 +96,7 @@ mod arena;
 mod array;
 mod consts;
 mod dataset;
+mod ding_que;
 mod macros;
 mod py_helper;
 mod rankings;
