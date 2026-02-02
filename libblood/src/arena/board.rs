@@ -667,11 +667,28 @@ impl BoardState {
                                  if let Some(idx) = found_idx {
                                      // Revert MinKan -> Pon
                                      victim_state.minkans.remove(idx);
-                                     victim_state.pons.push(tile);
+                                     // Convert the meld back to a pon (3 tiles). Guard against
+                                     // ArrayVec capacity overflow and accidental duplicates.
+                                     //
+                                     // In valid states, total meld count is <= 4, and removing a minkan
+                                     // makes room for one additional pon. If we still can't push, the
+                                     // state/log is inconsistent; log and keep going instead of panicking.
+                                     if !victim_state.pons.contains(&tile) {
+                                         if victim_state.pons.len() < 4 {
+                                             victim_state.pons.push(tile);
+                                         } else {
+                                             log::warn!(
+                                                 "ChanKan State Fix: victim_state.pons is full (len=4), cannot push tile {} for player {}. Skipping to avoid panic.",
+                                                 tile,
+                                                 kan_actor
+                                             );
+                                         }
+                                     }
                                      
-                                     // State changed, must update caches
+                                     // State changed, update caches.
+                                     // After a robbed kong, the victim does NOT get the rinshan draw,
+                                     // so they remain at 3n+1; update waits, not discard tables.
                                      victim_state.update_shanten();
-                                     victim_state.update_shanten_discards(); // Optional but safe
                                      victim_state.update_waits();
                                      
                                      log::info!("ChanKan State Fix: Reverted Player {}'s MinKan of tile {} to Pon", kan_actor, tile);
