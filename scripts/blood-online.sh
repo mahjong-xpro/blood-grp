@@ -12,7 +12,7 @@
 #
 # Notes:
 # - server + clients are started in background
-# - trainer runs in foreground by default (Ctrl+C to stop), unless BLOOD_TRAIN_BG=1 or --bg is set
+# - trainer runs in background by default, unless --fg is set
 
 set -euo pipefail
 
@@ -20,7 +20,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 CLIENTS="${BLOOD_CLIENTS:-7}"
 GPU_START="${BLOOD_CLIENT_GPU_START:-1}"
-TRAIN_BG="${BLOOD_TRAIN_BG:-0}"
+# Default: background trainer (can be overridden by env or flags below)
+TRAIN_BG="${BLOOD_TRAIN_BG:-1}"
 
 CMD="${1:-}"
 shift || true
@@ -78,12 +79,13 @@ Usage:
 Environment variables:
   BLOOD_CLIENTS=7
   BLOOD_CLIENT_GPU_START=1
-  BLOOD_TRAIN_BG=0   # set 1 to background trainer
+  BLOOD_TRAIN_BG=1   # set 0 to run trainer in foreground
 
 Examples:
   $0 up --clients 7 --gpu-start 1
+  $0 up            # trainer defaults to background
   $0 up --bg
-  BLOOD_TRAIN_BG=1 $0 up
+  $0 up --fg       # run trainer in foreground
 EOF
     ;;
   *)
