@@ -667,23 +667,21 @@ impl BoardState {
                                  if let Some(idx) = found_idx {
                                      // Revert MinKan -> Pon
                                      victim_state.minkans.remove(idx);
-                                     // Convert the meld back to a pon (3 tiles). Guard against
-                                     // ArrayVec capacity overflow and accidental duplicates.
-                                     //
-                                     // In valid states, total meld count is <= 4, and removing a minkan
-                                     // makes room for one additional pon. If we still can't push, the
-                                     // state/log is inconsistent; log and keep going instead of panicking.
-                                     if !victim_state.pons.contains(&tile) {
-                                         if victim_state.pons.len() < 4 {
-                                             victim_state.pons.push(tile);
-                                         } else {
-                                             log::warn!(
-                                                 "ChanKan State Fix: victim_state.pons is full (len=4), cannot push tile {} for player {}. Skipping to avoid panic.",
-                                                 tile,
-                                                 kan_actor
-                                             );
-                                         }
-                                     }
+                                     // Convert the meld back to a pon (3 tiles).
+                                     // Strong rule: if the state is inconsistent, crash early instead of
+                                     // trying to continue with corrupted meld state.
+                                     assert!(
+                                         !victim_state.pons.contains(&tile),
+                                         "ChanKan State Fix: duplicate pon tile {} for player {} (already in pons). This indicates invalid state/log.",
+                                         tile,
+                                         kan_actor
+                                     );
+                                     assert!(
+                                         victim_state.pons.len() < 4,
+                                         "ChanKan State Fix: pons capacity overflow (len=4) when reverting robbed kong for player {}. This indicates invalid state/log.",
+                                         kan_actor
+                                     );
+                                     victim_state.pons.push(tile);
                                      
                                      // State changed, update caches.
                                      // After a robbed kong, the victim does NOT get the rinshan draw,
