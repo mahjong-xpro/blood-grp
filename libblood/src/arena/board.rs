@@ -80,6 +80,13 @@ pub struct AgentContext<'a> {
 pub struct GangRecord {
     pub actor: u8,
     pub deltas: [i32; 4], // The exact points transfer that occurred (to be reversed if needed)
+    /// Whether this gang record is still valid (e.g. kakan robbed by chankan invalidates it).
+    #[serde(default = "default_true")]
+    pub valid: bool,
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 #[derive(Clone, Copy)]
@@ -419,6 +426,16 @@ impl BoardState {
                  tenpai_details.push((i, max_points));
              }
         }
+
+        // Who are No-Ten (Wei Ting / 被查大叫)?
+        // Alive, non-Huazhu, and NOT in tenpai_details.
+        let no_ten_actors: Vec<usize> = (0..4)
+            .filter(|&i| {
+                !self.players_agari[i]
+                    && !huazhu_actors.contains(&i)
+                    && !tenpai_details.iter().any(|(t, _)| *t == i)
+            })
+            .collect();
         
         if !tenpai_details.is_empty() {
             let mut chadajiao_deltas = [0; 4];
@@ -426,10 +443,6 @@ impl BoardState {
             // Calculate penalty for No-Ten players
             // Who are No-Ten?
             // Alive, Non-Huazhu, and NOT in tenpai_details
-            
-            let no_ten_actors: Vec<usize> = (0..4)
-                .filter(|&i| !self.players_agari[i] && !huazhu_actors.contains(&i) && !tenpai_details.iter().any(|(t, _)| *t == i))
-                .collect();
                 
             // Execution: Each No-Ten pays Each Tenpai (points of that Tenpai)
             for &no_ten in &no_ten_actors {
@@ -446,13 +459,18 @@ impl BoardState {
         // "Hua Zhu Wu Gang" (Pig has no Gang).
         // "Wei Ting Tui Shui" (No-Ten refunds Gangs).
         // Note: Agari players keep their Gangs. Tenpai players keep their Gangs.
-         
         let refund_actors: Vec<usize> = (0..4)
-             .filter(|&i| !self.players_agari[i] && !tenpai_details.iter().any(|(t, _)| *t == i))
-             .collect();
+            .filter(|&i| {
+                !self.players_agari[i]
+                    && (huazhu_actors.contains(&i) || no_ten_actors.contains(&i))
+            })
+            .collect();
              
-        // Iterate gang history
+        // Iterate gang history (skip invalidated records, e.g. robbed kong)
         for record in &self.gang_history {
+             if !record.valid {
+                 continue;
+             }
              if refund_actors.contains(&(record.actor as usize)) {
                  // Loop over the recorded payment deltas and reverse them
                  // record.deltas[i] is positive if i received money (actor), negative if i paid.
@@ -487,46 +505,9 @@ impl BoardState {
         _is_multi_ron: bool,
     ) -> Result<()> {
         let is_ron = single_actor != single_target;
+        let players_agari_before = self.players_agari;
         
 
-
-        // Phase 13: Chankan Refund Logic
-        // Strict Rule: If Chankan (Robbing the Kong) occurs, the Kong is invalid.
-        // The "Instant Payment" (Gua Feng) that happened in the previous step must be REFUNDED.
-        // It should NOT be transferred to the winner (that is for Valid Kongs).
-        if is_ron {
-            // Check if this is Chankan
-            // We check the player state directly to avoid moving `self`
-            let is_chankan = self.player_states[single_actor as usize].chankan_kakan_actor.is_some();
-            
-            if is_chankan {
-                if let Some(kan_actor) = self.last_kan_actor {
-                    // Assuming Chankan only happens on Kakan (Add Kong), where payment is 1000.
-                    // If Kan Actor matches Target (which it must for Chankan), and we have revenue to refund.
-                    if kan_actor == single_target && self.last_kan_revenue > 0 {
-                        let refund_per_person = 1000;
-                        let mut refund_deltas = [0; 4];
-                        
-                        // Identify who paid and needs refund.
-                        // Payers are: Everyone except Kan Actor AND except those who were ALREADY Agari (before this turn).
-                        // Note: We check `!self.players_agari[i]` here.
-                        // Crucial: This block runs BEFORE we mark current winners as Agari (lines below).
-                        // So current winners (who paid the tax) will correctly be identified as Non-Agari here, and get refund.
-                        for i in 0..4 {
-                            if i != kan_actor as usize && !self.players_agari[i] {
-                                refund_deltas[i] += refund_per_person;
-                                refund_deltas[kan_actor as usize] -= refund_per_person;
-                            }
-                        }
-                        
-                        vec_add_assign(&mut self.kyoku_deltas, &refund_deltas);
-                        
-                        // Clear revenue so it's not refunded again (Multi-Ron) or transferred later
-                        self.last_kan_revenue = 0; 
-                    }
-                }
-            }
-        }
 
         if !self.players_agari[single_actor as usize] {
             self.players_agari[single_actor as usize] = true;
@@ -613,7 +594,9 @@ impl BoardState {
                          let refund_per_person = 1000;
                          let mut total_refund = 0;
                          for i in 0..4 {
-                             if i != single_target as usize && !self.players_agari[i] {
+                             // Refund only those who actually paid at the time of kakan:
+                             // everyone except the kan actor and those already agari before this turn.
+                             if i != single_target as usize && !players_agari_before[i] {
                                  deltas[i] += refund_per_person;
                                  total_refund += refund_per_person;
                              }
@@ -623,12 +606,15 @@ impl BoardState {
                          // Clear revenue so subsequent winners (Multi-Ron) don't double refund
                          self.last_kan_revenue = 0;
                          
-                         // Remove the invalidated Kakan from gang history
-                         // Checks for safety: ensure the last record matches our expectation
-                         if let Some(last_gang) = self.gang_history.last() {
-                             if last_gang.actor == kan_actor {
-                                 self.gang_history.pop();
-                             }
+                         // Invalidate the robbed kong's gang record instead of popping,
+                         // so state remains replayable/deterministic.
+                         if let Some(rec) = self
+                             .gang_history
+                             .iter_mut()
+                             .rev()
+                             .find(|r| r.valid && r.actor == kan_actor)
+                         {
+                             rec.valid = false;
                          }
 
                          // CRITICAL FIX: Revert the Kakan state in PlayerState
@@ -675,22 +661,43 @@ impl BoardState {
                  }
             }
             
-            // Score Transfer (Hujiaozhuanyi)
-            if is_ron {
-                 // Check if the target (discarder) was the last kan actor
-                 // and if we have revenue to transfer
-                 if let Some(kan_actor) = self.last_kan_actor {
-                     if kan_actor == single_target && self.last_kan_revenue > 0 {
-                         // Transfer: Subtract from discarder, Add to winner
-                         deltas[single_target as usize] -= self.last_kan_revenue;
-                         deltas[single_actor as usize] += self.last_kan_revenue;
-                         
-                         // Clear revenue so subsequent winners (Multi-Ron) don't get double transfer
-                         // (assuming 'Heads' rule: first winner takes the transfer)
-                         // Since we process winners in loop, this works.
-                         self.last_kan_revenue = 0;
-                     }
-                 }
+            // Kong Revenue Handling (Hujiaozhuanyi / GangShangPao multi-ron rule)
+            //
+            // - Single Ron (杠上炮): the kan revenue is transferred to the winner.
+            // - Multi Ron on the same discard (一炮多响杠上炮): the kan revenue is refunded to original payers
+            //   (原路退回), and NOT transferred to any winner.
+            //
+            // Note: This is separate from chankan (抢杠) refund, which is handled above and also
+            // clears last_kan_revenue / invalidates the gang record.
+            if let Some(kan_actor) = self.last_kan_actor {
+                if kan_actor == single_target && self.last_kan_revenue > 0 {
+                    if _is_multi_ron {
+                        // Refund exactly by reversing the last valid gang record for this actor.
+                        if let Some(rec) = self
+                            .gang_history
+                            .iter_mut()
+                            .rev()
+                            .find(|r| r.valid && r.actor == kan_actor)
+                        {
+                            for i in 0..4 {
+                                deltas[i] -= rec.deltas[i];
+                            }
+                            rec.valid = false;
+                        } else {
+                            log::warn!(
+                                "Multi-ron gangpao refund: missing gang record for actor {}, revenue {}",
+                                kan_actor,
+                                self.last_kan_revenue
+                            );
+                        }
+                        self.last_kan_revenue = 0;
+                    } else {
+                        // Transfer: subtract from discarder, add to winner.
+                        deltas[single_target as usize] -= self.last_kan_revenue;
+                        deltas[single_actor as usize] += self.last_kan_revenue;
+                        self.last_kan_revenue = 0;
+                    }
+                }
             }
             
         } else {
@@ -1134,6 +1141,7 @@ impl BoardState {
                 self.gang_history.push(GangRecord {
                     actor,
                     deltas: payment_deltas,
+                    valid: true,
                 });
                 
                 // Construct modified event with deltas and broadcast
@@ -1169,6 +1177,7 @@ impl BoardState {
                 self.gang_history.push(GangRecord {
                     actor,
                     deltas: payment_deltas,
+                    valid: true,
                 });
                 
                 // Construct modified event with deltas and broadcast
@@ -1209,6 +1218,7 @@ impl BoardState {
                 self.gang_history.push(GangRecord {
                     actor,
                     deltas: payment_deltas,
+                    valid: true,
                 });
                 
                 // Construct modified event with deltas and broadcast

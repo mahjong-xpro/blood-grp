@@ -75,6 +75,17 @@ impl PlayerState {
 
         match action {
             Event::None => {
+                // In mjai, `none` is used as "no reaction".
+                // For safety, only allow it when:
+                // - the player truly cannot act, OR
+                // - the player can legally pass on an interrupt (pon/daiminkan/ron window).
+                //
+                // This prevents silent deadlocks / invalid logs where the player should act
+                // (discard, ding_que, etc.) but returned `none`.
+                ensure!(
+                    !cans.can_act() || cans.can_pass(),
+                    "cannot pass (none) when an action is required: {cans:?}"
+                );
                 return Ok(());
             }
             _ => (),

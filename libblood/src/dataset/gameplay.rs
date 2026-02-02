@@ -324,6 +324,7 @@ impl Gameplay {
             return Ok(());
         }
 
+        let version = config.version;
         let mut kan_select = None;
         let label_opt = match *next {
             Event::Dahai { pai, .. } => Some(pai.as_usize()),
@@ -347,6 +348,24 @@ impl Gameplay {
                 Some(28) // Kan action (was 42)
             }
             Event::DingQue { actor, suit } if actor == self.player_id => {
+                // Assert legality: DingQue should only appear when can_ding_que is true.
+                if !cans.can_ding_que {
+                    panic!(
+                        "Dataset mismatch: DingQue labeled when can_ding_que=false.\n\
+                         player: {}, kyoku: {}, turn: {}\n\
+                         cur: {:?}\n\
+                         wnd: {:?}\n\
+                         next: {:?}\n\
+                         state:\n{}",
+                        self.player_id,
+                        *kyoku_idx,
+                        state.at_turn(),
+                        cur,
+                        wnd,
+                        next,
+                        state.brief_info(),
+                    );
+                }
                 match suit {
                     crate::mjai::Suit::Man => Some(31),
                     crate::mjai::Suit::Pin => Some(32),
@@ -401,8 +420,9 @@ impl Gameplay {
             // When this fails, it indicates either a non-replayable log (state correction not encoded)
             // or a bug in legality / mask generation.
             if label == 29 {
-                let (_feature_dbg, mask_dbg) = state.encode_obs(config.version, false);
-                if !mask_dbg[29] {
+                let (_feature_dbg, mask_normal) = state.encode_obs(version, false);
+                let (_feature_dbg2, mask_kan) = state.encode_obs(version, true);
+                if !mask_normal[29] && !mask_kan[29] {
                     panic!(
                         "Mask Mismatch detected for Agari (Action 29) at window boundary.\n\
                          player: {}, kyoku: {}, turn: {}\n\
@@ -420,6 +440,30 @@ impl Gameplay {
                     );
                 }
             }
+
+            if let Some(kan) = kan_select {
+                // Assert kan-select label is allowed by the kan-select mask.
+                let (_feature_dbg, mask_dbg) = state.encode_obs(version, true);
+                if !mask_dbg[kan] {
+                    panic!(
+                        "Dataset mismatch: kan_select label not allowed by mask.\n\
+                         player: {}, kyoku: {}, turn: {}, kan: {}\n\
+                         cur: {:?}\n\
+                         wnd: {:?}\n\
+                         next: {:?}\n\
+                         state:\n{}",
+                        self.player_id,
+                        *kyoku_idx,
+                        state.at_turn(),
+                        kan,
+                        cur,
+                        wnd,
+                        next,
+                        state.brief_info(),
+                    );
+                }
+            }
+
             self.add_entry(ctx, false, label);
             if let Some(kan) = kan_select {
                 self.add_entry(ctx, true, kan);
