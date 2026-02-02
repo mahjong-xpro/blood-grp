@@ -2,7 +2,7 @@
 # Bloody Battle Mahjong TensorBoard Launch Script
 # Usage: ./blood-tensorboard.sh [tensorboard_dir] [port]
 
-set -e
+set -euo pipefail
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,6 +25,12 @@ if ! command -v "$TENSORBOARD_CMD" &> /dev/null; then
     echo ""
     echo "Please install TensorBoard:"
     echo "  pip install tensorboard"
+    exit 1
+fi
+
+# Check python (used for config parsing in other scripts; keep consistent)
+if ! command -v "$PYTHON_CMD" &> /dev/null; then
+    echo -e "${RED}Error: Python not found: $PYTHON_CMD${NC}"
     exit 1
 fi
 

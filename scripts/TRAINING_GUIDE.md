@@ -165,8 +165,13 @@ capacity = 1600
 
 ```bash
 # 终端 2-N：启动训练客户端
-cd mortal
-python client.py
+./scripts/blood-client.sh start --id 1 --gpu 1
+```
+
+在单机多卡服务器上，推荐直接一键多开（自动分配 GPU、并为每个 client 生成独立 log_dir，避免互相删除目录）：
+
+```bash
+./scripts/blood-client.sh start-many --num 7 --gpu-start 1
 ```
 
 客户端会：

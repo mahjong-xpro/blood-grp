@@ -2,7 +2,7 @@
 # Bloody Battle Mahjong Log Replay Web Service
 # Usage: ./blood-replay.sh [port]
 
-set -e
+set -euo pipefail
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

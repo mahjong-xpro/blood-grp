@@ -125,9 +125,12 @@ cp config.example.toml config.toml
 # 1. 启动训练服务器
 ./scripts/blood-server.sh start
 
-# 2. 启动训练客户端（多个终端）
-cd mortal
-python client.py
+# 2. 启动训练客户端（推荐用脚本一键多开）
+# 单机多卡示例：启动 7 个 client，占用 GPU1..GPU7（留 GPU0 给 trainer）
+./scripts/blood-client.sh start-many --num 7 --gpu-start 1
+
+# 或者只启动 1 个 client
+./scripts/blood-client.sh start --id 1 --gpu 1
 
 # 3. 启动训练主程序
 ./scripts/blood-train.sh online

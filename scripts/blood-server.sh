@@ -2,7 +2,7 @@
 # Bloody Battle Mahjong Training Server Management Script
 # Usage: ./blood-server.sh {start|stop|restart|status|logs}
 
-set -e
+set -euo pipefail
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,8 +10,11 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 MORTAL_DIR="$PROJECT_DIR/mortal"
 CONFIG_FILE="${MORTAL_CFG:-$MORTAL_DIR/config.toml}"
 PYTHON_CMD="${PYTHON_CMD:-python3}"
-PID_FILE="/tmp/blood-server.pid"
-LOG_FILE="/tmp/blood-server.log"
+
+PID_DIR="${BLOOD_PID_DIR:-/tmp}"
+LOG_DIR="${BLOOD_LOG_DIR:-/tmp}"
+PID_FILE="$PID_DIR/blood-server.pid"
+LOG_FILE="$LOG_DIR/blood-server.log"
 
 # Colors for output
 RED='\033[0;31m'
@@ -33,6 +36,27 @@ is_running() {
     return 1
 }
 
+toml_get() {
+    # toml_get <file> <python_expr>
+    # Example: toml_get config.toml 'cfg["online"]["remote"]["port"]'
+    local file="$1"
+    local expr="$2"
+    "$PYTHON_CMD" - <<PY "$file" "$expr" 2>/dev/null || true
+import sys
+import toml
+cfg_path = sys.argv[1]
+expr = sys.argv[2]
+cfg = toml.load(cfg_path)
+try:
+    v = eval(expr, {"cfg": cfg})
+except Exception:
+    v = ""
+if v is None:
+    v = ""
+print(v)
+PY
+}
+
 # Start the server
 start() {
     if is_running; then
@@ -46,6 +70,12 @@ start() {
     if [ ! -f "$CONFIG_FILE" ]; then
         echo -e "${RED}Error: Config file not found: $CONFIG_FILE${NC}"
         echo "Please create a config.toml file or set MORTAL_CFG environment variable"
+        return 1
+    fi
+
+    # Check python
+    if ! command -v "$PYTHON_CMD" > /dev/null 2>&1; then
+        echo -e "${RED}Error: Python not found: $PYTHON_CMD${NC}"
         return 1
     fi
 
@@ -64,6 +94,7 @@ start() {
     echo "  Python: $PYTHON_CMD"
     echo "  Log: $LOG_FILE"
     
+    mkdir -p "$PID_DIR" "$LOG_DIR" || true
     nohup "$PYTHON_CMD" server.py >> "$LOG_FILE" 2>&1 &
     PID=$!
     echo $PID > "$PID_FILE"
@@ -133,10 +164,18 @@ status() {
         echo "Process information:"
         ps -p "$PID" -o pid,ppid,cmd,etime,pcpu,pmem 2>/dev/null || echo "  (Process info unavailable)"
         
-        # Show port info from config
+        # Show port info from config (prefer TOML parse; fallback to grep)
         if [ -f "$CONFIG_FILE" ]; then
-            PORT=$(grep -E '^\s*port\s*=' "$CONFIG_FILE" | head -1 | sed 's/.*=\s*\([0-9]*\).*/\1/' || echo "N/A")
-            HOST=$(grep -E '^\s*host\s*=' "$CONFIG_FILE" | head -1 | sed 's/.*=\s*"\([^"]*\)".*/\1/' || echo "127.0.0.1")
+            PORT="$(toml_get "$CONFIG_FILE" 'cfg.get("online", {}).get("remote", {}).get("port", "")')"
+            HOST="$(toml_get "$CONFIG_FILE" 'cfg.get("online", {}).get("remote", {}).get("host", "")')"
+            if [ -z "$PORT" ]; then
+                PORT=$(grep -E '^\s*port\s*=' "$CONFIG_FILE" | head -1 | sed 's/.*=\s*\([0-9]*\).*/\1/' || echo "")
+            fi
+            if [ -z "$HOST" ]; then
+                HOST=$(grep -E '^\s*host\s*=' "$CONFIG_FILE" | head -1 | sed 's/.*=\s*"\([^"]*\)".*/\1/' || echo "")
+            fi
+            [ -z "$HOST" ] && HOST="127.0.0.1"
+            [ -z "$PORT" ] && PORT="N/A"
             echo ""
             echo "Configuration:"
             echo "  Host: $HOST"
