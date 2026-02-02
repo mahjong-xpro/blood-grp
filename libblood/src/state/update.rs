@@ -576,9 +576,20 @@ impl PlayerState {
                 // Revert minkans -> pons for this tile (do not change tehai: the 4th tile is robbed).
                 if let Some(pos) = self.minkans.iter().position(|&t| t == tile) {
                     self.minkans.remove(pos);
-                    if !self.pons.iter().any(|&t| t == tile) {
-                        self.pons.push(tile);
-                    }
+                    // Strong rule: reverting a robbed kong must not create invalid meld state.
+                    // If we end up with duplicate/overflow, crash early with a clear message.
+                    assert!(
+                        !self.pons.iter().any(|&t| t == tile),
+                        "chankan revert: duplicate pon tile {} for player {} (already in pons). This indicates invalid state/log.",
+                        tile,
+                        self.player_id
+                    );
+                    assert!(
+                        self.pons.len() < 4,
+                        "chankan revert: pons capacity overflow (len=4) for player {}. This indicates invalid state/log.",
+                        self.player_id
+                    );
+                    self.pons.push(tile);
                 }
 
                 // Revert fuuro_overview from 4 tiles back to 3 tiles if present.
