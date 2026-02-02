@@ -813,6 +813,17 @@ impl BoardState {
 
             if self.ding_que_selected.iter().all(|&b| b) {
                 self.ding_que_phase = false;
+                // 强规则：定缺结束后必须轮到庄家打牌（庄家应为 14 张，3n+2）。
+                // 如果庄家此时不能打牌，下一步会误走 Event::None -> 再摸一张，导致 15 张错误。
+                let oya = self.oya as usize;
+                let cans = self.player_states[oya].last_cans();
+                assert!(
+                    cans.can_discard && cans.target_actor == self.oya,
+                    "DingQue finished but oya cannot discard (or wrong target_actor). \
+                    This would cause an extra tsumo (15 tiles bug). oya={}, cans={:?}",
+                    self.oya,
+                    cans
+                );
             }
             return Ok(Poll::InGame);
         }
