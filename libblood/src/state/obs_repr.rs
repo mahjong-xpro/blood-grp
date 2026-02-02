@@ -529,7 +529,23 @@ impl<'a> ObsEncoderContext<'a> {
 
 
         if self.version == 4 {
-            if let Ok(SinglePlayerTables { max_ev_table }) = state.single_player_tables(None) {
+            // 定缺阶段（cans.can_ding_que=true）时，庄家可能处于“14张但不允许出牌”的中间态。
+            // SP 计算器假设：
+            // - can_discard=false => 3n+1（13张等待读）
+            // - can_discard=true  => 3n+2（14张待弃）
+            // 在定缺阶段对庄家做 SP 模拟会把“14张”等同为“3n+1”，从而在模拟摸牌后变成 15 张，
+            // 导致 discard_tiles ArrayVec 溢出（backtrace: State::get_discard_tiles -> ArrayVec::push overflow）。
+            //
+            // 强规则：定缺阶段不计算 SP 表（语义上定缺阶段唯一动作是 DingQue）。
+            if cans.can_ding_que {
+                self.encode_ev(0.);
+                // required tiles encoding (2*27 + 2) + sp table (3 * MAX_NUM_TURNS)
+                self.idx += 2 * 27 + 2 + 3 * MAX_NUM_TURNS;
+                // shape 保持一致：如果 can_discard=true（理论上不该发生于定缺阶段），也预留 best slots
+                if cans.can_discard {
+                    self.idx += 2; // best ev / win prob discard
+                }
+            } else if let Ok(SinglePlayerTables { max_ev_table }) = state.single_player_tables(None) {
                 // Handle empty max_ev_table (can happen in early game or special states)
                 if max_ev_table.is_empty() {
                     // Skip encoding if table is empty, just advance idx to maintain shape
