@@ -92,7 +92,7 @@ impl PlayerState {
 
             Event::Kakan { actor, pai, deltas, .. } => self.kakan(actor, pai, deltas)?,
             Event::Ankan { actor, consumed, deltas } => self.ankan(actor, consumed, deltas)?,
-            Event::Hora { actor, deltas, .. } => self.hora(actor, deltas)?,
+            Event::Hora { actor, target, deltas, .. } => self.hora(actor, target, deltas)?,
             Event::Ryukyoku { deltas, .. } => self.ryukyoku(deltas)?,
 
             _ => (),
@@ -133,6 +133,7 @@ impl PlayerState {
         self.chankan_chance = None;
         self.chankan_kakan_actor = None;
         self.chankan_kakan_tile = None;
+        self.pending_kakan_tile = None;
         self.last_discard_was_after_kan = false;
         self.intermediate_kan.clear(); // 新局开始时清空 intermediate_kan
         
@@ -224,6 +225,8 @@ impl PlayerState {
 
         self.last_cans.can_discard = true;
         self.last_self_tsumo = Some(pai);
+        // If we successfully kakan'd/ankan'd before this draw, it is no longer pending.
+        self.pending_kakan_tile = None;
         self.witness_tile(pai)?;
         self.move_tile(pai, MoveType::Tsumo)?;
 
@@ -552,9 +555,49 @@ impl PlayerState {
         Ok(())
     }
 
-    fn hora(&mut self, actor: u8, deltas: Option<[i32; 4]>) -> Result<()> {
+    fn hora(&mut self, actor: u8, target: u8, deltas: Option<[i32; 4]>) -> Result<()> {
         let actor_rel = self.rel(actor);
         self.players_agari[actor_rel] = true;
+
+        // Chankan (抢杠) replay fix:
+        // If we attempted kakan and then got ronned immediately on that kakan tile (target == self),
+        // the kong should be cancelled and our meld must revert from (min)kan back to pon.
+        //
+        // The arena engine currently does a similar state correction; we must mirror it here so that
+        // logs are replayable and downstream dataset generation stays consistent.
+        if target == self.player_id && actor != self.player_id {
+            if let Some(tile) = self.pending_kakan_tile.take() {
+                // Revert minkans -> pons for this tile (do not change tehai: the 4th tile is robbed).
+                if let Some(pos) = self.minkans.iter().position(|&t| t == tile) {
+                    self.minkans.remove(pos);
+                    if !self.pons.iter().any(|&t| t == tile) {
+                        self.pons.push(tile);
+                    }
+                }
+
+                // Revert fuuro_overview from 4 tiles back to 3 tiles if present.
+                // (fuuro_overview is stored per relative seat; for self it's always 0.)
+                for fuuro in &mut self.fuuro_overview[0] {
+                    if fuuro.first().is_some_and(|t0| t0.as_u8() == tile) && fuuro.len() == 4 {
+                        fuuro.pop();
+                        break;
+                    }
+                }
+
+                // After a robbed kong, we are not at rinshan anymore from our perspective.
+                self.at_rinshan = false;
+
+                // State changed, update caches to keep subsequent legality checks stable.
+                self.update_shanten();
+                if self.last_cans.can_discard {
+                    // 3n+2
+                    self.update_shanten_discards();
+                } else {
+                    // 3n+1
+                    self.update_waits();
+                }
+            }
+        }
         
         if let Some(d) = deltas {
              // deltas is [i32; 4] absolute.
@@ -743,6 +786,9 @@ impl PlayerState {
 
         self.at_rinshan = true;
         self.temporary_furiten = false;
+        // Mark this kakan as pending until we either draw from rinshan (success)
+        // or get ronned immediately (chankan, handled in hora()).
+        self.pending_kakan_tile = Some(pai.as_u8());
         self.move_tile(pai, MoveType::FuuroConsume)?;
         self.pons.retain(|&t| t != pai.as_u8());
         let minkans_len = self.minkans.len();

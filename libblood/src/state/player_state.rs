@@ -87,6 +87,12 @@ pub struct PlayerState {
     pub chankan_kakan_actor: Option<u8>,
     /// The tile that was kakan'd (for chankan gen exclusion)
     pub chankan_kakan_tile: Option<u8>,
+    /// If we (self.player_id) performed a kakan, record the tile until the next step.
+    ///
+    /// If a `Hora` happens with `target == self.player_id` before we draw from rinshan,
+    /// it indicates chankan (robbed kong) and the kakan must be reverted back to a pon
+    /// in our local state to keep logs replayable.
+    pub(super) pending_kakan_tile: Option<u8>,
     /// Track if the last discarded tile was after a kan (for 杠上炮)
     /// This is set in dahai() when intermediate_kan is not empty
     pub(super) last_discard_was_after_kan: bool,

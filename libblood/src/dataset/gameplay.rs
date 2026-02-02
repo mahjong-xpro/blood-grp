@@ -388,6 +388,29 @@ impl Gameplay {
         };
 
         if let Some(label) = label_opt {
+            // If we are about to record an agari action, ensure the current state's mask allows it.
+            // When this fails, it indicates either a non-replayable log (state correction not encoded)
+            // or a bug in legality / mask generation.
+            if label == 29 {
+                let (_feature_dbg, mask_dbg) = state.encode_obs(config.version, false);
+                if !mask_dbg[29] {
+                    panic!(
+                        "Mask Mismatch detected for Agari (Action 29) at window boundary.\n\
+                         player: {}, kyoku: {}, turn: {}\n\
+                         cur: {:?}\n\
+                         wnd: {:?}\n\
+                         next: {:?}\n\
+                         state:\n{}",
+                        self.player_id,
+                        *kyoku_idx,
+                        state.at_turn(),
+                        cur,
+                        wnd,
+                        next,
+                        state.brief_info(),
+                    );
+                }
+            }
             self.add_entry(ctx, false, label);
             if let Some(kan) = kan_select {
                 self.add_entry(ctx, true, kan);
