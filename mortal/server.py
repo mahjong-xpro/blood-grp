@@ -34,6 +34,12 @@ class State:
 S = None
 
 class Handler(BaseRequestHandler):
+    def ensure_dirs(self):
+        # Best-effort self-heal: buffer/drain dirs can be deleted by external cleanup.
+        # Keep the server running and resync counters if that happens.
+        os.makedirs(S.buffer_dir, exist_ok=True)
+        os.makedirs(S.drain_dir, exist_ok=True)
+
     def handle(self):
         msg = self.recv_msg()
         if msg['type'] == 'get_param':
@@ -74,11 +80,17 @@ class Handler(BaseRequestHandler):
 
     def handle_submit_replay(self, msg):
         with S.dir_lock:
+            self.ensure_dirs()
             for filename, content in msg['logs'].items():
                 filepath = path.join(S.buffer_dir, f'{S.submission_id}_{filename}')
                 with open(filepath, 'wb') as f:
                     f.write(content)
-            S.buffer_size += len(msg['logs'])
+            # Keep counter consistent with the filesystem even if dirs were recreated.
+            try:
+                S.buffer_size = len(os.listdir(S.buffer_dir))
+            except FileNotFoundError:
+                # Shouldn't happen after ensure_dirs(), but keep it robust.
+                S.buffer_size = 0
             S.submission_id += 1
             logging.info(f'total buffer size: {S.buffer_size}')
 
@@ -93,9 +105,14 @@ class Handler(BaseRequestHandler):
     def handle_drain(self):
         drained_size = 0
         with S.dir_lock:
+            self.ensure_dirs()
             buffer_list = os.listdir(S.buffer_dir)
             raw_count = len(buffer_list)
-            assert raw_count == S.buffer_size
+            if raw_count != S.buffer_size:
+                logging.warning(
+                    f'buffer_size counter mismatch: counter={S.buffer_size}, fs={raw_count}; resyncing'
+                )
+                S.buffer_size = raw_count
             if (not S.force_sequential or raw_count >= S.capacity) and raw_count > 0:
                 old_drain_list = os.listdir(S.drain_dir)
                 for filename in old_drain_list:
@@ -150,8 +167,8 @@ def main():
         shutil.rmtree(S.buffer_dir)
     if path.isdir(S.drain_dir):
         shutil.rmtree(S.drain_dir)
-    os.makedirs(S.buffer_dir)
-    os.makedirs(S.drain_dir)
+    os.makedirs(S.buffer_dir, exist_ok=True)
+    os.makedirs(S.drain_dir, exist_ok=True)
 
     with Server(bind_addr, Handler, bind_and_activate=False) as server:
         server.allow_reuse_address = True
