@@ -248,43 +248,48 @@ impl AgariCalculator<'_> {
         let mut max_fan: u8 = 0;
         
         // 8. 四归一（SiGuiYi / 根）：+1番/根
-        // Count how many tiles appear 4 times (in hand or fuuro)
-        // Note: If exclude_gen_tile is set (for chankan), exclude that tile from gen count
-        // This is calculated once as it relies on tile counts, not division structure
+        //
+        // Bloody Battle rule (per rules.md): a "gen" is counted whenever a tile kind appears
+        // exactly 4 times in total, across:
+        // - concealed hand (`self.tehai`)
+        // - exposed pons (3 tiles each)
+        // - exposed/closed kans (4 tiles each)
+        //
+        // Note: If `exclude_gen_tile` is set (for chankan), that tile kind is not counted as gen
+        // even if its total would be 4.
+        let mut total_counts: [u8; 27] = *self.tehai;
+        for &tile_id in self.pons.iter() {
+            let idx = tile_id as usize;
+            if idx < 27 {
+                total_counts[idx] = total_counts[idx].saturating_add(3);
+            }
+        }
+        for &tile_id in self.minkans.iter() {
+            let idx = tile_id as usize;
+            if idx < 27 {
+                total_counts[idx] = total_counts[idx].saturating_add(4);
+            }
+        }
+        for &tile_id in self.ankans.iter() {
+            let idx = tile_id as usize;
+            if idx < 27 {
+                total_counts[idx] = total_counts[idx].saturating_add(4);
+            }
+        }
+
+        debug_assert!(
+            total_counts.iter().all(|&c| c <= 4),
+            "invalid tile totals (>4) in gen counting"
+        );
+
         let mut gen_count: u8 = 0;
-        
-        // Count tiles in hand that appear 4 times
-        for (tile_id, &count) in self.tehai.iter().enumerate() {
+        for (tile_id, &count) in total_counts.iter().enumerate() {
             if count == 4 {
-                // Exclude the tile if it's the chankan kakan tile
-                if let Some(exclude_tile) = self.exclude_gen_tile {
-                    if tile_id == exclude_tile as usize {
-                        continue; // This tile was kakan'd and stolen, so it's not gen
-                    }
+                if self.exclude_gen_tile.is_some_and(|t| t as usize == tile_id) {
+                    continue;
                 }
                 gen_count = gen_count.saturating_add(1);
             }
-        }
-        
-        // Count tiles in fuuro that appear 4 times (ankans, minkans)
-        // Note: pons are 3 tiles, so they don't count as gen
-        // Ankans and minkans are 4 tiles each
-        // Exclude the tile if it's the chankan kakan tile
-        for &tile_id in self.ankans.iter() {
-            if let Some(exclude_tile) = self.exclude_gen_tile {
-                if tile_id == exclude_tile {
-                    continue; // This tile was kakan'd and stolen, so it's not gen
-                }
-            }
-            gen_count = gen_count.saturating_add(1);
-        }
-        for &tile_id in self.minkans.iter() {
-            if let Some(exclude_tile) = self.exclude_gen_tile {
-                if tile_id == exclude_tile {
-                    continue; // This tile was kakan'd and stolen, so it's not gen
-                }
-            }
-            gen_count = gen_count.saturating_add(1);
         }
         for div in divs.iter() {
             let mut div_fan: u8 = gen_count;
@@ -582,6 +587,7 @@ pub fn check_ankan_in_tenpai(tehai: &[u8; 27], len_div3: u8, tile: Tile, strict:
 mod test {
     use super::*;
     use crate::hand::hand;
+    use crate::tile::Tile;
 
     #[test]
     fn ankan_in_tenpai() {
@@ -1130,6 +1136,68 @@ mod additional_tests {
              println!("Detected Fan: {}", fan);
              assert!(fan >= 4, "Should be at least 4 Fan (Base+QiDui+Root)");
         }
+    }
+
+    #[test]
+    fn gen_counts_from_fuuro_plus_hand() {
+        // Fuuro pon 555m + concealed 456m makes 4 copies of 5m -> 1 gen (+1 fan).
+        //
+        // Concealed (11 tiles): 44456m 123p 123s
+        // Fuuro: pon 555m
+        //
+        // Total fan: PingHu(1) + Gen(1) = 2 (Ron points = 2000).
+        let tehai = hand("44456m 123p 123s").unwrap();
+        let five_m: Tile = "5m".parse().unwrap();
+        let pons = [five_m.as_u8()];
+
+        let agari_calc = AgariCalculator {
+            tehai: &tehai,
+            pons: &pons,
+            minkans: &[],
+            ankans: &[],
+            winning_tile: 6, // arbitrary (not used by has_yaku/agari fan calc except for JGD tanki)
+            is_ron: true,
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
+        };
+
+        let agari = agari_calc.agari().expect("should agari");
+        assert_eq!(agari.point(false).ron, 2000);
+    }
+
+    #[test]
+    fn gen_excluded_tile_not_counted() {
+        // Same as above, but exclude 5m from gen count (e.g. robbed kong semantics).
+        // Fan should drop by 1: PingHu(1) only -> 1000.
+        let tehai = hand("44456m 123p 123s").unwrap();
+        let five_m: Tile = "5m".parse().unwrap();
+        let pons = [five_m.as_u8()];
+
+        let agari_calc = AgariCalculator {
+            tehai: &tehai,
+            pons: &pons,
+            minkans: &[],
+            ankans: &[],
+            winning_tile: 6,
+            is_ron: true,
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: Some(five_m.as_u8()),
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
+        };
+
+        let agari = agari_calc.agari().expect("should agari");
+        assert_eq!(agari.point(false).ron, 1000);
     }
 }
 
