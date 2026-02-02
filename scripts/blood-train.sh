@@ -147,6 +147,13 @@ run_trainer_foreground() {
     local mode="$1"
     ensure_mode_matches_config "$mode"
 
+    # If a managed trainer is already running, avoid stomping PID_FILE.
+    if is_running; then
+        echo -e "${YELLOW}Trainer is already running (PID: $(cat "$PID_FILE"))${NC}"
+        echo -e "${YELLOW}Use '$0 status' or '$0 stop'.${NC}"
+        return 1
+    fi
+
     if [ "$mode" = "online" ]; then
         # Check if server is running; if not, start it.
         if [ -f "${BLOOD_PID_DIR:-/tmp}/blood-server.pid" ]; then
@@ -176,9 +183,16 @@ run_trainer_foreground() {
         fi
     fi
 
+    # Record PID for foreground trainer so that status/stop works from another terminal.
+    # Since we exec() into python, the PID remains the same.
+    mkdir -p "$PID_DIR" "$LOG_DIR" || true
+    echo $$ > "$PID_FILE"
+
     echo -e "${GREEN}Starting trainer (foreground)...${NC}"
     echo "  Config: $CONFIG_FILE"
     echo "  Mode  : $mode"
+    echo "  PID   : $(cat "$PID_FILE") (managed)"
+    echo "  PID file: $PID_FILE"
     echo ""
     cd "$MORTAL_DIR" || exit 1
     exec "$PYTHON_CMD" train.py
