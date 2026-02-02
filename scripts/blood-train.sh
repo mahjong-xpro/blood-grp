@@ -65,6 +65,28 @@ is_running() {
     return 1
 }
 
+child_pids() {
+    # List direct children of a PID (space-separated), empty if none.
+    local pid="$1"
+    ps -o pid= --ppid "$pid" 2>/dev/null | awk '{print $1}' || true
+}
+
+kill_tree() {
+    # kill_tree <pid> <signal>
+    # Recursively send signal to pid and all its descendants (post-order).
+    local pid="$1"
+    local sig="$2"
+    local children
+    children="$(child_pids "$pid")"
+    if [ -n "$children" ]; then
+        local c
+        for c in $children; do
+            kill_tree "$c" "$sig" || true
+        done
+    fi
+    kill "-$sig" "$pid" 2>/dev/null || true
+}
+
 stop_trainer() {
     if ! is_running; then
         echo -e "${YELLOW}Trainer is not running${NC}"
@@ -73,7 +95,9 @@ stop_trainer() {
     local pid
     pid="$(cat "$PID_FILE")"
     echo -e "${YELLOW}Stopping trainer (PID: $pid)...${NC}"
-    kill "$pid" 2>/dev/null || true
+    # In online mode, mortal/train.py spawns a child process to do actual training.
+    # Killing only the parent can leave the child running. So kill the whole process tree.
+    kill_tree "$pid" TERM
     for _ in {1..15}; do
         if ! ps -p "$pid" > /dev/null 2>&1; then
             break
@@ -81,8 +105,8 @@ stop_trainer() {
         sleep 1
     done
     if ps -p "$pid" > /dev/null 2>&1; then
-        echo -e "${YELLOW}Force killing trainer...${NC}"
-        kill -9 "$pid" 2>/dev/null || true
+        echo -e "${YELLOW}Force killing trainer tree...${NC}"
+        kill_tree "$pid" KILL
     fi
     rm -f "$PID_FILE" || true
     echo -e "${GREEN}✓ Trainer stopped${NC}"

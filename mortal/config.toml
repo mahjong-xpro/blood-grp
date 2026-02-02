@@ -26,7 +26,7 @@ enable_compile = false  # PyTorch 2.0+ 编译优化（可选）
 # 训练参数
 # 4090 (24GB) 单卡训练建议从 2048 起步，视显存/吞吐可尝试 3072/4096。
 # 该项目当前 trainer 是“单进程单 GPU”，8 卡的主要收益来自多 client 并发自对局产数。
-batch_size = 2048
+batch_size = 4096
 opt_step_every = 1
 
 # 保存和测试频率
@@ -144,7 +144,7 @@ sample_reuse_rate = 0
 sample_reuse_threshold = 0
 # 多 client 并发提交日志时，capacity 太小会频繁出现 "samples overflow"。
 # 7 个 client 并发建议 >= 20000；磁盘够的话可更大。
-capacity = 20000
+capacity = 40000
 force_sequential = false
 
 # 1v3 测试配置（用于评估模型）

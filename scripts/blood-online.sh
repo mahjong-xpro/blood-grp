@@ -2,7 +2,7 @@
 # One-command orchestration for online training on a single node.
 #
 # Usage:
-#   ./scripts/blood-online.sh up   [--clients N] [--gpu-start N]
+#   ./scripts/blood-online.sh up   [--clients N] [--gpu-start N] [--bg|--fg]
 #   ./scripts/blood-online.sh down
 #   ./scripts/blood-online.sh status
 #
@@ -12,7 +12,7 @@
 #
 # Notes:
 # - server + clients are started in background
-# - trainer runs in foreground by default (Ctrl+C to stop), unless BLOOD_TRAIN_BG=1
+# - trainer runs in foreground by default (Ctrl+C to stop), unless BLOOD_TRAIN_BG=1 or --bg is set
 
 set -euo pipefail
 
@@ -29,6 +29,8 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --clients) CLIENTS="${2:-}"; shift 2 ;;
     --gpu-start) GPU_START="${2:-}"; shift 2 ;;
+    --bg) TRAIN_BG="1"; shift ;;
+    --fg) TRAIN_BG="0"; shift ;;
     -h|--help)
       CMD="help"
       shift || true
@@ -69,7 +71,7 @@ case "$CMD" in
 Bloody Battle Mahjong Online Training Orchestrator
 
 Usage:
-  $0 up     [--clients N] [--gpu-start N]
+  $0 up     [--clients N] [--gpu-start N] [--bg|--fg]
   $0 down
   $0 status
 
@@ -80,6 +82,7 @@ Environment variables:
 
 Examples:
   $0 up --clients 7 --gpu-start 1
+  $0 up --bg
   BLOOD_TRAIN_BG=1 $0 up
 EOF
     ;;
