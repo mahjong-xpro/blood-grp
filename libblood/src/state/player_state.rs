@@ -11,6 +11,7 @@ use derivative::Derivative;
 use pyo3::prelude::*;
 use serde_json as json;
 use tinyvec::ArrayVec;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 
 /// `PlayerState` is the core of the lib, which holds all the observable game
 /// state information from a specific seat's perspective with the ability to
@@ -197,10 +198,27 @@ impl PlayerState {
 
         let can_discard = self.last_cans.can_discard;
         let mut sp_tables = Candidate::csv_header(can_discard).join("\t");
-        if let Ok(tables) = self.single_player_tables(None) {
-            for candidate in tables.max_ev_table {
+        let sp_res = catch_unwind(AssertUnwindSafe(|| self.single_player_tables(None)));
+        match sp_res {
+            Ok(Ok(tables)) => {
+                for candidate in tables.max_ev_table {
+                    sp_tables.push('\n');
+                    sp_tables.push_str(&candidate.csv_row(can_discard).join("\t"));
+                }
+            }
+            Ok(Err(_)) => {
+                // Keep debug output stable; SP tables are best-effort in brief_info.
+            }
+            Err(panic_payload) => {
+                let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                    (*s).to_string()
+                } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "unknown panic".to_string()
+                };
                 sp_tables.push('\n');
-                sp_tables.push_str(&candidate.csv_row(can_discard).join("\t"));
+                sp_tables.push_str(&format!("<panic in single_player_tables: {msg}>"));
             }
         }
 

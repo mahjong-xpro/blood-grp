@@ -506,6 +506,28 @@ impl Gameplay {
     }
 
     fn add_entry(&mut self, ctx: &LoaderContext<'_>, at_kan_select: bool, label: usize) -> Result<()> {
+        let cans = ctx.state.last_cans();
+        let tehai_sum: u8 = ctx.state.tehai.iter().sum();
+        // Invariant: when we can discard, tehai must be 3n+2 (normally 14 tiles).
+        // If violated, downstream feature generation (SP tables) can panic (ArrayVec overflow),
+        // which would otherwise lose all context in Python multiprocessing.
+        if cans.can_discard && tehai_sum > 14 {
+            bail!(
+                "Dataset mismatch: invalid hand size at discard window (tehai_sum={} > 14).\n\
+                 player: {}, kyoku: {}, turn: {}, at_kan_select: {}\n\
+                 label: {}, cans: {:?}\n\
+                 state:\n{}",
+                tehai_sum,
+                self.player_id,
+                ctx.kyoku_idx,
+                ctx.state.at_turn(),
+                at_kan_select,
+                label,
+                cans,
+                ctx.state.brief_info(),
+            );
+        }
+
         let (feature, mask) = ctx.state.encode_obs(ctx.config.version, at_kan_select);
         // Action indices: 0-26 (discard), 27 (pon), 28 (kan), 29 (agari), 30 (pass), 31-33 (ding que)
         // Strict invariant: label must be allowed by the mask computed from the same state.
@@ -524,7 +546,7 @@ impl Gameplay {
                 label,
                 ctx.state.shanten(),
                 ctx.state.ding_que,
-                ctx.state.last_cans(),
+                cans,
                 ctx.state.brief_info(),
             );
         }
