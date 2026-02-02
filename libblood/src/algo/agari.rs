@@ -1091,6 +1091,7 @@ mod test {
 #[cfg(test)]
 mod additional_tests {
     use super::*;
+    use crate::hand::hand;
 
     #[test]
     fn test_long_qidui() {
@@ -1198,6 +1199,101 @@ mod additional_tests {
 
         let agari = agari_calc.agari().expect("should agari");
         assert_eq!(agari.point(false).ron, 1000);
+    }
+
+    #[test]
+    fn ron_8p_pure_straight_shape_is_2_fan_without_bonuses() {
+        // Hand shape (winning on 8p):
+        // 123p 456p 789p 888p 55s
+        //
+        // Per current Bloody Battle scoring implementation:
+        // - PingHu base: 1
+        // - Gen (SiGuiYi): +1 (8p appears 4 times total: one in 789p + 888p)
+        // No other patterns apply (not QingYiSe, not DaiYaoJiu, not ToiToi, not JGD).
+        //
+        // Therefore Ron should be 2 fan -> 2000 points.
+        let tehai = hand("123456789p 888p 55s").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(8p),
+            is_ron: true,
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
+        };
+        let agari = calc.agari().expect("should agari");
+        assert_eq!(agari, Agari::Fan(2));
+        assert_eq!(agari.point(false).ron, 2000);
+    }
+
+    #[test]
+    fn ron_8p_becomes_3_fan_with_one_bonus_flag() {
+        let tehai = hand("123456789p 888p 55s").unwrap();
+
+        // Haidi (海底炮) adds +1 fan.
+        let calc_haidi = AgariCalculator {
+            tehai: &tehai,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(8p),
+            is_ron: true,
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
+            is_haidi: true,
+            is_tianhu: false,
+            is_dihu: false,
+        };
+        assert_eq!(calc_haidi.agari().unwrap(), Agari::Fan(3));
+
+        // GangShangPao (杠上炮) adds +1 fan when Ron happens right after a kan discard.
+        let calc_kan_discard = AgariCalculator {
+            tehai: &tehai,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(8p),
+            is_ron: true,
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: true,
+            is_chankan: false,
+            exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
+        };
+        assert_eq!(calc_kan_discard.agari().unwrap(), Agari::Fan(3));
+
+        // Chankan (抢杠) adds +1 fan.
+        let calc_chankan = AgariCalculator {
+            tehai: &tehai,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(8p),
+            is_ron: true,
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: true,
+            exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
+        };
+        assert_eq!(calc_chankan.agari().unwrap(), Agari::Fan(3));
     }
 }
 
