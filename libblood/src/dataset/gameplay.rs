@@ -357,18 +357,27 @@ impl Gameplay {
             _ => {
                 let mut ret = None;
 
+                // If the immediate next event is Hora, the current event produced a ron window
+                // (multi-ron is represented as consecutive Hora events).
+                //
+                // IMPORTANT: only Hora events *contiguous right after cur* are reactions to `cur`.
+                // A later Hora after an intervening Tsumo is a separate decision and must be
+                // captured when `cur` is that Tsumo window, not here.
                 let has_any_ron = matches!(wnd[1], Event::Hora { .. });
                 if has_any_ron {
-                    // Check if the POV is one of those who made Hora.
+                    // Check if the POV is one of those who made Hora (in the contiguous Hora run).
                     for ev in &wnd[1..] {
-                        match *ev {
-                            Event::EndKyoku => break,
-                            Event::Hora { actor, .. } if actor == self.player_id => {
+                        match ev {
+                            Event::Hora { actor, .. } if *actor == self.player_id => {
                                 ret = Some(29); // Agari action (was 43)
                                 break;
                             }
-                            _ => (),
-                        };
+                            Event::Hora { .. } => {
+                                // another player's ron (continue scanning contiguous Hora run)
+                            }
+                            Event::EndKyoku => break,
+                            _ => break, // stop at the first non-Hora event (e.g. Tsumo)
+                        }
                     }
                 }
 
