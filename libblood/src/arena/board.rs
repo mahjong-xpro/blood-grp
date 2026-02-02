@@ -791,20 +791,20 @@ impl BoardState {
         }
 
         // 处理定缺选择阶段（基础规则：血战到底必须在打牌前选择定缺）
-        // 严格模式：未定缺的玩家必须提交 DingQue（None 会在 validate_reaction 中报错）
+        // 严格模式：必须由 AI 提交 DingQue；服务端不做任何自动定缺。
         if self.ding_que_phase {
             for actor in 0..4 {
                 if self.ding_que_selected[actor] {
                     continue;
                 }
-                if let Event::DingQue { actor: ev_actor, suit } = &reactions[actor].event {
+                if let Event::DingQue { actor: ev_actor, suit } = reactions[actor].event {
                     ensure!(
-                        *ev_actor as usize == actor,
+                        ev_actor as usize == actor,
                         "ding_que actor mismatch: reaction actor={} but slot={}",
                         ev_actor,
                         actor
                     );
-                    let ding_que_event = Event::DingQue { actor: *ev_actor, suit: *suit };
+                    let ding_que_event = Event::DingQue { actor: ev_actor, suit };
                     self.broadcast(&ding_que_event);
                     self.add_log_no_meta(ding_que_event);
                     self.ding_que_selected[actor] = true;
