@@ -140,6 +140,8 @@ def train():
         'cql_loss': 0,
         'next_rank_loss': 0,
         'ding_que_ce_loss': 0,
+        'ding_que_match': 0,
+        'ding_que_total': 0,
     }
     all_q = torch.zeros((save_every, batch_size), device=device, dtype=torch.float32)
     all_q_target = torch.zeros((save_every, batch_size), device=device, dtype=torch.float32)
@@ -296,6 +298,13 @@ def train():
                 else:
                     ding_que_ce_loss = torch.tensor(0.0, device=device, dtype=torch.float32)
 
+                # 定缺与启发式一致率: action 31=Man, 32=Pin, 33=Sou 对应 0,1,2
+                if sel.any():
+                    policy_suit = actions[sel] - 31
+                    match_count = (policy_suit == ding_que_best_suit[sel]).sum().item()
+                    stats['ding_que_match'] += match_count
+                    stats['ding_que_total'] += sel.sum().item()
+
                 loss = sum((
                     dqn_loss,
                     cql_loss * min_q_weight,
@@ -342,6 +351,10 @@ def train():
                     writer.add_scalar('loss/cql_loss', stats['cql_loss'] / save_every, steps)
                 writer.add_scalar('loss/next_rank_loss', stats['next_rank_loss'] / save_every, steps)
                 writer.add_scalar('loss/ding_que_ce_loss', stats['ding_que_ce_loss'] / save_every, steps)
+                # 定缺与启发式一致率：定缺步中策略所选花色与启发式最佳花色一致的比例
+                dq_total = stats['ding_que_total']
+                if dq_total > 0:
+                    writer.add_scalar('ding_que/match_rate', stats['ding_que_match'] / dq_total, steps)
                 writer.add_scalar('hparam/lr', scheduler.get_last_lr()[0], steps)
                 writer.add_histogram('q_predicted', all_q_1d, steps)
                 writer.add_histogram('q_target', all_q_target_1d, steps)
