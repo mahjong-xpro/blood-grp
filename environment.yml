@@ -1,10 +1,47 @@
+# 血战到底 mortal 训练/自对局/在线环境
+# 创建: conda env create -f environment.yml
+# 激活: conda activate mortal
 name: mortal
 channels:
-  - conda-forge
+  # TUNA (Tsinghua University) Mirrors for Conda
+  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/pytorch/
+  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main/
+  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/free/
+  - defaults
 dependencies:
   - python=3.12
   - pip
   - pip:
-    - tqdm
-    - toml
+    # 1. Main PyPI Mirror (TUNA) - Accelerates maturin, numpy, tqdm
+    - -i https://pypi.tuna.tsinghua.edu.cn/simple
+    
+    # 2. PyTorch Wheels Mirror (TUNA) - Accelerates torch download (2GB+)
+    # Note: If cu124 fails, try changing to cu121 (Both support RTX 4090)
+    - --extra-index-url https://mirrors.tuna.tsinghua.edu.cn/pytorch-wheels/cu124
+    
+    - torch
+    - torchvision
+    - torchaudio
+    
+    # Compilation & Rust
+    - triton
+    - maturin
+    
+    # Data & Logging
+    - numpy<2.0
     - tensorboard
+    - tqdm
+    
+    # Utilities
+    - psutil
+    - colorlog
+    - toml
+    
+    # Development
+    - black
+    - isort
+    - pytest
+    
+    # web 回放 (log-viewer)
+    - Flask>=2.3.0
+    - flask-cors>=4.0.0
