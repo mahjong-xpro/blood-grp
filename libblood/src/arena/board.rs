@@ -516,8 +516,8 @@ impl BoardState {
         let ryukyoku = Event::Ryukyoku {
             deltas: Some(final_deltas),
         };
+        self.broadcast(&ryukyoku); // 同步各 PlayerState 的 scores（流局查花猪/查大叫/退税）
         self.add_log_no_meta(ryukyoku);
-        // no need to broadcast
     }
 
     // These functions are removed

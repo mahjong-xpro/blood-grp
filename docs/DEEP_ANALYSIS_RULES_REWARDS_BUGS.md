@@ -127,6 +127,29 @@ scores = [base_points, -points_per_player, ...];  // 和牌者写 base_points �
 
 ---
 
+### Bug #5：final_scores 总和校正只处理 sum < 100k（已修复）
+
+**位置**：`libblood/src/dataset/grp.rs`、`libblood/src/stat.rs`。
+
+**问题**：血战到底零和（4×25000=100000），从 log 反推的 `final_scores` 总和应为 100000。原逻辑仅在 `sum < 100_000` 时把差额加给第一名；若 `sum > 100_000`（例如某处多计或重复计分），未做校正，导致 `final_scores` 与奖励/统计不一致。
+
+**修复**（已做）：改为 `if sum != 100_000 { final_scores[top] += 100_000 - sum; }`，对 sum 不足或超出均校正到 100k（由第一名承担差额）。
+
+---
+
+### Bug #6：Ryukyoku 未 broadcast 导致 PlayerState.scores 滞后（已修复）
+
+**位置**：`libblood/src/arena/board.rs`，`exhaustive_ryukyoku()`。
+
+**问题**：流局时只把 Ryukyoku 写入 log（`add_log_no_meta(ryukyoku)`），未对 4 个 `player_states` 做 `broadcast(&ryukyoku)`。  
+- 对局层 `kyoku_deltas` 已正确累加流局分，`Poll::End` 时会加到 `board.scores`。  
+- 各 `PlayerState` 的 `scores` 只在 `update(ev)` 时更新（如 Hora/Daiminkan/Kakan/Ankan/Ryukyoku），Ryukyoku 从未被 broadcast，故流局后到下一局 StartKyoku 之前，各 state 的 `scores` 缺少流局分。  
+- 若在此窗口内读取 `agent_context()` 并依赖 `player_states[].scores`，会得到错误分数；且与「log 中有 Ryukyoku、state 未同步」不一致。
+
+**修复**（已做）：在 `add_log_no_meta(ryukyoku)` 前调用 `self.broadcast(&ryukyoku)`，使各 `PlayerState` 执行 `ryukyoku(deltas)` 并更新 `scores`。
+
+---
+
 ### 其他已处理/无问题项
 
 - **抢杠**：先应用 Kakan 再在 Hora 时回滚 MinKan→Pon、刮风退款、根不计，逻辑与 CHANKAN_STATE_FIX_ANALYSIS.md 一致，无误。  
@@ -134,6 +157,11 @@ scores = [base_points, -points_per_player, ...];  // 和牌者写 base_points �
 - **多响**：多 Ron 时逐个 handle_hora、杠收入转移/退款、下一轮 tsumo_actor 跳过已和牌者，逻辑正确。  
 - **Point/庄家**：无庄家倍数，tsumo_total/ron 与规则一致。  
 - **杠支付**：Ankan/Kakan 仅对「未和牌」玩家收/付（`!self.players_agari[i]`）；Daiminkan 仅 discarder 付 2000，逻辑正确。
+- **流局查花猪**：使用 `check_ding_que_complete()`（已含副露），与 Bug#2 修复一致。
+- **查大叫**：听牌者 max_points 用 `agari()`（内部含 `can_agari_with_fuuro`），花猪已排除；is_ron: true 不计自摸番，正确。
+- **抢杠计分**：支付额按和牌方番数，exclude_gen_tile 仅影响被抢杠方手牌评价，不改变支付额，当前实现正确。
+- **定缺打牌**：`discard_allowed` 只查 tehai（手牌中缺门必须先打），副露不可打，逻辑正确。
+- **奖励/grp/stat**：scores_history + final_scores、sum 校正到 100k 一致，reward_calculator 差分逻辑正确。
 
 ---
 
@@ -144,6 +172,8 @@ scores = [base_points, -points_per_player, ...];  // 和牌者写 base_points �
 | 高 | #1 SP 自摸计分逻辑 | 自摸被算成「和牌者得 base_points、三家共付 base_points/3」，违反规则（自摸最低 6000） | 已修复：和牌者得 base_points×3，三家各付 base_points |
 | 中 | #2 定缺/花猪不含副露 | 花猪和牌、查花猪漏判 | 已修复：整手定缺检查（ding_que + agari + check_ding_que_complete） |
 | 中 | #4 Hora 未 broadcast | 各 PlayerState.players_agari 滞后，agent 看到的「谁已和牌」错误 | 已修复：handle_hora 中 broadcast(Hora) 再 add_log |
+| 中 | #5 final_scores 总和校正 | 仅处理 sum<100k，sum>100k 时 final_scores 错误 | 已修复：grp/stat 中 sum!=100k 时统一校正到 100k |
+| 中 | #6 Ryukyoku 未 broadcast | 各 PlayerState.scores 缺流局分，与 log 不一致 | 已修复：exhaustive_ryukyoku 中 broadcast(Ryukyoku) 再 add_log |
 | 低 | #3 金钩钓注释 | 仅文档 | 注释改为 +1 番 |
 
 ---

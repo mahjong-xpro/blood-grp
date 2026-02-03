@@ -302,10 +302,11 @@ impl Stat {
 
         let rk = Rankings::new(cur_scores);
 
-        // assume the sum of scores to be 100k
+        // assume the sum of scores to be 100k (zero-sum: 4×25000)
         let sum: i32 = cur_scores.iter().sum();
-        if sum < 100_000 {
-            cur_scores[rk.player_by_rank[0] as usize] += 100_000 - sum;
+        if sum != 100_000 {
+            let top = rk.player_by_rank[0] as usize;
+            cur_scores[top] += 100_000 - sum;
         }
 
         // assume the starting point to be 25000
