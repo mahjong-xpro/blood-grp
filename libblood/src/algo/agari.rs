@@ -198,15 +198,16 @@ impl AgariCalculator<'_> {
     /// 
     /// 1. 平胡（PingHu）：+1番（基础，必须）
     /// 2. 自摸（Tsumo）：+1番（if !is_ron）
-    /// 3. 七对（QiDui）：+2番
-    /// 4. 碰碰胡（ToiToi）：+1番
-    /// 5. 金钩钓（JinGouDiao）：+1番
-    /// 6. 清一色（QingYiSe）：+2番
-    /// 7. 带幺九（DaiYaoJiu）：+3番
-    /// 8. 四归一（SiGuiYi / 根）：+1番/根
-    /// 9. 杠上花（GangShangHua）：+1番（if is_after_kan && !is_ron）
-    /// 10. 杠上炮（GangShangPao）：+1番（if is_kan_discard && is_ron && !is_chankan）
-    /// 11. 抢杠（Chankan）：+1番（if is_chankan && is_ron）
+    /// 3. 门清（MenQing）：+1番（无副露：无碰、无杠）
+    /// 4. 七对（QiDui）：+2番
+    /// 5. 碰碰胡（ToiToi）：+1番
+    /// 6. 金钩钓（JinGouDiao）：+1番
+    /// 7. 清一色（QingYiSe）：+2番
+    /// 8. 带幺九（DaiYaoJiu）：+3番
+    /// 9. 四归一（SiGuiYi / 根）：+1番/根
+    /// 10. 杠上花（GangShangHua）：+1番（if is_after_kan && !is_ron）
+    /// 11. 杠上炮（GangShangPao）：+1番（if is_kan_discard && is_ron && !is_chankan）
+    /// 12. 抢杠（Chankan）：+1番（if is_chankan && is_ron）
     ///     Note: 抢杠、杠上花、杠上炮是不同的：
     ///     - 抢杠：在别人加杠时抢杠和牌，+1番（平胡1番 + 抢杠1番 = 2番）
     ///     - 杠上花：杠牌后摸牌自摸，+1番（自摸1番 + 平胡1番 + 杠上花1番 = 3番）
@@ -225,8 +226,13 @@ impl AgariCalculator<'_> {
             fan += 1;
         }
 
-        // 12. 海底捞月/海底炮（Haidi）：+1番
+        // 13. 海底捞月/海底炮（Haidi）：+1番
         if self.is_haidi {
+            fan += 1;
+        }
+
+        // 3. 门清（MenQing）：+1番（无副露：无碰、无杠）
+        if self.pons.is_empty() && self.minkans.is_empty() && self.ankans.is_empty() {
             fan += 1;
         }
         
@@ -458,7 +464,7 @@ impl AgariCalculator<'_> {
             fan += 1;
         }
         
-        // 13. 天胡 (TianHu) / 地胡 (DiHu): Max Fan (5番)
+        // 14. 天胡 (TianHu) / 地胡 (DiHu): Max Fan (5番)
         if self.is_tianhu || self.is_dihu {
             fan = 5;
             // Early return or just let it be capped below (it is already 5)
@@ -633,7 +639,7 @@ mod test {
     #[test]
     fn agari_calc() {
         
-        // Test 1: Basic 平胡 (PingHu) - 1番 (base fan)
+        // Test 1: 平胡 + 自摸 + 门清 (PingHu + Tsumo + MenQing) - 3番
         let tehai = hand("123456m 789p 11s 2m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
@@ -653,10 +659,10 @@ mod test {
             is_dihu: false,
         };
         let agari = calc.agari().unwrap();
-        // 自摸 + 平胡 = 1 + 1 = 2番
-        assert_eq!(agari, Agari::Fan(2));
+        // 自摸 + 平胡 + 门清 = 1 + 1 + 1 = 3番
+        assert_eq!(agari, Agari::Fan(3));
         
-        // Test 2: 平胡 + 自摸 (Tsumo) - 2番
+        // Test 2: 平胡 + 荣和 + 门清 (Ron, MenQing) - 2番
         let tehai = hand("123456m 789p 11s 2m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
@@ -676,8 +682,16 @@ mod test {
             is_dihu: false,
         };
         let agari = calc.agari().unwrap();
-        // 荣和 + 平胡 = 1番（荣和没有自摸番）
-        assert_eq!(agari, Agari::Fan(1));
+        // 荣和 + 平胡 + 门清 = 1 + 1 = 2番
+        assert_eq!(agari, Agari::Fan(2));
+        
+        // Test 2b: 门清（MenQing）无副露 +1番：同一型无副露 3番 vs 有 1 碰 2番
+        let tehai_mq = hand("123456m 789p 11s 2m").unwrap();
+        let c_mq = AgariCalculator { tehai: &tehai_mq, pons: &[], minkans: &[], ankans: &[], winning_tile: tu8!(2m), is_ron: false, ding_que: None, is_after_kan: false, is_kan_discard: false, is_chankan: false, exclude_gen_tile: None, is_haidi: false, is_tianhu: false, is_dihu: false };
+        assert_eq!(c_mq.agari().unwrap(), Agari::Fan(3), "无副露=门清+1");
+        let tehai_f = hand("123456m 789p 11s").unwrap();
+        let c_f = AgariCalculator { tehai: &tehai_f, pons: &[tu8!(2m)], minkans: &[], ankans: &[], winning_tile: tu8!(2m), is_ron: false, ding_que: None, is_after_kan: false, is_kan_discard: false, is_chankan: false, exclude_gen_tile: None, is_haidi: false, is_tianhu: false, is_dihu: false };
+        assert_eq!(c_f.agari().unwrap(), Agari::Fan(2), "有副露无门清");
         
         // Test 3: 七对 (QiDui) - 2番
         let tehai = hand("11223344556677m").unwrap();
@@ -699,8 +713,8 @@ mod test {
             is_dihu: false,
         };
         let agari = calc.agari().unwrap();
-        // 自摸 + 平胡 + 七对 = 1 + 1 + 2 = 4番
-        assert_eq!(agari, Agari::Fan(4));
+        // 自摸 + 平胡 + 门清 + 七对 = 1 + 1 + 1 + 2 = 5番（封顶）
+        assert_eq!(agari, Agari::Fan(5));
         
         // Test 4: 碰碰胡 (ToiToi) - 1番
         let tehai = hand("11133355577m 99p").unwrap();
@@ -722,8 +736,8 @@ mod test {
             is_dihu: false,
         };
         let agari = calc.agari().unwrap();
-        // 自摸 + 平胡 + 碰碰胡 = 1 + 1 + 1 = 3番
-        assert_eq!(agari, Agari::Fan(3));
+        // 自摸 + 平胡 + 门清 + 碰碰胡 = 1 + 1 + 1 + 1 = 4番
+        assert_eq!(agari, Agari::Fan(4));
         
         // Test 5: 清一色 (QingYiSe) - 2番
         let tehai = hand("1112345678999m").unwrap();
@@ -745,8 +759,8 @@ mod test {
             is_dihu: false,
         };
         let agari = calc.agari().unwrap();
-        // 自摸 + 平胡 + 清一色 = 1 + 1 + 2 = 4番
-        assert_eq!(agari, Agari::Fan(4));
+        // 自摸 + 平胡 + 门清 + 清一色 = 1 + 1 + 1 + 2 = 5番（封顶）
+        assert_eq!(agari, Agari::Fan(5));
         
         // Test 6: 带幺九 (DaiYaoJiu) - 3番
         let tehai = hand("111999m 111999p 11s").unwrap();
@@ -791,8 +805,8 @@ mod test {
             is_dihu: false,
         };
         let agari = calc.agari().unwrap();
-        // 自摸 + 平胡 + 杠上花 = 1 + 1 + 1 = 3番
-        assert_eq!(agari, Agari::Fan(3));
+        // 自摸 + 平胡 + 门清 + 杠上花 = 1 + 1 + 1 + 1 = 4番
+        assert_eq!(agari, Agari::Fan(4));
         
         // Test 8: 杠上炮 (GangShangPao) - 1番
         let tehai = hand("123456m 789p 11s 2m").unwrap();
@@ -814,8 +828,8 @@ mod test {
             is_dihu: false,
         };
         let agari = calc.agari().unwrap();
-        // 荣和 + 平胡 + 杠上炮 = 1 + 1 = 2番
-        assert_eq!(agari, Agari::Fan(2));
+        // 荣和 + 平胡 + 门清 + 杠上炮 = 1 + 1 + 1 = 3番
+        assert_eq!(agari, Agari::Fan(3));
         
         // Test 9: 四归一 (SiGuiYi / 根) - 1番/根
         let tehai = hand("111123456m 789p 11s").unwrap();
@@ -837,10 +851,10 @@ mod test {
             is_dihu: false,
         };
         let agari = calc.agari().unwrap();
-        // 自摸 + 平胡 + 四归一(1根) = 1 + 1 + 1 = 3番
-        assert_eq!(agari, Agari::Fan(3));
+        // 自摸 + 平胡 + 门清 + 四归一(1根) = 1 + 1 + 1 + 1 = 4番
+        assert_eq!(agari, Agari::Fan(4));
         
-        // Test 10: 金钩钓 (JinGouDiao) - 2番 (4 fuuro + tanki wait)
+        // Test 10: 金钩钓 (JinGouDiao) - 2番 (4 fuuro + tanki wait，有副露故无门清)
         // This requires 4 fuuro, so we need to set pons/minkans/ankans
         let tehai = hand("11m").unwrap();
         let calc = AgariCalculator {
@@ -861,10 +875,10 @@ mod test {
             is_dihu: false,
         };
         let agari = calc.agari().unwrap();
-        // 自摸 + 平胡 + 金钩钓 = 1 + 1 + 2 = 4番
+        // 自摸 + 平胡 + 金钩钓 = 1 + 1 + 2 = 4番（有副露故无门清）
         assert_eq!(agari, Agari::Fan(4));
         
-        // Test 11: Fan cap at 5
+        // Test 12: Fan cap at 5
         // 自摸 + 平胡 + 七对 + 清一色 = 1 + 1 + 2 + 2 = 6番，但封顶5番
         let tehai = hand("11223344556677m").unwrap();
         let calc = AgariCalculator {
@@ -885,10 +899,10 @@ mod test {
             is_dihu: false,
         };
         let agari = calc.agari().unwrap();
-        // 应该封顶在5番
+        // 应该封顶在5番（自摸+平胡+门清+七对+清一色 = 7番封顶5）
         assert_eq!(agari, Agari::Fan(5));
         
-        // Test 12: Ding Que check - cannot agari if hand has ding_que suit tiles
+        // Test 13: Ding Que check - cannot agari if hand has ding_que suit tiles
         let tehai = hand("123456m 789p 11s 2p").unwrap(); // Has pin tiles
         let calc = AgariCalculator {
             tehai: &tehai,
@@ -910,7 +924,7 @@ mod test {
         // 应该不能和牌（花猪）
         assert!(!calc.has_yaku());
         
-        // Test 13: 抢杠 (Chankan) - 2番 (平胡1番 + 抢杠1番)
+        // Test 14: 抢杠 (Chankan) - 2番 (平胡1番 + 抢杠1番)
         // 抢杠：在别人加杠时，如果听的牌正好是加杠的牌，可以抢杠和牌
         // 抢杠和杠上炮是不同的：
         // - 抢杠：在别人加杠时抢杠和牌，+1番（平胡1番 + 抢杠1番 = 2番）
@@ -935,10 +949,10 @@ mod test {
             is_dihu: false,
         };
         let agari = calc.agari().unwrap();
-        // 荣和 + 平胡 + 抢杠 = 1 + 1 = 2番
-        assert_eq!(agari, Agari::Fan(2));
+        // 荣和 + 平胡 + 门清 + 抢杠 = 1 + 1 + 1 = 3番
+        assert_eq!(agari, Agari::Fan(3));
         
-        // Test 14: 番数叠加 - 清一色 + 自摸 + 平胡 = 4番
+        // Test 15: 番数叠加 - 清一色 + 自摸 + 平胡 + 门清 = 5番（封顶）
         // 清一色（2番）+ 自摸（1番）+ 平胡（1番）= 4番
         let tehai = hand("1112345678999m").unwrap();
         let calc = AgariCalculator {
@@ -959,10 +973,10 @@ mod test {
             is_dihu: false,
         };
         let agari = calc.agari().unwrap();
-        // 自摸 + 平胡 + 清一色 = 1 + 1 + 2 = 4番
-        assert_eq!(agari, Agari::Fan(4));
+        // 自摸 + 平胡 + 门清 + 清一色 = 1 + 1 + 1 + 2 = 5番（封顶）
+        assert_eq!(agari, Agari::Fan(5));
         
-        // Test 15: 番数叠加 - 带幺九 + 自摸 + 平胡 = 5番（封顶）
+        // Test 16: 番数叠加 - 带幺九 + 自摸 + 平胡 + 门清 = 5番（封顶）
         // 带幺九（3番）+ 自摸（1番）+ 平胡（1番）= 5番（封顶）
         let tehai = hand("111999m 111999p 11s").unwrap();
         let calc = AgariCalculator {
@@ -983,10 +997,10 @@ mod test {
             is_dihu: false,
         };
         let agari = calc.agari().unwrap();
-        // 自摸 + 平胡 + 带幺九 = 1 + 1 + 3 = 5番（封顶）
+        // 自摸 + 平胡 + 门清 + 带幺九 = 1+1+1+3 = 6番封顶5
         assert_eq!(agari, Agari::Fan(5));
         
-        // Test 16: 互斥番数 - 七对与碰碰胡互斥
+        // Test 17: 互斥番数 - 七对与碰碰胡互斥
         // 七对（2番）与碰碰胡（1番）互斥，应该只计算七对
         let tehai = hand("11223344556677m").unwrap();
         let calc = AgariCalculator {
@@ -1007,10 +1021,10 @@ mod test {
             is_dihu: false,
         };
         let agari = calc.agari().unwrap();
-        // 自摸 + 平胡 + 七对 = 1 + 1 + 2 = 4番（不是碰碰胡）
-        assert_eq!(agari, Agari::Fan(4));
+        // 自摸 + 平胡 + 门清 + 七对 = 1 + 1 + 1 + 2 = 5番（封顶，不是碰碰胡）
+        assert_eq!(agari, Agari::Fan(5));
         
-        // Test 17: 金钩钓 - 4副露 + 单钓 = 4番
+        // Test 18: 金钩钓 - 4副露 + 单钓 = 4番（有副露故无门清）
         // 金钩钓（2番）+ 自摸（1番）+ 平胡（1番）= 4番
         let tehai = hand("11m").unwrap();
         let calc = AgariCalculator {
@@ -1034,7 +1048,7 @@ mod test {
         // 自摸 + 平胡 + 金钩钓 = 1 + 1 + 2 = 4番
         assert_eq!(agari, Agari::Fan(4));
         
-        // Test 18: 四归一（根）- 多个根的情况
+        // Test 19: 四归一（根）- 多个根的情况
         // 四归一（1番/根）+ 自摸（1番）+ 平胡（1番）= 3番（1个根）
         let tehai = hand("111123456789m 11p").unwrap();
         let calc = AgariCalculator {
@@ -1055,10 +1069,10 @@ mod test {
             is_dihu: false,
         };
         let agari = calc.agari().unwrap();
-        // 自摸 + 平胡 + 四归一（1根）= 1 + 1 + 1 = 3番
-        assert_eq!(agari, Agari::Fan(3));
+        // 自摸 + 平胡 + 门清 + 四归一（1根）= 1 + 1 + 1 + 1 = 4番
+        assert_eq!(agari, Agari::Fan(4));
         
-        // Test 19: 番数叠加 - 清一色 + 碰碰胡 + 自摸 + 平胡 = 5番（封顶）
+        // Test 20: 番数叠加 - 清一色+碰碰胡+自摸+平胡+门清 = 5番（封顶）
         // 清一色（2番）+ 碰碰胡（1番）+ 自摸（1番）+ 平胡（1番）= 5番（封顶）
         let tehai = hand("111444777999m 11m").unwrap();
         let calc = AgariCalculator {
@@ -1206,12 +1220,12 @@ mod additional_tests {
         // Hand shape (winning on 8p):
         // 123p 456p 789p 888p 55s
         //
-        // Per current Bloody Battle scoring implementation:
+        // Per Bloody Battle scoring:
         // - PingHu base: 1
-        // - Gen (SiGuiYi): +1 (8p appears 4 times total: one in 789p + 888p)
-        // No other patterns apply (not QingYiSe, not DaiYaoJiu, not ToiToi, not JGD).
+        // - MenQing: +1 (no fuuro)
+        // - Gen (SiGuiYi): +1 (8p appears 4 times: one in 789p + 888p)
         //
-        // Therefore Ron should be 2 fan -> 2000 points.
+        // Ron: PingHu(1) + MenQing(1) + Gen(1) = 3 fan -> 4000 points.
         let tehai = hand("123456789p 888p 55s").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
@@ -1230,8 +1244,8 @@ mod additional_tests {
             is_dihu: false,
         };
         let agari = calc.agari().expect("should agari");
-        assert_eq!(agari, Agari::Fan(2));
-        assert_eq!(agari.point(false).ron, 2000);
+        assert_eq!(agari, Agari::Fan(3));
+        assert_eq!(agari.point(false).ron, 4000);
     }
 
     #[test]
@@ -1255,6 +1269,7 @@ mod additional_tests {
             is_tianhu: false,
             is_dihu: false,
         };
+        // PingHu(1) + MenQing(1) + Haidi(1) = 3 fan
         assert_eq!(calc_haidi.agari().unwrap(), Agari::Fan(3));
 
         // GangShangPao (杠上炮) adds +1 fan when Ron happens right after a kan discard.
@@ -1274,6 +1289,7 @@ mod additional_tests {
             is_tianhu: false,
             is_dihu: false,
         };
+        // PingHu(1) + MenQing(1) + GangShangPao(1) = 3 fan
         assert_eq!(calc_kan_discard.agari().unwrap(), Agari::Fan(3));
 
         // Chankan (抢杠) adds +1 fan.
@@ -1293,6 +1309,7 @@ mod additional_tests {
             is_tianhu: false,
             is_dihu: false,
         };
+        // PingHu(1) + MenQing(1) + Chankan(1) = 3 fan
         assert_eq!(calc_chankan.agari().unwrap(), Agari::Fan(3));
     }
 }
