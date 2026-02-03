@@ -43,6 +43,44 @@ pub fn has_ding_que_tiles(tehai: &[u8; TILE_KIND_COUNT], ding_que: Option<Suit>)
     ding_que.is_some_and(|s| has_suit_tiles(tehai, s))
 }
 
+/// 整手（手牌 + 副露）是否仍含定缺花色。用于和牌/花猪判定。
+#[inline]
+#[must_use]
+pub fn has_ding_que_tiles_in_hand(
+    tehai: &[u8; TILE_KIND_COUNT],
+    pons: &[u8],
+    minkans: &[u8],
+    ankans: &[u8],
+    ding_que: Option<Suit>,
+) -> bool {
+    if let Some(suit) = ding_que {
+        if has_suit_tiles(tehai, suit) {
+            return true;
+        }
+        for &t in pons.iter().chain(minkans.iter()).chain(ankans.iter()) {
+            if (t as usize) < TILE_KIND_COUNT && is_ding_que_tile(t as usize, ding_que) {
+                return true;
+            }
+        }
+        false
+    } else {
+        false
+    }
+}
+
+/// 整手（手牌 + 副露）无定缺花色时可和牌；否则为花猪不可和。
+#[inline]
+#[must_use]
+pub fn can_agari_with_fuuro(
+    tehai: &[u8; TILE_KIND_COUNT],
+    pons: &[u8],
+    minkans: &[u8],
+    ankans: &[u8],
+    ding_que: Option<Suit>,
+) -> bool {
+    !has_ding_que_tiles_in_hand(tehai, pons, minkans, ankans, ding_que)
+}
+
 #[inline]
 #[must_use]
 pub fn is_ding_que_tile(tile_id: usize, ding_que: Option<Suit>) -> bool {
@@ -68,9 +106,11 @@ pub fn discard_allowed(tile_id: usize, tehai: &[u8; TILE_KIND_COUNT], ding_que: 
     }
 }
 
-/// DingQue win rule (花猪): cannot agari if any DingQue-suit tile remains in hand.
+/// DingQue win rule (花猪): cannot agari if any DingQue-suit tile remains in hand (tehai only).
+/// Prefer [can_agari_with_fuuro] when fuuro is available.
 #[inline]
 #[must_use]
+#[allow(dead_code)]
 pub fn can_agari(tehai: &[u8; TILE_KIND_COUNT], ding_que: Option<Suit>) -> bool {
     !has_ding_que_tiles(tehai, ding_que)
 }
@@ -91,5 +131,21 @@ mod test {
         // After clearing Man tiles, anything is allowed.
         tehai[0] = 0;
         assert!(discard_allowed(9, &tehai, Some(Suit::Man)));
+    }
+
+    #[test]
+    fn fuuro_ding_que_hand() {
+        let mut tehai = [0u8; TILE_KIND_COUNT];
+        tehai[9] = 2;
+        tehai[10] = 2;
+        tehai[11] = 2;
+        let pons: &[u8] = &[0]; // 1m (index 0), 定缺 Man 时副露有万
+        let minkans: &[u8] = &[];
+        let ankans: &[u8] = &[];
+        assert!(has_ding_que_tiles_in_hand(&tehai, pons, minkans, ankans, Some(Suit::Man)));
+        assert!(!can_agari_with_fuuro(&tehai, pons, minkans, ankans, Some(Suit::Man)));
+        let pons_no_man: &[u8] = &[9];
+        assert!(!has_ding_que_tiles_in_hand(&tehai, pons_no_man, minkans, ankans, Some(Suit::Man)));
+        assert!(can_agari_with_fuuro(&tehai, pons_no_man, minkans, ankans, Some(Suit::Man)));
     }
 }

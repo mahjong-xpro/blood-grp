@@ -274,14 +274,19 @@ impl PlayerState {
     /// This function returning `false` when `ding_que.is_none()` is intentional:
     /// "clearing" the Ding Que suit is only meaningful after a suit has been chosen.
     /// Before selection, the concept of "完成定缺" does not apply.
+    /// Includes fuuro (pons, minkans, ankans): 整手无定缺花色才算完成定缺/非花猪。
     #[must_use]
     pub fn check_ding_que_complete(&self) -> bool {
-        if let Some(suit) = self.ding_que {
-            let (start, end) = crate::ding_que::suit_range(suit);
-            (start..end).all(|i| self.tehai[i] == 0)
-        } else {
-            false // No ding_que selected, so "completion" is not applicable
+        if self.ding_que.is_none() {
+            return false; // No ding_que selected, so "completion" is not applicable
         }
+        !crate::ding_que::has_ding_que_tiles_in_hand(
+            &self.tehai,
+            &self.pons,
+            &self.minkans,
+            &self.ankans,
+            self.ding_que,
+        )
     }
 
     /// Count remaining ding_que suit tiles in hand

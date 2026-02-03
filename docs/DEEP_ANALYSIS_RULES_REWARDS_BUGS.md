@@ -89,26 +89,18 @@ scores = [base_points, -points_per_player, ...];  // 和牌者写 base_points �
 
 ---
 
-### Bug #2：定缺/花猪未考虑副露（潜在规则偏差）
+### Bug #2：定缺/花猪未考虑副露（已修复）
 
 **位置**：  
-- `libblood/src/ding_que.rs`：`has_ding_que_tiles(tehai, ding_que)`、`can_agari(tehai, ding_que)` 只查 `tehai`。  
-- `libblood/src/state/player_state.rs`：`check_ding_que_complete()` 只查 `self.tehai`。
+- `libblood/src/ding_que.rs`：原 `has_ding_que_tiles(tehai)`、`can_agari(tehai)` 只查 `tehai`。  
+- `libblood/src/state/player_state.rs`：原 `check_ding_que_complete()` 只查 `self.tehai`。
 
 **规则**：四川规则中「手牌」通常包含副露（碰/杠）；「手牌中还有缺门花色的牌」应包含明牌中的定缺花色。
 
-**问题**：  
-1. **和牌**：若定缺万，仅副露中有万（如碰 1m），tehai 无万，`can_agari` 会返回 true，可能允许「花猪和牌」。  
-2. **流局查花猪**：仅看 tehai，副露全是定缺花色时不会被判花猪，少罚分。
-
-**影响**：  
-- 和牌：可能出现规则上不应成立的和牌被接受。  
-- 流局：花猪判定过松，查花猪罚分偏少。
-
-**建议**：  
-- 增加「整手」定缺检查：如 `has_ding_que_tiles_in_hand(tehai, pons, minkans, ankans, ding_que)`，对 tehai 与 pons/minkans/ankans 中的牌按花色检查。  
-- `can_agari` 在 AgariCalculator 调用处传入副露，使用上述整手检查。  
-- `check_ding_que_complete()` 改为：定缺花色在 tehai 与所有副露中均无残留。
+**修复**（已做）：  
+- `ding_que.rs`：新增 `has_ding_que_tiles_in_hand(tehai, pons, minkans, ankans, ding_que)`、`can_agari_with_fuuro(...)`，按整手（tehai + 副露）检查定缺花色。  
+- `agari.rs`：`has_yaku()` / `agari()` 改为使用 `can_agari_with_fuuro(self.tehai, self.pons, self.minkans, self.ankans, self.ding_que)`。  
+- `player_state.rs`：`check_ding_que_complete()` 改为在整手（tehai + pons + minkans + ankans）上调用 `!has_ding_que_tiles_in_hand(...)`，且 `ding_que.is_none()` 时仍返回 false。
 
 ---
 
@@ -150,7 +142,7 @@ scores = [base_points, -points_per_player, ...];  // 和牌者写 base_points �
 | 优先级 | Bug | 影响 | 建议 |
 |--------|-----|------|------|
 | 高 | #1 SP 自摸计分逻辑 | 自摸被算成「和牌者得 base_points、三家共付 base_points/3」，违反规则（自摸最低 6000） | 已修复：和牌者得 base_points×3，三家各付 base_points |
-| 中 | #2 定缺/花猪不含副露 | 花猪和牌、查花猪漏判 | 增加整手定缺检查并接入和牌与流局 |
+| 中 | #2 定缺/花猪不含副露 | 花猪和牌、查花猪漏判 | 已修复：整手定缺检查（ding_que + agari + check_ding_que_complete） |
 | 中 | #4 Hora 未 broadcast | 各 PlayerState.players_agari 滞后，agent 看到的「谁已和牌」错误 | 已修复：handle_hora 中 broadcast(Hora) 再 add_log |
 | 低 | #3 金钩钓注释 | 仅文档 | 注释改为 +1 番 |
 

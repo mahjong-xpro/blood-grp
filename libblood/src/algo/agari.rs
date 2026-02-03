@@ -179,8 +179,8 @@ impl AgariCalculator<'_> {
             return false;
         }
 
-        // DingQue rule (花猪): cannot agari if DingQue suit tiles remain.
-        if !crate::ding_que::can_agari(self.tehai, self.ding_que) {
+        // DingQue rule (花猪): cannot agari if DingQue suit tiles remain in full hand (tehai + fuuro).
+        if !crate::ding_que::can_agari_with_fuuro(self.tehai, self.pons, self.minkans, self.ankans, self.ding_que) {
             return false;
         }
         
@@ -213,8 +213,8 @@ impl AgariCalculator<'_> {
     ///     - 杠上炮：杠牌后打出的牌和牌，+1番（平胡1番 + 杠上炮1番 = 2番）
     #[must_use]
     pub fn agari(&self) -> Option<Agari> {
-        // DingQue rule (花猪): cannot agari if DingQue suit tiles remain.
-        if !crate::ding_que::can_agari(self.tehai, self.ding_que) {
+        // DingQue rule (花猪): cannot agari if DingQue suit tiles remain in full hand (tehai + fuuro).
+        if !crate::ding_que::can_agari_with_fuuro(self.tehai, self.pons, self.minkans, self.ankans, self.ding_que) {
             return None;
         }
         
