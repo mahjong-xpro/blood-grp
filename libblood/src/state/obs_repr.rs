@@ -625,6 +625,14 @@ impl<'a> ObsEncoderContext<'a> {
                     }
                 }
             } else {
+                // Do not silently swallow SP invariant violations: they indicate a replay/state bug
+                // that can later crash with an ArrayVec overflow in SP code. Fail with a clear error.
+                if let Err(e) = state.single_player_tables(None) {
+                    let msg = e.to_string();
+                    if msg.contains("SP invariant violation") {
+                        panic!("{msg}");
+                    }
+                }
                 // Use the minimal tsumo agari point as the max EV.
                 // Note: In Bloody Battle Mahjong, there is no uradora (里宝牌)
                 let min_tsumo_agari = state

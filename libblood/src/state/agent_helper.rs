@@ -437,14 +437,20 @@ impl PlayerState {
         ensure!(cur_shanten >= 0, "can't calculate an agari hand");
 
         let can_discard = self.last_cans.can_discard;
-        // Critical invariant:
-        // When can_discard is true, hand must be 3n+2 (normally 14 tiles).
-        // If this is violated, downstream SP logic can panic (e.g. ArrayVec<[DiscardTile; 14]> overflow).
+        // Critical invariants:
+        //
+        // This SP implementation assumes the concealed hand tile count is consistent with the
+        // "can_discard" window:
+        // - can_discard=true  => 3n+2 (e.g. 14, 11, 8, 5, 2...)
+        // - can_discard=false => 3n+1 (e.g. 13, 10, 7, 4, 1...)
+        //
+        // If violated, downstream SP logic can panic (e.g. ArrayVec<[DiscardTile; 14]> overflow)
+        // because it may simulate a draw on top of an already-3n+2 hand (creating 15 tiles).
         let tehai_sum: u8 = self.tehai.iter().sum();
         ensure!(
-            !can_discard || tehai_sum <= 14,
-            "single_player_tables: invalid hand size for discard window (tehai_sum={} > 14). \
-             This indicates replay divergence or state bug. kyoku={}, turn={}, tiles_left={}, ding_que={:?}, cans={:?}",
+            tehai_sum <= 14,
+            "SP invariant violation: concealed hand too large (tehai_sum={} > 14). \
+             kyoku={}, turn={}, tiles_left={}, ding_que={:?}, cans={:?}",
             tehai_sum,
             self.kyoku,
             self.at_turn,
@@ -452,6 +458,43 @@ impl PlayerState {
             self.ding_que,
             self.last_cans,
         );
+        if can_discard {
+            ensure!(
+                tehai_sum % 3 == 2,
+                "SP invariant violation: can_discard=true but tehai_sum%3 != 2 (tehai_sum={}). \
+                 kyoku={}, turn={}, tiles_left={}, ding_que={:?}, cans={:?}",
+                tehai_sum,
+                self.kyoku,
+                self.at_turn,
+                self.tiles_left,
+                self.ding_que,
+                self.last_cans,
+            );
+        } else {
+            ensure!(
+                tehai_sum % 3 == 1,
+                "SP invariant violation: can_discard=false but tehai_sum%3 != 1 (tehai_sum={}). \
+                 kyoku={}, turn={}, tiles_left={}, ding_que={:?}, cans={:?}",
+                tehai_sum,
+                self.kyoku,
+                self.at_turn,
+                self.tiles_left,
+                self.ding_que,
+                self.last_cans,
+            );
+            // can_discard=false windows should never have a 3n+2 concealed hand (max 13).
+            ensure!(
+                tehai_sum <= 13,
+                "SP invariant violation: can_discard=false but tehai_sum={} > 13. \
+                 kyoku={}, turn={}, tiles_left={}, ding_que={:?}, cans={:?}",
+                tehai_sum,
+                self.kyoku,
+                self.at_turn,
+                self.tiles_left,
+                self.ding_que,
+                self.last_cans,
+            );
+        }
         let tsumos_left = if can_discard {
             self.tiles_left / 4
         } else {
