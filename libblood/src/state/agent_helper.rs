@@ -439,13 +439,13 @@ impl PlayerState {
         let can_discard = self.last_cans.can_discard;
         // Critical invariants:
         //
-        // This SP implementation assumes the concealed hand tile count is consistent with the
-        // "can_discard" window:
-        // - can_discard=true  => 3n+2 (e.g. 14, 11, 8, 5, 2...)
-        // - can_discard=false => 3n+1 (e.g. 13, 10, 7, 4, 1...)
+        // Hand count must match the decision window:
+        // - can_discard=true  => 3n+2 (e.g. 14, 11, 8, 5, 2) — our turn, we have drawn.
+        // - can_discard=false =>
+        //   - Reaction (pon/daiminkan/ron): hand includes the tile we may call, so 3n+2 (14, 11, 8, 5, 2).
+        //   - Waiting for draw: 3n+1 (13, 10, 7, 4, 1).
         //
-        // If violated, downstream SP logic can panic (e.g. ArrayVec<[DiscardTile; 14]> overflow)
-        // because it may simulate a draw on top of an already-3n+2 hand (creating 15 tiles).
+        // If violated, downstream SP logic can panic (e.g. ArrayVec overflow).
         let tehai_sum: u8 = self.tehai.iter().sum();
         ensure!(
             tehai_sum <= 14,
@@ -458,6 +458,9 @@ impl PlayerState {
             self.ding_que,
             self.last_cans,
         );
+        let reaction = self.last_cans.can_pon
+            || self.last_cans.can_daiminkan
+            || self.last_cans.can_ron_agari;
         if can_discard {
             ensure!(
                 tehai_sum % 3 == 2,
@@ -470,10 +473,11 @@ impl PlayerState {
                 self.ding_que,
                 self.last_cans,
             );
-        } else {
+        } else if reaction {
+            // Reaction phase: hand already includes the tile we may call → 3n+2.
             ensure!(
-                tehai_sum % 3 == 1,
-                "SP invariant violation: can_discard=false but tehai_sum%3 != 1 (tehai_sum={}). \
+                tehai_sum % 3 == 2,
+                "SP invariant violation: can_discard=false (reaction) but tehai_sum%3 != 2 (tehai_sum={}). \
                  kyoku={}, turn={}, tiles_left={}, ding_que={:?}, cans={:?}",
                 tehai_sum,
                 self.kyoku,
@@ -482,10 +486,22 @@ impl PlayerState {
                 self.ding_que,
                 self.last_cans,
             );
-            // can_discard=false windows should never have a 3n+2 concealed hand (max 13).
+        } else {
+            // Waiting for draw: 3n+1, at most 13.
+            ensure!(
+                tehai_sum % 3 == 1,
+                "SP invariant violation: can_discard=false (waiting) but tehai_sum%3 != 1 (tehai_sum={}). \
+                 kyoku={}, turn={}, tiles_left={}, ding_que={:?}, cans={:?}",
+                tehai_sum,
+                self.kyoku,
+                self.at_turn,
+                self.tiles_left,
+                self.ding_que,
+                self.last_cans,
+            );
             ensure!(
                 tehai_sum <= 13,
-                "SP invariant violation: can_discard=false but tehai_sum={} > 13. \
+                "SP invariant violation: can_discard=false (waiting) but tehai_sum={} > 13. \
                  kyoku={}, turn={}, tiles_left={}, ding_que={:?}, cans={:?}",
                 tehai_sum,
                 self.kyoku,
