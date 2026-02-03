@@ -206,10 +206,11 @@ impl AgariCalculator<'_> {
     /// 8. 带幺九（DaiYaoJiu）：+3番（与断幺九互斥）
     /// 9. 断幺九（DuanYaoJiu）：+1番（所有组合不含1和9，与带幺九互斥）
     /// 10. 一条龙（YiTiaoLong）：+1番（同一花色含 123、456、789 三副顺子）
-    /// 11. 四归一（SiGuiYi / 根）：+1番/根
-    /// 12. 杠上花（GangShangHua）：+1番（if is_after_kan && !is_ron）
-    /// 13. 杠上炮（GangShangPao）：+1番（if is_kan_discard && is_ron && !is_chankan）
-    /// 14. 抢杠（Chankan）：+1番（if is_chankan && is_ron）
+    /// 11. 夹心五（JiaXinWu）：+1番（和牌张为 5，46 听 5 成顺 456）
+    /// 12. 四归一（SiGuiYi / 根）：+1番/根
+    /// 13. 杠上花（GangShangHua）：+1番（if is_after_kan && !is_ron）
+    /// 14. 杠上炮（GangShangPao）：+1番（if is_kan_discard && is_ron && !is_chankan）
+    /// 15. 抢杠（Chankan）：+1番（if is_chankan && is_ron）
     ///     Note: 抢杠、杠上花、杠上炮是不同的：
     ///     - 抢杠：在别人加杠时抢杠和牌，+1番（平胡1番 + 抢杠1番 = 2番）
     ///     - 杠上花：杠牌后摸牌自摸，+1番（自摸1番 + 平胡1番 + 杠上花1番 = 3番）
@@ -395,6 +396,18 @@ impl AgariCalculator<'_> {
                 div_fan += 1;
             }
             
+            // 11. 夹心五（JiaXinWu）：+1番（和牌张为 5，且听牌为 4-6 夹 5，和 5 成顺 456）
+            let is_jiaxinwu = (self.winning_tile < 27 && self.winning_tile % 9 == 4)
+                && div.shuntsu_idxs.iter().any(|&shuntsu_idx| {
+                    let tile_id = tile14[shuntsu_idx as usize];
+                    tile_id < 27
+                        && tile_id % 9 == 3
+                        && tile_id / 9 == self.winning_tile / 9
+                });
+            if is_jiaxinwu {
+                div_fan += 1;
+            }
+            
             // 7. 带幺九（DaiYaoJiu）：+3番
             // Check if all groups (shuntsu, kotsu, pair) contain 1 or 9
             let mut is_daiyaojiu = true;
@@ -514,12 +527,12 @@ impl AgariCalculator<'_> {
         
         fan = fan.saturating_add(max_fan);
         
-        // 12. 杠上花（GangShangHua）：+1番
+        // 13. 杠上花（GangShangHua）：+1番
         if self.is_after_kan && !self.is_ron {
             fan += 1;
         }
         
-        // 13. 杠上炮（GangShangPao）：+1番
+        // 14. 杠上炮（GangShangPao）：+1番
         // 注意：抢杠（chankan）和杠上炮是不同的
         // - 抢杠：在别人加杠时抢杠和牌，+1番
         // - 杠上炮：其他玩家杠牌后打出的牌和牌，+1番
@@ -527,14 +540,14 @@ impl AgariCalculator<'_> {
             fan += 1;
         }
         
-        // 14. 抢杠（Chankan）：+1番
+        // 15. 抢杠（Chankan）：+1番
         // 抢杠：在别人加杠时抢杠和牌，+1番
         // 抢杠时，被抢杠的玩家的根不应该计算（因为加杠的牌被抢走了）
         if self.is_chankan && self.is_ron {
             fan += 1;
         }
         
-        // 16. 天胡 (TianHu) / 地胡 (DiHu): Max Fan (5番)
+        // 17. 天胡 (TianHu) / 地胡 (DiHu): Max Fan (5番)
         if self.is_tianhu || self.is_dihu {
             fan = 5;
             // Early return or just let it be capped below (it is already 5)
@@ -897,6 +910,28 @@ mod test {
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 门清 + 一条龙 = 1 + 1 + 1 + 1 = 4番（123m 456m 789m 22p 345s）
+        assert_eq!(agari, Agari::Fan(4));
+        
+        // Test 6d: 夹心五 (JiaXinWu) - 1番（46 听 5，和 5 成顺 456）
+        let tehai = hand("123m 789p 456s 22m 345p").unwrap();
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            pons: &[],
+            minkans: &[],
+            ankans: &[],
+            winning_tile: tu8!(5s),
+            is_ron: false,
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
+        };
+        let agari = calc.agari().unwrap();
+        // 自摸 + 平胡 + 门清 + 夹心五 = 1 + 1 + 1 + 1 = 4番（456s 为 46 听 5 和出）
         assert_eq!(agari, Agari::Fan(4));
         
         // Test 7: 杠上花 (GangShangHua) - 1番
