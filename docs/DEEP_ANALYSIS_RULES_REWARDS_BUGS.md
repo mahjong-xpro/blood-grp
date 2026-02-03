@@ -162,6 +162,7 @@ scores = [base_points, -points_per_player, ...];  // 和牌者写 base_points �
 - **抢杠计分**：支付额按和牌方番数，exclude_gen_tile 仅影响被抢杠方手牌评价，不改变支付额，当前实现正确。
 - **定缺打牌**：`discard_allowed` 只查 tehai（手牌中缺门必须先打），副露不可打，逻辑正确。
 - **奖励/grp/stat**：scores_history + final_scores、sum 校正到 100k 一致，reward_calculator 差分逻辑正确。
+- **后续复核（无新 bug）**：tsumo_actor 在 Dahai/Hora 后正确跳过已和牌者；agari_count/players_agari 与结束条件一致；dataloader 中 `len(kyoku_rewards) >= at_kyoku[-1]+1` 与 scores_history 长度一致；4 杠无特殊结束（设计如此）；validate_logs 与 board 规则一致（update 后得 cans）。
 
 ---
 
