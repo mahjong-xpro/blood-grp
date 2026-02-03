@@ -22,54 +22,117 @@ pub struct GameScore {
     /// Value: +1.0 = best choice, 0.0 = middle, -1.0 = worst choice
     /// If no DingQue event found for a kyoku, value is 0.0
     pub ding_que_quality: Vec<[f32; 4]>,
+
+    /// Heuristic best suit index per kyoku per player for Ding Que CE auxiliary.
+    /// 0 = Man, 1 = Pin, 2 = Sou. Only valid for kyokus where DingQue occurred.
+    pub ding_que_best_suit: Vec<[u8; 4]>,
+}
+
+/// Count how many complete 顺子 (sequences) can be formed in a suit's 9 tile counts.
+/// Greedy: repeatedly extract one 顺子 (three consecutive indices with count >= 1).
+pub(crate) fn count_sequences_in_suit(counts: &[u8; 9]) -> u8 {
+    let mut c = *counts;
+    let mut num: u8 = 0;
+    loop {
+        let mut found = false;
+        for i in 0..7 {
+            if c[i] >= 1 && c[i + 1] >= 1 && c[i + 2] >= 1 {
+                c[i] -= 1;
+                c[i + 1] -= 1;
+                c[i + 2] -= 1;
+                num += 1;
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            break;
+        }
+    }
+    num
+}
+
+/// Count how many tile kinds (0..27) improve the hand when added by one (reduce shanten).
+/// Used as a bonus: more improvement kinds = better shape after removing the suit.
+fn count_improvement_kinds(tehai_without: &[u8; 27], remaining_count: u8, shanten: i8) -> u8 {
+    let new_len_div3 = (remaining_count + 1) / 3;
+    let mut count: u8 = 0;
+    for tid in 0..27 {
+        if tehai_without[tid] >= 4 {
+            continue; // cannot add one more of this kind
+        }
+        let mut t = *tehai_without;
+        t[tid] += 1;
+        if shanten::calc_all(&t, new_len_div3, None) < shanten {
+            count += 1;
+        }
+    }
+    count
 }
 
 /// Calculate the cost of choosing a suit as Ding Que.
 /// Lower cost = better choice.
-/// 
+///
 /// Factors:
 /// 1. Shanten after removing the suit (base)
-/// 2. Triplet penalty (if removing triplets)
-/// 3. ToiToi potential bonus (if remaining hand has 4+ pairs/triplets)
-fn calc_ding_que_cost(tehai: &[u8; 27], suit: Suit) -> f32 {
+/// 2. Triplet penalty (刻子: each triplet removed is a significant loss)
+/// 3. Sequence penalty (顺子: each complete 顺子 removed is a loss)
+/// 4. Pair penalty (对子: each pair removed is a smaller loss; 刻子不重复计对子)
+/// 5. ToiToi potential bonus (if remaining hand has 4+ pairs/triplets)
+/// 6. Improvement-kinds bonus (进张种类数: more tile kinds that reduce shanten = better shape)
+pub(crate) fn calc_ding_que_cost(tehai: &[u8; 27], suit: Suit) -> f32 {
     let suit_range = match suit {
         Suit::Man => 0..9,
         Suit::Pin => 9..18,
         Suit::Sou => 18..27,
     };
-    
-    // Count tiles to be removed
+
+    // Count tiles to be removed, 刻子 (triplets), and 对子 (pairs, count==2 only; 刻子 already counted)
     let mut removed_count: u8 = 0;
     let mut removed_triplets: u8 = 0;
-    for i in suit_range.clone() {
+    let mut removed_pairs: u8 = 0;
+    let mut suit_counts = [0u8; 9];
+    for (j, i) in suit_range.clone().enumerate() {
         let count = tehai[i];
         removed_count += count;
+        suit_counts[j] = count;
         if count >= 3 {
             removed_triplets += 1;
+        } else if count == 2 {
+            removed_pairs += 1;
         }
     }
-    
+
     // If no tiles in this suit, it's the perfect choice
     if removed_count == 0 {
         return -10.0; // Very low cost (bonus)
     }
-    
+
+    // 顺子 (sequence) count in this suit: how many complete 123/234/... we're removing
+    let removed_sequences = count_sequences_in_suit(&suit_counts);
+
     // Create tehai without the suit
     let mut tehai_without = *tehai;
     for i in suit_range {
         tehai_without[i] = 0;
     }
-    
+
     // Calculate new len_div3 (number of complete groups possible)
     let remaining_count: u8 = tehai_without.iter().sum();
     let new_len_div3 = remaining_count / 3;
-    
+
     // Calculate shanten after removal (pass None for ding_que since we're evaluating the choice itself)
     let shanten = shanten::calc_all(&tehai_without, new_len_div3, None);
-    
-    // Triplet penalty: each triplet removed is a significant loss
+
+    // 刻子 penalty: each 刻子 removed is a significant loss (we lose one complete group)
     let triplet_penalty = removed_triplets as f32 * 0.8;
-    
+
+    // 顺子 penalty: each complete 顺子 removed is also a loss (we lose one complete group)
+    let sequence_penalty = removed_sequences as f32 * 0.7;
+
+    // 对子 penalty: each 对子 (pair, count==2) removed is a smaller loss (将牌/进刻潜力); 刻子不重复计
+    let pair_penalty = removed_pairs as f32 * 0.35;
+
     // ToiToi potential: count pairs and triplets in remaining hand
     let mut pair_triplet_count: u8 = 0;
     for &count in tehai_without.iter() {
@@ -78,9 +141,26 @@ fn calc_ding_que_cost(tehai: &[u8; 27], suit: Suit) -> f32 {
         }
     }
     let toitoi_bonus = if pair_triplet_count >= 4 { 0.5 } else { 0.0 };
-    
-    // Final cost
-    shanten as f32 + triplet_penalty - toitoi_bonus
+
+    // Improvement-kinds bonus (进张种类): more tile kinds that reduce shanten = better hand shape
+    let improvement_kinds = count_improvement_kinds(&tehai_without, remaining_count, shanten);
+    let improvement_bonus = (improvement_kinds as f32 * 0.12).min(2.0); // cap so one factor doesn't dominate
+
+    // Final cost: 刻子/顺子/对子 in the removed suit all increase cost (worse to 定缺 a suit that has useful structure)
+    shanten as f32 + triplet_penalty + sequence_penalty + pair_penalty - toitoi_bonus - improvement_bonus
+}
+
+/// Returns the heuristic best suit index for Ding Que: 0 = Man, 1 = Pin, 2 = Sou.
+/// On tie, returns the first with minimum cost.
+fn best_ding_que_suit_index(tehai: &[u8; 27]) -> u8 {
+    let suits = [Suit::Man, Suit::Pin, Suit::Sou];
+    let costs: Vec<f32> = suits.iter().map(|&s| calc_ding_que_cost(tehai, s)).collect();
+    let (best_idx, _) = costs
+        .iter()
+        .enumerate()
+        .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        .unwrap_or((0, &0.0));
+    best_idx as u8
 }
 
 /// Evaluate the quality of a Ding Que selection.
@@ -88,22 +168,22 @@ fn calc_ding_que_cost(tehai: &[u8; 27], suit: Suit) -> f32 {
 fn evaluate_ding_que_quality(tehai: &[u8; 27], chosen_suit: Suit) -> f32 {
     let suits = [Suit::Man, Suit::Pin, Suit::Sou];
     let costs: Vec<f32> = suits.iter().map(|&s| calc_ding_que_cost(tehai, s)).collect();
-    
+
     let chosen_idx = match chosen_suit {
         Suit::Man => 0,
         Suit::Pin => 1,
         Suit::Sou => 2,
     };
-    
+
     let chosen_cost = costs[chosen_idx];
     let min_cost = costs.iter().cloned().fold(f32::INFINITY, f32::min);
     let max_cost = costs.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-    
+
     // Handle edge case: all costs are equal
     if (max_cost - min_cost).abs() < 0.001 {
         return 0.0; // No difference, neutral
     }
-    
+
     // Check if chosen is best, worst, or middle
     if (chosen_cost - min_cost).abs() < 0.001 {
         1.0 // Best choice
@@ -156,6 +236,12 @@ impl GameScore {
     pub fn take_ding_que_quality(&mut self) -> Vec<[f32; 4]> {
         std::mem::take(&mut self.ding_que_quality)
     }
+
+    /// Returns heuristic best suit index per kyoku per player: 0=Man, 1=Pin, 2=Sou.
+    /// Used for Ding Que CE auxiliary loss.
+    pub fn take_ding_que_best_suit(&mut self) -> Vec<[u8; 4]> {
+        std::mem::take(&mut self.ding_que_best_suit)
+    }
 }
 
 impl GameScore {
@@ -165,25 +251,29 @@ impl GameScore {
         let mut final_deltas = [0; 4];
         let mut final_scores = [0; 4];
         
-        // For Ding Que quality tracking
+        // For Ding Que quality and best-suit tracking
         let mut ding_que_quality: Vec<[f32; 4]> = vec![];
+        let mut ding_que_best_suit: Vec<[u8; 4]> = vec![];
         // Track the effective hand at DingQue time (庄家在定缺前会多一张补牌)
         let mut current_tehais: Option<[[u8; 27]; 4]> = None;
         let mut current_kyoku_quality = [0.0f32; 4];
+        let mut current_kyoku_best_suit = [0u8; 4]; // 0=Man, 1=Pin, 2=Sou
 
         // Forward pass to collect scores and Ding Que quality
         for ev in events.iter() {
             match ev {
                 Event::StartKyoku { scores, tehais, .. } => {
-                    // Save previous kyoku's quality (if any)
+                    // Save previous kyoku's quality and best suit (if any)
                     if current_tehais.is_some() {
                         ding_que_quality.push(current_kyoku_quality);
+                        ding_que_best_suit.push(current_kyoku_best_suit);
                     }
-                    
+
                     // Reset for new kyoku
                     scores_history.push(*scores);
                     current_tehais = Some(array::from_fn(|i| tiles_to_tehai(&tehais[i])));
                     current_kyoku_quality = [0.0f32; 4]; // Default neutral
+                    current_kyoku_best_suit = [0; 4];
                 }
                 Event::Tsumo { actor, pai } => {
                     if let Some(ref mut tehais) = current_tehais {
@@ -202,6 +292,8 @@ impl GameScore {
                         if player_idx < 4 {
                             current_kyoku_quality[player_idx] =
                                 evaluate_ding_que_quality(&tehais[player_idx], *suit);
+                            current_kyoku_best_suit[player_idx] =
+                                best_ding_que_suit_index(&tehais[player_idx]);
                         }
                     }
                 }
@@ -209,9 +301,10 @@ impl GameScore {
             }
         }
         
-        // Save the last kyoku's quality
+        // Save the last kyoku's quality and best suit
         if current_tehais.is_some() {
             ding_que_quality.push(current_kyoku_quality);
+            ding_que_best_suit.push(current_kyoku_best_suit);
         }
 
         // Reverse pass to find final scores (existing logic)
@@ -261,6 +354,7 @@ impl GameScore {
             final_scores,
             rank_by_player,
             ding_que_quality,
+            ding_que_best_suit,
         })
     }
 }
@@ -268,6 +362,7 @@ impl GameScore {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::mjai::Suit;
     use crate::t;
 
     #[test]
@@ -307,5 +402,59 @@ mod test {
         assert_eq!(gs.final_scores, [31000, 23000, 23000, 23000]);
         // rank_by_player is 0 for top, 3 for last
         assert_eq!(gs.rank_by_player[0], 0);
+    }
+
+    #[test]
+    fn ding_que_count_sequences_in_suit() {
+        // No sequence: 1m 5m 9m
+        assert_eq!(count_sequences_in_suit(&[1, 0, 0, 0, 1, 0, 0, 0, 1]), 0);
+        // One sequence: 123
+        assert_eq!(count_sequences_in_suit(&[1, 1, 1, 0, 0, 0, 0, 0, 0]), 1);
+        // Two sequences: 123 + 234
+        assert_eq!(count_sequences_in_suit(&[1, 1, 1, 1, 1, 1, 0, 0, 0]), 2);
+        // 111234 -> one 顺子 (123), one 2 and 3 left but no 4 for 234
+        assert_eq!(count_sequences_in_suit(&[3, 1, 1, 1, 0, 0, 0, 0, 0]), 1);
+    }
+
+    #[test]
+    fn ding_que_cost_penalizes_triplet_and_sequence() {
+        // Hand: 111m 123p 1s 2s 3s 4s 5s (Man has 刻子, Pin has 顺子, Sou has 顺子)
+        let mut tehai = [0u8; 27];
+        tehai[0] = 3; // 111m
+        tehai[9] = 1;
+        tehai[10] = 1;
+        tehai[11] = 1; // 123p
+        tehai[18] = 1;
+        tehai[19] = 1;
+        tehai[20] = 1;
+        tehai[21] = 1;
+        tehai[22] = 1; // 12345s
+        let cost_man = calc_ding_que_cost(&tehai, Suit::Man);
+        let cost_pin = calc_ding_que_cost(&tehai, Suit::Pin);
+        let cost_sou = calc_ding_que_cost(&tehai, Suit::Sou);
+        // 定缺 Man: lose one 刻子 -> high cost
+        // 定缺 Pin: lose one 顺子 -> medium cost
+        // 定缺 Sou: lose one 顺子 (123) and some loose tiles -> cost depends on shanten
+        assert!(cost_man > cost_pin, "定缺刻子门应比定缺顺子门 cost 更高");
+        assert!(cost_man > cost_sou);
+    }
+
+    #[test]
+    fn ding_que_cost_prefers_suit_with_no_groups() {
+        // Hand: 1m 5m 9m (Man, no 刻子/顺子), 123p (Pin, one 顺子), 111s (Sou, one 刻子)
+        let mut tehai = [0u8; 27];
+        tehai[0] = 1;
+        tehai[4] = 1;
+        tehai[8] = 1; // Man: 散牌
+        tehai[9] = 1;
+        tehai[10] = 1;
+        tehai[11] = 1; // Pin: 顺子
+        tehai[18] = 3; // Sou: 刻子
+        let cost_man = calc_ding_que_cost(&tehai, Suit::Man);
+        let cost_pin = calc_ding_que_cost(&tehai, Suit::Pin);
+        let cost_sou = calc_ding_que_cost(&tehai, Suit::Sou);
+        // 定缺 Man (only 散牌) should have lowest cost
+        assert!(cost_man < cost_pin, "定缺无成组门应 cost 最低");
+        assert!(cost_man < cost_sou);
     }
 }

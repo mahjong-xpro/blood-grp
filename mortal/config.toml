@@ -96,6 +96,11 @@ min_q_weight = 0.0
 # 辅助任务配置
 [aux]
 next_rank_weight = 0.2  # 排名预测任务的权重
+# 定缺辅助：仅在定缺步加即时奖励塑形，帮助学习定缺选择（见 docs/DING_QUE_AUXILIARY_LEARNING.md）
+ding_que_aux_enabled = true
+ding_que_aux_scale = 0.02  # ding_que_quality in [-1,1]，不宜过大
+# 定缺 CE 监督：仅在定缺步用启发式「最佳花色」做交叉熵损失（方案 B）
+ding_que_ce_weight = 0.1
 
 # Batch Normalization 冻结配置
 [freeze_bn]

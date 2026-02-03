@@ -41,6 +41,7 @@ def train():
     test_games = config['test_play']['games']
     min_q_weight = config['cql']['min_q_weight']
     next_rank_weight = config['aux']['next_rank_weight']
+    ding_que_ce_weight = config['aux'].get('ding_que_ce_weight', 0.0)
     assert save_every % opt_step_every == 0
     assert test_every % save_every == 0
 
@@ -138,6 +139,7 @@ def train():
         'dqn_loss': 0,
         'cql_loss': 0,
         'next_rank_loss': 0,
+        'ding_que_ce_loss': 0,
     }
     all_q = torch.zeros((save_every, batch_size), device=device, dtype=torch.float32)
     all_q_target = torch.zeros((save_every, batch_size), device=device, dtype=torch.float32)
@@ -238,10 +240,12 @@ def train():
         remaining_steps_to_done = []
         remaining_kyoku_rewards = []
         remaining_player_ranks = []
+        remaining_ding_que_bonus = []
+        remaining_ding_que_best_suit = []
         remaining_bs = 0
         pb = tqdm(total=save_every, desc='TRAIN', initial=steps % save_every)
 
-        def train_batch(obs, actions, masks, steps_to_done, kyoku_rewards, player_ranks):
+        def train_batch(obs, actions, masks, steps_to_done, kyoku_rewards, player_ranks, ding_que_bonus, ding_que_best_suit):
             nonlocal steps
             nonlocal idx
             nonlocal pb
@@ -252,6 +256,8 @@ def train():
             steps_to_done = steps_to_done.to(dtype=torch.int64, device=device)
             kyoku_rewards = kyoku_rewards.to(dtype=torch.float64, device=device)
             player_ranks = player_ranks.to(dtype=torch.int64, device=device)
+            ding_que_bonus = ding_que_bonus.to(dtype=torch.float32, device=device)
+            ding_que_best_suit = ding_que_best_suit.to(dtype=torch.int64, device=device)
 
             # Skip batch if any (state, action) pair is invalid (action not allowed by mask).
             # This can happen when logs contain moves from a buggy version (e.g. discard before
@@ -267,7 +273,8 @@ def train():
                 logging.error(msg)
                 raise RuntimeError(msg)
 
-            q_target_mc = gamma ** steps_to_done * kyoku_rewards
+            # Kyoku return (discounted) + per-step Ding Que auxiliary bonus (only non-zero at DingQue steps)
+            q_target_mc = gamma ** steps_to_done * kyoku_rewards + ding_que_bonus
             q_target_mc = q_target_mc.to(torch.float32)
 
             with torch.autocast(device.type, enabled=enable_amp):
@@ -282,10 +289,18 @@ def train():
                 next_rank_logits, = aux_net(phi)
                 next_rank_loss = ce(next_rank_logits, player_ranks)
 
+                # Ding Que CE auxiliary: supervise policy toward heuristic best suit at DingQue steps only
+                sel = ding_que_best_suit >= 0
+                if sel.any() and ding_que_ce_weight > 0:
+                    ding_que_ce_loss = ce(q_out[sel, 31:34], ding_que_best_suit[sel])
+                else:
+                    ding_que_ce_loss = torch.tensor(0.0, device=device, dtype=torch.float32)
+
                 loss = sum((
                     dqn_loss,
                     cql_loss * min_q_weight,
                     next_rank_loss * next_rank_weight,
+                    ding_que_ce_loss * ding_que_ce_weight,
                 ))
             scaler.scale(loss / opt_step_every).backward()
 
@@ -294,6 +309,7 @@ def train():
                 if not online:
                     stats['cql_loss'] += cql_loss
                 stats['next_rank_loss'] += next_rank_loss
+                stats['ding_que_ce_loss'] += ding_que_ce_loss
                 all_q[idx] = q
                 all_q_target[idx] = q_target_mc
 
@@ -325,6 +341,7 @@ def train():
                 if not online:
                     writer.add_scalar('loss/cql_loss', stats['cql_loss'] / save_every, steps)
                 writer.add_scalar('loss/next_rank_loss', stats['next_rank_loss'] / save_every, steps)
+                writer.add_scalar('loss/ding_que_ce_loss', stats['ding_que_ce_loss'] / save_every, steps)
                 writer.add_scalar('hparam/lr', scheduler.get_last_lr()[0], steps)
                 writer.add_histogram('q_predicted', all_q_1d, steps)
                 writer.add_histogram('q_target', all_q_target_1d, steps)
@@ -419,7 +436,7 @@ def train():
                         sys.exit(0)
                 pb = tqdm(total=save_every, desc='TRAIN')
 
-        for obs, actions, masks, steps_to_done, kyoku_rewards, player_ranks in data_loader:
+        for obs, actions, masks, steps_to_done, kyoku_rewards, player_ranks, ding_que_bonus, ding_que_best_suit in data_loader:
             bs = obs.shape[0]
             if bs != batch_size:
                 remaining_obs.append(obs)
@@ -428,9 +445,11 @@ def train():
                 remaining_steps_to_done.append(steps_to_done)
                 remaining_kyoku_rewards.append(kyoku_rewards)
                 remaining_player_ranks.append(player_ranks)
+                remaining_ding_que_bonus.append(ding_que_bonus)
+                remaining_ding_que_best_suit.append(ding_que_best_suit)
                 remaining_bs += bs
                 continue
-            train_batch(obs, actions, masks, steps_to_done, kyoku_rewards, player_ranks)
+            train_batch(obs, actions, masks, steps_to_done, kyoku_rewards, player_ranks, ding_que_bonus, ding_que_best_suit)
 
         remaining_batches = remaining_bs // batch_size
         if remaining_batches > 0:
@@ -440,6 +459,8 @@ def train():
             steps_to_done = torch.cat(remaining_steps_to_done, dim=0)
             kyoku_rewards = torch.cat(remaining_kyoku_rewards, dim=0)
             player_ranks = torch.cat(remaining_player_ranks, dim=0)
+            ding_que_bonus = torch.cat(remaining_ding_que_bonus, dim=0)
+            ding_que_best_suit = torch.cat(remaining_ding_que_best_suit, dim=0)
             start = 0
             end = batch_size
             while end <= remaining_bs:
@@ -450,6 +471,8 @@ def train():
                     steps_to_done[start:end],
                     kyoku_rewards[start:end],
                     player_ranks[start:end],
+                    ding_que_bonus[start:end],
+                    ding_que_best_suit[start:end],
                 )
                 start = end
                 end += batch_size

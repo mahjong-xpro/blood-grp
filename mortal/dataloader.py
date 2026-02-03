@@ -145,26 +145,27 @@ class FileDatasetsIter(IterableDataset):
                 rank_by_player = game_score.take_rank_by_player()
                 final_scores = game_score.take_final_scores()
 
-                # SWITCH TO SCORE BASED REWARD FOR SBR
-                # Original Rank-based:
-                
                 # SBR Score-based (Maximize Points):
                 # Scale: 1.0 reward = 10000 points
                 kyoku_rewards = self.reward_calc.calc_delta_points(player_id, scores_history, final_scores) / 10000.0
-                
-                # Add Ding Que quality bonus
-                # REMOVED: Since Ding Que is algorithm-controlled, we should rely solely on true score.
-                # Heuristic rewards can introduce noise/bias against the ground truth.
-                # 
-                # ding_que_quality = game_score.take_ding_que_quality()
-                # if len(ding_que_quality) > 0:
-                #     ding_que_quality_arr = np.array(ding_que_quality, dtype=np.float64)
-                #     # Get this player's quality scores for each kyoku
-                #     player_dq_quality = ding_que_quality_arr[:, player_id]
-                #     # Scale and add to rewards (ensure same length)
-                #     min_len = min(len(kyoku_rewards), len(player_dq_quality))
-                #     kyoku_rewards[:min_len] += player_dq_quality[:min_len] * 0.02
-                
+
+                # Per-step Ding Que auxiliary bonus (only at the step where player chose DingQue).
+                # Action indices 31=Man, 32=Pin, 33=Sou. See docs/DING_QUE_AUXILIARY_LEARNING.md.
+                ding_que_aux_enabled = config.get('aux', {}).get('ding_que_aux_enabled', False)
+                ding_que_aux_scale = config.get('aux', {}).get('ding_que_aux_scale', 0.02)
+                ding_que_quality = game_score.take_ding_que_quality()
+                ding_que_best_suit_list = game_score.take_ding_que_best_suit()
+                if ding_que_aux_enabled and len(ding_que_quality) > 0:
+                    ding_que_quality_arr = np.array(ding_que_quality, dtype=np.float64)
+                    player_dq_quality = ding_que_quality_arr[:, player_id]
+                else:
+                    player_dq_quality = None
+                if len(ding_que_best_suit_list) > 0:
+                    dq_best_suit_arr = np.array(ding_que_best_suit_list, dtype=np.int64)
+                    player_dq_best_suit = dq_best_suit_arr[:, player_id]
+                else:
+                    player_dq_best_suit = None
+
                 assert len(kyoku_rewards) >= at_kyoku[-1] + 1 # usually they are equal, unless there is no action in the last kyoku
 
                 scores_seq = np.concatenate((scores_history, [final_scores]))
@@ -189,6 +190,24 @@ class FileDatasetsIter(IterableDataset):
                     next_kyoku_idx = int(at_kyoku[i]) + 1
                     if next_kyoku_idx >= len(player_ranks):
                         next_kyoku_idx = len(player_ranks) - 1
+                    # Ding Que bonus: only at step where action is DingQue (31=Man, 32=Pin, 33=Sou)
+                    if player_dq_quality is not None and int(actions[i]) in (31, 32, 33):
+                        k = int(at_kyoku[i])
+                        if k < len(player_dq_quality):
+                            dq_bonus = float(player_dq_quality[k] * ding_que_aux_scale)
+                        else:
+                            dq_bonus = 0.0
+                    else:
+                        dq_bonus = 0.0
+                    # Ding Que best-suit label for CE auxiliary: 0=Man, 1=Pin, 2=Sou; -1 = not a DingQue step
+                    if player_dq_best_suit is not None and int(actions[i]) in (31, 32, 33):
+                        k = int(at_kyoku[i])
+                        if k < len(player_dq_best_suit):
+                            dq_best_suit = int(player_dq_best_suit[k])
+                        else:
+                            dq_best_suit = -1
+                    else:
+                        dq_best_suit = -1
                     entry = [
                         obs[i],
                         actions[i],
@@ -196,6 +215,8 @@ class FileDatasetsIter(IterableDataset):
                         steps_to_done[i],
                         kyoku_rewards[at_kyoku[i]],
                         player_ranks[next_kyoku_idx],
+                        dq_bonus,
+                        dq_best_suit,
                     ]
                     if self.oracle:
                         entry.insert(1, invisible_obs[i])
