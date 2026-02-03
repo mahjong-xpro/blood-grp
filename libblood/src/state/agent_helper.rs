@@ -474,10 +474,11 @@ impl PlayerState {
                 self.last_cans,
             );
         } else if reaction {
-            // Reaction phase: hand already includes the tile we may call → 3n+2.
+            // Reaction phase: tehai may be 3n+1 (tile not yet in hand) or 3n+2 (tile already in hand).
+            // Only reject impossible counts (3n, or >14).
             ensure!(
-                tehai_sum % 3 == 2,
-                "SP invariant violation: can_discard=false (reaction) but tehai_sum%3 != 2 (tehai_sum={}). \
+                tehai_sum % 3 != 0,
+                "SP invariant violation: can_discard=false (reaction) but tehai_sum%3 == 0 (tehai_sum={}). \
                  kyoku={}, turn={}, tiles_left={}, ding_que={:?}, cans={:?}",
                 tehai_sum,
                 self.kyoku,
