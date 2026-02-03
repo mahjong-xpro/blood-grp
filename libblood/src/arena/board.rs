@@ -759,8 +759,8 @@ impl BoardState {
             target: single_target,
             deltas: Some(deltas),
         };
+        self.broadcast(&hora); // 同步各 PlayerState 的 players_agari，否则 agent 拿到的 state 中「谁已和牌」会滞后
         self.add_log_no_meta(hora);
-        // No need to broadcast
         Ok(())
     }
 

@@ -200,7 +200,7 @@ impl AgariCalculator<'_> {
     /// 2. 自摸（Tsumo）：+1番（if !is_ron）
     /// 3. 七对（QiDui）：+2番
     /// 4. 碰碰胡（ToiToi）：+1番
-    /// 5. 金钩钓（JinGouDiao）：+2番
+    /// 5. 金钩钓（JinGouDiao）：+1番
     /// 6. 清一色（QingYiSe）：+2番
     /// 7. 带幺九（DaiYaoJiu）：+3番
     /// 8. 四归一（SiGuiYi / 根）：+1番/根

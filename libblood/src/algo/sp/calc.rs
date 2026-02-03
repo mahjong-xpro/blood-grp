@@ -669,15 +669,15 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
         };
         
         // Points = 1000 * 2^(fan-1), capped at 5 fan
+        // 血战到底自摸规则：仅未和牌者付「和牌点数」(base_points)，和牌者得 付家数×和牌点数
+        // 此处按「自摸3家」计（3 家付），即最大自摸收益；对局中已和牌者不付（board.rs 按 players_agari 排除）
         let fan_capped = fan.min(5);
         let base_points = 1000 * (1 << (fan_capped.saturating_sub(1)));
-        
-        let points_per_player = base_points / 3; // 3 players pay (excluding winner)
         let scores = [
-            base_points as f32, // Winner gets total
-            -points_per_player as f32, // Other players pay
-            -points_per_player as f32,
-            -points_per_player as f32,
+            (base_points * 3) as f32, // 和牌者得 3×和牌点数（自摸3家时）
+            -base_points as f32,      // 每家付和牌点数（未和牌者）
+            -base_points as f32,
+            -base_points as f32,
         ];
         
         return Some(scores);
