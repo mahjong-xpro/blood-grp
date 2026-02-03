@@ -41,16 +41,16 @@ submit_every = 1000
 # 以更快拉取新参数、提高整体迭代速度；总吞吐由 client 数量补回来。
 games = 6400
 log_dir = '/data/mortal/train_play'  # 自对局数据保存目录
-boltzmann_epsilon = 0.5  # 探索率 (初期: 0.5 - 用户指示重回 Zero Start)
+boltzmann_epsilon = 0.15  # 探索率 (中期: 0.15 - 基于 TensorBoard step~87k 调整)
                      # 阶段建议:
-                     # 1. 初期: 0.5 (当前)
-                     # 2. 中期: 0.15
+                     # 1. 初期: 0.5
+                     # 2. 中期: 0.15 (当前)
                      # 3. 后期: 0.005
 
-boltzmann_temp = 0.5     # 温度参数 (初期: 0.5)
+boltzmann_temp = 0.2     # 温度参数 (中期: 0.2)
                      # 阶段建议:
-                     # 1. 初期: 0.5 (当前)
-                     # 2. 中期: 0.2
+                     # 1. 初期: 0.5
+                     # 2. 中期: 0.2 (当前)
                      # 3. 后期: 0.05
 top_p = 1.0
 repeats = 1
@@ -95,7 +95,7 @@ min_q_weight = 0.0
 
 # 辅助任务配置
 [aux]
-next_rank_weight = 0.2  # 排名预测任务的权重
+next_rank_weight = 0.25  # 排名预测任务的权重 (略升以强化排名学习，test_play avg_pt 略低于随机)
 # 定缺辅助：仅在定缺步加即时奖励塑形，帮助学习定缺选择（见 docs/DING_QUE_AUXILIARY_LEARNING.md）
 ding_que_aux_enabled = true
 ding_que_aux_scale = 0.02  # ding_que_quality in [-1,1]，不宜过大
@@ -116,8 +116,8 @@ max_grad_norm = 1.0  # 启用梯度裁剪 (1.0)，防止无 CQL 时梯度主要�
 
 # 学习率调度器配置
 [optim.scheduler]
-peak = 1e-4  # 峰值学习率
-final = 1e-4  # 最终学习率
+peak = 1e-4   # 峰值学习率
+final = 5e-5  # 最终学习率 (启用 decay，dqn_loss 在 50k+ 缓慢上升时利于稳定)
 warm_up_steps = 1000  # 预热步数 (防止梯度爆炸)
 max_steps = 1000000  # 设置为较大的值以支持长时间训练 (需 > warm_up_steps)
 
