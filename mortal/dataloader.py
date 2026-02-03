@@ -160,9 +160,12 @@ class FileDatasetsIter(IterableDataset):
                     player_dq_quality = ding_que_quality_arr[:, player_id]
                 else:
                     player_dq_quality = None
+                # Rust Vec<[u8; 4]> is exposed as list of 4-byte sequences (bytes or list); take player_id-th column
                 if len(ding_que_best_suit_list) > 0:
-                    dq_best_suit_arr = np.array(ding_que_best_suit_list, dtype=np.int64)
-                    player_dq_best_suit = dq_best_suit_arr[:, player_id]
+                    player_dq_best_suit = np.array(
+                        [row[player_id] for row in ding_que_best_suit_list],
+                        dtype=np.int64,
+                    )
                 else:
                     player_dq_best_suit = None
 
