@@ -4,6 +4,12 @@ use pyo3::prelude::*;
 
 pub const MAX_VERSION: u32 = 4;
 
+/// Initial score per player (血战到底零和：4×INITIAL_SCORE = TOTAL_SCORE).
+/// 60000 起步可避免飞人时出现负分。
+pub const INITIAL_SCORE: i32 = 60_000;
+/// Total points in the game (zero-sum). Must equal 4 * INITIAL_SCORE.
+pub const TOTAL_SCORE: i32 = 4 * INITIAL_SCORE;
+
 pub const ACTION_SPACE: usize = 27 // discard (27 tile kinds)
                               + 1  // pon
                               + 1  // kan (decide)
@@ -51,5 +57,7 @@ pub(crate) fn register_module(
     m.add_function(wrap_pyfunction!(oracle_obs_shape, &m)?)?;
     m.add("MAX_VERSION", MAX_VERSION)?;
     m.add("ACTION_SPACE", ACTION_SPACE)?;
+    m.add("INITIAL_SCORE", INITIAL_SCORE)?;
+    m.add("TOTAL_SCORE", TOTAL_SCORE)?;
     add_submodule(py, prefix, super_mod, &m)
 }

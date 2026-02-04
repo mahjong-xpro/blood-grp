@@ -332,11 +332,11 @@ impl GameScore {
 
                         let rk = Rankings::new(final_scores);
 
-                        // assume the sum of scores to be 100k (zero-sum: 4×25000)
+                        // assume the sum of scores to be TOTAL_SCORE (zero-sum: 4×INITIAL_SCORE)
                         let sum: i32 = final_scores.iter().sum();
-                        if sum != 100_000 {
+                        if sum != crate::consts::TOTAL_SCORE {
                             let top = rk.player_by_rank[0] as usize;
-                            final_scores[top] += 100_000 - sum;
+                            final_scores[top] += crate::consts::TOTAL_SCORE - sum;
                         }
 
                         rank_by_player_opt = Some(rk.rank_by_player);
@@ -362,11 +362,13 @@ impl GameScore {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::consts::INITIAL_SCORE;
     use crate::mjai::Suit;
     use crate::t;
 
     #[test]
     fn final_scores_include_kan_deltas() {
+        let init: [i32; 4] = [INITIAL_SCORE; 4];
         let events = vec![
             Event::StartGame {
                 names: [
@@ -380,7 +382,7 @@ mod test {
             Event::StartKyoku {
                 kyoku: 1,
                 oya: 0,
-                scores: [25000, 25000, 25000, 25000],
+                scores: init,
                 tehais: [[t!(1m); 13]; 4],
             },
             // Ankan: instant payment (+6000 to actor, -2000 each from others)
@@ -398,8 +400,16 @@ mod test {
         ];
 
         let gs = GameScore::load_events(&events).unwrap();
-        assert_eq!(gs.scores_history, vec![[25000, 25000, 25000, 25000]]);
-        assert_eq!(gs.final_scores, [31000, 23000, 23000, 23000]);
+        assert_eq!(gs.scores_history, vec![init]);
+        assert_eq!(
+            gs.final_scores,
+            [
+                INITIAL_SCORE + 6000,
+                INITIAL_SCORE - 2000,
+                INITIAL_SCORE - 2000,
+                INITIAL_SCORE - 2000,
+            ]
+        );
         // rank_by_player is 0 for top, 3 for last
         assert_eq!(gs.rank_by_player[0], 0);
     }

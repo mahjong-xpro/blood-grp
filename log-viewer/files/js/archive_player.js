@@ -192,7 +192,7 @@ loadAction = function(action) {
         if (prevBoard) {
           board.players[i].score = prevBoard.players[i].score;
         } else {
-          board.players[i].score = 25000;
+          board.players[i].score = 60000;
         }
       }
       break;

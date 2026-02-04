@@ -1,3 +1,4 @@
+use crate::consts::{INITIAL_SCORE, TOTAL_SCORE};
 use crate::mjai::Event;
 use crate::py_helper::add_submodule;
 use crate::rankings::Rankings;
@@ -302,16 +303,16 @@ impl Stat {
 
         let rk = Rankings::new(cur_scores);
 
-        // assume the sum of scores to be 100k (zero-sum: 4×25000)
+        // assume the sum of scores to be TOTAL_SCORE (zero-sum: 4×INITIAL_SCORE)
         let sum: i32 = cur_scores.iter().sum();
-        if sum != 100_000 {
+        if sum != TOTAL_SCORE {
             let top = rk.player_by_rank[0] as usize;
-            cur_scores[top] += 100_000 - sum;
+            cur_scores[top] += TOTAL_SCORE - sum;
         }
 
-        // assume the starting point to be 25000
+        // assume the starting point to be INITIAL_SCORE
         let final_score = cur_scores[player_id as usize];
-        stat.point = final_score as i64 - 25000;
+        stat.point = final_score as i64 - i64::from(INITIAL_SCORE);
         if final_score < 0 {
             stat.tobi = 1;
         }

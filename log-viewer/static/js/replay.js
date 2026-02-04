@@ -22,10 +22,10 @@ const App = {
 
         // Players State (Snapshot at current index)
         const players = ref([
-            { name: 'Player 0', score: 25000, dingque: null, agari: false, riichi: false, tehai: [], kawa: [], fuuro: [] },
-            { name: 'Player 1', score: 25000, dingque: null, agari: false, riichi: false, tehai: [], kawa: [], fuuro: [] },
-            { name: 'Player 2', score: 25000, dingque: null, agari: false, riichi: false, tehai: [], kawa: [], fuuro: [] },
-            { name: 'Player 3', score: 25000, dingque: null, agari: false, riichi: false, tehai: [], kawa: [], fuuro: [] },
+            { name: 'Player 0', score: 60000, dingque: null, agari: false, riichi: false, tehai: [], kawa: [], fuuro: [] },
+            { name: 'Player 1', score: 60000, dingque: null, agari: false, riichi: false, tehai: [], kawa: [], fuuro: [] },
+            { name: 'Player 2', score: 60000, dingque: null, agari: false, riichi: false, tehai: [], kawa: [], fuuro: [] },
+            { name: 'Player 3', score: 60000, dingque: null, agari: false, riichi: false, tehai: [], kawa: [], fuuro: [] },
         ]);
         const currentKyoku = ref(0);
         const tilesLeft = ref(56);
@@ -129,7 +129,7 @@ const App = {
             const names = gameInfo.value.playerNames || ['Player 0', 'Player 1', 'Player 2', 'Player 3'];
             players.value = names.map(name => ({
                 name,
-                score: 25000,
+                score: 60000,
                 dingque: null,
                 dingque_suit: '',
                 dingque_char: '',

@@ -24,7 +24,7 @@ use tinyvec::ArrayVec;
 pub struct Board {
     /// Counts from 0 (for recording only, no game flow impact)
     pub kyoku: u8,
-    /// [25000; 4]
+    /// [INITIAL_SCORE; 4] (see crate::consts)
     pub scores: [i32; 4],
 
     pub haipai: [[Tile; 13]; 4],
@@ -1012,9 +1012,14 @@ impl BoardState {
                 self.broadcast(&tsumo);
                 self.add_log_no_meta(tsumo);
                 
-                // Reset Score Transfer state on Tsumo (new turn)
-                self.last_kan_actor = None;
-                self.last_kan_revenue = 0;
+                // Reset Score Transfer state only when this Tsumo is a normal turn draw,
+                // not the rinshan draw after a kong. 杠上炮转雨 requires last_kan_actor/last_kan_revenue
+                // to remain set until the discarder is ronned (or the next normal turn).
+                let is_rinshan_draw = self.last_kan_actor == Some(self.tsumo_actor);
+                if !is_rinshan_draw {
+                    self.last_kan_actor = None;
+                    self.last_kan_revenue = 0;
+                }
             }
 
             Event::Dahai { actor, pai: _pai, .. } => {
@@ -1598,7 +1603,7 @@ mod test {
     fn create_test_board_state() -> BoardState {
         let mut board = Board::default();
         board.kyoku = 0;
-        board.scores = [25000; 4];
+        board.scores = [crate::consts::INITIAL_SCORE; 4];
         
         // Create simple haipai (all players have same hand for simplicity)
         // Use a hand that doesn't have all three suits to avoid issues

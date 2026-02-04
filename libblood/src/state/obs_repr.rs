@@ -2,7 +2,7 @@ use super::item::KawaItem;
 use super::{PlayerState, SinglePlayerTables};
 use crate::algo::sp::{Candidate, CandidateColumn};
 use crate::array::Simple2DArray;
-use crate::consts::{ACTION_SPACE, MAX_VERSION, obs_shape};
+use crate::consts::{ACTION_SPACE, MAX_VERSION, obs_shape, TOTAL_SCORE};
 use crate::tile::Tile;
 // use crate::{tu8, tuz}; // Unused imports
 use std::num::NonZeroUsize;
@@ -141,16 +141,19 @@ impl<'a> ObsEncoderContext<'a> {
 
 
         for &score in &state.scores {
-            let v = score.clamp(0, 100_000) as f32 / 100_000.;
+            // 60000 起步后负分极少，但飞人仍可能为负；归一化到 [0,1] 且 IntegerEncoder 需非负，故 clamp。
+            let score_clamped = score.clamp(0, TOTAL_SCORE);
+            let v = score_clamped as f32 / TOTAL_SCORE as f32;
             self.arr.fill(self.idx, v);
             self.idx += 1;
 
+            let score_for_encoder = (score_clamped as usize).saturating_mul(500) / TOTAL_SCORE as usize;
             match self.version {
-                2 | 3 => IntegerEncoder::new(score as usize / 100, 500)
+                2 | 3 => IntegerEncoder::new(score_for_encoder, 500)
                     .rbf_intervals(10)
                     .encode(&mut self),
                 4 => {
-                    let v = score.clamp(0, 100_000) as f32 / 100_000.;
+                    let v = score_clamped as f32 / TOTAL_SCORE as f32;
                     self.arr.fill(self.idx, v);
                     self.idx += 1;
                 }

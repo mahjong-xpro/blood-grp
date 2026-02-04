@@ -28,7 +28,7 @@ def run_test():
     # 2. Mock Log Data (Bloody Battle Scenario)
     # Scenario:
     # - Start Game
-    # - Start Kyoku (Scores: 25000)
+    # - Start Kyoku (Scores: 60000)
     # - Ding Que (All players)
     # - Tsumo / Dahai cycle
     # - Hora (Player 0 wins from Player 1) -> Score update check
@@ -37,7 +37,7 @@ def run_test():
     
     mock_log = """
 {"type":"start_game","names":["A","B","C","D"],"seed":[1,1]}
-{"type":"start_kyoku","kyoku":1,"oya":0,"scores":[25000,25000,25000,25000],"tehais":[["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"],["1p","2p","3p","4p","5p","6p","7p","8p","9p","1s","2s","3s","4s"],["1s","2s","3s","4s","5s","6s","7s","8s","9s","1m","2m","3m","4m"],["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"]]}
+{"type":"start_kyoku","kyoku":1,"oya":0,"scores":[60000,60000,60000,60000],"tehais":[["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"],["1p","2p","3p","4p","5p","6p","7p","8p","9p","1s","2s","3s","4s"],["1s","2s","3s","4s","5s","6s","7s","8s","9s","1m","2m","3m","4m"],["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"]]}
 {"type":"ding_que","actor":0,"suit":"man"}
 {"type":"ding_que","actor":1,"suit":"pin"}
 {"type":"ding_que","actor":2,"suit":"sou"}
@@ -61,8 +61,8 @@ def run_test():
         game = games[0] # Perspective of Player 0 (A)
         
         # 4. Verify Score Update Logic
-        # Initial: 25000
-        # After Hora: Player 0 lost 1000 -> 24000. Player 1 gained 1000 -> 26000.
+        # Initial: 60000
+        # After Hora: Player 0 lost 1000 -> 59000. Player 1 gained 1000 -> 61000.
         # Check obs score feature at step corresponding to Ryukyoku or late game.
         
         obs_list = game.take_obs()
@@ -79,10 +79,10 @@ def run_test():
         
         # In this mock, we had one Hora with deltas [-1000, 1000, 0, 0]
         # and Ryukyoku with [0,0,0,0]
-        # Base: 25000.
-        # Expected Final: [24000, 26000, 25000, 25000]
-        
-        expected_final = [24000, 26000, 25000, 25000]
+        # Base: 60000.
+        # Expected Final: [59000, 61000, 60000, 60000]
+
+        expected_final = [59000, 61000, 60000, 60000]
         if list(final_scores) == expected_final:
              print("SUCCESS: Score Update Logic Validated (Final Scores match).")
         else:
@@ -105,7 +105,7 @@ def run_test():
     # 5. Verify GameScore includes kan deltas (scoring reconstruction)
     mock_score_log = """
 {"type":"start_game","names":["A","B","C","D"],"seed":[1,2]}
-{"type":"start_kyoku","kyoku":1,"oya":0,"scores":[25000,25000,25000,25000],"tehais":[["1m","1m","1m","1m","1m","1m","1m","1m","1m","1m","1m","1m","1m"],["2m","2m","2m","2m","2m","2m","2m","2m","2m","2m","2m","2m","2m"],["3m","3m","3m","3m","3m","3m","3m","3m","3m","3m","3m","3m","3m"],["4m","4m","4m","4m","4m","4m","4m","4m","4m","4m","4m","4m","4m"]]}
+{"type":"start_kyoku","kyoku":1,"oya":0,"scores":[60000,60000,60000,60000],"tehais":[["1m","1m","1m","1m","1m","1m","1m","1m","1m","1m","1m","1m","1m"],["2m","2m","2m","2m","2m","2m","2m","2m","2m","2m","2m","2m","2m"],["3m","3m","3m","3m","3m","3m","3m","3m","3m","3m","3m","3m","3m"],["4m","4m","4m","4m","4m","4m","4m","4m","4m","4m","4m","4m","4m"]]}
 {"type":"ankan","actor":0,"consumed":["9m","9m","9m","9m"],"deltas":[6000,-2000,-2000,-2000]}
 {"type":"ryukyoku","deltas":[0,0,0,0]}
 {"type":"end_kyoku"}
@@ -113,7 +113,7 @@ def run_test():
     """
     gs2 = GameScore.load_log(mock_score_log.strip())
     final_scores2 = gs2.take_final_scores()
-    expected_final2 = [31000, 23000, 23000, 23000]
+    expected_final2 = [66000, 58000, 58000, 58000]  # 60000 base + ankan deltas
     if list(final_scores2) == expected_final2:
         print("SUCCESS: GameScore includes kan deltas.")
     else:

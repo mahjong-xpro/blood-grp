@@ -244,7 +244,7 @@ mod test {
         let lines = r#"
             {"type":"none"}
             {"type":"start_game","names":["Equim","Mortal","akochan","NoName"],"seed":[123,456]}
-            {"type":"start_kyoku","kyoku":1,"oya":0,"scores":[25000,25000,25000,25000],"tehais":[["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"],["1p","2p","3p","4p","5p","6p","7p","8p","9p","1s","2s","3s","4s"],["1s","2s","3s","4s","5s","6s","7s","8s","9s","1m","2m","3m","4m"],["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"]]}
+            {"type":"start_kyoku","kyoku":1,"oya":0,"scores":[60000,60000,60000,60000],"tehais":[["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"],["1p","2p","3p","4p","5p","6p","7p","8p","9p","1s","2s","3s","4s"],["1s","2s","3s","4s","5s","6s","7s","8s","9s","1m","2m","3m","4m"],["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"]]}
             {"type":"ding_que","actor":0,"suit":"man"}
             {"type":"ding_que","actor":1,"suit":"pin"}
             {"type":"ding_que","actor":2,"suit":"sou"}
@@ -295,7 +295,7 @@ mod test {
             "type": "start_kyoku",
             "kyoku": 1,
             "oya": 0,
-            "scores": [25000, 25000, 25000, 25000],
+            "scores": [60000, 60000, 60000, 60000],
             "tehais": [
                 ["1m","2m","3m","4m","5m","6m","7m","8m","9m","1p","2p","3p","4p"],
                 ["1p","2p","3p","4p","5p","6p","7p","8p","9p","1s","2s","3s","4s"],

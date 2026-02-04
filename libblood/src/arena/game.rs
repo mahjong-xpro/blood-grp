@@ -1,6 +1,7 @@
 use super::board::{Board, BoardState, Poll};
 use super::result::GameResult;
 use crate::agent::BatchAgent;
+use crate::consts::INITIAL_SCORE;
 use crate::mjai::EventExt;
 use std::time::Duration;
 use std::{array, mem};
@@ -209,7 +210,7 @@ impl BatchGame {
         Self {
             // Bloody Battle: one kyoku (one deal) per game/episode.
             length: 1,
-            init_scores: [25000; 4],
+            init_scores: [INITIAL_SCORE; 4],
             disable_progress_bar,
         }
     }

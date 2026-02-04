@@ -28,10 +28,10 @@ try:
     # Test calc_delta_points with dummy data
     # scores_history: [kyoku_count, 4]
     scores_history_mock = np.zeros((10, 4)) 
-    # Mock Start Scores: 25000, 25000, 25000, 25000
-    scores_history_mock[:] = 25000
-    
-    final_scores = [30000, 20000, 25000, 25000]
+    # Mock Start Scores: 60000, 60000, 60000, 60000
+    scores_history_mock[:] = 60000
+
+    final_scores = [70000, 50000, 60000, 60000]  # example final (zero-sum 240000)
     
     player_id = 0
     delta = rc.calc_delta_points(player_id, scores_history_mock, final_scores)

@@ -1,17 +1,18 @@
 // Add test for stage 2 completion verification
 #[test]
 fn test_stage2_completion_verification() {
+    use crate::consts::INITIAL_SCORE;
     use crate::hand::{hand, tile27_to_vec};
     use crate::mjai::Event;
     use crate::state::PlayerState;
     use crate::t;
-    
+
     // Test 1: Verify no chi functionality
     let mut ps = PlayerState::new(0);
     let _unused = ps.update(&Event::StartKyoku {
         kyoku: 1,
         oya: 0,
-        scores: [25000; 4],
+        scores: [INITIAL_SCORE; 4],
         tehais: [
             tile27_to_vec(&hand("123m 456p 789s 11m").unwrap())
                 .try_into()
