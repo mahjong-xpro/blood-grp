@@ -119,13 +119,8 @@ def train():
         steps = state['steps']
     
     # Initialize scheduler after loading checkpoint to get correct steps for offset
+    # Do NOT load scheduler state as it would overwrite the offset parameter
     scheduler = LinearWarmUpCosineAnnealingLR(optimizer, offset=steps, **config['optim']['scheduler'])
-    
-    # Load scheduler state if resuming from checkpoint
-    if path.exists(state_file):
-        state = torch.load(state_file, weights_only=True, map_location=device)
-        if not online or state['config']['control']['online']:
-            scheduler.load_state_dict(state['scheduler'])
 
     optimizer.zero_grad(set_to_none=True)
     mse = nn.MSELoss()
