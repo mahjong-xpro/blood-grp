@@ -96,7 +96,6 @@ def train():
         {'params': no_decay_params},
     ]
     optimizer = optim.AdamW(param_groups, lr=1, weight_decay=0, betas=betas, eps=eps)
-    scheduler = LinearWarmUpCosineAnnealingLR(optimizer, offset=steps, **config['optim']['scheduler'])
     scaler = GradScaler(device.type, enabled=enable_amp)
     test_player = TestPlayer()
     best_perf = {
@@ -114,12 +113,19 @@ def train():
         mortal.load_state_dict(state['mortal'])
         dqn.load_state_dict(state['current_dqn'])
         aux_net.load_state_dict(state['aux_net'])
-        if not online or state['config']['control']['online']:
-            optimizer.load_state_dict(state['optimizer'])
-            scheduler.load_state_dict(state['scheduler'])
+        optimizer.load_state_dict(state['optimizer'])
         scaler.load_state_dict(state['scaler'])
         best_perf = state['best_perf']
         steps = state['steps']
+    
+    # Initialize scheduler after loading checkpoint to get correct steps for offset
+    scheduler = LinearWarmUpCosineAnnealingLR(optimizer, offset=steps, **config['optim']['scheduler'])
+    
+    # Load scheduler state if resuming from checkpoint
+    if path.exists(state_file):
+        state = torch.load(state_file, weights_only=True, map_location=device)
+        if not online or state['config']['control']['online']:
+            scheduler.load_state_dict(state['scheduler'])
 
     optimizer.zero_grad(set_to_none=True)
     mse = nn.MSELoss()
