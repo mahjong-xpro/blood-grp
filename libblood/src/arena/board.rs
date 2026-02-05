@@ -686,10 +686,11 @@ impl BoardState {
                                      // State changed, update caches.
                                      // After a robbed kong, the victim does NOT get the rinshan draw,
                                      // so they remain at 3n+1; update waits, not discard tables.
-                                     victim_state.update_shanten();
-                                     victim_state.update_waits();
-                                     
-                                     log::info!("ChanKan State Fix: Reverted Player {}'s MinKan of tile {} to Pon", kan_actor, tile);
+                                    victim_state.update_shanten();
+                                    victim_state.update_waits();
+                                    
+                                    // 抢杠时每发生一次打一条；大批量对局（如 6400 局）会累积很多条，故用 debug 降噪
+                                    log::debug!("ChanKan State Fix: Reverted Player {}'s MinKan of tile {} to Pon", kan_actor, tile);
                                  } else {
                                      log::warn!("ChanKan State Fix: Failed to find MinKan for tile {} in Player {}'s state. Consistency might be broken.", tile, kan_actor);
                                  }
