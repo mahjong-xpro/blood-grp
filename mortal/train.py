@@ -96,7 +96,7 @@ def train():
         {'params': no_decay_params},
     ]
     optimizer = optim.AdamW(param_groups, lr=1, weight_decay=0, betas=betas, eps=eps)
-    scheduler = LinearWarmUpCosineAnnealingLR(optimizer, **config['optim']['scheduler'])
+    scheduler = LinearWarmUpCosineAnnealingLR(optimizer, offset=steps, **config['optim']['scheduler'])
     scaler = GradScaler(device.type, enabled=enable_amp)
     test_player = TestPlayer()
     best_perf = {
