@@ -41,13 +41,13 @@ submit_every = 1000
 # 以更快拉取新参数、提高整体迭代速度；总吞吐由 client 数量补回来。
 games = 6400
 log_dir = '/data/mortal/train_play'  # 自对局数据保存目录
-boltzmann_epsilon = 0.05  # 探索率 (后期: 0.05 - Step 400k+ 降低探索)
+boltzmann_epsilon = 0.1  # 探索率 (后期: 0.05 - Step 400k+ 降低探索)
                      # 阶段建议:
                      # 1. 初期: 0.5
                      # 2. 中期: 0.15
                      # 3. 后期: 0.05 (当前)
 
-boltzmann_temp = 0.1     # 温度参数 (后期: 0.1 - Step 400k+ 降低探索)
+boltzmann_temp = 0.15    # 温度参数 (后期: 0.1 - Step 400k+ 降低探索)
                      # 阶段建议:
                      # 1. 初期: 0.5
                      # 2. 中期: 0.2
