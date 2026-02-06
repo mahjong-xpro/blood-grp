@@ -117,7 +117,7 @@ max_grad_norm = 1.0  # 启用梯度裁剪 (1.0)，防止无 CQL 时梯度主要�
 # 学习率调度器配置
 [optim.scheduler]
 peak = 1e-4   # 峰值学习率
-final = 5e-5  # 最终学习率 (启用 decay，dqn_loss 在 50k+ 缓慢上升时利于稳定)
+final = 1e-4  # 最终学习率 (启用 decay，dqn_loss 在 50k+ 缓慢上升时利于稳定)
 warm_up_steps = 1000  # 预热步数 (防止梯度爆炸)
 max_steps = 1000000  # 设置为较大的值以支持长时间训练 (需 > warm_up_steps)
 
