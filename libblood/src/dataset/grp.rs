@@ -142,12 +142,26 @@ pub(crate) fn calc_ding_que_cost(tehai: &[u8; 27], suit: Suit) -> f32 {
     }
     let toitoi_bonus = if pair_triplet_count >= 4 { 0.5 } else { 0.0 };
 
+    // Quantity Penalty (Golden Balance Plan + User Request)
+    // - Count >= 6: Soft Ban (+20.0). It's suicidal to void >=6 tiles.
+    // - Count == 5: Moderate Penalty (+0.6). Worse than pair penalty(0.35), close to sequence(0.7).
+    // - Count == 4: Slight Penalty (+0.15). Slight bias against voiding 4 tiles if 3-tile option exists.
+    let count_penalty = if removed_count >= 6 {
+        20.0
+    } else if removed_count == 5 {
+        0.8
+    } else if removed_count == 4 {
+        0.2
+    } else {
+        0.0
+    };
+
     // Improvement-kinds bonus (进张种类): more tile kinds that reduce shanten = better hand shape
     let improvement_kinds = count_improvement_kinds(&tehai_without, remaining_count, shanten);
     let improvement_bonus = (improvement_kinds as f32 * 0.12).min(2.0); // cap so one factor doesn't dominate
 
     // Final cost: 刻子/顺子/对子 in the removed suit all increase cost (worse to 定缺 a suit that has useful structure)
-    shanten as f32 + triplet_penalty + sequence_penalty + pair_penalty - toitoi_bonus - improvement_bonus
+    shanten as f32 + triplet_penalty + sequence_penalty + pair_penalty - toitoi_bonus - improvement_bonus + count_penalty
 }
 
 /// Returns the heuristic best suit index for Ding Que: 0 = Man, 1 = Pin, 2 = Sou.
