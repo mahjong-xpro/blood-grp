@@ -77,7 +77,7 @@ augmented_first = false
 
 # 环境配置
 [env]
-gamma = 0.995  # 折扣因子 (激进调整: 0.95, 强迫 AI 重视眼前收益，拒绝并在)
+gamma = 0.98  # 折扣因子 (激进调整: 0.95, 强迫 AI 重视眼前收益，拒绝并在)
 pts = [6.0, 4.0, 2.0, 0.0]
 
 # ResNet 模型配置
@@ -87,7 +87,7 @@ num_blocks = 40
 
 # CQL (Conservative Q-Learning) 配置
 [cql]
-min_q_weight = 0.0
+min_q_weight = 0.3
                      # CQL 权重 (压制未见动作的力度)
                      # 阶段建议:
                      # 1. Zero Start: 0.0 (关闭 CQL，鼓励自由探索，避免初期过度悲观)
