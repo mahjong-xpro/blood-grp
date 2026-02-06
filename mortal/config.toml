@@ -80,6 +80,12 @@ augmented_first = false
 gamma = 0.98  # 折扣因子 (激进调整: 0.95, 强迫 AI 重视眼前收益，拒绝并在)
 pts = [6.0, 4.0, 2.0, 0.0]
 
+# 奖励塑形配置
+[reward_shaping]
+# 排名奖励 (加到游戏结束时的最后一个 kyoku)
+rank_bonus_enabled = true
+rank_bonuses = [0.3, 0.1, -0.1, -0.3]  # 1st, 2nd, 3rd, 4th
+
 # ResNet 模型配置
 [resnet]
 conv_channels = 192

@@ -64,7 +64,7 @@ class FileDatasetsIter(IterableDataset):
         # self.grp = GRP(**config['grp']['network'])
         # grp_state = torch.load(config['grp']['state_file'], weights_only=True, map_location=torch.device('cpu'))
         # self.grp.load_state_dict(grp_state['model'])
-        self.reward_calc = RewardCalculator()
+        self.reward_calc = RewardCalculator(config)
 
         for _ in range(self.num_epochs):
             yield from self.load_files(self.augmented_first)
@@ -148,6 +148,11 @@ class FileDatasetsIter(IterableDataset):
                 # SBR Score-based (Maximize Points):
                 # Scale: 1.0 reward = 10000 points
                 kyoku_rewards = self.reward_calc.calc_delta_points(player_id, scores_history, final_scores) / 10000.0
+                
+                # 添加排名奖励到最后一个 kyoku (游戏结束时)
+                if self.reward_calc.rank_bonus_enabled and len(kyoku_rewards) > 0:
+                    rank_bonus = self.reward_calc.calc_rank_bonus(player_id, final_scores)
+                    kyoku_rewards[-1] += rank_bonus
 
                 # Per-step Ding Que auxiliary bonus (only at the step where player chose DingQue).
                 # Action indices 31=Man, 32=Pin, 33=Sou. See docs/DING_QUE_AUXILIARY_LEARNING.md.
