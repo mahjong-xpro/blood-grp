@@ -100,7 +100,7 @@ next_rank_weight = 0.25  # 排名预测任务的权重 (略升以强化排名学
 ding_que_aux_enabled = true
 ding_que_aux_scale = 0.02  # ding_que_quality in [-1,1]，不宜过大
 # 定缺 CE 监督：仅在定缺步用启发式「最佳花色」做交叉熵损失（方案 B）
-ding_que_ce_weight = 0.2
+ding_que_ce_weight = 1
 
 # Batch Normalization 冻结配置
 [freeze_bn]
