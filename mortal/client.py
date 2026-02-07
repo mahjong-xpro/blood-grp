@@ -28,7 +28,8 @@ def main():
     train_player = TrainPlayer()
     param_version = -1
 
-    pts = np.array([90, 45, 0, -135])
+    # 从配置读取 pts (血战麻将: 按排名计分)
+    pts = np.array(config['env']['pts'])
     history_window = config['online']['history_window']
     history = []
 
