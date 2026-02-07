@@ -80,6 +80,10 @@ augmented_first = false
 gamma = 0.98  # 折扣因子 (激进调整: 0.95, 强迫 AI 重视眼前收益，拒绝并在)
 pts = [6.0, 4.0, 2.0, 0.0]
 
+# TD(λ) 配置
+td_lambda = 0.95         # λ 参数: 0=TD(0), 1=MC, 0.95=推荐值
+td_lambda_enabled = true # 启用 TD(λ) 训练 (替代纯 Monte Carlo)
+
 # 奖励塑形配置
 [reward_shaping]
 # 排名奖励 (加到游戏结束时的最后一个 kyoku)
@@ -107,6 +111,9 @@ ding_que_aux_enabled = true
 ding_que_aux_scale = 0.02  # ding_que_quality in [-1,1]，不宜过大
 # 定缺 CE 监督：仅在定缺步用启发式「最佳花色」做交叉熵损失（方案 B）
 ding_que_ce_weight = 2
+# 对手等待预测: 预测 3 个对手的听牌 (81 = 3×27)
+opp_wait_enabled = false  # 需要 libblood 重新编译后启用
+opp_wait_weight = 0.1     # BCE 损失权重
 
 # Batch Normalization 冻结配置
 [freeze_bn]

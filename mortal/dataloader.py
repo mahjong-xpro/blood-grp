@@ -30,6 +30,64 @@ from reward_calculator import RewardCalculator
 from libblood.dataset import GameplayLoader
 from config import config
 
+
+def compute_td_lambda_returns(
+    kyoku_rewards: np.ndarray,
+    at_kyoku: np.ndarray,
+    dones: np.ndarray,
+    apply_gamma: np.ndarray,
+    gamma: float,
+    lambda_: float,
+    game_size: int
+) -> np.ndarray:
+    """
+    计算 TD(λ) 回报.
+    
+    TD(λ) 使用资格迹混合 n-step 回报:
+    G_t^λ = r_t + γ * (1-done) * [(1-λ)*V(s') + λ*G_{t+1}^λ]
+    
+    由于我们没有 V(s) 估计, 使用简化版本:
+    - 在 kyoku 结束时, 使用该 kyoku 的奖励
+    - 中间步骤使用 TD(λ) 递推
+    
+    Args:
+        kyoku_rewards: 每个 kyoku 的奖励 (shape: [num_kyoku])
+        at_kyoku: 每步对应的 kyoku 索引 (shape: [game_size])
+        dones: 每步是否结束 (shape: [game_size])
+        apply_gamma: 每步是否应用折扣 (shape: [game_size])
+        gamma: 折扣因子
+        lambda_: TD(λ) 的 λ 参数
+        game_size: 游戏步数
+        
+    Returns:
+        td_returns: 每步的 TD(λ) 回报 (shape: [game_size])
+    """
+    td_returns = np.zeros(game_size, dtype=np.float64)
+    
+    # 反向计算 TD(λ) 回报
+    running_return = 0.0
+    
+    for i in reversed(range(game_size)):
+        k = int(at_kyoku[i])
+        step_reward = kyoku_rewards[k] if dones[i] else 0.0
+        
+        if dones[i]:
+            # Kyoku 结束, 回报就是该 kyoku 的奖励
+            running_return = step_reward
+        else:
+            # TD(λ) 递推: G_t = r_t + γλG_{t+1}
+            # 注意: apply_gamma 控制是否应用折扣
+            if apply_gamma[i]:
+                running_return = step_reward + gamma * lambda_ * running_return
+            else:
+                # 不应用折扣时, 保持当前回报 (用于 DingQue 等特殊步骤)
+                running_return = step_reward + lambda_ * running_return
+        
+        td_returns[i] = running_return
+    
+    return td_returns
+
+
 class FileDatasetsIter(IterableDataset):
     def __init__(
         self,
@@ -202,6 +260,28 @@ class FileDatasetsIter(IterableDataset):
                         steps += int(apply_gamma[i])
                     steps_to_done[i] = steps
 
+                # TD(λ) 回报计算
+                td_lambda_enabled = config.get('env', {}).get('td_lambda_enabled', False)
+                td_lambda = config.get('env', {}).get('td_lambda', 0.95)
+                gamma = config.get('env', {}).get('gamma', 0.99)
+                
+                if td_lambda_enabled:
+                    # 将 dones 和 apply_gamma 转换为 numpy 数组
+                    dones_arr = np.array(dones, dtype=np.bool_)
+                    apply_gamma_arr = np.array(apply_gamma, dtype=np.bool_)
+                    
+                    td_returns = compute_td_lambda_returns(
+                        kyoku_rewards=kyoku_rewards,
+                        at_kyoku=at_kyoku,
+                        dones=dones_arr,
+                        apply_gamma=apply_gamma_arr,
+                        gamma=gamma,
+                        lambda_=td_lambda,
+                        game_size=game_size
+                    )
+                else:
+                    td_returns = None
+
                 for i in range(game_size):
                     # player_ranks is based on scores_history + final_scores, so it usually has
                     # length = (#kyoku + 1). Some logs may mark actions with at_kyoku==#kyoku
@@ -227,12 +307,19 @@ class FileDatasetsIter(IterableDataset):
                             dq_best_suit = -1
                     else:
                         dq_best_suit = -1
+                    
+                    # 使用 TD(λ) 回报或原始 MC 回报
+                    if td_returns is not None:
+                        reward_value = td_returns[i]
+                    else:
+                        reward_value = kyoku_rewards[at_kyoku[i]]
+                    
                     entry = [
                         obs[i],
                         actions[i],
                         masks[i],
                         steps_to_done[i],
-                        kyoku_rewards[at_kyoku[i]],
+                        reward_value,
                         player_ranks[next_kyoku_idx],
                         dq_bonus,
                         dq_best_suit,
@@ -240,6 +327,7 @@ class FileDatasetsIter(IterableDataset):
                     if self.oracle:
                         entry.insert(1, invisible_obs[i])
                     self.buffer.append(entry)
+
 
     def __iter__(self):
         if self.iterator is None:

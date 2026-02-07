@@ -74,6 +74,10 @@ augmented_first = false
 gamma = 0.99  # 阶段 1: 高 gamma，学习长期规划 (后期降到 0.98)
 pts = [6.0, 4.0, 2.0, 0.0]
 
+# TD(λ) 配置
+td_lambda = 0.95         # λ 参数: 0=TD(0), 1=MC, 0.95=推荐值
+td_lambda_enabled = true # 启用 TD(λ) 训练 (替代纯 Monte Carlo)
+
 # 奖励塑形配置
 [reward_shaping]
 # 阶段 1: 关闭排名奖励，纯靠分数差学习基础能力
@@ -97,10 +101,10 @@ baseline_update_threshold = 3.2
 # │ 2. 收敛期  │  true      │ Step 100k+ (avg_pt > 2.8) │
 # └──────────────────────────────────────────────────────┘
 
-# ResNet 模型配置
+# ResNet 模型配置 - 增大模型容量
 [resnet]
-conv_channels = 192
-num_blocks = 40
+conv_channels = 256  # 从 192 增加，更强的表示能力
+num_blocks = 50      # 从 40 增加，更深的网络
 
 # CQL 配置 - online 模式下不生效，但保留配置
 [cql]
@@ -116,6 +120,10 @@ ding_que_aux_scale = 0.02
 
 # 定缺 CE 监督 - 初期适度
 ding_que_ce_weight = 1  # 阶段 1: 适度监督 (后期提高到 2-3)
+
+# 对手等待预测: 预测 3 个对手的听牌 (81 = 3×27)
+opp_wait_enabled = false  # 需要 libblood 重新编译后启用
+opp_wait_weight = 0.1     # BCE 损失权重
 
 # Batch Normalization 冻结配置
 [freeze_bn]

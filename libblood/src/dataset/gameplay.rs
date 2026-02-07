@@ -55,6 +55,8 @@ pub struct Gameplay {
     pub apply_gamma: Vec<bool>,
     pub at_turns: Vec<u8>,
     pub shantens: Vec<i8>,
+    /// Opponent waits per move: 3 opponents × 27 tiles = 81 booleans
+    pub opponent_waits: Vec<[bool; 81]>,
 
     // per game
     pub game_score: GameScore,
@@ -228,6 +230,9 @@ impl Gameplay {
     }
     fn take_shantens(&mut self) -> Vec<i8> {
         mem::take(&mut self.shantens)
+    }
+    fn take_opponent_waits(&mut self) -> Vec<[bool; 81]> {
+        mem::take(&mut self.opponent_waits)
     }
 
     fn take_game_score(&mut self) -> GameScore {
@@ -567,6 +572,15 @@ impl Gameplay {
         self.apply_gamma.push(apply_gamma);
         self.at_turns.push(ctx.state.at_turn());
         self.shantens.push(ctx.state.shanten());
+
+        // Collect opponent waits for auxiliary learning
+        let mut opp_waits = [false; 81];
+        for (i, s) in ctx.opponent_states.iter().enumerate() {
+            for (t, &waiting) in s.waits().iter().enumerate() {
+                opp_waits[i * 27 + t] = waiting;
+            }
+        }
+        self.opponent_waits.push(opp_waits);
 
         if let Some(invisibles) = ctx.invisibles {
             let invisible_obs = invisibles[ctx.kyoku_idx].encode(

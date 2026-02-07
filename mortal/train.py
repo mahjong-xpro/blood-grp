@@ -65,7 +65,8 @@ def train():
 
     mortal = Brain(version=version, **config['resnet']).to(device)
     dqn = DQN(version=version).to(device)
-    aux_net = AuxNet((4,)).to(device)
+    # AuxNet dims: (4 = next_rank, 81 = opponent waits: 3 opponents × 27 tiles)
+    aux_net = AuxNet((4, 81)).to(device)
     all_models = (mortal, dqn, aux_net)
     if enable_compile:
         for m in all_models:
@@ -277,20 +278,38 @@ def train():
                 raise RuntimeError(msg)
 
             # Kyoku return (discounted) + per-step Ding Que auxiliary bonus (only non-zero at DingQue steps)
-            q_target_mc = gamma ** steps_to_done * kyoku_rewards + ding_que_bonus
-            q_target_mc = q_target_mc.to(torch.float32)
+            # TD(λ) 模式: kyoku_rewards 已经包含折扣后的 TD 回报, 不需要再乘 gamma^n
+            # MC 模式: 需要乘 gamma^n 进行折扣
+            td_lambda_enabled = config.get('env', {}).get('td_lambda_enabled', False)
+            if td_lambda_enabled:
+                # TD(λ) 回报已在 dataloader 中预计算, 包含了折扣
+                q_target = kyoku_rewards + ding_que_bonus
+            else:
+                # 原始 MC 回报需要折扣
+                q_target = gamma ** steps_to_done * kyoku_rewards + ding_que_bonus
+            q_target = q_target.to(torch.float32)
 
             with torch.autocast(device.type, enabled=enable_amp):
                 phi = mortal(obs)
                 q_out = dqn(phi, masks)
                 q = q_out[range(batch_size), actions]
-                dqn_loss = 0.5 * mse(q, q_target_mc)
+                dqn_loss = 0.5 * mse(q, q_target)
                 cql_loss = 0
                 if not online:
                     cql_loss = q_out.logsumexp(-1).mean() - q.mean()
 
-                next_rank_logits, = aux_net(phi)
+                next_rank_logits, opp_wait_logits = aux_net(phi)
                 next_rank_loss = ce(next_rank_logits, player_ranks)
+                
+                # Opponent wait prediction BCE loss
+                opp_wait_enabled = config.get('aux', {}).get('opp_wait_enabled', False)
+                opp_wait_weight = config.get('aux', {}).get('opp_wait_weight', 0.1)
+                if opp_wait_enabled and 'opponent_waits' in locals():
+                    opp_wait_loss = F.binary_cross_entropy_with_logits(
+                        opp_wait_logits, opponent_waits.float()
+                    )
+                else:
+                    opp_wait_loss = torch.tensor(0.0, device=device, dtype=torch.float32)
 
                 # Ding Que CE auxiliary: supervise policy toward heuristic best suit at DingQue steps only
                 sel = ding_que_best_suit >= 0
@@ -311,6 +330,7 @@ def train():
                     cql_loss * min_q_weight,
                     next_rank_loss * next_rank_weight,
                     ding_que_ce_loss * ding_que_ce_weight,
+                    opp_wait_loss * opp_wait_weight,
                 ))
             scaler.scale(loss / opt_step_every).backward()
 
@@ -321,7 +341,7 @@ def train():
                 stats['next_rank_loss'] += next_rank_loss
                 stats['ding_que_ce_loss'] += ding_que_ce_loss
                 all_q[idx] = q
-                all_q_target[idx] = q_target_mc
+                all_q_target[idx] = q_target
 
             steps += 1
             idx += 1
