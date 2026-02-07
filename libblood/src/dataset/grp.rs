@@ -344,11 +344,9 @@ impl GameScore {
                         current_kyoku_agari[winner_idx] = current_kyoku_agari[winner_idx].saturating_add(1);
                     }
                     // Track houjuu (deal-in) for target if it's a Ron (target != actor)
-                    if let Some(t) = target {
-                        let target_idx = *t as usize;
-                        if target_idx < 4 && target_idx != winner_idx {
-                            current_kyoku_houjuu[target_idx] = current_kyoku_houjuu[target_idx].saturating_add(1);
-                        }
+                    let target_idx = *target as usize;
+                    if target_idx < 4 && target_idx != winner_idx {
+                        current_kyoku_houjuu[target_idx] = current_kyoku_houjuu[target_idx].saturating_add(1);
                     }
                 }
                 _ => {}
