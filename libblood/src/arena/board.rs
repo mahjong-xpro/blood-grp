@@ -692,7 +692,13 @@ impl BoardState {
                                     // 抢杠时每发生一次打一条；大批量对局（如 6400 局）会累积很多条，故用 debug 降噪
                                     log::debug!("ChanKan State Fix: Reverted Player {}'s MinKan of tile {} to Pon", kan_actor, tile);
                                  } else {
-                                     log::warn!("ChanKan State Fix: Failed to find MinKan for tile {} in Player {}'s state. Consistency might be broken.", tile, kan_actor);
+                                     // Kakan event might have been preempted by Ron, so state is still Pon.
+                                     // Check if it is indeed a Pon.
+                                     if victim_state.pons.contains(&tile) {
+                                         log::debug!("ChanKan State Fix: Player {} state is already Pon for tile {} (Kakan preempted by Ron). No revert needed.", kan_actor, tile);
+                                     } else {
+                                         log::warn!("ChanKan State Fix: Failed to find MinKan OR Pon for tile {} in Player {}'s state. Consistency might be broken.", tile, kan_actor);
+                                     }
                                  }
                              } else {
                                   log::warn!("ChanKan State Fix: Winner {} context missing chankan_kakan_tile", single_actor);

@@ -1,7 +1,6 @@
-# Training Configuration
-# 服务器路径配置：
-# - 数据目录: /data/mortal
-# - 源码目录: /data/blood
+# 🚀 Fresh Start Training Configuration
+# 新服务器 4090×8 优化配置
+# 阶段 2: 策略成型期 (Step 85k+)
 
 [control]
 version = 4
@@ -12,46 +11,43 @@ state_file = '/data/mortal/mortal.pth'
 best_state_file = '/data/mortal/best.pth'
 tensorboard_dir = '/data/mortal/logs'
 
-# 计算设备配置
-#
-# 单机 8×4090 推荐用法（online 模式）：
-# - 训练器（trainer）进程：CUDA_VISIBLE_DEVICES=0 -> 这里保持 cuda:0
-# - 每个客户端（client）进程：CUDA_VISIBLE_DEVICES=<物理卡号> -> 这里同样保持 cuda:0
-#   （因为每个进程只“看见”自己那 1 张卡）
+# 计算设备配置 (4090 x 8)
 device = 'cuda:0'
-enable_cudnn_benchmark = true  # GPU 训练时建议启用
-enable_amp = true  # 混合精度训练，节省显存
-enable_compile = false  # PyTorch 2.0+ 编译优化（可选）
+enable_cudnn_benchmark = true
+enable_amp = true
+enable_compile = false
 
-# 训练参数
-# 4090 (24GB) 单卡训练建议从 2048 起步，视显存/吞吐可尝试 3072/4096。
-# 该项目当前 trainer 是“单进程单 GPU”，8 卡的主要收益来自多 client 并发自对局产数。
+# 训练参数 - 4090 单卡 24GB 可用 4096
 batch_size = 4096
 opt_step_every = 1
 
 # 保存和测试频率
-save_every = 1000 # 2000 Samples/Step * 1000 Steps = 2M Samples (约3-5分钟存一次)
-test_every = 5000   # 5000 Steps = 10M Samples (约15-25分钟测一次，监控恢复进度)
+save_every = 1000
+test_every = 5000
 submit_every = 1000
 
-# 自对局配置（用于生成训练数据）
-# 使用环境变量 TRAIN_PLAY_PROFILE 可以选择不同的配置
-[train_play.default]
-# 8×4090（7 个 client 并发）建议降低单个 client 的 games，
-# 以更快拉取新参数、提高整体迭代速度；总吞吐由 client 数量补回来。
-games = 6400
-log_dir = '/data/mortal/train_play'  # 自对局数据保存目录
-boltzmann_epsilon = 0.08  # 探索率 (降低以突破停滞期)
-                     # 阶段建议:
-                     # 1. 初期: 0.5
-                     # 2. 中期: 0.15
-                     # 3. 后期: 0.08 (当前) ← Step 767k 降低以突破
+# ═══════════════════════════════════════════════════════
+# 阶段 2 配置: 策略成型 (Step 85k - 300k)
+# 降低探索，启用排名奖励，强化定缺监督
+# ═══════════════════════════════════════════════════════
 
-boltzmann_temp = 0.15    # 温度参数 (降低以突破停滞期)
-                     # 阶段建议:
-                     # 1. 初期: 0.5
-                     # 2. 中期: 0.2
-                     # 3. 后期: 0.15 (当前) ← Step 767k 降低以突破
+[train_play.default]
+games = 6400
+log_dir = '/data/mortal/train_play'
+
+# 探索参数 - 阶段 2: 降低探索
+boltzmann_epsilon = 0.15  # 阶段 2: 中等探索
+boltzmann_temp = 0.2      # 阶段 2: 中等温度
+
+# 阶段转换指南:
+# ┌──────────────────────────────────────────────────────┐
+# │ 阶段       │ epsilon │ temp  │ 触发条件            │
+# ├──────────────────────────────────────────────────────┤
+# │ 1. 探索期  │  0.3    │ 0.3   │ Step 0 - 100k       │
+# │ 2. 收敛期  │  0.15   │ 0.2   │ Step 100k - 300k    │
+# │ 3. 精调期  │  0.05   │ 0.1   │ Step 300k+          │
+# └──────────────────────────────────────────────────────┘
+
 top_p = 1.0
 repeats = 1
 keep_data = false
@@ -62,14 +58,12 @@ games = 3000
 log_dir = '/data/mortal/test_play'
 
 # 数据集配置
-# 自博弈训练：指向自对局生成的数据目录
 [dataset]
 globs = ['/data/mortal/train_play/**/*.json.gz']
 file_index = '/data/mortal/file_index.pth'
 file_batch_size = 32
 reserve_ratio = 0.0
-# num_workers 与 CPU/存储强相关；8×GPU 通常配更强 CPU，可先从 8 试起。
-num_workers = 8
+num_workers = 8  # 4090x8 服务器 CPU 通常较强
 player_names_files = []
 num_epochs = 1
 enable_augmentation = false
@@ -77,8 +71,10 @@ augmented_first = false
 
 # 环境配置
 [env]
-gamma = 0.98  # 折扣因子 (激进调整: 0.95, 强迫 AI 重视眼前收益，拒绝并在)
-# 排名 PT 计分 (血战麻将): 1位=4pt, 2位=2pt, 3位=1pt, 4位=0pt
+gamma = 0.99  # 阶段 1: 高 gamma，学习长期规划 (后期降到 0.98)
+# 排名 PT 计分 (血战麻将)
+# 1位=4pt, 2位=2pt, 3位=1pt, 4位=0pt
+# 用于 avg_pt 指标计算，不影响训练奖励
 pts = [4.0, 2.0, 1.0, 0.0]
 
 # TD(λ) 配置
@@ -87,38 +83,53 @@ td_lambda_enabled = true # 启用 TD(λ) 训练 (替代纯 Monte Carlo)
 
 # 奖励塑形配置
 [reward_shaping]
-# 排名奖励 (加到游戏结束时的最后一个 kyoku)
+# 阶段 2: 启用排名奖励，激励争夺名次
 rank_bonus_enabled = true
-rank_bonuses = [0.3, 0.1, -0.1, -0.3]  # 1st, 2nd, 3rd, 4th
+rank_bonuses = [0.3, 0.1, -0.1, -0.3]
 
-# ResNet 模型配置
+# 动作级奖励 (和牌/放铳) - 阶段 2 开启
+action_bonus_enabled = true  # 启用动作奖励
+agari_bonus = 0.1            # 和牌奖励
+houjuu_penalty = -0.1        # 放铳惩罚
+
+# 自动更新 baseline 的阈值 (阶梯式训练)
+# 当 avg_pt 超过此值时，自动用当前模型替换 baseline
+baseline_update_threshold = 3.2
+
+# 阶段转换指南:
+# ┌──────────────────────────────────────────────────────┐
+# │ 阶段       │ rank_bonus │ 触发条件                  │
+# ├──────────────────────────────────────────────────────┤
+# │ 1. 探索期  │  false     │ Step 0 - 100k             │
+# │ 2. 收敛期  │  true      │ Step 100k+ (avg_pt > 2.8) │
+# └──────────────────────────────────────────────────────┘
+
+# ResNet 模型配置 - 增大模型容量
 [resnet]
-conv_channels = 192
-num_blocks = 40
+conv_channels = 256  # 从 192 增加，更强的表示能力
+num_blocks = 50      # 从 40 增加，更深的网络
 
-# CQL (Conservative Q-Learning) 配置
+# CQL 配置 - online 模式下不生效，但保留配置
 [cql]
-min_q_weight = 0.3
-                     # CQL 权重 (压制未见动作的力度)
-                     # 阶段建议:
-                     # 1. Zero Start: 0.0 (关闭 CQL，鼓励自由探索，避免初期过度悲观)
-                     # 2. 稳定期: 0.5-1.0 (防止 Q 值发散)
+min_q_weight = 0.0  # 阶段 1: 关闭 CQL，鼓励自由探索
 
 # 辅助任务配置
 [aux]
-next_rank_weight = 0.25  # 排名预测任务的权重 (略升以强化排名学习，test_play avg_pt 略低于随机)
-# 定缺辅助：仅在定缺步加即时奖励塑形，帮助学习定缺选择（见 docs/DING_QUE_AUXILIARY_LEARNING.md）
+next_rank_weight = 0.25
+
+# 定缺辅助
 ding_que_aux_enabled = true
-ding_que_aux_scale = 0.02  # ding_que_quality in [-1,1]，不宜过大
-# 定缺 CE 监督：仅在定缺步用启发式「最佳花色」做交叉熵损失（方案 B）
-ding_que_ce_weight = 2
+ding_que_aux_scale = 0.02
+
+# 定缺 CE 监督 - 阶段 2 增强监督
+ding_que_ce_weight = 2  # 阶段 2: 增强监督
+
 # 对手等待预测: 预测 3 个对手的听牌 (81 = 3×27)
 opp_wait_enabled = false  # 需要 libblood 重新编译后启用
 opp_wait_weight = 0.1     # BCE 损失权重
 
 # Batch Normalization 冻结配置
 [freeze_bn]
-# 在线训练时设置为 true
 mortal = false
 
 # 优化器配置
@@ -126,28 +137,27 @@ mortal = false
 eps = 1e-8
 betas = [0.9, 0.999]
 weight_decay = 0.1
-max_grad_norm = 1.0  # 启用梯度裁剪 (1.0)，防止无 CQL 时梯度主要爆炸
+max_grad_norm = 1.0
 
 # 学习率调度器配置
 [optim.scheduler]
-peak = 1e-4   # 峰值学习率
-final = 1e-4  # 最终学习率 (启用 decay，dqn_loss 在 50k+ 缓慢上升时利于稳定)
-warm_up_steps = 1000  # 预热步数 (防止梯度爆炸)
-max_steps = 1000000  # 设置为较大的值以支持长时间训练 (需 > warm_up_steps)
+peak = 5e-4   # 阶段 1: 高学习率加速初期学习
+final = 1e-4  # 最终稳定在 1e-4
+warm_up_steps = 2000
+max_steps = 1000000
 
-# Baseline 模型配置（用于自对局）
-# 第一次训练时，如果 baseline 文件不存在，系统会使用当前模型作为 baseline
+# Baseline 模型配置
 [baseline.train]
-device = 'cuda:0'  # 或 'cuda:0'
-enable_compile = false
-state_file = '/data/mortal/baseline.pth'  # 如果不存在，会使用当前模型
-
-[baseline.test]
-device = 'cuda:0'  # 或 'cuda:0'
+device = 'cuda:0'
 enable_compile = false
 state_file = '/data/mortal/baseline.pth'
 
-# 在线训练配置（分布式训练）
+[baseline.test]
+device = 'cuda:0'
+enable_compile = false
+state_file = '/data/mortal/baseline.pth'
+
+# 在线训练配置
 [online]
 history_window = 50
 enable_compile = false
@@ -161,12 +171,10 @@ buffer_dir = '/data/mortal/buffer'
 drain_dir = '/data/mortal/drain'
 sample_reuse_rate = 0
 sample_reuse_threshold = 0
-# 多 client 并发提交日志时，capacity 太小会频繁出现 "samples overflow"。
-# 7 个 client 并发建议 >= 20000；磁盘够的话可更大。
-capacity = 40000
+capacity = 40000  # 7 个 client 并发足够
 force_sequential = false
 
-# 1v3 测试配置（用于评估模型）
+# 1v3 测试配置
 [1v3]
 seed_key = -1
 games_per_iter = 2000
@@ -192,7 +200,6 @@ enable_amp = true
 enable_rule_based_agari_guard = true
 
 [1v3.akochan]
-enabled = false  # 是否使用 Akochan AI 作为对手
-dir = '/path/to/akochan'  # Akochan 目录（如果启用）
-tactics = '/path/to/tactics.json'  # Akochan 策略文件（如果启用）
-
+enabled = false
+dir = '/path/to/akochan'
+tactics = '/path/to/tactics.json'
