@@ -7,6 +7,11 @@ class RewardCalculator:
         reward_config = self.config.get('reward_shaping', {})
         self.rank_bonus_enabled = reward_config.get('rank_bonus_enabled', True)
         self.rank_bonuses = reward_config.get('rank_bonuses', [0.3, 0.1, -0.1, -0.3])
+        
+        # 动作级奖励配置 (和牌/放铳)
+        self.action_bonus_enabled = reward_config.get('action_bonus_enabled', False)
+        self.agari_bonus = reward_config.get('agari_bonus', 0.1)  # 和牌奖励
+        self.houjuu_penalty = reward_config.get('houjuu_penalty', -0.1)  # 放铳惩罚
 
     def calc_delta_points(self, player_id, scores_history, final_scores):
         # scores_history is raw scores [kyoku_count, 4]
@@ -41,3 +46,18 @@ class RewardCalculator:
         ranks = (-np.array(final_scores)).argsort().argsort()
         player_rank = ranks[player_id]
         return self.rank_bonuses[player_rank]
+    
+    def calc_action_bonus(self, agari_count, houjuu_count):
+        """计算动作级奖励 (和牌奖励 + 放铳惩罚)
+        
+        Args:
+            agari_count: 该 kyoku 中和牌次数
+            houjuu_count: 该 kyoku 中放铳次数
+        
+        Returns:
+            float: 动作级奖励值
+        """
+        if not self.action_bonus_enabled:
+            return 0.0
+        return agari_count * self.agari_bonus + houjuu_count * self.houjuu_penalty
+

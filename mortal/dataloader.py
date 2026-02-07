@@ -153,6 +153,17 @@ class FileDatasetsIter(IterableDataset):
                 if self.reward_calc.rank_bonus_enabled and len(kyoku_rewards) > 0:
                     rank_bonus = self.reward_calc.calc_rank_bonus(player_id, final_scores)
                     kyoku_rewards[-1] += rank_bonus
+                
+                # 添加动作级奖励 (和牌奖励 + 放铳惩罚)
+                if self.reward_calc.action_bonus_enabled:
+                    agari_count_list = game_score.take_agari_count()
+                    houjuu_count_list = game_score.take_houjuu_count()
+                    if len(agari_count_list) > 0 and len(houjuu_count_list) > 0:
+                        agari_arr = np.array([row[player_id] for row in agari_count_list], dtype=np.float64)
+                        houjuu_arr = np.array([row[player_id] for row in houjuu_count_list], dtype=np.float64)
+                        for k in range(min(len(kyoku_rewards), len(agari_arr))):
+                            action_bonus = self.reward_calc.calc_action_bonus(agari_arr[k], houjuu_arr[k])
+                            kyoku_rewards[k] += action_bonus
 
                 # Per-step Ding Que auxiliary bonus (only at the step where player chose DingQue).
                 # Action indices 31=Man, 32=Pin, 33=Sou. See docs/DING_QUE_AUXILIARY_LEARNING.md.

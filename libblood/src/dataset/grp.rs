@@ -26,6 +26,12 @@ pub struct GameScore {
     /// Heuristic best suit index per kyoku per player for Ding Que CE auxiliary.
     /// 0 = Man, 1 = Pin, 2 = Sou. Only valid for kyokus where DingQue occurred.
     pub ding_que_best_suit: Vec<[u8; 4]>,
+    
+    /// Agari (win) count per player per kyoku (for action rewards)
+    pub agari_count: Vec<[u8; 4]>,
+    
+    /// Houjuu (deal-in) count per player per kyoku (for action rewards)
+    pub houjuu_count: Vec<[u8; 4]>,
 }
 
 /// Count how many complete 顺子 (sequences) can be formed in a suit's 9 tile counts.
@@ -256,6 +262,16 @@ impl GameScore {
     pub fn take_ding_que_best_suit(&mut self) -> Vec<[u8; 4]> {
         std::mem::take(&mut self.ding_que_best_suit)
     }
+    
+    /// Returns agari (win) count per player per kyoku for action rewards
+    pub fn take_agari_count(&mut self) -> Vec<[u8; 4]> {
+        std::mem::take(&mut self.agari_count)
+    }
+    
+    /// Returns houjuu (deal-in) count per player per kyoku for action rewards
+    pub fn take_houjuu_count(&mut self) -> Vec<[u8; 4]> {
+        std::mem::take(&mut self.houjuu_count)
+    }
 }
 
 impl GameScore {
@@ -272,15 +288,23 @@ impl GameScore {
         let mut current_tehais: Option<[[u8; 27]; 4]> = None;
         let mut current_kyoku_quality = [0.0f32; 4];
         let mut current_kyoku_best_suit = [0u8; 4]; // 0=Man, 1=Pin, 2=Sou
+        
+        // For agari (win) and houjuu (deal-in) tracking
+        let mut agari_count: Vec<[u8; 4]> = vec![];
+        let mut houjuu_count: Vec<[u8; 4]> = vec![];
+        let mut current_kyoku_agari = [0u8; 4];
+        let mut current_kyoku_houjuu = [0u8; 4];
 
         // Forward pass to collect scores and Ding Que quality
         for ev in events.iter() {
             match ev {
                 Event::StartKyoku { scores, tehais, .. } => {
-                    // Save previous kyoku's quality and best suit (if any)
+                    // Save previous kyoku's quality, best suit, and action counts (if any)
                     if current_tehais.is_some() {
                         ding_que_quality.push(current_kyoku_quality);
                         ding_que_best_suit.push(current_kyoku_best_suit);
+                        agari_count.push(current_kyoku_agari);
+                        houjuu_count.push(current_kyoku_houjuu);
                     }
 
                     // Reset for new kyoku
@@ -288,6 +312,8 @@ impl GameScore {
                     current_tehais = Some(array::from_fn(|i| tiles_to_tehai(&tehais[i])));
                     current_kyoku_quality = [0.0f32; 4]; // Default neutral
                     current_kyoku_best_suit = [0; 4];
+                    current_kyoku_agari = [0u8; 4];
+                    current_kyoku_houjuu = [0u8; 4];
                 }
                 Event::Tsumo { actor, pai } => {
                     if let Some(ref mut tehais) = current_tehais {
@@ -311,14 +337,30 @@ impl GameScore {
                         }
                     }
                 }
+                Event::Hora { actor, target, .. } => {
+                    // Track agari (win) for actor
+                    let winner_idx = *actor as usize;
+                    if winner_idx < 4 {
+                        current_kyoku_agari[winner_idx] = current_kyoku_agari[winner_idx].saturating_add(1);
+                    }
+                    // Track houjuu (deal-in) for target if it's a Ron (target != actor)
+                    if let Some(t) = target {
+                        let target_idx = *t as usize;
+                        if target_idx < 4 && target_idx != winner_idx {
+                            current_kyoku_houjuu[target_idx] = current_kyoku_houjuu[target_idx].saturating_add(1);
+                        }
+                    }
+                }
                 _ => {}
             }
         }
         
-        // Save the last kyoku's quality and best suit
+        // Save the last kyoku's quality, best suit, and action counts
         if current_tehais.is_some() {
             ding_que_quality.push(current_kyoku_quality);
             ding_que_best_suit.push(current_kyoku_best_suit);
+            agari_count.push(current_kyoku_agari);
+            houjuu_count.push(current_kyoku_houjuu);
         }
 
         // Reverse pass to find final scores (existing logic)
@@ -369,6 +411,8 @@ impl GameScore {
             rank_by_player,
             ding_que_quality,
             ding_que_best_suit,
+            agari_count,
+            houjuu_count,
         })
     }
 }

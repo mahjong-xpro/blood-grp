@@ -381,6 +381,14 @@ def train():
                     'config': config,
                 }
                 torch.save(state, state_file)
+                
+                # 每 50k 步保存一个历史 checkpoint，用于阶梯式训练
+                if steps % 50000 == 0:
+                    checkpoint_dir = '/data/mortal/checkpoints'
+                    os.makedirs(checkpoint_dir, exist_ok=True)
+                    checkpoint_file = f'{checkpoint_dir}/mortal_{steps // 1000}k.pth'
+                    torch.save(state, checkpoint_file)
+                    logging.info(f'Checkpoint saved: {checkpoint_file}')
 
                 if online and steps % submit_every != 0:
                     submit_param(mortal, dqn, is_idle=False)
@@ -442,6 +450,17 @@ def train():
                             f'saving to {best_state_file}'
                         )
                         shutil.copy(state_file, best_state_file)
+                    
+                    # 自动更新 baseline (阶梯式训练)
+                    # 当 avg_pt 超过阈值时，用当前模型替换 baseline，创造持续进步压力
+                    baseline_config = config.get('baseline', {}).get('train', {})
+                    baseline_file = baseline_config.get('state_file', '/data/mortal/baseline.pth')
+                    auto_update_threshold = config.get('reward_shaping', {}).get('baseline_update_threshold', 3.2)
+                    if avg_pt >= auto_update_threshold and better:
+                        shutil.copy(state_file, baseline_file)
+                        logging.info(f'Baseline updated: avg_pt={avg_pt:.4} >= threshold={auto_update_threshold}')
+                        writer.add_scalar('baseline/update_step', steps, steps)
+                    
                     if online:
                         # BUG: This is a bug with unknown reason. When training
                         # in online mode, the process will get stuck here. This
