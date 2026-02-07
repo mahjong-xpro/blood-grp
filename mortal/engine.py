@@ -93,6 +93,14 @@ class MortalEngine:
             if self.boltzmann_temp <= 0:
                 raise ValueError(f"boltzmann_temp must be > 0, got {self.boltzmann_temp}")
             is_greedy = torch.full((batch_size,), 1-self.boltzmann_epsilon, device=self.device).bernoulli().to(torch.bool)
+            
+            # 定缺动作 (31=万, 32=饼, 33=条) 强制使用贪婪选择，跳过探索
+            # 只有当可用动作仅限于定缺时才跳过探索
+            ding_que_only = (
+                masks[:, 31] | masks[:, 32] | masks[:, 33]
+            ) & (masks[:, :31].sum(-1) == 0) & (masks[:, 34:].sum(-1) == 0)
+            is_greedy = is_greedy | ding_que_only  # 定缺时强制贪婪
+            
             logits = (q_out / self.boltzmann_temp).masked_fill(~masks, -torch.inf)
             sampled = sample_top_p(logits, self.top_p)
             actions = torch.where(is_greedy, q_out.argmax(-1), sampled)
