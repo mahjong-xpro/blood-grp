@@ -88,14 +88,20 @@ def load_log_content(file_path):
                 break
         game_info['hero_index'] = hero_index
 
-        # Count Hero Agari
-        hero_agari = 0
+        # Count Agari for all players
+        player_agari_counts = [0, 0, 0, 0]
         for event in events:
-            if event.get('type') == 'hora' and event.get('actor') == hero_index:
-                hero_agari += 1
+            if event.get('type') == 'hora' and 'actor' in event:
+                actor = event.get('actor')
+                if 0 <= actor < 4:
+                    player_agari_counts[actor] += 1
         
-        print(f"DEBUG: Loaded {file_path.name}, Hero({names[hero_index] if names else 'P0'}) Wins: {hero_agari}")
+        # Keep hero_agari_count for backward compatibility if needed, or derived
+        hero_agari = player_agari_counts[hero_index]
+        
+        print(f"DEBUG: Loaded {file_path.name}, Wins: {player_agari_counts} (Hero P{hero_index}: {hero_agari})")
         game_info['hero_agari_count'] = hero_agari
+        game_info['player_agari_counts'] = player_agari_counts
         
         return {
             'content': raw_log,
@@ -277,6 +283,7 @@ def list_logs():
                 'cache_key': log_entry['path'],  # Use full path as cache key
                 'cache_key': log_entry['path'],  # Use full path as cache key
                 'p0_agari_count': log_entry.get('game_info', {}).get('hero_agari_count', 0), # Use Hero count for display
+                'player_agari_counts': log_entry.get('game_info', {}).get('player_agari_counts', [0, 0, 0, 0]),
                 'hero_index': log_entry.get('game_info', {}).get('hero_index', 0),
             })
         
