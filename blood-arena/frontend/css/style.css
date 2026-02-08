@@ -190,8 +190,6 @@ html, body { height: 100%; margin: 0; font: 14px/1.4 system-ui, "PingFang SC", s
     width: var(--tile-w);
     height: var(--tile-h);
     border-radius: var(--radius-tile);
-    background: #fff;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.18);
     object-fit: contain;
     display: block;
 }
@@ -203,12 +201,9 @@ html, body { height: 100%; margin: 0; font: 14px/1.4 system-ui, "PingFang SC", s
     width: var(--tile-mine-w);
     height: var(--tile-mine-h);
     cursor: pointer;
-    transition: transform 0.12s ease, box-shadow 0.15s ease;
+    transition: transform 0.12s ease;
 }
-.tile--mine:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 6px 14px rgba(0,0,0,0.22);
-}
+.tile--mine:hover { transform: translateY(-5px); }
 .tile--call { transform: rotate(90deg); }
 
 /* 左/右：牌竖放（宽高互换 + 旋转） */
