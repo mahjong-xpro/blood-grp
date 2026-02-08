@@ -8,7 +8,15 @@
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
 </head>
 <body class="ui-body">
-    <div id="app" class="ui-root" :class="{ 'ui-root--my-turn': isMyTurn, 'ui-root--ended': state.gameEnded }">
+    <div
+        id="app"
+        class="ui-root"
+        :class="{
+            'ui-root--my-turn': isMyTurn,
+            'ui-root--ended': state.gameEnded
+        }"
+    >
+        <!-- 顶栏：状态 + 开始/再来一局 + 四家分数 -->
         <header class="ui-header" role="banner">
             <div class="ui-header__status" aria-live="polite">
                 <span class="ui-header__text">{{ state.status }}</span>
@@ -21,8 +29,8 @@
                     {{ state.gameEnded ? '再来一局' : '开始对局' }}
                 </button>
             </div>
-            <div class="ui-scores" role="list">
-                <div
+            <ul class="ui-scores" role="list">
+                <li
                     v-for="(p, i) in state.players"
                     :key="i"
                     class="ui-scores__item"
@@ -31,13 +39,18 @@
                 >
                     <span class="ui-scores__name">{{ p.name }}</span>
                     <span class="ui-scores__points">{{ p.score }}<small>分</small></span>
-                    <span v-if="p.dingQueSuit" class="ui-scores__dingque" :class="'ui-scores__dingque--' + p.dingQueSuit">
+                    <span
+                        v-if="p.dingQueSuit"
+                        class="ui-scores__dingque"
+                        :class="'ui-scores__dingque--' + p.dingQueSuit"
+                    >
                         定缺{{ suitName(p.dingQueSuit) }}
                     </span>
-                </div>
-            </div>
+                </li>
+            </ul>
         </header>
 
+        <!-- 主区域：牌桌 + 操作按钮 -->
         <main class="ui-main" role="main">
             <div class="table">
                 <template v-for="z in playerZones" :key="z.zone">
@@ -56,15 +69,36 @@
                         </div>
                         <div
                             class="table__hand"
-                            :class="{ 'table__hand--closed': z.seat !== state.myPlayerId, 'table__hand--my-turn': z.seat === state.myPlayerId && isMyTurn }"
+                            :class="{
+                                'table__hand--closed': z.seat !== state.myPlayerId,
+                                'table__hand--my-turn': z.seat === state.myPlayerId && isMyTurn
+                            }"
                         >
                             <template v-if="z.seat !== state.myPlayerId">
-                                <img v-for="n in 13" :key="'b-' + n" :src="getPaiImage('?', z.pose)" class="tile" alt="">
+                                <img
+                                    v-for="n in 13"
+                                    :key="'b-' + n"
+                                    :src="getPaiImage('?', z.pose)"
+                                    class="tile"
+                                    alt=""
+                                >
                             </template>
                             <div v-if="state.players[z.seat].melds.length" class="table__melds">
                                 <div v-for="(m, mi) in state.players[z.seat].melds" :key="'m-' + mi" class="meld">
-                                    <img v-for="tile in m.consumed" :key="tile" :src="getPaiImage(tile, z.pose)" class="tile tile--meld" alt="">
-                                    <img v-if="m.type !== 'ankan'" :src="getPaiImage(m.pai, z.pose)" class="tile tile--meld tile--meld-pai" :class="{ 'tile--meld-pai-rotate': z.zone === 'bottom' }" alt="">
+                                    <img
+                                        v-for="tile in m.consumed"
+                                        :key="tile"
+                                        :src="getPaiImage(tile, z.pose)"
+                                        class="tile tile--meld"
+                                        alt=""
+                                    >
+                                    <img
+                                        v-if="m.type !== 'ankan'"
+                                        :src="getPaiImage(m.pai, z.pose)"
+                                        class="tile tile--meld tile--meld-pai"
+                                        :class="{ 'tile--meld-pai-rotate': z.zone === 'bottom' }"
+                                        alt=""
+                                    >
                                 </div>
                             </div>
                             <template v-if="z.seat === state.myPlayerId">
@@ -92,7 +126,12 @@
                 </div>
             </div>
 
-            <div v-if="state.validActions.length > 0" class="ui-actions" role="group" aria-label="可选操作">
+            <div
+                v-if="state.validActions.length > 0"
+                class="ui-actions"
+                role="group"
+                aria-label="可选操作"
+            >
                 <button
                     v-for="action in state.validActions"
                     :key="action.label"
@@ -106,10 +145,12 @@
             </div>
         </main>
 
+        <!-- 全屏提示（和牌等） -->
         <div v-if="state.notification && !state.gameEnded" class="ui-toast" role="alert">
             {{ state.notification }}
         </div>
 
+        <!-- 对局结束弹窗 -->
         <aside
             v-if="showResultPanel"
             class="ui-result"

@@ -1,8 +1,8 @@
 /* ==========================================================================
    血战到底 - 人机对战
-   Design tokens + BEM + 状态驱动
    ========================================================================== */
 
+/* --- 设计变量 --- */
 :root {
     --color-bg: #0f1419;
     --color-surface: #1a2332;
@@ -16,7 +16,6 @@
     --color-danger: #f85149;
     --color-table: #0d3320;
     --color-table-border: #1a4d32;
-    --color-table-felt: rgba(0, 0, 0, 0.2);
     --color-felt-center: rgba(0, 0, 0, 0.35);
     --color-suit-man: #c62828;
     --color-suit-pin: #1565c0;
@@ -44,6 +43,7 @@
     --table-border-width: 6px;
 }
 
+/* --- 根布局 --- */
 .ui-body {
     margin: 0;
     min-height: 100vh;
@@ -66,6 +66,7 @@
 .ui-root--my-turn .table__hand--my-turn { --tile-glow: 1; }
 .ui-root--ended .table { opacity: 0.6; }
 
+/* --- 顶栏 --- */
 .ui-header {
     display: flex;
     align-items: center;
@@ -94,6 +95,7 @@
     text-overflow: ellipsis;
 }
 
+/* --- 按钮 --- */
 .ui-btn {
     padding: var(--space-sm) var(--space-lg);
     border: none;
@@ -117,6 +119,7 @@
     box-shadow: 0 4px 12px rgba(88, 166, 255, 0.35);
 }
 
+/* --- 分数条 --- */
 .ui-scores {
     display: flex;
     gap: var(--space-md);
@@ -148,6 +151,7 @@
 .ui-scores__dingque--pin { color: #42a5f5; }
 .ui-scores__dingque--sou { color: #66bb6a; }
 
+/* --- 主区域 --- */
 .ui-main {
     flex: 1;
     min-height: 0;
@@ -159,6 +163,7 @@
     position: relative;
 }
 
+/* --- 牌桌 --- */
 .table {
     width: 100%;
     max-width: 900px;
@@ -232,6 +237,7 @@
 .table__subtitle { margin: 0; font-size: 0.8rem; color: rgba(255,255,255,0.65); }
 .table__tiles-left { margin: var(--space-sm) 0 0; font-size: 0.8rem; color: rgba(255,255,255,0.8); }
 
+/* 河牌 */
 .table__river {
     display: grid;
     grid-template-columns: repeat(6, 1fr);
@@ -243,6 +249,7 @@
     min-height: 2em;
 }
 
+/* 手牌区 */
 .table__hand {
     display: flex;
     flex-wrap: wrap;
@@ -271,6 +278,7 @@
     50% { filter: brightness(1.08); }
 }
 
+/* --- 牌片 --- */
 .tile {
     width: var(--tile-w);
     height: var(--tile-h);
@@ -314,6 +322,7 @@
     height: var(--tile-my-h);
 }
 
+/* --- 副露 --- */
 .table__melds {
     display: flex;
     flex-wrap: wrap;
@@ -354,6 +363,7 @@
 .table__zone--left .table__melds { flex-direction: column; align-items: flex-start; }
 .table__zone--right .table__melds { flex-direction: column; align-items: flex-end; }
 
+/* --- 操作按钮（定缺/碰杠过/自摸） --- */
 .ui-actions {
     position: absolute;
     bottom: 160px;
@@ -380,6 +390,7 @@
 .ui-btn--action.btn-sou { background: var(--color-suit-sou); color: #fff; }
 .ui-btn--action.btn-win { background: linear-gradient(180deg, #ffd54f 0%, #ffb300 100%); color: #1a1a1a; }
 
+/* --- 全屏提示 --- */
 .ui-toast {
     position: fixed;
     top: 50%;
@@ -402,6 +413,7 @@
     to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 
+/* --- 对局结束弹窗 --- */
 .ui-result {
     position: fixed;
     inset: 0;
@@ -453,6 +465,7 @@
 .ui-result__points { font-weight: 700; color: var(--color-accent); }
 .ui-result__again { width: 100%; padding: var(--space-md) var(--space-lg); font-size: 1rem; }
 
+/* --- 调试 --- */
 .ui-debug {
     position: fixed;
     bottom: var(--space-sm);
