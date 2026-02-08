@@ -168,7 +168,6 @@ html, body { height: 100%; margin: 0; font: 14px/1.4 system-ui, "PingFang SC", s
 }
 .side-hand--opp { flex-wrap: nowrap; }
 .side--top .side-hand { flex-wrap: nowrap; }
-.side--bottom .side-hand { flex-direction: column; }
 .side--left .side-hand,
 .side--right .side-hand { flex-direction: column; flex-wrap: nowrap; }
 .side-hand--turn { animation: turn 1.2s ease-in-out infinite; }
