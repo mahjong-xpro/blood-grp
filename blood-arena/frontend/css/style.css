@@ -190,13 +190,12 @@ body {
     gap: 8px;
     transform-origin: center center;
 }
-/* 左右共用：信息+手牌区固定最小宽度，column-reverse 使信息卡都在「中心侧」、手牌在边缘侧 */
+/* 左右共用：同一结构、同一尺寸，不 reverse，顺序都是 信息(上) → 手牌(下) */
 .player-area.player-1 .player-info-and-hand,
 .player-area.player-3 .player-info-and-hand {
     min-width: 520px;
     align-items: center;
     gap: 8px;
-    flex-direction: column-reverse;
 }
 .player-area.player-1 .player-info-card,
 .player-area.player-3 .player-info-card {
@@ -204,9 +203,6 @@ body {
     width: 120px;
     box-sizing: border-box;
 }
-/* 反旋转信息卡，使姓名/分数在左右两侧阅读方向一致 */
-.player-area.player-1 .player-info-card { transform: rotate(90deg); }
-.player-area.player-3 .player-info-card { transform: rotate(-90deg); }
 .player-area.player-1 .hand-row,
 .player-area.player-3 .hand-row {
     margin-bottom: -100px;
@@ -220,9 +216,9 @@ body {
 .player-area.player-3 .kawa-area {
     max-width: 500px;
 }
-/* 左右样式完全一致，仅旋转方向相反（右 -90deg，左 90deg） */
-.player-area.player-1 { transform: rotate(-90deg); }
-.player-area.player-3 { transform: rotate(90deg); }
+/* 思路：左右相差 180°。右家 90° 使列底(手牌)到视口右；左家 -90° 使列底到视口左。同一布局，仅旋转差 180° */
+.player-area.player-1 { transform: rotate(90deg); }
+.player-area.player-3 { transform: rotate(-90deg); }
 
 /* Player 2 = 上家 */
 .player-area.player-2 { transform: rotate(180deg); }
