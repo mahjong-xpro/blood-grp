@@ -237,7 +237,7 @@ body {
 .fuuro-area {
     display: flex;
     gap: 0;
-    margin-left: 20px;
+    margin-left: 0;
 }
 
 .meld-group {
@@ -269,7 +269,7 @@ body {
     height: var(--tile-height);
     background: var(--tile-bg);
     border-radius: 4px;
-    box-shadow: 1px 1px 0px rgba(0,0,0,0.15), 2px 2px 3px rgba(0, 0, 0, 0.3);
+    box-shadow: none;
     border: none;
     display: flex;
     justify-content: center;
