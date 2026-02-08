@@ -14,15 +14,6 @@
     --accent-hover: #26c6da;
     --danger-color: #ef5350;
     --success-color: #66bb6a;
-
-    --tile-width: 38px;
-    --tile-height: 52px;
-    --tile-depth: 0;
-    --tile-bg: transparent;
-    --tile-back-bg: #2d5aa0;
-
-    --pov-tile-width: 56px;
-    --pov-tile-height: 80px;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -149,8 +140,8 @@ body {
 .player-area.is-turn { opacity: 1; }
 .player-area:not(.is-turn) { opacity: 0.7; }
 
-.kawa-area { order: 1; margin-bottom: 4px; }
-/* 信息卡+手牌同组，左右两家与中心的间距一致 */
+/* ========== 四家：仅保留布局与旋转，手牌区样式已移除 ========== */
+.kawa-area { order: 1; }
 .player-info-and-hand {
     order: 2;
     display: flex;
@@ -159,38 +150,13 @@ body {
     gap: 8px;
     justify-content: flex-end;
 }
-.hand-row { margin-bottom: -15px; }
 
-/* Player 0 = 下家（自己） */
 .player-area.player-0 { transform: none; gap: 12px; }
-
-.player-area.player-0 .tile {
-    width: var(--pov-tile-width);
-    height: var(--pov-tile-height);
-    font-size: 32px;
-}
-
-.player-area.player-0 .tile.small {
-    width: 36px;
-    height: 50px;
-    font-size: 20px;
-}
-
-.player-area.player-0 .hand-row { gap: 0; }
-
-.player-area.player-0 .kawa-area .tile {
-    width: 28px;
-    height: 39px;
-    font-size: 16px;
-}
-
-/* Player 1 = 右家、Player 3 = 左家：样式尺寸完全一致，仅旋转方向相反 */
 .player-area.player-1,
 .player-area.player-3 {
     gap: 8px;
     transform-origin: center center;
 }
-/* 左右共用：同一结构、同一尺寸，不 reverse，顺序都是 信息(上) → 手牌(下) */
 .player-area.player-1 .player-info-and-hand,
 .player-area.player-3 .player-info-and-hand {
     min-width: 520px;
@@ -204,48 +170,24 @@ body {
     box-sizing: border-box;
 }
 .player-area.player-1 .hand-row,
-.player-area.player-3 .hand-row {
-    margin-bottom: -100px;
-    justify-content: center;
-}
+.player-area.player-3 .hand-row { margin-bottom: -100px; justify-content: center; }
 .player-area.player-1 .tehai-area,
-.player-area.player-3 .tehai-area {
-    justify-content: center;
-}
+.player-area.player-3 .tehai-area { justify-content: center; }
 .player-area.player-1 .kawa-area,
-.player-area.player-3 .kawa-area {
-    max-width: 500px;
-}
-/* 思路：左右相差 180°。右家 90° 使列底(手牌)到视口右；左家 -90° 使列底到视口左。同一布局，仅旋转差 180° */
+.player-area.player-3 .kawa-area { max-width: 500px; }
 .player-area.player-1 { transform: rotate(90deg); }
 .player-area.player-3 { transform: rotate(-90deg); }
-
-/* Player 2 = 上家 */
 .player-area.player-2 { transform: rotate(180deg); }
 
-/* ========== 手牌 + 河牌布局 ========== */
+/* ========== 手牌区域 + 牌：重建（仅布局与必要尺寸，无背景/边框/阴影/颜色） ========== */
 .hand-row {
     display: flex;
     gap: 0;
+    margin-bottom: -15px;
 }
-
-.tehai-area {
-    display: flex;
-    gap: 0;
-}
-
-.fuuro-area {
-    display: flex;
-    gap: 0;
-    margin-left: 0;
-}
-
-.meld-group {
-    display: flex;
-    gap: 0;
-    opacity: 0.9;
-}
-
+.tehai-area { display: flex; gap: 0; }
+.fuuro-area { display: flex; gap: 0; margin-left: 0; }
+.meld-group { display: flex; gap: 0; }
 .kawa-area {
     display: grid;
     grid-template-columns: repeat(12, 1fr);
@@ -255,51 +197,34 @@ body {
     margin-bottom: 4px;
 }
 
-/* ========== 牌样式（与 replay 一致） ========== */
 .tile-wrapper { position: relative; }
-
-.kawa-area .tile {
-    width: 28px;
-    height: 39px;
-    font-size: 16px;
-}
-
 .tile {
-    width: var(--tile-width);
-    height: var(--tile-height);
-    background: var(--tile-bg);
-    border-radius: 4px;
-    box-shadow: none;
-    border: none;
     display: flex;
-    justify-content: center;
     align-items: center;
-    user-select: none;
-    position: relative;
+    justify-content: center;
     margin: 0;
     padding: 0;
     overflow: hidden;
+    user-select: none;
 }
-
 .tile-img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
     display: block;
+    object-fit: contain;
     vertical-align: bottom;
 }
 
-.tile.small {
-    width: 26px;
-    height: 36px;
-    font-size: 16px;
-}
+/* 尺寸：默认 / 河牌 / 下家大手牌 / 副露小牌 */
+.tile { width: 38px; height: 52px; }
+.tile .tile-img { width: 100%; height: 100%; }
+.kawa-area .tile { width: 28px; height: 39px; }
+.player-area.player-0 .tile { width: 56px; height: 80px; }
+.player-area.player-0 .kawa-area .tile { width: 28px; height: 39px; }
+.tile.small { width: 26px; height: 36px; }
+.player-area.player-0 .tile.small { width: 36px; height: 50px; }
 
-.tile--mine {
-    cursor: pointer;
-    transition: transform 0.12s ease;
-}
-.tile--mine:hover { transform: translateY(-5px); }
+.tile--mine { cursor: pointer; }
+.tile--mine:hover { transform: translateY(-2px); }
+.player-area.player-0 .hand-row { gap: 0; }
 
 /* ========== 信息卡 ========== */
 .player-info-card {
