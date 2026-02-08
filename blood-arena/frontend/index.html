@@ -5,75 +5,91 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>血战到底</title>
     <link rel="stylesheet" href="/css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
 </head>
-<body class="app">
-    <div id="app" class="app-root" :class="{ 'app-root--over': state.gameEnded }">
-        <header class="bar">
+<body>
+    <div id="app" v-cloak :class="{ 'app-root--over': state.gameEnded }">
+        <header class="game-header bar">
             <span class="bar-title">血战到底</span>
-            <span class="bar-status" aria-live="polite">{{ state.status }}</span>
+            <span class="bar-status">{{ state.status }}</span>
             <button v-if="!state.gameStarted || state.gameEnded" type="button" class="bar-btn" @click="tryStartGame">
                 {{ state.gameEnded ? '再来一局' : '开始对局' }}
             </button>
         </header>
 
-        <div class="table">
-            <div class="table-inner">
-                <template v-for="z in playerZones" :key="z.zone">
-                    <div
-                        :class="['side', 'side--' + z.zone, { 'side--turn': state.currentActor === z.seat }]"
-                        :aria-label="z.seat === state.myPlayerId ? '我的手牌' : '对手' + (z.seat + 1)"
-                    >
-                        <div class="side-river">
-                            <img
-                                v-for="(tile, ti) in state.players[z.seat].discards"
-                                :key="'d-' + ti"
-                                :src="getPaiImage(tile, z.pose)"
-                                class="tile tile--sm"
-                                alt=""
-                            >
-                        </div>
+        <main class="main-content">
+            <div class="game-board-container">
+                <div class="game-board">
+                    <!-- Center: 剩 N 张 -->
+                    <div class="center-info">
+                        <span v-if="state.tilesLeft != null" class="center-logo">剩 {{ state.tilesLeft }} 张</span>
+                        <span v-else class="center-logo">🀄</span>
+                    </div>
+
+                    <!-- 4 player areas: same structure as replay (player-0 bottom, 1 right, 2 top, 3 left) -->
+                    <template v-for="z in playerZones" :key="z.zone">
                         <div
-                            class="side-hand"
-                            :class="{
-                                'side-hand--opp': z.seat !== state.myPlayerId,
-                                'side-hand--turn': z.seat === state.myPlayerId && isMyTurn
-                            }"
+                            class="player-area"
+                            :class="['player-' + z.seat, { 'is-turn': state.currentActor === z.seat }]"
+                            :aria-label="z.seat === state.myPlayerId ? '我的手牌' : '对手' + (z.seat + 1)"
                         >
-                            <template v-if="z.seat !== state.myPlayerId">
-                                <img v-for="n in 13" :key="'b-' + n" :src="getPaiImage('?', z.pose)" class="tile" alt="">
-                            </template>
-                            <template v-else>
-                                <div v-if="state.players[z.seat].melds.length" class="side-melds">
-                                    <div v-for="(m, mi) in state.players[z.seat].melds" :key="'g-' + mi" class="meld">
-                                        <img v-for="t in m.consumed" :key="t" :src="getPaiImage(t, z.pose)" class="tile tile--sm" alt="">
-                                        <img v-if="m.type !== 'ankan'" :src="getPaiImage(m.pai, z.pose)" class="tile tile--sm tile--call" alt="">
+                            <!-- Kawa (discards) -->
+                            <div class="kawa-area">
+                                <div v-for="(tile, ti) in state.players[z.seat].discards" :key="'d-' + ti" class="tile-wrapper discarded">
+                                    <div class="tile">
+                                        <img :src="getPaiImage(tile, z.pose)" class="tile-img" alt="">
                                     </div>
                                 </div>
-                                <img
-                                    v-for="(tile, i) in state.players[z.seat].tehai"
-                                    :key="'h-' + i"
-                                    :src="getPaiImage(tile, z.pose)"
-                                    class="tile tile--mine"
-                                    role="button"
-                                    tabindex="0"
-                                    :aria-label="'出牌 ' + tile"
-                                    @click="handleTileClick(tile, i)"
-                                >
-                            </template>
+                            </div>
+
+                            <!-- Info card -->
+                            <div class="player-info-card">
+                                <div class="name">{{ state.players[z.seat].name }}</div>
+                                <div class="score" :class="{ 'positive': state.players[z.seat].score >= 60000, 'negative': state.players[z.seat].score < 60000 }">{{ state.players[z.seat].score }}</div>
+                                <div class="player-status-row">
+                                    <span v-if="state.players[z.seat].dingQueSuit" class="badge dingque" :class="state.players[z.seat].dingQueSuit">{{ suitName(state.players[z.seat].dingQueSuit) }}</span>
+                                </div>
+                            </div>
+
+                            <!-- Hand + Fuuro -->
+                            <div class="hand-row">
+                                <div class="tehai-area">
+                                    <template v-if="z.seat !== state.myPlayerId">
+                                        <div v-for="n in 13" :key="'b-' + n" class="tile">
+                                            <img :src="getPaiImage('?', z.pose)" class="tile-img" alt="">
+                                        </div>
+                                    </template>
+                                    <template v-else>
+                                        <div
+                                            v-for="(tile, i) in state.players[z.seat].tehai"
+                                            :key="'h-' + i"
+                                            class="tile tile--mine"
+                                            role="button"
+                                            tabindex="0"
+                                            :aria-label="'出牌 ' + tile"
+                                            @click="handleTileClick(tile, i)"
+                                        >
+                                            <img :src="getPaiImage(tile, z.pose)" class="tile-img" alt="">
+                                        </div>
+                                    </template>
+                                </div>
+                                <div class="fuuro-area" v-if="z.seat === state.myPlayerId && state.players[z.seat].melds.length">
+                                    <div v-for="(m, mi) in state.players[z.seat].melds" :key="'g-' + mi" class="meld-group">
+                                        <div v-for="t in m.consumed" :key="t" class="tile small">
+                                            <img :src="getPaiImage(t, z.pose)" class="tile-img" alt="">
+                                        </div>
+                                        <div v-if="m.type !== 'ankan'" class="tile small">
+                                            <img :src="getPaiImage(m.pai, z.pose)" class="tile-img" alt="">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div class="side-info">
-                            <span class="side-info-name">{{ state.players[z.seat].name }}</span>
-                            <span class="side-info-score">{{ state.players[z.seat].score }}</span>
-                            <span v-if="state.players[z.seat].dingQueSuit" class="side-info-dq" :class="'side-info-dq--' + state.players[z.seat].dingQueSuit">{{ suitName(state.players[z.seat].dingQueSuit) }}</span>
-                        </div>
-                    </div>
-                </template>
-                <div class="table-center">
-                    <span v-if="state.tilesLeft != null" class="table-center-text">剩 {{ state.tilesLeft }} 张</span>
+                    </template>
                 </div>
             </div>
-        </div>
+        </main>
 
         <div v-if="state.validActions.length > 0" class="actions" role="group" aria-label="可选操作">
             <button
