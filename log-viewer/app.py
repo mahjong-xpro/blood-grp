@@ -285,6 +285,13 @@ def list_logs():
                 'p0_agari_count': log_entry.get('game_info', {}).get('hero_agari_count', 0), # Use Hero count for display
                 'player_agari_counts': log_entry.get('game_info', {}).get('player_agari_counts', [0, 0, 0, 0]),
                 'hero_index': log_entry.get('game_info', {}).get('hero_index', 0),
+                'ordered_counts': [
+                    {'count': log_entry.get('game_info', {}).get('player_agari_counts', [0]*4)[i], 
+                     'is_hero': i == log_entry.get('game_info', {}).get('hero_index', 0),
+                     'idx': i}
+                    for i in [log_entry.get('game_info', {}).get('hero_index', 0)] + 
+                             [x for x in range(4) if x != log_entry.get('game_info', {}).get('hero_index', 0)]
+                ],
             })
         
         return jsonify({
