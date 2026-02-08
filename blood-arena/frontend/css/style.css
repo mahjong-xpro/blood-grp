@@ -216,9 +216,9 @@ body {
 .player-area.player-3 .kawa-area {
     max-width: 500px;
 }
-/* 仅旋转方向不同：右家 90deg 使 hand 在视口右；左家 -90deg 使 hand 在视口左。其余样式完全共用，形成镜像 */
-.player-area.player-1 { transform: rotate(90deg); }
-.player-area.player-3 { transform: rotate(-90deg); }
+/* 左右样式完全一致，仅旋转方向相反（右 -90deg，左 90deg） */
+.player-area.player-1 { transform: rotate(-90deg); }
+.player-area.player-3 { transform: rotate(90deg); }
 
 /* Player 2 = 上家 */
 .player-area.player-2 { transform: rotate(180deg); }
