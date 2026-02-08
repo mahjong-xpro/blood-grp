@@ -1,7 +1,6 @@
 const { createApp, reactive, computed, onMounted } = Vue;
 
-/* --- Constants & Mappers --- */
-const TSUPAIS = [null, "E", "S", "W", "N", "P", "F", "C"]; // 1-7
+const TSUPAIS = [null, "E", "S", "W", "N", "P", "F", "C"];
 const TSUPAI_TO_IMG = {
     "E": "ji_e", "S": "ji_s", "W": "ji_w", "N": "ji_n",
     "P": "no", "F": "ji_h", "C": "ji_c",
@@ -11,22 +10,16 @@ const TSUPAI_TO_IMG = {
 
 function getPaiImage(pai, pose = 0) {
     if (!pai || pai === "?") return `/static/images/p_bk_${pose}.gif`;
-
-    // Parse: 5m, 5mr, E, 1z
     let name = "";
     let ext = "gif";
-
-    // Check Honor (z or Letter)
     if (TSUPAI_TO_IMG[pai] || /^[1-7]z$/.test(pai)) {
-        name = TSUPAI_TO_IMG[pai] || TSUPAI_TO_IMG[pai.replace("z", "")]; // Fallback
+        name = TSUPAI_TO_IMG[pai] || TSUPAI_TO_IMG[pai.replace("z", "")];
         if (!name && /^[1-7]z$/.test(pai)) {
-            // map 1z->E->ji_e
             const idx = parseInt(pai[0]);
             const letter = TSUPAIS[idx];
             name = TSUPAI_TO_IMG[letter];
         }
     } else {
-        // Suits: 1m, 5p, 9s
         const match = pai.match(/^([0-9])([mps])(r)?$/);
         if (match) {
             const num = match[1];
@@ -35,38 +28,28 @@ function getPaiImage(pai, pose = 0) {
             name = `${type}s${num}${red ? "r" : ""}`;
             if (red) ext = "png";
         } else {
-            // Fallback for unexpected formats
-            // console.warn("Unknown pai format:", pai);
             return `/static/images/p_bk_${pose}.gif`;
         }
     }
-
     return `/static/images/p_${name}_${pose}.${ext}`;
 }
 
 const app = createApp({
     setup() {
-        // --- State ---
         const state = reactive({
             connected: false,
             status: '连接中…',
-            notification: "", // Big center text
-
-            // Game Data
+            notification: "",
             players: [
-                { name: '我', score: 60000, tehai: [], discards: [], melds: [], dingQueSuit: null },   // 0
-                { name: '对手1', score: 60000, tehai: [], discards: [], melds: [], dingQueSuit: null }, // 1
-                { name: '对手2', score: 60000, tehai: [], discards: [], melds: [], dingQueSuit: null }, // 2
-                { name: '对手3', score: 60000, tehai: [], discards: [], melds: [], dingQueSuit: null }  // 3
+                { name: '我', score: 60000, tehai: [], discards: [], melds: [], dingQueSuit: null },
+                { name: '对手1', score: 60000, tehai: [], discards: [], melds: [], dingQueSuit: null },
+                { name: '对手2', score: 60000, tehai: [], discards: [], melds: [], dingQueSuit: null },
+                { name: '对手3', score: 60000, tehai: [], discards: [], melds: [], dingQueSuit: null }
             ],
-
-            // Turn Logic
             myPlayerId: 0,
             currentActor: -1,
             isMyTurn: false,
             validActions: [],
-
-            // Meta
             gameStarted: false,
             tilesLeft: null,
             gameEnded: false,
@@ -75,91 +58,46 @@ const app = createApp({
 
         let ws = null;
 
-        // --- Helpers ---
-        const playSound = (type) => {
-            // TODO: Add Audio 
-        };
-
         const sortHand = (tehai) => {
-            // Simple sort: m < p < s < z
             const weight = (p) => {
                 if (p === "?") return 999;
                 if (TSUPAI_TO_IMG[p] || /^[1-7]z$/.test(p)) {
-                    // Honor
-                    let idx = 0;
-                    if (p.endsWith('z')) idx = parseInt(p[0]);
-                    else idx = TSUPAIS.indexOf(p);
+                    let idx = p.endsWith('z') ? parseInt(p[0]) : TSUPAIS.indexOf(p);
                     return 300 + idx;
                 }
                 const match = p.match(/^([0-9])([mps])/);
                 if (!match) return 999;
                 const n = parseInt(match[1]);
                 const t = match[2];
-                let base = 0;
-                if (t === 'm') base = 0;
-                if (t === 'p') base = 100;
-                if (t === 's') base = 200;
+                const base = t === 'm' ? 0 : t === 'p' ? 100 : 200;
                 return base + n;
             };
             return tehai.sort((a, b) => weight(a) - weight(b));
         };
 
-        // --- Core Logic ---
-
-        // Evaluates the current state to determine what UI to show (Phase Detection)
         const evaluatePhase = (events) => {
-            // 1. Ding Que Phase Detection
-            // Condition: StartKyoku exists events BUT NO one has discarded or melded yet?
-            // Or simpler: My DingQueSuit is null?
             const lastStartKyokuIdx = events.findLastIndex(e => e.type === 'start_kyoku');
-
             if (lastStartKyokuIdx !== -1) {
-                // Check if any DingQue action happened AFTER start_kyoku for ME
-                // Actually, the server broadcasts 'ding_que' event when SOMEONE does it.
-                // We need to know if *I* have done it.
-                // state.players[0].dingQueSuit reflects the 'ding_que' event.
-                // But strictly, we should offer the buttons if we haven't sent it yet.
-                // Best way: Check if any play events (Dahai/Chi/Pon/Tsumo) happened after Start Kyoku.
-                // UPDATE: 'tsumo' is allowed (Dealer draws 14th tile BEFORE Ding Que).
-                // So we only look for Discards or Melds (Dahai, Chi, Pon, Kan).
-
                 const eventsAfterKyoku = events.slice(lastStartKyokuIdx + 1);
                 const hasPlay = eventsAfterKyoku.some(e => ['dahai', 'chi', 'pon', 'daiminkan', 'ankan', 'kakan'].includes(e.type));
-
                 if (!hasPlay) {
-                    // We are in Ding Que or Pre-Game phase
                     if (!state.players[state.myPlayerId].dingQueSuit) {
-                        // I haven't picked a suit yet -> Show Buttons
                         state.status = '请选择定缺花色';
                         state.validActions = [
                             { label: '万', class: 'btn-action btn-man', payload: { type: 'ding_que', actor: state.myPlayerId, suit: 'man' } },
                             { label: '筒', class: 'btn-action btn-pin', payload: { type: 'ding_que', actor: state.myPlayerId, suit: 'pin' } },
                             { label: '条', class: 'btn-action btn-sou', payload: { type: 'ding_que', actor: state.myPlayerId, suit: 'sou' } }
                         ];
-                        return; // Exclusive UI
+                        return;
                     } else {
-                        // I have picked.
-                        if (state.isMyTurn) {
-                            state.status = '轮到你出牌';
-                            state.validActions = []; // Clear buttons, allow tile click
-                        } else {
-                            state.status = '等待其他玩家定缺…';
-                            state.validActions = [];
-                        }
-                        // Don't return, maybe we want to render the board? Yes.
+                        state.status = state.isMyTurn ? '轮到你出牌' : '等待其他玩家定缺…';
+                        state.validActions = [];
                     }
                 }
             }
-
-            // 2. My Turn Detection (Playing Phase)
-            // Already handled by detailed event processing (Tsumo/Pon logic),
-            // but we can sanity check here.
-            // If validActions is empty and it's my turn (from Tsumo), ensure I can Dahai?
-            // Handled by handleTileClick.
         };
 
         const handleEvent = (event) => {
-            // console.log("Event:", event);
             const { type, actor, target, pai, consumed, scores, tehais, suit } = event;
 
             if (type === 'start_game') {
@@ -175,8 +113,7 @@ const app = createApp({
                 state.gameStarted = true;
                 state.status = '对局开始';
                 if (scores) scores.forEach((s, i) => state.players[i].score = s);
-                state.players.forEach(p => p.dingQueSuit = null); // Reset Ding Que
-
+                state.players.forEach(p => p.dingQueSuit = null);
                 if (tehais) {
                     tehais.forEach((hand, i) => {
                         state.players[i].tehai = [...hand];
@@ -202,7 +139,6 @@ const app = createApp({
                 const pIdx = state.players[actor].tehai.indexOf(pai);
                 if (pIdx !== -1) state.players[actor].tehai.splice(pIdx, 1);
                 else state.players[actor].tehai.pop();
-
                 state.players[actor].discards.push(pai);
                 if (actor === state.myPlayerId) sortHand(state.players[actor].tehai);
 
@@ -286,7 +222,6 @@ const app = createApp({
             }
         };
 
-        // --- Setup ---
         onMounted(() => {
             const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
             ws = new WebSocket(`${protocol}//${window.location.host}/ws/game`);
@@ -323,7 +258,6 @@ const app = createApp({
             return { man: '万', pin: '筒', sou: '条' }[suit] || suit;
         };
 
-        /** 牌桌座位布局：上/左/右/下 对应 player index 与牌面朝向 */
         const playerZones = [
             { zone: 'top', seat: 2, pose: 2 },
             { zone: 'left', seat: 3, pose: 3 },
@@ -334,7 +268,6 @@ const app = createApp({
         const showResultPanel = computed(() => state.gameEnded);
         const isMyTurn = computed(() => state.isMyTurn);
 
-        /** 从手牌中取两张与 pai 相同的牌用于碰（服务器校验需要） */
         function getPonConsumed(tehai, pai) {
             if (!pai || !tehai || tehai.length < 2) return [];
             const out = [];
@@ -344,7 +277,6 @@ const app = createApp({
             return out.length >= 2 ? out : [];
         }
 
-        /** 从手牌中取三张与 pai 相同的牌用于明杠（服务器校验需要） */
         function getMinkanConsumed(tehai, pai) {
             if (!pai || !tehai || tehai.length < 3) return [];
             const out = [];

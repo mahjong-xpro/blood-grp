@@ -1,91 +1,141 @@
 <!DOCTYPE html>
-<html>
-
+<html lang="zh-CN">
 <head>
-    <meta charset="utf-8">
-    <title>Blood Arena - Human vs AI</title>
-    <link rel="stylesheet" type="text/css" href="/css/style.css">
-
-    <!-- Dependencies -->
-    <script src="/js/jquery-1.7.2.min.js"></script>
-    <script src="/js/dytem.js"></script>
-
-    <!-- Archive Player Logic (Rendering) -->
-    <script src="/js/archive_player.js"></script>
-
-    <!-- Inject global variables for archive_player just in case -->
-    <script>
-        var resourceDir = "static"; // Important: tell archive_player where images are
-    </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>血战到底 - 人机对战</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
 </head>
-
-<body>
-
-    <!-- Status Bar -->
-    <div id="status" style="text-align: center; color: white; background: #333; padding: 10px;">Connecting...</div>
-
-    <!-- Controls Area -->
-    <div id="controls" style="text-align: center; margin: 10px;"></div>
-
-    <!-- Board Container (Structure required by archive_player.js) -->
-    <div class="board">
-        <div id="players" class="repeated player">
-            <div class="ho">
-                <div id="players.hoRows" class="repeated pai-row">
-                    <img id="players.hoRows.pais" class="repeated">
+<body class="ui-body">
+    <div id="app" class="ui-root" :class="{ 'ui-root--my-turn': isMyTurn, 'ui-root--ended': state.gameEnded }">
+        <header class="ui-header" role="banner">
+            <div class="ui-header__status" aria-live="polite">
+                <span class="ui-header__text">{{ state.status }}</span>
+                <button
+                    v-if="!state.gameStarted || state.gameEnded"
+                    type="button"
+                    class="ui-btn ui-btn--primary"
+                    @click="tryStartGame"
+                >
+                    {{ state.gameEnded ? '再来一局' : '开始对局' }}
+                </button>
+            </div>
+            <div class="ui-scores" role="list">
+                <div
+                    v-for="(p, i) in state.players"
+                    :key="i"
+                    class="ui-scores__item"
+                    :class="{ 'ui-scores__item--active': state.currentActor === i }"
+                    role="listitem"
+                >
+                    <span class="ui-scores__name">{{ p.name }}</span>
+                    <span class="ui-scores__points">{{ p.score }}<small>分</small></span>
+                    <span v-if="p.dingQueSuit" class="ui-scores__dingque" :class="'ui-scores__dingque--' + p.dingQueSuit">
+                        定缺{{ suitName(p.dingQueSuit) }}
+                    </span>
                 </div>
             </div>
-            <div class="tehai-container pai-row">
-                <img id="players.tehais" class="repeated">
-                <img id="players.tsumoPai" class="tsumo-pai">
+        </header>
+
+        <main class="ui-main" role="main">
+            <div class="table">
+                <template v-for="z in playerZones" :key="z.zone">
+                    <section
+                        :class="['table__zone', 'table__zone--' + z.zone]"
+                        :aria-label="z.seat === state.myPlayerId ? '我的手牌' : '对手' + (z.seat + 1)"
+                    >
+                        <div class="table__river">
+                            <img
+                                v-for="(tile, ti) in state.players[z.seat].discards"
+                                :key="'r-' + ti"
+                                :src="getPaiImage(tile, z.pose)"
+                                class="tile tile--river"
+                                alt=""
+                            >
+                        </div>
+                        <div
+                            class="table__hand"
+                            :class="{ 'table__hand--closed': z.seat !== state.myPlayerId, 'table__hand--my-turn': z.seat === state.myPlayerId && isMyTurn }"
+                        >
+                            <template v-if="z.seat !== state.myPlayerId">
+                                <img v-for="n in 13" :key="'b-' + n" :src="getPaiImage('?', z.pose)" class="tile" alt="">
+                            </template>
+                            <div v-if="state.players[z.seat].melds.length" class="table__melds">
+                                <div v-for="(m, mi) in state.players[z.seat].melds" :key="'m-' + mi" class="meld">
+                                    <img v-for="tile in m.consumed" :key="tile" :src="getPaiImage(tile, z.pose)" class="tile tile--meld" alt="">
+                                    <img v-if="m.type !== 'ankan'" :src="getPaiImage(m.pai, z.pose)" class="tile tile--meld tile--meld-pai" :class="{ 'tile--meld-pai-rotate': z.zone === 'bottom' }" alt="">
+                                </div>
+                            </div>
+                            <template v-if="z.seat === state.myPlayerId">
+                                <img
+                                    v-for="(tile, i) in state.players[z.seat].tehai"
+                                    :key="'h-' + i"
+                                    :src="getPaiImage(tile, z.pose)"
+                                    class="tile tile--hand tile--hand-my"
+                                    role="button"
+                                    tabindex="0"
+                                    :aria-label="'出牌 ' + tile"
+                                    @click="handleTileClick(tile, i)"
+                                >
+                            </template>
+                        </div>
+                    </section>
+                </template>
+
+                <div class="table__center" aria-hidden="true">
+                    <div class="table__brand">
+                        <h2 class="table__title">血战到底</h2>
+                        <p class="table__subtitle">三人和牌即结束 · 定缺一门</p>
+                        <p v-if="state.tilesLeft != null" class="table__tiles-left">剩余 {{ state.tilesLeft }} 张</p>
+                    </div>
+                </div>
             </div>
-            <div class="furo-container pai-row">
-                <span id="players.furos" class="repeated">
-                    <img id="players.furos.pais" class="repeated">
-                </span>
+
+            <div v-if="state.validActions.length > 0" class="ui-actions" role="group" aria-label="可选操作">
+                <button
+                    v-for="action in state.validActions"
+                    :key="action.label"
+                    type="button"
+                    class="ui-btn ui-btn--action"
+                    :class="action.class"
+                    @click="sendAction(action)"
+                >
+                    {{ action.label }}
+                </button>
             </div>
-            <div class="player-footer"></div>
+        </main>
+
+        <div v-if="state.notification && !state.gameEnded" class="ui-toast" role="alert">
+            {{ state.notification }}
         </div>
-        <div class="wanpais-container">
-            <img id="wanpais" class="repeated">
+
+        <aside
+            v-if="showResultPanel"
+            class="ui-result"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="result-title"
+        >
+            <div class="ui-result__backdrop" @click.self="tryStartGame"></div>
+            <div class="ui-result__card">
+                <h2 id="result-title" class="ui-result__title">对局结束</h2>
+                <ul class="ui-result__scores">
+                    <li v-for="(p, i) in state.players" :key="i" class="ui-result__row">
+                        <span class="ui-result__name">{{ p.name }}</span>
+                        <span class="ui-result__points">{{ p.score }} 分</span>
+                    </li>
+                </ul>
+                <button type="button" class="ui-btn ui-btn--primary ui-result__again" @click="tryStartGame">
+                    再来一局
+                </button>
+            </div>
+        </aside>
+
+        <div v-if="state.debug" class="ui-debug" aria-hidden="true">
+            Phase={{ state.status }} | Started={{ state.gameStarted }} | Connected={{ state.connected }} | Turn={{ state.isMyTurn }} | 定缺={{ suitName(state.players[state.myPlayerId].dingQueSuit) }}
         </div>
     </div>
-
-    <!-- Controller (Hidden but might be useful for debug) -->
-    <div class="controller-container" style="display:none;">
-        <div>
-            <select id="kyokuSelector"></select>
-        </div>
-        <div>
-            <button id="prev-button">Prev</button>
-            <button id="next-button">Next</button>
-            <input id="action-id-label" type="text" size="3" value="0">
-            <button id="go-button">Go</button>
-            <button id="last-button" style="margin-left: 1em;">Last</button>
-        </div>
-        <table border="0">
-            <tr>
-                <th>#</th>
-                <th>Name</th>
-                <th>Score</th>
-                <th><button id="viewpoint-button">Viewpoint</button></th>
-            </tr>
-            <tr id="playerInfos" class="repeated">
-                <td id="playerInfos.index"></td>
-                <td id="playerInfos.name"></td>
-                <td id="playerInfos.score"></td>
-                <td id="playerInfos.viewpoint"></td>
-            </tr>
-        </table>
-        <div>
-            <pre id="action-label"></pre>
-        </div>
-        <div id="log-label" class="log-label"></div>
-    </div>
-
-    <!-- Game Logic -->
-    <script src="/js/game.js"></script>
-
+    <script src="/js/app.js"></script>
 </body>
-
 </html>

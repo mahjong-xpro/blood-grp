@@ -33,15 +33,6 @@ game_manager = GameManager()
 
 @app.get("/")
 async def get():
-    return FileResponse("frontend/index_vue.html")
-
-@app.get("/v2")
-async def get_v2():
-    return FileResponse("frontend/index_v2.html")
-
-# Keeping legacy route for reference if needed
-@app.get("/legacy")
-async def get_legacy():
     return FileResponse("frontend/index.html")
 
 @app.websocket("/ws/game")
