@@ -216,12 +216,9 @@ body {
 .player-area.player-3 .kawa-area {
     max-width: 500px;
 }
-/* 左家：手牌行反序，旋转后与右家视觉一致（牌列方向一致） */
-.player-area.player-3 .hand-row { flex-direction: row-reverse; }
-.player-area.player-3 .tehai-area { flex-direction: row-reverse; }
-.player-area.player-3 .fuuro-area { margin-left: 0; margin-right: 20px; }
-.player-area.player-1 { transform: rotate(-90deg); }
-.player-area.player-3 { transform: rotate(90deg); }
+/* 仅旋转方向不同：右家 90deg 使 hand 在视口右；左家 -90deg 使 hand 在视口左。其余样式完全共用，形成镜像 */
+.player-area.player-1 { transform: rotate(90deg); }
+.player-area.player-3 { transform: rotate(-90deg); }
 
 /* Player 2 = 上家 */
 .player-area.player-2 { transform: rotate(180deg); }
