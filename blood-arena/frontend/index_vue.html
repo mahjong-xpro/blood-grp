@@ -9,15 +9,18 @@
     <style>
         .debug-panel {
             position: fixed;
-            bottom: 10px;
-            left: 10px;
-            background: rgba(0, 0, 0, 0.8);
-            color: lime;
-            padding: 10px;
-            font-family: monospace;
+            bottom: 8px;
+            left: 8px;
+            max-width: 320px;
+            background: rgba(0,0,0,0.85);
+            color: #8bc34a;
+            padding: 8px 10px;
+            font-family: ui-monospace, monospace;
             font-size: 10px;
+            line-height: 1.4;
             z-index: 9999;
             pointer-events: none;
+            border-radius: 6px;
         }
     </style>
 </head>
@@ -64,42 +67,31 @@
             </button>
         </div>
 
-        <!-- Game Board -->
+        <!-- 牌桌：四家由 playerZones 驱动，中央固定 -->
         <div class="game-board">
-            <!-- Player 2 (Top) -->
-            <div class="player-zone zone-top">
-                <div class="hand hand-closed">
-                    <img v-for="n in 13" src="/static/images/p_bk_2.gif" />
-                    <!-- Melds -->
-                    <div class="melds" v-if="state.players[2].melds.length">
-                        <div v-for="(m, mi) in state.players[2].melds" :key="mi" class="meld-group">
-                            <img v-for="tile in m.consumed" :key="tile" :src="getPaiImage(tile, 2)">
-                            <img v-if="m.type !== 'ankan'" :src="getPaiImage(m.pai, 2)">
+            <template v-for="z in playerZones" :key="z.zone">
+                <div :class="['player-zone', 'zone-' + z.zone]">
+                    <div class="river">
+                        <img v-for="(tile, ti) in state.players[z.seat].discards" :key="ti" :src="getPaiImage(tile, z.pose)">
+                    </div>
+                    <div class="hand" :class="{ 'hand-closed': z.seat !== state.myPlayerId }">
+                        <template v-if="z.seat !== state.myPlayerId">
+                            <img v-for="n in 13" :key="n" :src="getPaiImage('?', z.pose)">
+                        </template>
+                        <div class="melds" v-if="state.players[z.seat].melds.length">
+                            <div v-for="(m, mi) in state.players[z.seat].melds" :key="mi" class="meld-group">
+                                <img v-for="tile in m.consumed" :key="tile" :src="getPaiImage(tile, z.pose)">
+                                <img v-if="m.type !== 'ankan'" :src="getPaiImage(m.pai, z.pose)" :class="{ 'meld-pai-rotate': z.zone === 'bottom' }">
+                            </div>
                         </div>
+                        <template v-if="z.seat === state.myPlayerId">
+                            <img v-for="(tile, i) in state.players[z.seat].tehai" :key="i + tile" :src="getPaiImage(tile, z.pose)"
+                                class="my-tile" @click="handleTileClick(tile, i)">
+                        </template>
                     </div>
                 </div>
-                <div class="river">
-                    <img v-for="(tile, ti) in state.players[2].discards" :key="ti" :src="getPaiImage(tile, 2)">
-                </div>
-            </div>
+            </template>
 
-            <!-- Player 3 (Left) -->
-            <div class="player-zone zone-left">
-                <div class="hand hand-closed">
-                    <img v-for="n in 13" src="/static/images/p_bk_3.gif" />
-                    <div class="melds" v-if="state.players[3].melds.length">
-                        <div v-for="(m, mi) in state.players[3].melds" :key="mi" class="meld-group">
-                            <img v-for="tile in m.consumed" :key="tile" :src="getPaiImage(tile, 3)">
-                            <img v-if="m.type !== 'ankan'" :src="getPaiImage(m.pai, 3)">
-                        </div>
-                    </div>
-                </div>
-                <div class="river">
-                    <img v-for="(tile, ti) in state.players[3].discards" :key="ti" :src="getPaiImage(tile, 3)">
-                </div>
-            </div>
-
-            <!-- 中央：血战到底无宝牌，仅显示牌桌名称与可选信息 -->
             <div class="zone-center">
                 <div class="center-info">
                     <div class="game-title">血战到底</div>
@@ -107,45 +99,6 @@
                     <div v-if="state.tilesLeft != null" class="tiles-left">剩余 {{ state.tilesLeft }} 张</div>
                 </div>
             </div>
-
-            <!-- Player 1 (Right) -->
-            <div class="player-zone zone-right">
-                <div class="hand hand-closed">
-                    <img v-for="n in 13" src="/static/images/p_bk_1.gif" />
-                    <div class="melds" v-if="state.players[1].melds.length">
-                        <div v-for="(m, mi) in state.players[1].melds" :key="mi" class="meld-group">
-                            <img v-for="tile in m.consumed" :key="tile" :src="getPaiImage(tile, 1)">
-                            <img v-if="m.type !== 'ankan'" :src="getPaiImage(m.pai, 1)">
-                        </div>
-                    </div>
-                </div>
-                <div class="river">
-                    <img v-for="(tile, ti) in state.players[1].discards" :key="ti" :src="getPaiImage(tile, 1)">
-                </div>
-            </div>
-
-            <!-- Player 0 (Me - Bottom) -->
-            <div class="player-zone zone-bottom">
-                <div class="river">
-                    <img v-for="(tile, ti) in state.players[0].discards" :key="ti" :src="getPaiImage(tile, 0)">
-                </div>
-                <div class="hand">
-                    <!-- Melds -->
-                    <div class="melds" v-if="state.players[0].melds.length">
-                        <div v-for="(m, mi) in state.players[0].melds" :key="mi" class="meld-group">
-                            <img v-for="tile in m.consumed" :key="tile" :src="getPaiImage(tile, 0)">
-                            <img v-if="m.type !== 'ankan'" :src="getPaiImage(m.pai, 0)" style="transform: rotate(90deg);">
-                        </div>
-                    </div>
-
-                    <!-- Hand Tiles -->
-                    <img v-for="(tile, i) in state.players[0].tehai" :key="i + tile" :src="getPaiImage(tile, 0)"
-                        class="my-tile" @click="handleTileClick(tile, i)">
-
-                    <!-- Tsumo Tile (Last one if play is active? For now simplest to just render full hand) -->
-                </div>
-            </div>
-
         </div>
     </div>
 

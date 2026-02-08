@@ -322,6 +322,14 @@ const app = createApp({
             return { man: '万', pin: '筒', sou: '条' }[suit] || suit;
         };
 
+        /** 牌桌座位布局：上/左/右/下 对应 player index 与牌面朝向 */
+        const playerZones = [
+            { zone: 'top', seat: 2, pose: 2 },
+            { zone: 'left', seat: 3, pose: 3 },
+            { zone: 'right', seat: 1, pose: 1 },
+            { zone: 'bottom', seat: 0, pose: 0 }
+        ];
+
         /** 从手牌中取两张与 pai 相同的牌用于碰（服务器校验需要） */
         function getPonConsumed(tehai, pai) {
             if (!pai || !tehai || tehai.length < 2) return [];
@@ -344,6 +352,7 @@ const app = createApp({
 
         return {
             state,
+            playerZones,
             getPaiImage,
             suitName,
             handleTileClick,

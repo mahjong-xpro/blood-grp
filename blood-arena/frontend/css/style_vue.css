@@ -1,22 +1,42 @@
+/* ==========================================================================
+   血战到底 - 人机对战布局
+   Layout: 上方对手(2) | 左(3) 中央 右(1) | 下方自己(0)
+   ========================================================================== */
+
 :root {
+    /* 背景与主题 */
     --bg-color: #121212;
-    --table-color: #005c0099;
-    /* Dark Green Felt with transparency */
-    --mat-color: #004d00;
     --text-color: #e0e0e0;
     --accent-color: #4fc3f7;
-    --tile-width: 40px;
-    --tile-height: 56px;
-    --tile-width-sm: 30px;
-    /* For opponent hands/river */
-    --tile-height-sm: 42px;
+
+    /* 牌桌 */
+    --table-color: #005c0099;
+    --mat-color: #004d00;
+    --table-radius: 16px;
+    --table-padding: 16px;
+
+    /* 牌尺寸：对手 / 自己手牌 */
+    --tile-w: 40px;
+    --tile-h: 56px;
+    --tile-w-sm: 30px;
+    --tile-h-sm: 42px;
+    --my-tile-w: 58px;
+    --my-tile-h: 82px;
+
+    /* 牌桌网格（上 中 下 行高） */
+    --grid-side: 200px;
+    --grid-center-min: 180px;
+    --grid-bottom: 300px;
 }
 
+/* -------------------------------------------------------------------------- */
+/* 基础 */
+/* -------------------------------------------------------------------------- */
 body {
     margin: 0;
     background-color: var(--bg-color);
     color: var(--text-color);
-    font-family: 'Segoe UI', sans-serif;
+    font-family: 'Segoe UI', 'PingFang SC', sans-serif;
     overflow: hidden;
     height: 100vh;
     display: flex;
@@ -30,24 +50,48 @@ body {
     position: relative;
 }
 
-/* --- HUD --- */
+/* -------------------------------------------------------------------------- */
+/* 顶部栏：状态 + 分数 */
+/* -------------------------------------------------------------------------- */
 .hud-header {
     display: flex;
     justify-content: space-between;
+    align-items: center;
     padding: 10px 20px;
-    background: rgba(0, 0, 0, 0.8);
+    background: rgba(0, 0, 0, 0.85);
     z-index: 100;
+    flex-shrink: 0;
+}
+
+.hud-header .status {
+    font-size: 0.95rem;
+}
+
+.hud-header .status button {
+    margin-left: 12px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: none;
+    background: var(--accent-color);
+    color: #111;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.hud-header .status button:hover {
+    filter: brightness(1.1);
 }
 
 .score-panel {
     display: flex;
-    gap: 20px;
+    gap: 16px;
 }
 
 .score-item {
-    padding: 5px 10px;
-    border-radius: 4px;
+    padding: 6px 12px;
+    border-radius: 6px;
     background: rgba(255, 255, 255, 0.1);
+    font-size: 0.9rem;
 }
 
 .score-item.active {
@@ -55,29 +99,33 @@ body {
     color: var(--accent-color);
 }
 
-/* --- GAME BOARD (Grid) --- */
+/* -------------------------------------------------------------------------- */
+/* 牌桌网格：四家 + 中央 */
+/* -------------------------------------------------------------------------- */
 .game-board {
-    flex-grow: 1;
+    flex: 1;
+    min-height: 0;
     display: grid;
     grid-template-areas:
-        ".        top        ."
-        "left     center     right"
-        ".        bottom     .";
-    grid-template-columns: 220px 1fr 220px;
-    grid-template-rows: 160px 1fr 320px;
-    background-color: var(--mat-color);
+        ".      top    ."
+        "left   center right"
+        ".      bottom .";
+    grid-template-columns: var(--grid-side) 1fr var(--grid-side);
+    grid-template-rows: var(--grid-center-min) 1fr var(--grid-bottom);
+    background: var(--mat-color);
     position: relative;
-    padding: 16px;
-    min-height: 0;
+    padding: var(--table-padding);
+    border-radius: var(--table-radius);
+    margin: 8px;
 }
 
-/* --- ZONES --- */
+/* 四家区域通用 */
 .player-zone {
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    position: relative;
+    min-width: 0;
 }
 
 .zone-top {
@@ -85,14 +133,6 @@ body {
     flex-direction: column-reverse;
 }
 
-.zone-bottom {
-    grid-area: bottom;
-    justify-content: flex-end;
-    min-height: 140px;
-    padding-bottom: 12px;
-}
-
-/* My hand at bottom */
 .zone-left {
     grid-area: left;
     flex-direction: column;
@@ -105,49 +145,63 @@ body {
     justify-content: center;
 }
 
+.zone-bottom {
+    grid-area: bottom;
+    justify-content: flex-end;
+    min-height: 120px;
+    padding-bottom: 8px;
+}
+
+/* 中央信息 */
 .zone-center {
     grid-area: center;
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    background: rgba(0, 0, 0, 0.2);
+    background: rgba(0, 0, 0, 0.25);
     border-radius: 20px;
 }
 
-/* 中央：血战到底无宝牌，显示牌桌名称 */
 .center-info {
     text-align: center;
     padding: 1rem;
 }
+
 .center-info .game-title {
     font-size: 1.5rem;
     font-weight: bold;
-    color: rgba(255,255,255,0.95);
+    color: rgba(255, 255, 255, 0.95);
     margin-bottom: 4px;
 }
+
 .center-info .game-subtitle {
     font-size: 0.8rem;
-    color: rgba(255,255,255,0.7);
+    color: rgba(255, 255, 255, 0.7);
 }
+
 .center-info .tiles-left {
     font-size: 0.85rem;
-    color: rgba(255,255,255,0.8);
+    color: rgba(255, 255, 255, 0.8);
     margin-top: 8px;
 }
 
-/* --- HANDS --- */
+/* -------------------------------------------------------------------------- */
+/* 手牌区 */
+/* -------------------------------------------------------------------------- */
 .hand {
     display: flex;
+    flex-wrap: wrap;
     gap: 2px;
-    min-height: var(--tile-height);
-    margin: 10px;
+    min-height: var(--tile-h);
+    margin: 8px;
+    justify-content: center;
 }
 
 .hand img {
-    width: var(--tile-width);
-    height: var(--tile-height);
-    background: white;
+    width: var(--tile-w);
+    height: var(--tile-h);
+    background: #fff;
     border-radius: 4px;
     box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.5);
     cursor: default;
@@ -156,163 +210,169 @@ body {
     object-fit: contain;
 }
 
-/* Side Player Tiles (Landscape/Vertical Stack) */
+/* 左右对手：竖排叠牌 */
 .zone-left .hand,
 .zone-right .hand {
     flex-direction: column;
-    /* Stack tiles vertically */
-    gap: -10px;
-    /* Tighter vertical stacking */
+    flex-wrap: nowrap;
 }
 
 .zone-left .hand img,
 .zone-right .hand img {
-    width: var(--tile-height);
-    /* Swap W/H */
-    height: var(--tile-width);
-    margin-bottom: -20px;
-    /* Overlap for 3D effect look */
-    margin-right: 0;
+    width: var(--tile-h);
+    height: var(--tile-w);
+    margin-bottom: -18px;
 }
 
-/* 自己手牌：加大尺寸、清晰渲染，保证可见 */
+/* 自己手牌：大牌、可点击 */
 .zone-bottom .hand {
-    flex-wrap: wrap;
-    justify-content: center;
     gap: 6px;
-    min-height: 100px;
-    padding: 14px 10px;
+    min-height: 90px;
+    padding: 12px 10px;
 }
+
 .zone-bottom .hand img {
-    width: 58px;
-    height: 82px;
+    width: var(--my-tile-w);
+    height: var(--my-tile-h);
     cursor: pointer;
-    transition: transform 0.1s;
-    image-rendering: -webkit-optimize-contrast;
-    image-rendering: crisp-edges;
-    object-fit: contain;
+    transition: transform 0.12s ease;
 }
 
 .zone-bottom .hand img:hover {
-    transform: translateY(-10px);
+    transform: translateY(-8px);
 }
 
-.tsumo-padding {
-    margin-left: 15px;
-    /* Separate drawn tile */
+/* 对手手牌/背牌单行或单列 */
+.zone-top .hand {
+    flex-wrap: nowrap;
 }
 
-/* Opponent Hands (Face down or sideways) */
-.hand-closed {
-    /* Usually just backs */
-}
-
-/* --- RIVERS (Discards) --- */
-.river {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    /* 6 tiles per row usually */
-    gap: 2px;
-    margin: 10px;
-    background: rgba(0, 0, 0, 0.1);
-    padding: 5px;
-    border-radius: 4px;
-}
-
-.river img {
-    width: var(--tile-width-sm);
-    height: var(--tile-height-sm);
-    image-rendering: -webkit-optimize-contrast;
-    image-rendering: crisp-edges;
-    object-fit: contain;
-}
-
-/* --- MELDS --- */
+/* -------------------------------------------------------------------------- */
+/* 副露 */
+/* -------------------------------------------------------------------------- */
 .melds {
     display: flex;
-    gap: 10px;
-    margin: 5px;
+    gap: 8px;
+    margin: 4px 8px;
+    flex-wrap: wrap;
 }
 
 .meld-group {
     display: flex;
     gap: 1px;
-    background: rgba(0, 0, 0, 0.3);
+    background: rgba(0, 0, 0, 0.35);
     padding: 2px;
-    border-radius: 2px;
+    border-radius: 4px;
 }
 
 .meld-group img {
-    width: var(--tile-width-sm);
-    height: var(--tile-height-sm);
-    opacity: 0.9;
+    width: var(--tile-w-sm);
+    height: var(--tile-h-sm);
+    opacity: 0.95;
 }
 
-/* 左右玩家副露：竖向排列，与手牌方向一致 */
+.meld-group img.meld-pai-rotate {
+    transform: rotate(90deg);
+}
+
 .zone-left .melds {
     flex-direction: column;
     align-items: flex-start;
 }
+
 .zone-left .meld-group {
     flex-direction: row;
-    margin-bottom: 4px;
 }
+
 .zone-left .meld-group img {
-    width: var(--tile-height-sm);
-    height: var(--tile-width-sm);
+    width: var(--tile-h-sm);
+    height: var(--tile-w-sm);
     transform: rotate(-90deg);
-    image-rendering: crisp-edges;
 }
+
+.zone-left .meld-group img.meld-pai-rotate {
+    transform: rotate(-90deg);
+}
+
 .zone-right .melds {
     flex-direction: column;
     align-items: flex-end;
 }
+
 .zone-right .meld-group {
     flex-direction: row;
-    margin-bottom: 4px;
-}
-.zone-right .meld-group img {
-    width: var(--tile-height-sm);
-    height: var(--tile-width-sm);
-    transform: rotate(90deg);
-    image-rendering: crisp-edges;
 }
 
-/* --- INDICATORS / CENTER --- */
+.zone-right .meld-group img {
+    width: var(--tile-h-sm);
+    height: var(--tile-w-sm);
+    transform: rotate(90deg);
+}
+
+.zone-right .meld-group img.meld-pai-rotate {
+    transform: rotate(90deg);
+}
+
+/* -------------------------------------------------------------------------- */
+/* 河牌（打出的牌） */
+/* -------------------------------------------------------------------------- */
+.river {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 2px;
+    margin: 8px;
+    padding: 6px;
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 6px;
+    min-height: 2em;
+}
+
+.river img {
+    width: var(--tile-w-sm);
+    height: var(--tile-h-sm);
+    image-rendering: crisp-edges;
+    object-fit: contain;
+}
+
+/* -------------------------------------------------------------------------- */
+/* 通知浮层 */
+/* -------------------------------------------------------------------------- */
 .notification-overlay {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    font-size: 3rem;
+    font-size: 2.5rem;
     font-weight: bold;
     color: gold;
-    text-shadow: 0 0 20px black;
+    text-shadow: 0 0 20px #000;
     pointer-events: none;
     z-index: 200;
 }
 
-/* --- ACTION PANEL --- */
+/* -------------------------------------------------------------------------- */
+/* 操作按钮（碰/杠/过/定缺等） */
+/* -------------------------------------------------------------------------- */
 .action-panel {
     position: absolute;
-    bottom: 200px;
+    bottom: 180px;
     left: 50%;
     transform: translateX(-50%);
     display: flex;
-    gap: 10px;
+    gap: 12px;
     z-index: 150;
 }
 
 .btn-action {
-    padding: 15px 30px;
-    font-size: 1.2rem;
+    padding: 14px 28px;
+    font-size: 1.1rem;
     border: none;
     border-radius: 50px;
-    background: linear-gradient(135deg, #ffffff 0%, #e0e0e0 100%);
-    color: #333;
-    font-weight: bold;
+    background: linear-gradient(135deg, #fff 0%, #e8e8e8 100%);
+    color: #222;
+    font-weight: 600;
     cursor: pointer;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
     transition: transform 0.1s;
 }
 
@@ -321,22 +381,10 @@ body {
 }
 
 .btn-action:active {
-    transform: scale(0.95);
+    transform: scale(0.98);
 }
 
-.btn-suit {
-    min-width: 80px;
-    color: white;
-}
-
-.btn-man {
-    background: #d32f2f;
-}
-
-.btn-pin {
-    background: #1976d2;
-}
-
-.btn-sou {
-    background: #388e3c;
-}
+.btn-man { background: #c62828; color: #fff; }
+.btn-pin { background: #1565c0; color: #fff; }
+.btn-sou { background: #2e7d32; color: #fff; }
+.btn-win { background: linear-gradient(135deg, #ffd54f 0%, #ffb300 100%); color: #1a1a1a; }
