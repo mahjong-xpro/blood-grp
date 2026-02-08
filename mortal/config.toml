@@ -122,7 +122,7 @@ ding_que_aux_enabled = true
 ding_que_aux_scale = 0.02
 
 # 定缺 CE 监督 - 阶段 2 增强监督
-ding_que_ce_weight = 5  # 阶段 2+: 强力定缺监督 (用户要求提高匹配率)
+ding_que_ce_weight = 0.5  # 阶段 2+: 紧急回调 (避免过拟合定缺辅助)
 
 # 对手等待预测: 预测 3 个对手的听牌 (81 = 3×27)
 opp_wait_enabled = false  # 需要 libblood 重新编译后启用
