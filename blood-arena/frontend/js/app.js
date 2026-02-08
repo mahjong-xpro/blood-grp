@@ -2,7 +2,7 @@
  * 血战到底 - 人机对战
  * Vue 3 单页，WebSocket 与后端通信
  */
-const { createApp, reactive, computed, onMounted } = Vue;
+const { createApp, reactive, ref, computed, onMounted } = Vue;
 
 // ---------------------------------------------------------------------------
 // 常量
@@ -255,6 +255,7 @@ function evaluatePhase(state, events) {
 // ---------------------------------------------------------------------------
 const app = createApp({
     setup() {
+        const mounted = ref(false);
         const state = createInitialState();
         const handlers = createEventHandlers(state);
 
@@ -290,6 +291,7 @@ const app = createApp({
         const getDisplayPose = (z) => (z.seat === 3 ? 1 : z.pose);
 
         onMounted(() => {
+            mounted.value = true;
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(`${protocol}//${window.location.host}/ws/game`);
             ws.onopen = () => {
@@ -317,6 +319,7 @@ const app = createApp({
         });
 
         return {
+            mounted,
             state,
             playerZones: PLAYER_ZONES,
             showResultPanel: computed(() => state.gameEnded),

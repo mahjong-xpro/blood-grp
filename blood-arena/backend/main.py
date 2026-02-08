@@ -8,8 +8,9 @@ import queue
 import asyncio
 
 # Setup paths to import sibling modules
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(os.path.dirname(current_dir)) # Mahjong/blood
+current_dir = os.path.dirname(os.path.abspath(__file__))  # .../blood-arena/backend
+arena_root = os.path.dirname(current_dir)                 # .../blood-arena（前端所在目录）
+parent_dir = os.path.dirname(arena_root)                  # Mahjong/blood
 sys.path.append(parent_dir)
 
 # Set MORTAL_CFG for mortal module
@@ -23,17 +24,21 @@ from backend.game_manager import GameManager
 
 app = FastAPI()
 
-# Mount static files
-app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
-app.mount("/js", StaticFiles(directory="frontend/js"), name="js")
-app.mount("/css", StaticFiles(directory="frontend/css"), name="css")
+# 静态资源与首页：使用绝对路径，不依赖进程 CWD
+_frontend = os.path.join(arena_root, "frontend")
+app.mount("/static", StaticFiles(directory=os.path.join(_frontend, "static")), name="static")
+app.mount("/js", StaticFiles(directory=os.path.join(_frontend, "js")), name="js")
+app.mount("/css", StaticFiles(directory=os.path.join(_frontend, "css")), name="css")
 
 # Initialize Game Manager
 game_manager = GameManager()
 
 @app.get("/")
 async def get():
-    return FileResponse("frontend/index.html")
+    index_path = os.path.join(_frontend, "index.html")
+    if not os.path.isfile(index_path):
+        logging.error("index.html not found at %s", index_path)
+    return FileResponse(index_path)
 
 @app.websocket("/ws/game")
 async def websocket_endpoint(websocket: WebSocket):

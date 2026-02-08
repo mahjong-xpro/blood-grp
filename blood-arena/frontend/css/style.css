@@ -36,6 +36,14 @@ body {
     width: 100vw;
 }
 
+/* 脚本未加载或 Vue 未挂载时显示的占位，保证至少能看到文字 */
+.load-fallback {
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-primary);
+    font-size: 1rem;
+}
+
 .app-root--over .game-board { opacity: 0.85; }
 
 /* ========== 顶栏（与 replay game-header 一致） ========== */
