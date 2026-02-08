@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Blood Arena - Pure Vue 3</title>
+    <link rel="stylesheet" href="/css/style_vue.css">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+</head>
+
+<body>
+
+    <div id="app">
+        <!-- HUD Header -->
+        <div class="hud-header">
+            <div class="status">{{ state.status }}</div>
+            <div class="score-panel">
+                <div v-for="(p, i) in state.players" :key="i" class="score-item"
+                    :class="{ active: state.currentActor === i }">
+                    {{ p.name }} ({{ i }}): {{ p.score }}
+                    <span v-if="p.dingQueSuit" :class="'suit-' + p.dingQueSuit">
+                        [{{ p.dingQueSuit.toUpperCase() }}]
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notification Overlay (Big Text) -->
+        <div v-if="state.notification" class="notification-overlay">
+            {{ state.notification }}
+        </div>
+
+        <!-- Action Panel (Buttons) -->
+        <div class="action-panel" v-if="state.validActions.length > 0">
+            <button v-for="action in state.validActions" :key="action.label" class="btn-action" :class="action.class"
+                @click="sendAction(action)">
+                {{ action.label }}
+            </button>
+        </div>
+
+        <!-- Game Board -->
+        <div class="game-board">
+            <!-- Player 2 (Top) -->
+            <div class="player-zone zone-top">
+                <div class="hand hand-closed">
+                    <img v-for="n in 13" src="/static/images/p_bk_2.gif" />
+                    <!-- Melds -->
+                    <div class="melds" v-if="state.players[2].melds.length">
+                        <div v-for="(m, mi) in state.players[2].melds" :key="mi" class="meld-group">
+                            <img v-for="tile in m.consumed" :src="getPaiImage(tile, 2)">
+                            <img :src="getPaiImage(m.pai, 2)">
+                        </div>
+                    </div>
+                </div>
+                <div class="river">
+                    <img v-for="(tile, ti) in state.players[2].discards" :key="ti" :src="getPaiImage(tile, 2)">
+                </div>
+            </div>
+
+            <!-- Player 3 (Left) -->
+            <div class="player-zone zone-left">
+                <div class="hand hand-closed">
+                    <img v-for="n in 13" src="/static/images/p_bk_3.gif" />
+                    <div class="melds" v-if="state.players[3].melds.length">
+                        <div v-for="(m, mi) in state.players[3].melds" :key="mi" class="meld-group">
+                            <img v-for="tile in m.consumed" :src="getPaiImage(tile, 3)">
+                            <img :src="getPaiImage(m.pai, 3)">
+                        </div>
+                    </div>
+                </div>
+                <div class="river">
+                    <img v-for="(tile, ti) in state.players[3].discards" :key="ti" :src="getPaiImage(tile, 3)">
+                </div>
+            </div>
+
+            <!-- Center (Dora, Info) -->
+            <div class="zone-center">
+                <div class="dora-display">
+                    <h3>DORA</h3>
+                    <div class="hand">
+                        <img v-for="(tile, i) in state.doraMarkers" :key="i" :src="getPaiImage(tile, 0)">
+                        <img v-if="state.doraMarkers.length < 5" src="/static/images/p_bk_0.gif">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Player 1 (Right) -->
+            <div class="player-zone zone-right">
+                <div class="hand hand-closed">
+                    <img v-for="n in 13" src="/static/images/p_bk_1.gif" />
+                    <div class="melds" v-if="state.players[1].melds.length">
+                        <div v-for="(m, mi) in state.players[1].melds" :key="mi" class="meld-group">
+                            <img v-for="tile in m.consumed" :src="getPaiImage(tile, 1)">
+                            <img :src="getPaiImage(m.pai, 1)">
+                        </div>
+                    </div>
+                </div>
+                <div class="river">
+                    <img v-for="(tile, ti) in state.players[1].discards" :key="ti" :src="getPaiImage(tile, 1)">
+                </div>
+            </div>
+
+            <!-- Player 0 (Me - Bottom) -->
+            <div class="player-zone zone-bottom">
+                <div class="river">
+                    <img v-for="(tile, ti) in state.players[0].discards" :key="ti" :src="getPaiImage(tile, 0)">
+                </div>
+                <div class="hand">
+                    <!-- Melds -->
+                    <div class="melds" v-if="state.players[0].melds.length">
+                        <div v-for="(m, mi) in state.players[0].melds" :key="mi" class="meld-group">
+                            <!-- Simplified Meld Render: Consumed + Target. Real MJAI is more complex about who it came from -->
+                            <img v-for="tile in m.consumed" :key="tile" :src="getPaiImage(tile, 0)">
+                            <img :src="getPaiImage(m.pai, 0)" style="transform: rotate(90deg);">
+                        </div>
+                    </div>
+
+                    <!-- Hand Tiles -->
+                    <img v-for="(tile, i) in state.players[0].tehai" :key="i + tile" :src="getPaiImage(tile, 0)"
+                        class="my-tile" @click="handleTileClick(tile, i)">
+
+                    <!-- Tsumo Tile (Last one if play is active? For now simplest to just render full hand) -->
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="/js/app_vue.js"></script>
+
+</body>
+
+</html>

@@ -1,0 +1,253 @@
+:root {
+    --bg-color: #121212;
+    --table-color: #005c0099;
+    /* Dark Green Felt with transparency */
+    --mat-color: #004d00;
+    --text-color: #e0e0e0;
+    --accent-color: #4fc3f7;
+    --tile-width: 40px;
+    --tile-height: 56px;
+    --tile-width-sm: 30px;
+    /* For opponent hands/river */
+    --tile-height-sm: 42px;
+}
+
+body {
+    margin: 0;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-family: 'Segoe UI', sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+#app {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+}
+
+/* --- HUD --- */
+.hud-header {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 20px;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 100;
+}
+
+.score-panel {
+    display: flex;
+    gap: 20px;
+}
+
+.score-item {
+    padding: 5px 10px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.score-item.active {
+    border: 1px solid var(--accent-color);
+    color: var(--accent-color);
+}
+
+/* --- GAME BOARD (Grid) --- */
+.game-board {
+    flex-grow: 1;
+    display: grid;
+    grid-template-areas:
+        ".        top        ."
+        "left     center     right"
+        ".        bottom     .";
+    grid-template-columns: 250px 1fr 250px;
+    grid-template-rows: 200px 1fr 250px;
+    background-color: var(--mat-color);
+    position: relative;
+    padding: 20px;
+}
+
+/* --- ZONES --- */
+.player-zone {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+}
+
+.zone-top {
+    grid-area: top;
+    flex-direction: column-reverse;
+}
+
+.zone-bottom {
+    grid-area: bottom;
+    justify-content: flex-end;
+}
+
+/* My hand at bottom */
+.zone-left {
+    grid-area: left;
+    flex-direction: row-reverse;
+}
+
+.zone-right {
+    grid-area: right;
+    flex-direction: row;
+}
+
+.zone-center {
+    grid-area: center;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 20px;
+}
+
+/* --- HANDS --- */
+.hand {
+    display: flex;
+    gap: 2px;
+    min-height: var(--tile-height);
+    margin: 10px;
+}
+
+.hand img {
+    width: var(--tile-width);
+    height: var(--tile-height);
+    background: white;
+    border-radius: 4px;
+    box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.5);
+    cursor: default;
+}
+
+/* My Hand Specifics */
+.zone-bottom .hand img {
+    width: 60px;
+    /* Larger for me */
+    height: 84px;
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+
+.zone-bottom .hand img:hover {
+    transform: translateY(-10px);
+}
+
+.tsumo-padding {
+    margin-left: 15px;
+    /* Separate drawn tile */
+}
+
+/* Opponent Hands (Face down or sideways) */
+.hand-closed {
+    /* Usually just backs */
+}
+
+/* --- RIVERS (Discards) --- */
+.river {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    /* 6 tiles per row usually */
+    gap: 2px;
+    margin: 10px;
+    background: rgba(0, 0, 0, 0.1);
+    padding: 5px;
+    border-radius: 4px;
+}
+
+.river img {
+    width: var(--tile-width-sm);
+    height: var(--tile-height-sm);
+}
+
+/* --- MELDS --- */
+.melds {
+    display: flex;
+    gap: 10px;
+    margin: 5px;
+}
+
+.meld-group {
+    display: flex;
+    gap: 1px;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 2px;
+    border-radius: 2px;
+}
+
+.meld-group img {
+    width: var(--tile-width-sm);
+    height: var(--tile-height-sm);
+    opacity: 0.9;
+}
+
+/* --- INDICATORS / CENTER --- */
+.notification-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 3rem;
+    font-weight: bold;
+    color: gold;
+    text-shadow: 0 0 20px black;
+    pointer-events: none;
+    z-index: 200;
+}
+
+/* --- ACTION PANEL --- */
+.action-panel {
+    position: absolute;
+    bottom: 120px;
+    /* Above my hand */
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 10px;
+    z-index: 150;
+}
+
+.btn-action {
+    padding: 15px 30px;
+    font-size: 1.2rem;
+    border: none;
+    border-radius: 50px;
+    background: linear-gradient(135deg, #ffffff 0%, #e0e0e0 100%);
+    color: #333;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    transition: transform 0.1s;
+}
+
+.btn-action:hover {
+    transform: scale(1.05);
+}
+
+.btn-action:active {
+    transform: scale(0.95);
+}
+
+.btn-suit {
+    min-width: 80px;
+    color: white;
+}
+
+.btn-man {
+    background: #d32f2f;
+}
+
+.btn-pin {
+    background: #1976d2;
+}
+
+.btn-sou {
+    background: #388e3c;
+}
