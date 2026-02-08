@@ -69,7 +69,8 @@ const app = createApp({
             // Meta
             gameStarted: false,
             tilesLeft: null,
-            gameEnded: false
+            gameEnded: false,
+            debug: false
         });
 
         let ws = null;
@@ -330,6 +331,9 @@ const app = createApp({
             { zone: 'bottom', seat: 0, pose: 0 }
         ];
 
+        const showResultPanel = computed(() => state.gameEnded);
+        const isMyTurn = computed(() => state.isMyTurn);
+
         /** 从手牌中取两张与 pai 相同的牌用于碰（服务器校验需要） */
         function getPonConsumed(tehai, pai) {
             if (!pai || !tehai || tehai.length < 2) return [];
@@ -353,6 +357,8 @@ const app = createApp({
         return {
             state,
             playerZones,
+            showResultPanel,
+            isMyTurn,
             getPaiImage,
             suitName,
             handleTileClick,
