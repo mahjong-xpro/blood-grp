@@ -66,9 +66,10 @@ const app = createApp({
             isMyTurn: false,
             validActions: [],
 
-            // Meta（血战到底：无宝牌，可选剩余牌数）
+            // Meta
             gameStarted: false,
-            tilesLeft: null
+            tilesLeft: null,
+            gameEnded: false
         });
 
         let ws = null;
@@ -128,7 +129,7 @@ const app = createApp({
                     // We are in Ding Que or Pre-Game phase
                     if (!state.players[state.myPlayerId].dingQueSuit) {
                         // I haven't picked a suit yet -> Show Buttons
-                        state.status = "Select Void Suit (Ding Que)";
+                        state.status = '请选择定缺花色';
                         state.validActions = [
                             { label: '万', class: 'btn-action btn-man', payload: { type: 'ding_que', actor: state.myPlayerId, suit: 'man' } },
                             { label: '筒', class: 'btn-action btn-pin', payload: { type: 'ding_que', actor: state.myPlayerId, suit: 'pin' } },
@@ -138,10 +139,10 @@ const app = createApp({
                     } else {
                         // I have picked.
                         if (state.isMyTurn) {
-                            state.status = "YOUR TURN (Discard)";
+                            state.status = '轮到你出牌';
                             state.validActions = []; // Clear buttons, allow tile click
                         } else {
-                            state.status = "Waiting for other players to Ding Que...";
+                            state.status = '等待其他玩家定缺…';
                             state.validActions = [];
                         }
                         // Don't return, maybe we want to render the board? Yes.
@@ -162,7 +163,8 @@ const app = createApp({
 
             if (type === 'start_game') {
                 state.gameStarted = true;
-                state.status = "Game Started";
+                state.gameEnded = false;
+                state.status = '对局开始';
                 state.players.forEach(p => {
                     p.tehai = []; p.discards = []; p.melds = []; p.score = 60000; p.dingQueSuit = null;
                 });
@@ -204,30 +206,36 @@ const app = createApp({
                 if (actor === state.myPlayerId) sortHand(state.players[actor].tehai);
 
                 if (actor !== state.myPlayerId && state.players[state.myPlayerId].dingQueSuit !== null) {
-                    state.validActions = [
-                        { label: '荣和', type: 'hora', payload: { type: 'hora', actor: state.myPlayerId, target: actor }, class: 'btn-action btn-win' },
-                        { label: '碰', type: 'pon', payload: { type: 'pon', actor: state.myPlayerId, target: actor, pai: pai, consumed: [] }, class: 'btn-action' },
-                        { label: '杠', type: 'daiminkan', payload: { type: 'daiminkan', actor: state.myPlayerId, target: actor, pai: pai }, class: 'btn-action' },
-                        { label: '过', type: 'none', payload: { type: 'none' }, class: 'btn-action' }
+                    const myHand = state.players[state.myPlayerId].tehai;
+                    const ponConsumed = getPonConsumed(myHand, pai);
+                    const minkanConsumed = getMinkanConsumed(myHand, pai);
+                    const actions = [
+                        { label: '荣和', payload: { type: 'hora', actor: state.myPlayerId, target: actor }, class: 'btn-action btn-win' },
+                        { label: '过', payload: { type: 'none' }, class: 'btn-action' }
                     ];
+                    if (ponConsumed.length >= 2)
+                        actions.splice(1, 0, { label: '碰', payload: { type: 'pon', actor: state.myPlayerId, target: actor, pai: pai, consumed: ponConsumed }, class: 'btn-action' });
+                    if (minkanConsumed.length >= 3)
+                        actions.splice(1, 0, { label: '杠', payload: { type: 'daiminkan', actor: state.myPlayerId, target: actor, pai: pai, consumed: minkanConsumed }, class: 'btn-action' });
+                    state.validActions = actions;
                 }
             }
-            else if (type === 'pon' || type === 'daiminkan' || type === 'chi') {
-                // Remove consumed
-                consumed.forEach(c => {
+            else if (type === 'pon' || type === 'daiminkan' || type === 'chi' || type === 'ankan' || type === 'kakan') {
+                const consumedList = consumed && Array.isArray(consumed) ? consumed : [];
+                consumedList.forEach(c => {
                     const idx = state.players[actor].tehai.indexOf(c);
                     if (idx !== -1) state.players[actor].tehai.splice(idx, 1);
                     else state.players[actor].tehai.pop();
                 });
-                state.players[actor].melds.push({ type, pai, consumed });
-                // Remove from discards
-                const targetDiscards = state.players[target].discards;
-                if (targetDiscards.length > 0) targetDiscards.pop();
-
+                state.players[actor].melds.push({ type, pai: pai || (consumedList[0]), consumed: consumedList });
+                if (target != null && state.players[target]) {
+                    const targetDiscards = state.players[target].discards;
+                    if (targetDiscards.length > 0) targetDiscards.pop();
+                }
                 state.currentActor = actor;
                 if (actor === state.myPlayerId) {
                     state.isMyTurn = true;
-                    state.validActions = []; // Must discard
+                    state.validActions = [];
                 }
             }
             else if (type === 'ding_que') {
@@ -283,23 +291,27 @@ const app = createApp({
             ws = new WebSocket(`${protocol}//${window.location.host}/ws/game`);
             ws.onopen = () => {
                 state.connected = true;
-                // Removed initial start_game, now manual via tryStartGame or backend push
+                if (!state.gameStarted) state.status = '已连接，请点击开始对局';
             };
             ws.onmessage = (e) => {
                 const msg = JSON.parse(e.data);
                 if (msg.type === "state_update") {
-                    // Full Replay to ensure sync
-                    // Reset internal state first
+                    state.gameEnded = false;
                     state.players.forEach(p => {
                         p.tehai = []; p.discards = []; p.melds = []; p.dingQueSuit = null;
                     });
                     state.tilesLeft = null;
-
-                    // Replay all
                     msg.data.events.forEach(handleEvent);
-
-                    // Post-Process Logic (Phase Detection)
                     evaluatePhase(msg.data.events);
+                } else if (msg.type === "game_over") {
+                    state.gameStarted = true;
+                    state.gameEnded = true;
+                    state.notification = '对局结束';
+                    if (msg.scores && msg.scores.length === 4) {
+                        msg.scores.forEach((s, i) => state.players[i].score = s);
+                    }
+                    state.validActions = [];
+                    state.isMyTurn = false;
                 }
             };
             ws.onclose = () => state.connected = false;
@@ -309,6 +321,26 @@ const app = createApp({
             if (!suit) return '';
             return { man: '万', pin: '筒', sou: '条' }[suit] || suit;
         };
+
+        /** 从手牌中取两张与 pai 相同的牌用于碰（服务器校验需要） */
+        function getPonConsumed(tehai, pai) {
+            if (!pai || !tehai || tehai.length < 2) return [];
+            const out = [];
+            for (let i = 0; i < tehai.length && out.length < 2; i++) {
+                if (tehai[i] === pai) out.push(tehai[i]);
+            }
+            return out.length >= 2 ? out : [];
+        }
+
+        /** 从手牌中取三张与 pai 相同的牌用于明杠（服务器校验需要） */
+        function getMinkanConsumed(tehai, pai) {
+            if (!pai || !tehai || tehai.length < 3) return [];
+            const out = [];
+            for (let i = 0; i < tehai.length && out.length < 3; i++) {
+                if (tehai[i] === pai) out.push(tehai[i]);
+            }
+            return out.length >= 3 ? out : [];
+        }
 
         return {
             state,

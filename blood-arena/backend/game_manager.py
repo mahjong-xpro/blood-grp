@@ -80,8 +80,7 @@ class HumanEngine:
         tehai = []
         discards = [[], [], [], []]
         melds = [[], [], [], []]
-        scores = [25000] * 4 # Default starting score
-        dora_markers = []
+        scores = [60000] * 4  # 血战到底规则初始分
         current_turn = 0
         
         # Replay all events to build current state
@@ -91,9 +90,8 @@ class HumanEngine:
             actor = ev.get("actor")
             
             if ev_type == "start_kyoku":
-                tehai = ev.get("tehai", []) # Only for self
+                tehai = ev.get("tehai", [])
                 scores = ev.get("scores", scores)
-                dora_markers = [ev.get("dora_marker")]
             
             elif ev_type == "tsumo":
                 if actor == self.player_id:

@@ -48,20 +48,12 @@ async def get_legacy():
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     
-    # Send latest state if available (Reconnection support)
+    # Reconnection: send latest state (state_update or game_over) so client can restore UI
     if 'latest' in game_manager.shared_state:
         await websocket.send_json(game_manager.shared_state['latest'])
-    
-    # Register this websocket with the game manager (or just use it directly here)
-    # GameManager is designed to run in a separate thread and communicate via queue
-    
-    # Start the game thread if not running
-    # TODO: Pass actual model path
-    # For MVP, we assume a default model path or let it fail gently
-    model_path = os.path.join(parent_dir, "mortal", "models", "best.pth") 
-    
-    game_manager.start_game_thread(model_path)
-    
+
+    model_path = os.path.join(parent_dir, "mortal", "models", "best.pth")
+
     # Listener loop for Queue -> WebSocket
     async def sender():
         while True:
@@ -83,11 +75,9 @@ async def websocket_endpoint(websocket: WebSocket):
             while True:
                 data = await websocket.receive_json()
                 if data.get("type") == "start_game":
-                    # Already started thread
+                    # Start game thread only when user clicks "开始对局" (single game per start)
+                    game_manager.start_game_thread(model_path)
                     continue
-                
-                # Verify if it's a valid acton
-                # For MVP, just put in queue
                 game_manager.action_queue.put(data)
         except WebSocketDisconnect:
             logging.info("Client disconnected")
