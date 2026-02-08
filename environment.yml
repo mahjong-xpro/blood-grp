@@ -45,3 +45,8 @@ dependencies:
     # web 回放 (log-viewer)
     - Flask>=2.3.0
     - flask-cors>=4.0.0
+    
+    # Blood Arena Backend
+    - fastapi
+    - uvicorn[standard]
+    - websockets

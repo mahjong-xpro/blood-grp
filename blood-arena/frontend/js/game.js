@@ -77,13 +77,27 @@ window.addEventListener("load", function () {
         if (events.length === 0) return;
         const lastEvent = events[events.length - 1];
 
-        // Enable controls if:
-        // 1. It's Tsumo for me -> I must discard or declare win/kan
-        // 2. It's Dahai/Kan from others -> I might Pon/Kan/Ron
-
         const controlPanel = document.getElementById("controls");
         controlPanel.innerHTML = ""; // Clear old buttons
 
+        // Ding Que Phase Detection
+        // Condition: StartKyoku exists, NO Tsumo exists, and *I* haven't done DingQue yet.
+        const hasStartKyoku = events.some(e => e.type === 'start_kyoku');
+        const hasTsumo = events.some(e => e.type === 'tsumo');
+
+        if (hasStartKyoku && !hasTsumo) {
+            const hasMyDingQue = events.some(e => e.type === 'ding_que' && e.actor === myPlayerId);
+            if (!hasMyDingQue) {
+                statusDiv.textContent = "Please select a suit to void (Ding Que).";
+                showDingQueButtons();
+                return;
+            } else {
+                statusDiv.textContent = "Waiting for other players to Ding Que...";
+                return;
+            }
+        }
+
+        // Normal Turn Logic
         if (lastEvent.type === "tsumo" && lastEvent.actor === myPlayerId) {
             // TURN: Self Tsumo
             statusDiv.textContent = "Your Turn! Click a tile to discard.";
@@ -94,6 +108,8 @@ window.addEventListener("load", function () {
             // For MVP, human must valid move. 
             // We can add a "Tsumo" button anyway, backend will reject if invalid.
             addActionButton("Tsumo (Win)", { type: "hora", actor: myPlayerId, target: myPlayerId });
+            addActionButton("Reach", { type: "reach", actor: myPlayerId });
+            addActionButton("Ankan (Select)", { type: "ankan", actor: myPlayerId, consumed: [] }); // Placeholder
 
             // Kan (Ankan/Kakan) - tricky to differentiate without selection
             // addActionButton("Kan", { type: "kan" ... });
@@ -112,6 +128,29 @@ window.addEventListener("load", function () {
         else {
             statusDiv.textContent = "Waiting for opponents...";
         }
+    }
+
+    function showDingQueButtons() {
+        // Enums from libblood: Man, Pin, Sou -> "man", "pin", "sou"
+        const suits = ["man", "pin", "sou"];
+        const labels = ["Man (Wan)", "Pin (Tong)", "Sou (Tiao)"];
+        const colors = ["#d32f2f", "#1976d2", "#388e3c"]; // Red, Blue, Green hints
+
+        suits.forEach((suit, idx) => {
+            const btn = document.createElement("button");
+            btn.textContent = labels[idx];
+            btn.style.backgroundColor = colors[idx];
+            btn.style.color = "white";
+            btn.style.margin = "5px";
+            btn.onclick = () => {
+                sendAction({
+                    type: "ding_que",
+                    actor: myPlayerId,
+                    suit: suit
+                });
+            };
+            document.getElementById("controls").appendChild(btn);
+        });
     }
 
     function enableDiscardInteraction() {
