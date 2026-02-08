@@ -2,7 +2,7 @@
  * 血战到底 - 人机对战
  * Vue 3 单页，WebSocket 与后端通信
  */
-const { createApp, reactive, ref, computed, onMounted } = Vue;
+const { createApp, reactive, computed, onMounted } = Vue;
 
 // ---------------------------------------------------------------------------
 // 常量
@@ -251,11 +251,84 @@ function evaluatePhase(state, events) {
 }
 
 // ---------------------------------------------------------------------------
-// Vue App
+// Vue App（字符串模板，不依赖 in-DOM，避免解析/属性未定义问题）
 // ---------------------------------------------------------------------------
+const APP_TEMPLATE = `
+<div class="app-root" :class="{ 'app-root--over': state.gameEnded }">
+  <header class="game-header bar">
+    <span class="bar-title">血战到底</span>
+    <span class="bar-status">{{ state.status }}</span>
+    <button v-if="!state.gameStarted || state.gameEnded" type="button" class="bar-btn" @click="tryStartGame">
+      {{ state.gameEnded ? '再来一局' : '开始对局' }}
+    </button>
+  </header>
+  <main class="main-content">
+    <div class="game-board-container">
+      <div class="game-board">
+        <div class="center-info">
+          <span v-if="state.tilesLeft != null" class="center-logo">剩 {{ state.tilesLeft }} 张</span>
+          <span v-else class="center-logo">🀄</span>
+        </div>
+        <template v-for="z in playerZones" :key="z.zone">
+          <div class="player-area" :class="['player-' + z.seat, { 'is-turn': state.currentActor === z.seat }]">
+            <div class="kawa-area">
+              <div v-for="(tile, ti) in state.players[z.seat].discards" :key="'d-' + ti" class="tile-wrapper">
+                <div class="tile"><img :src="getPaiImage(tile, getDisplayPose(z))" class="tile-img" alt=""></div>
+              </div>
+            </div>
+            <div class="player-info-and-hand">
+              <div class="player-info-card">
+                <div class="name">{{ state.players[z.seat].name }}</div>
+                <div class="score" :class="{ positive: state.players[z.seat].score >= 60000, negative: state.players[z.seat].score < 60000 }">{{ state.players[z.seat].score }}</div>
+                <div class="player-status-row">
+                  <span v-if="state.players[z.seat].dingQueSuit" class="badge dingque" :class="state.players[z.seat].dingQueSuit">{{ suitName(state.players[z.seat].dingQueSuit) }}</span>
+                </div>
+              </div>
+              <div class="hand-row">
+                <div class="tehai-area">
+                  <template v-if="z.seat !== state.myPlayerId">
+                    <div v-for="n in 13" :key="'b-' + n" class="tile"><img :src="getPaiImage('?', getDisplayPose(z))" class="tile-img" alt=""></div>
+                  </template>
+                  <template v-else>
+                    <div v-for="(tile, i) in state.players[z.seat].tehai" :key="'h-' + i" class="tile tile--mine" role="button" @click="handleTileClick(tile, i)">
+                      <img :src="getPaiImage(tile, getDisplayPose(z))" class="tile-img" alt="">
+                    </div>
+                  </template>
+                </div>
+                <div class="fuuro-area" v-if="z.seat === state.myPlayerId && state.players[z.seat].melds.length">
+                  <div v-for="(m, mi) in state.players[z.seat].melds" :key="'g-' + mi" class="meld-group">
+                    <div v-for="t in m.consumed" :key="t" class="tile small"><img :src="getPaiImage(t, getDisplayPose(z))" class="tile-img" alt=""></div>
+                    <div v-if="m.type !== 'ankan'" class="tile small"><img :src="getPaiImage(m.pai, getDisplayPose(z))" class="tile-img" alt=""></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </main>
+  <div v-if="state.validActions.length > 0" class="actions" role="group">
+    <button v-for="action in state.validActions" :key="action.label" type="button" class="actions-btn" :class="action.class" @click="sendAction(action)">{{ action.label }}</button>
+  </div>
+  <div v-if="state.notification && !state.gameEnded" class="toast" role="alert">{{ state.notification }}</div>
+  <div v-if="showResultPanel" class="modal" role="dialog">
+    <div class="modal-backdrop" @click.self="tryStartGame"></div>
+    <div class="modal-panel">
+      <h2 class="modal-title">对局结束</h2>
+      <ul class="modal-list">
+        <li v-for="(p, i) in state.players" :key="i" class="modal-row"><span>{{ p.name }}</span><span>{{ p.score }} 分</span></li>
+      </ul>
+      <button type="button" class="bar-btn modal-btn" @click="tryStartGame">再来一局</button>
+    </div>
+  </div>
+  <pre v-if="state.debug" class="debug">{{ state.status }} {{ state.connected }} {{ state.isMyTurn }}</pre>
+</div>
+`;
+
 const app = createApp({
+    template: APP_TEMPLATE,
     setup() {
-        const appReady = ref(false);
         const state = createInitialState();
         const handlers = createEventHandlers(state);
 
@@ -286,14 +359,11 @@ const app = createApp({
         };
 
         const suitName = (suit) => (suit ? (SUIT_NAMES[suit] || suit) : '');
-
-        /** 左右共用同一套牌图（右家 pose=1），左家用 CSS 镜像，保证样式一致 */
         const getDisplayPose = (z) => (z.seat === 3 ? 1 : z.pose);
 
         onMounted(() => {
-            appReady.value = true;
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(`${protocol}//${window.location.host}/ws/game`);
+            ws = new WebSocket(protocol + '//' + window.location.host + '/ws/game');
             ws.onopen = () => {
                 state.connected = true;
                 if (!state.gameStarted) state.status = '已连接，请点击开始对局';
@@ -310,7 +380,7 @@ const app = createApp({
                     state.gameStarted = true;
                     state.gameEnded = true;
                     state.notification = '对局结束';
-                    if (msg.scores?.length === 4) msg.scores.forEach((s, i) => (state.players[i].score = s));
+                    if (msg.scores && msg.scores.length === 4) msg.scores.forEach((s, i) => (state.players[i].score = s));
                     state.validActions = [];
                     state.isMyTurn = false;
                 }
@@ -319,7 +389,6 @@ const app = createApp({
         });
 
         return {
-            appReady,
             state,
             playerZones: PLAYER_ZONES,
             showResultPanel: computed(() => state.gameEnded),
