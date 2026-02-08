@@ -10,4 +10,4 @@ export PYTHONPATH="$PYTHONPATH:$PROJECT_ROOT"
 
 # Start Uvicorn
 echo "Starting Blood Arena Game Server..."
-python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8800 --reload
