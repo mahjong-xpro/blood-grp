@@ -226,6 +226,9 @@ body {
 .tile--mine:hover { transform: translateY(-2px); }
 .player-area.player-0 .hand-row { gap: 0; }
 
+/* 左家与右家共用同一套图（JS getDisplayPose 左家用 pose 1），CSS 水平镜像 */
+.player-area.player-3 .tile-img { transform: scaleX(-1); }
+
 /* ========== 信息卡 ========== */
 .player-info-card {
     display: flex;

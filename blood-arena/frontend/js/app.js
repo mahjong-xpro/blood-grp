@@ -286,6 +286,9 @@ const app = createApp({
 
         const suitName = (suit) => (suit ? (SUIT_NAMES[suit] || suit) : '');
 
+        /** 左右共用同一套牌图（右家 pose=1），左家用 CSS 镜像，保证样式一致 */
+        const getDisplayPose = (z) => (z.seat === 3 ? 1 : z.pose);
+
         onMounted(() => {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(`${protocol}//${window.location.host}/ws/game`);
@@ -319,6 +322,7 @@ const app = createApp({
             showResultPanel: computed(() => state.gameEnded),
             isMyTurn: computed(() => state.isMyTurn),
             getPaiImage,
+            getDisplayPose,
             suitName,
             handleTileClick,
             sendAction,

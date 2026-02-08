@@ -38,7 +38,7 @@
                             <div class="kawa-area">
                                 <div v-for="(tile, ti) in state.players[z.seat].discards" :key="'d-' + ti" class="tile-wrapper discarded">
                                     <div class="tile">
-                                        <img :src="getPaiImage(tile, z.pose)" class="tile-img" alt="">
+                                        <img :src="getPaiImage(tile, getDisplayPose(z))" class="tile-img" alt="">
                                     </div>
                                 </div>
                             </div>
@@ -56,7 +56,7 @@
                                 <div class="tehai-area">
                                     <template v-if="z.seat !== state.myPlayerId">
                                         <div v-for="n in 13" :key="'b-' + n" class="tile">
-                                            <img :src="getPaiImage('?', z.pose)" class="tile-img" alt="">
+                                            <img :src="getPaiImage('?', getDisplayPose(z))" class="tile-img" alt="">
                                         </div>
                                     </template>
                                     <template v-else>
@@ -69,17 +69,17 @@
                                             :aria-label="'出牌 ' + tile"
                                             @click="handleTileClick(tile, i)"
                                         >
-                                            <img :src="getPaiImage(tile, z.pose)" class="tile-img" alt="">
+                                            <img :src="getPaiImage(tile, getDisplayPose(z))" class="tile-img" alt="">
                                         </div>
                                     </template>
                                 </div>
                                 <div class="fuuro-area" v-if="z.seat === state.myPlayerId && state.players[z.seat].melds.length">
                                     <div v-for="(m, mi) in state.players[z.seat].melds" :key="'g-' + mi" class="meld-group">
                                         <div v-for="t in m.consumed" :key="t" class="tile small">
-                                            <img :src="getPaiImage(t, z.pose)" class="tile-img" alt="">
+                                            <img :src="getPaiImage(t, getDisplayPose(z))" class="tile-img" alt="">
                                         </div>
                                         <div v-if="m.type !== 'ankan'" class="tile small">
-                                            <img :src="getPaiImage(m.pai, z.pose)" class="tile-img" alt="">
+                                            <img :src="getPaiImage(m.pai, getDisplayPose(z))" class="tile-img" alt="">
                                         </div>
                                     </div>
                                 </div>
