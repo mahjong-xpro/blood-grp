@@ -50,26 +50,29 @@
                             :title="log.name">
                             {{ log.name }}
                         </span>
-                        <div v-if="log.player_agari_counts" style="display: flex; gap: 2px;">
-                            <span v-for="(count, idx) in log.player_agari_counts" :key="idx"
-                                style="display: inline-block; font-size: 10px; padding: 1px 4px; border-radius: 3px; font-weight: bold; min-width: 12px; text-align: center;"
-                                :title="'Player ' + idx + ' Wins'"
-                                :style="count > 0 ? 'background-color: #ff9800; color: #000;' : 'background-color: #424242; color: #aaa;'">
-                                {{ count }}
+                        <div v-if="log.ordered_counts" style="display: flex; gap: 3px;">
+                            <span v-for="(entry, idx) in log.ordered_counts" :key="entry.idx"
+                                style="display: inline-block; font-size: 10px; padding: 1px 5px; border-radius: 3px; font-weight: bold; min-width: 14px; text-align: center;"
+                                :title="entry.is_hero ? 'Mortal (P' + entry.idx + ')' : 'Player ' + entry.idx"
+                                :style="entry.is_hero 
+                                    ? (entry.count > 0 ? 'background-color: #ff9800; color: #000; border: 1px solid #ffb74d;' : 'background-color: #5d4037; color: #ffcc80; border: 1px solid #8d6e63;')
+                                    : (entry.count > 0 ? 'background-color: #2196f3; color: #fff;' : 'background-color: #424242; color: #757575;')">
+                                {{ entry.count }}
                             </span>
                         </div>
-                        <span v-else-if="log.p0_agari_count !== undefined"
-                            style="display: inline-block; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: bold; flex-shrink: 0;"
-                            :style="log.p0_agari_count > 0 ? 'background-color: #ff9800; color: #000;' : 'background-color: #424242; color: #aaa;'">
-                            {{ log.p0_agari_count }}胡
-                        </span>
-                    </div>
-                    <div class="log-meta">
-                        <span>{{ log.mtime_str.split(' ')[1] }}</span>
-                        <span>{{ formatSize(log.size) }}</span>
+                        <div v-else-if="log.player_agari_counts" style="display: flex; gap: 2px;">
+                            <span v-else-if="log.p0_agari_count !== undefined"
+                                style="display: inline-block; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: bold; flex-shrink: 0;"
+                                :style="log.p0_agari_count > 0 ? 'background-color: #ff9800; color: #000;' : 'background-color: #424242; color: #aaa;'">
+                                {{ log.p0_agari_count }}胡
+                            </span>
+                        </div>
+                        <div class="log-meta">
+                            <span>{{ log.mtime_str.split(' ')[1] }}</span>
+                            <span>{{ formatSize(log.size) }}</span>
+                        </div>
                     </div>
                 </div>
-            </div>
         </aside>
 
         <!-- Main Content -->
