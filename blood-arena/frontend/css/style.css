@@ -18,7 +18,7 @@
     --tile-width: 38px;
     --tile-height: 52px;
     --tile-depth: 5px;
-    --tile-bg: linear-gradient(135deg, #fdfbf7 0%, #f3efe6 100%);
+    --tile-bg: transparent;
     --tile-back-bg: #2d5aa0;
 
     --pov-tile-width: 56px;
@@ -233,8 +233,8 @@ body {
     height: var(--tile-height);
     background: var(--tile-bg);
     border-radius: 4px;
-    box-shadow: 1px 1px 0px #ccc, 2px 2px 3px rgba(0, 0, 0, 0.3);
-    border: 1px solid #dcdcdc;
+    box-shadow: 1px 1px 0px rgba(0,0,0,0.15), 2px 2px 3px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(0,0,0,0.12);
     display: flex;
     justify-content: center;
     align-items: center;
@@ -259,7 +259,7 @@ body {
     left: 0;
     right: 0;
     height: 4px;
-    background-color: #dcdcdc;
+    background-color: rgba(0,0,0,0.2);
     border-radius: 0 0 4px 4px;
 }
 
