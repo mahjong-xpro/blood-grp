@@ -129,7 +129,15 @@ body {
     cursor: default;
 }
 
-/* Side Player Tiles (Landscape) */
+/* Side Player Tiles (Landscape/Vertical Stack) */
+.zone-left .hand,
+.zone-right .hand {
+    flex-direction: column;
+    /* Stack tiles vertically */
+    gap: -10px;
+    /* Tighter vertical stacking */
+}
+
 .zone-left .hand img,
 .zone-right .hand img {
     width: var(--tile-height);
@@ -137,6 +145,7 @@ body {
     height: var(--tile-width);
     margin-bottom: -20px;
     /* Overlap for 3D effect look */
+    margin-right: 0;
 }
 
 /* My Hand Specifics */

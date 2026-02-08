@@ -136,8 +136,14 @@ const app = createApp({
                         ];
                         return; // Exclusive UI
                     } else {
-                        state.status = "Waiting for other players to Ding Que...";
-                        state.validActions = [];
+                        // I have picked.
+                        if (state.isMyTurn) {
+                            state.status = "YOUR TURN (Discard)";
+                            state.validActions = []; // Clear buttons, allow tile click
+                        } else {
+                            state.status = "Waiting for other players to Ding Que...";
+                            state.validActions = [];
+                        }
                         // Don't return, maybe we want to render the board? Yes.
                     }
                 }
