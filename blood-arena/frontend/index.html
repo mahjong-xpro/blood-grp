@@ -32,25 +32,6 @@
                     {{ state.gameEnded ? '再来一局' : '开始对局' }}
                 </button>
             </div>
-            <ul class="ui-scores" role="list">
-                <li
-                    v-for="(p, i) in state.players"
-                    :key="i"
-                    class="ui-scores__item"
-                    :class="{ 'ui-scores__item--active': state.currentActor === i }"
-                    role="listitem"
-                >
-                    <span class="ui-scores__name">{{ p.name }}</span>
-                    <span class="ui-scores__points">{{ p.score }}<small>分</small></span>
-                    <span
-                        v-if="p.dingQueSuit"
-                        class="ui-scores__dingque"
-                        :class="'ui-scores__dingque--' + p.dingQueSuit"
-                    >
-                        定缺{{ suitName(p.dingQueSuit) }}
-                    </span>
-                </li>
-            </ul>
         </header>
 
         <!-- 主区域：牌桌 + 操作按钮 -->
@@ -117,34 +98,32 @@
                                 >
                             </template>
                         </div>
+                        <div class="zone__info" :class="['zone__info--' + z.zone, { 'zone__info--active': state.currentActor === z.seat }]">
+                            <span class="zone__name">{{ state.players[z.seat].name }}</span>
+                            <span class="zone__score">{{ state.players[z.seat].score }}</span>
+                            <div class="zone__badges">
+                                <span v-if="state.players[z.seat].dingQueSuit" class="zone__dingque" :class="'zone__dingque--' + state.players[z.seat].dingQueSuit">{{ suitName(state.players[z.seat].dingQueSuit) }}</span>
+                                <button
+                                    v-for="action in (z.seat === state.myPlayerId ? state.validActions : [])"
+                                    :key="action.label"
+                                    type="button"
+                                    class="zone__action"
+                                    :class="action.class"
+                                    @click="sendAction(action)"
+                                >
+                                    {{ action.label }}
+                                </button>
+                            </div>
+                        </div>
                     </section>
                 </template>
 
                 <div class="table__center" aria-hidden="true">
-                    <div class="table__brand">
-                        <h2 class="table__title">血战到底</h2>
-                        <p class="table__subtitle">三人和牌即结束 · 定缺一门</p>
-                        <p v-if="state.tilesLeft != null" class="table__tiles-left">剩余 {{ state.tilesLeft }} 张</p>
+                    <div class="table__center-btn" :class="{ 'table__center-btn--active': isMyTurn }">
+                        <span class="table__center-chevron">▼</span>
                     </div>
+                    <p v-if="state.tilesLeft != null" class="table__tiles-left">剩余 {{ state.tilesLeft }} 张</p>
                 </div>
-            </div>
-
-            <div
-                v-if="state.validActions.length > 0"
-                class="ui-actions"
-                role="group"
-                aria-label="可选操作"
-            >
-                <button
-                    v-for="action in state.validActions"
-                    :key="action.label"
-                    type="button"
-                    class="ui-btn ui-btn--action"
-                    :class="action.class"
-                    @click="sendAction(action)"
-                >
-                    {{ action.label }}
-                </button>
             </div>
         </main>
 
