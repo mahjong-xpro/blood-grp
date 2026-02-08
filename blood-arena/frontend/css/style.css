@@ -184,11 +184,44 @@ body {
     font-size: 16px;
 }
 
-/* Player 1 = 右家、Player 3 = 左家：布局完全一致，仅旋转方向相反 */
+/* Player 1 = 右家、Player 3 = 左家：样式尺寸完全一致，仅旋转方向相反 */
+.player-area.player-1,
+.player-area.player-3 {
+    gap: 8px;
+    transform-origin: center center;
+}
+/* 左右共用：信息+手牌区固定最小宽度（13张牌宽），对齐方式一致 */
+.player-area.player-1 .player-info-and-hand,
+.player-area.player-3 .player-info-and-hand {
+    min-width: 520px; /* 13 * tile-width 左右留余 */
+    align-items: center;
+    gap: 8px;
+}
+.player-area.player-1 .player-info-card,
+.player-area.player-3 .player-info-card {
+    min-width: 120px;
+    width: 120px;
+    box-sizing: border-box;
+}
 .player-area.player-1 .hand-row,
-.player-area.player-3 .hand-row { margin-bottom: -100px; }
-.player-area.player-1 { transform: rotate(-90deg); transform-origin: center center; }
-.player-area.player-3 { transform: rotate(90deg); transform-origin: center center; }
+.player-area.player-3 .hand-row {
+    margin-bottom: -100px;
+    justify-content: center;
+}
+.player-area.player-1 .tehai-area,
+.player-area.player-3 .tehai-area {
+    justify-content: center;
+}
+.player-area.player-1 .kawa-area,
+.player-area.player-3 .kawa-area {
+    max-width: 500px;
+}
+/* 左家：手牌行反序，旋转后与右家视觉一致（牌列方向一致） */
+.player-area.player-3 .hand-row { flex-direction: row-reverse; }
+.player-area.player-3 .tehai-area { flex-direction: row-reverse; }
+.player-area.player-3 .fuuro-area { margin-left: 0; margin-right: 20px; }
+.player-area.player-1 { transform: rotate(-90deg); }
+.player-area.player-3 { transform: rotate(90deg); }
 
 /* Player 2 = 上家 */
 .player-area.player-2 { transform: rotate(180deg); }
