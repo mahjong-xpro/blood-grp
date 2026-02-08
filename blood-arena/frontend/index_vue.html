@@ -13,7 +13,12 @@
     <div id="app">
         <!-- HUD Header -->
         <div class="hud-header">
-            <div class="status">{{ state.status }}</div>
+            <div class="status">
+                {{ state.status }}
+                <button v-if="!state.gameStarted" @click="tryStartGame" style="margin-left: 10px;">
+                    Start Game
+                </button>
+            </div>
             <div class="score-panel">
                 <div v-for="(p, i) in state.players" :key="i" class="score-item"
                     :class="{ active: state.currentActor === i }">

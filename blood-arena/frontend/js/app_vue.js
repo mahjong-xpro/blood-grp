@@ -36,7 +36,7 @@ function getPaiImage(pai, pose = 0) {
             if (red) ext = "png";
         } else {
             // Fallback for unexpected formats
-            console.warn("Unknown pai format:", pai);
+            // console.warn("Unknown pai format:", pai);
             return `/static/images/p_bk_${pose}.gif`;
         }
     }
@@ -65,7 +65,10 @@ const app = createApp({
             myPlayerId: 0,
             currentActor: -1,
             isMyTurn: false,
-            validActions: []
+            validActions: [],
+
+            // Meta
+            gameStarted: false
         });
 
         let ws = null;
@@ -99,13 +102,58 @@ const app = createApp({
             return tehai.sort((a, b) => weight(a) - weight(b));
         };
 
-        // --- Event Processor ---
+        // --- Core Logic ---
+
+        // Evaluates the current state to determine what UI to show (Phase Detection)
+        const evaluatePhase = (events) => {
+            // 1. Ding Que Phase Detection
+            // Condition: StartKyoku exists events BUT NO one has discarded or melded yet?
+            // Or simpler: My DingQueSuit is null?
+            const lastStartKyokuIdx = events.findLastIndex(e => e.type === 'start_kyoku');
+
+            if (lastStartKyokuIdx !== -1) {
+                // Check if any DingQue action happened AFTER start_kyoku for ME
+                // Actually, the server broadcasts 'ding_que' event when SOMEONE does it.
+                // We need to know if *I* have done it.
+                // state.players[0].dingQueSuit reflects the 'ding_que' event.
+                // But strictly, we should offer the buttons if we haven't sent it yet.
+                // Best way: Check if any play events (Dahai/Chi/Pon/Tsumo) happened after Start Kyoku.
+
+                const eventsAfterKyoku = events.slice(lastStartKyokuIdx + 1);
+                const hasPlay = eventsAfterKyoku.some(e => ['dahai', 'chi', 'pon', 'daiminkan', 'kan', 'tsumo'].includes(e.type));
+
+                if (!hasPlay) {
+                    // We are in Ding Que or Pre-Game phase
+                    if (!state.players[state.myPlayerId].dingQueSuit) {
+                        // I haven't picked a suit yet -> Show Buttons
+                        state.status = "Select Void Suit (Ding Que)";
+                        state.validActions = [
+                            { label: "Man", class: "btn-action btn-man", payload: { type: "ding_que", actor: state.myPlayerId, suit: "man" } },
+                            { label: "Pin", class: "btn-action btn-pin", payload: { type: "ding_que", actor: state.myPlayerId, suit: "pin" } },
+                            { label: "Sou", class: "btn-action btn-sou", payload: { type: "ding_que", actor: state.myPlayerId, suit: "sou" } }
+                        ];
+                        return; // Exclusive UI
+                    } else {
+                        state.status = "Waiting for other players to Ding Que...";
+                        state.validActions = [];
+                        // Don't return, maybe we want to render the board? Yes.
+                    }
+                }
+            }
+
+            // 2. My Turn Detection (Playing Phase)
+            // Already handled by detailed event processing (Tsumo/Pon logic),
+            // but we can sanity check here.
+            // If validActions is empty and it's my turn (from Tsumo), ensure I can Dahai?
+            // Handled by handleTileClick.
+        };
+
         const handleEvent = (event) => {
-            console.log("Event:", event);
+            // console.log("Event:", event);
             const { type, actor, target, pai, consumed, scores, tehais, suit } = event;
 
-            // General State Update
             if (type === 'start_game') {
+                state.gameStarted = true;
                 state.status = "Game Started";
                 state.players.forEach(p => {
                     p.tehai = []; p.discards = []; p.melds = []; p.score = 25000; p.dingQueSuit = null;
@@ -115,17 +163,12 @@ const app = createApp({
             else if (type === 'start_kyoku') {
                 state.status = `Kyoku ${event.kyoku} Started`;
                 state.doraMarkers = [event.dora_marker];
-
-                // Set Scores
                 if (scores) scores.forEach((s, i) => state.players[i].score = s);
+                state.players.forEach(p => p.dingQueSuit = null); // Reset Ding Que
 
-                // Set Hands
-                // tehai is array of 4 arrays. 
-                // Index 0 is player 0 (Me).
                 if (tehais) {
                     tehais.forEach((hand, i) => {
                         state.players[i].tehai = [...hand];
-                        // Sort my hand
                         if (i === state.myPlayerId) sortHand(state.players[i].tehai);
                     });
                 }
@@ -133,39 +176,28 @@ const app = createApp({
             else if (type === 'tsumo') {
                 state.status = `Player ${actor} Tsumo`;
                 state.currentActor = actor;
-
-                // Add to hand
-                state.players[actor].tehai.push(pai);
-
-                // If me, enable turn
+                state.players[actor].tehai.push(pai); // Add tile logic
                 if (actor === state.myPlayerId) {
                     state.isMyTurn = true;
                     state.status = "YOUR TURN";
+                    // Only show Win/Reach button if applicable.
+                    // For MVP, enable Tsumo button always on turn (server rejects if invalid).
                     state.validActions = [
-                        { label: "Tsumo", type: "hora", payload: { type: "hora", actor: state.myPlayerId, target: state.myPlayerId }, class: "btn-action btn-win" },
-                        // Check for Reach/Kan? Backend handles legality, we just offer buttons if heuristic says maybe?
-                        // For MVP, simplistic: Always show Reach if closed hand? Too complex.
-                        // Let's just rely on click-to-discard for now.
+                        { label: "Tsumo", type: "hora", payload: { type: "hora", actor: state.myPlayerId, target: state.myPlayerId }, class: "btn-action btn-win" }
                     ];
-                    // Add Reach/Kan buttons manually for MVP test
                 }
             }
             else if (type === 'dahai') {
                 state.status = `Player ${actor} Discard`;
                 state.currentActor = actor;
-
-                // Remove from hand (Value match for me, just pop for others if '?' )
                 const pIdx = state.players[actor].tehai.indexOf(pai);
                 if (pIdx !== -1) state.players[actor].tehai.splice(pIdx, 1);
-                else if (actor !== state.myPlayerId) state.players[actor].tehai.pop(); // Remove unknown
+                else if (actor !== state.myPlayerId) state.players[actor].tehai.pop();
 
-                // Add to discards
                 state.players[actor].discards.push(pai);
-
-                // Re-sort hand (optional, keeps it neat)
                 if (actor === state.myPlayerId) sortHand(state.players[actor].tehai);
 
-                // Check for Call opportunities (if not me)
+                // Check Call Ops
                 if (actor !== state.myPlayerId && state.players[state.myPlayerId].dingQueSuit !== null) {
                     state.validActions = [
                         { label: "Ron", type: "hora", payload: { type: "hora", actor: state.myPlayerId, target: actor }, class: "btn-action btn-win" },
@@ -176,24 +208,21 @@ const app = createApp({
                 }
             }
             else if (type === 'pon' || type === 'daiminkan' || type === 'chi') {
-                // Remove consumed from actor's hand
+                // Remove consumed
                 consumed.forEach(c => {
                     const idx = state.players[actor].tehai.indexOf(c);
                     if (idx !== -1) state.players[actor].tehai.splice(idx, 1);
                     else state.players[actor].tehai.pop();
                 });
-                // Add to melds
                 state.players[actor].melds.push({ type, pai, consumed });
-
-                // Remove pai from target's discard (it was taken!)
-                // The last discard of target
+                // Remove from discards
                 const targetDiscards = state.players[target].discards;
                 if (targetDiscards.length > 0) targetDiscards.pop();
 
                 state.currentActor = actor;
                 if (actor === state.myPlayerId) {
-                    state.isMyTurn = true; // After pon, it's my turn to discard
-                    state.validActions = [];
+                    state.isMyTurn = true;
+                    state.validActions = []; // Must discard
                 }
             }
             else if (type === 'ding_que') {
@@ -205,30 +234,10 @@ const app = createApp({
                 if (event.deltas && event.deltas.length === 4) {
                     event.deltas.forEach((d, i) => state.players[i].score += d);
                 }
-                setTimeout(() => state.notification = "", 3000);
+                setTimeout(() => state.notification = "", 5000);
             }
             else if (type === 'game_over') {
                 state.notification = "GAME SET";
-            }
-
-            // Ding Que Prompt Logic
-            // If StartKyoku happened, no Tsumo yet, and I haven't picked DingQue
-            // We need to track "Has StartKyoku happened in this cycle?" 
-            // Simplistic check: If my hand has 13/14 tiles and no DingQueSuit set?
-            // "ding_que" event resets per kyoku? No, state.players[i].dingQueSuit needs reset on start_kyoku.
-            // (Handled in start_game, but start_kyoku should also reset it? Yes)
-
-            const noTsumoYet = state.players.every(p => p.discards.length === 0 && p.melds.length === 0); // Approx
-            // StartKyoku sets tehai. 
-            if (type === 'start_kyoku') {
-                state.players.forEach(p => p.dingQueSuit = null);
-                // Prompt immediately
-                state.status = "Select Void Suit";
-                state.validActions = [
-                    { label: "Man", class: "btn-action btn-man", payload: { type: "ding_que", actor: state.myPlayerId, suit: "man" } },
-                    { label: "Pin", class: "btn-action btn-pin", payload: { type: "ding_que", actor: state.myPlayerId, suit: "pin" } },
-                    { label: "Sou", class: "btn-action btn-sou", payload: { type: "ding_que", actor: state.myPlayerId, suit: "sou" } }
-                ];
             }
         };
 
@@ -253,52 +262,50 @@ const app = createApp({
             state.validActions = [];
         };
 
+        const tryStartGame = () => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                console.log("Sending manual start_game...");
+                ws.send(JSON.stringify({ type: "start_game" }));
+                state.status = "Start Requested...";
+            } else {
+                window.location.reload();
+            }
+        };
+
         // --- Setup ---
         onMounted(() => {
             const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
             ws = new WebSocket(`${protocol}//${window.location.host}/ws/game`);
             ws.onopen = () => {
                 state.connected = true;
-                ws.send(JSON.stringify({ type: "start_game" }));
+                // Removed initial start_game, now manual via tryStartGame or backend push
             };
             ws.onmessage = (e) => {
                 const msg = JSON.parse(e.data);
                 if (msg.type === "state_update") {
-                    // Replay all events? Or just delta?
-                    // backend sends FULL log usually.
-                    // We must clear state and replay for robustness.
-                    // MVP Optimization: Replay all.
-
-                    // Reset Logic
-                    // We can't easily reset partial state if we process incrementally.
-                    // Let's implement full replay for every update to ensure sync.
-
-                    // Reset State
-                    // state.players.forEach...
-                    // But 'start_game' event is usually first.
-                    // Let's just process the NEW events?
-                    // Does backend send ALL events every time?
-                    // HumanEngine._reconstruct_state returns { events: events_list }
-                    // Yes, it sends ACCUMULATED list.
-
-                    // So we must CLEAR and REPLAY.
+                    // Full Replay to ensure sync
+                    // Reset internal state first
                     state.players.forEach(p => {
                         p.tehai = []; p.discards = []; p.melds = []; p.dingQueSuit = null;
-                        // Score persists across kyokus, so careful resetting score.
                     });
                     state.doraMarkers = [];
-                    // But scores? Scores are in start_kyoku.
 
+                    // Replay all
                     msg.data.events.forEach(handleEvent);
+
+                    // Post-Process Logic (Phase Detection)
+                    evaluatePhase(msg.data.events);
                 }
             };
+            ws.onclose = () => state.connected = false;
         });
 
         return {
             state,
             getPaiImage,
             handleTileClick,
-            sendAction
+            sendAction,
+            tryStartGame
         };
     }
 });

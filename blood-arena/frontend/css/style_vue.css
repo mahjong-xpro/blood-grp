@@ -92,12 +92,14 @@ body {
 /* My hand at bottom */
 .zone-left {
     grid-area: left;
-    flex-direction: row-reverse;
+    flex-direction: column;
+    justify-content: center;
 }
 
 .zone-right {
     grid-area: right;
-    flex-direction: row;
+    flex-direction: column-reverse;
+    justify-content: center;
 }
 
 .zone-center {
