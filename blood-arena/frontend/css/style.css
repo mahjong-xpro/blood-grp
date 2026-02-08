@@ -1,567 +1,447 @@
-/* ==========================================================================
-   血战到底 - 人机对战 · 参考设计
-   深灰背景、四向玩家信息卡、中央蓝色下箭头
-   ========================================================================== */
+/* 血战到底 - 全新界面 */
+
+* {
+    box-sizing: border-box;
+}
 
 :root {
-    --bg-base: #1c1c1e;
-    --bg-surface: #2a2a2e;
-    --bg-card: #252528;
-    --bg-zone-info: #333336;
-    --text-primary: #ffffff;
-    --text-secondary: #b0b0b5;
-    --text-muted: #78787d;
-    --accent-blue: #4a9eff;
-    --accent-blue-glow: rgba(74, 158, 255, 0.5);
-    --accent-blue-soft: rgba(74, 158, 255, 0.2);
-    --suit-man: #c62828;
-    --suit-pin: #1565c0;
-    --suit-sou: #2e7d32;
-    --btn-label-bg: #5a9fd4;
-    --btn-label-green: #66bb6a;
-    --space-xs: 4px;
-    --space-sm: 8px;
-    --space-md: 12px;
-    --space-lg: 16px;
-    --space-xl: 24px;
+    --bg: #0e0e10;
+    --bg-panel: #18181b;
+    --bg-table: #1c1c1f;
+    --bg-seat: #161618;
+    --fg: #fafafa;
+    --fg-dim: #a1a1aa;
+    --fg-muted: #71717a;
+    --accent: #f97316;
+    --accent-hover: #fb923c;
+    --accent-glow: rgba(249, 115, 22, 0.35);
+    --suit-m: #dc2626;
+    --suit-p: #2563eb;
+    --suit-s: #16a34a;
+    --radius: 10px;
     --radius-sm: 6px;
-    --radius-md: 8px;
-    --radius-lg: 12px;
-    --radius-xl: 16px;
-    --shadow-soft: 0 2px 12px rgba(0, 0, 0, 0.4);
-    --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.5);
-    --tile-w: 38px;
-    --tile-h: 54px;
-    --tile-w-sm: 28px;
-    --tile-h-sm: 40px;
-    --tile-my-w: 50px;
-    --tile-my-h: 72px;
-    --header-h: 48px;
-    --table-gap: 12px;
-    --table-frame-w: 8px;
+    --space: 12px;
+    --space-sm: 6px;
+    --space-lg: 20px;
+    --tile-w: 36px;
+    --tile-h: 50px;
+    --tile-w-s: 26px;
+    --tile-h-s: 36px;
+    --tile-mine-w: 46px;
+    --tile-mine-h: 66px;
 }
 
-/* --------------------------------------------------------------------------
-   根与背景
-   -------------------------------------------------------------------------- */
-.ui-body {
+.game {
     margin: 0;
     min-height: 100vh;
-    background: var(--bg-base);
-    color: var(--text-primary);
-    font-family: 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
     font-size: 14px;
-    line-height: 1.5;
+    line-height: 1.4;
     overflow: hidden;
-    -webkit-font-smoothing: antialiased;
 }
 
-.ui-root {
+.game-app {
+    min-height: 100vh;
     display: flex;
     flex-direction: column;
-    min-height: 100vh;
-    position: relative;
 }
 
-.ui-root--my-turn .table__hand--my-turn {
-    animation: hand-glow 1.6s ease-in-out infinite;
-}
+.game-app--over .game-board { opacity: 0.7; }
 
-.ui-root--ended .table { opacity: 0.65; }
-
-@keyframes hand-glow {
-    0%, 100% { filter: brightness(1); }
-    50% { filter: brightness(1.08); }
-}
-
-/* --------------------------------------------------------------------------
-   顶栏（仅品牌 + 状态 + 开始按钮）
-   -------------------------------------------------------------------------- */
-.ui-header {
-    flex-shrink: 0;
-    z-index: 100;
-    background: var(--bg-surface);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.ui-header__top {
+/* ----- 顶栏 ----- */
+.game-bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--space-lg);
-    height: var(--header-h);
-    padding: 0 var(--space-xl);
+    padding: var(--space) var(--space-lg);
+    background: var(--bg-panel);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
 }
 
-.ui-header__brand {
-    font-family: 'Noto Serif SC', serif;
+.game-title {
+    margin: 0;
+    font-size: 1.1rem;
     font-weight: 700;
-    font-size: 1.2rem;
-    color: var(--text-primary);
+    letter-spacing: 0.02em;
 }
 
-.ui-header__text {
+.game-status {
     flex: 1;
+    margin: 0;
     text-align: center;
-    color: var(--text-secondary);
-    font-size: 0.9rem;
+    font-size: 0.875rem;
+    color: var(--fg-dim);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    padding: 0 var(--space-md);
 }
 
-.ui-btn {
-    padding: var(--space-sm) var(--space-lg);
+.game-cta {
+    padding: 8px 18px;
     border: none;
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-sm);
+    background: var(--accent);
+    color: #fff;
     font-size: 0.9rem;
     font-weight: 600;
     cursor: pointer;
-    transition: transform 0.1s, background 0.2s;
+    transition: background 0.2s, transform 0.1s;
 }
 
-.ui-btn:hover { transform: translateY(-1px); }
-.ui-btn:active { transform: translateY(0); }
-
-.ui-btn--primary {
-    background: var(--accent-blue);
-    color: #fff;
+.game-cta:hover {
+    background: var(--accent-hover);
+    transform: translateY(-1px);
 }
 
-.ui-btn--primary:hover {
-    background: #5aa8ff;
-}
-
-/* --------------------------------------------------------------------------
-   主区域与牌桌
-   -------------------------------------------------------------------------- */
-.ui-main {
+/* ----- 牌桌 ----- */
+.game-board {
     flex: 1;
     min-height: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: var(--space-lg);
-    position: relative;
-}
-
-.table {
-    width: 100%;
-    max-width: 900px;
-    flex: 1;
-    min-height: 280px;
     display: grid;
     grid-template-areas:
-        ".     top    ."
-        "left  center right"
+        ".     top   ."
+        "left  mid   right"
         ".     bottom .";
-    grid-template-columns: minmax(140px, 1fr) minmax(160px, 2fr) minmax(140px, 1fr);
-    grid-template-rows: minmax(120px, 1fr) minmax(140px, 2fr) minmax(200px, 1.2fr);
-    gap: var(--table-gap);
-    padding: var(--table-frame-w);
-    background: var(--bg-surface);
-    border-radius: var(--radius-xl);
-    box-shadow: var(--shadow-card);
-    position: relative;
+    grid-template-columns: minmax(130px,1fr) minmax(140px,2fr) minmax(130px,1fr);
+    grid-template-rows: minmax(100px,1fr) minmax(120px,1.8fr) minmax(180px,1.2fr);
+    gap: 10px;
+    padding: var(--space);
+    align-items: stretch;
+    justify-items: stretch;
 }
 
-.table::before {
-    content: '';
-    position: absolute;
-    inset: var(--table-frame-w);
-    background: var(--bg-base);
-    border-radius: calc(var(--radius-xl) - 4px);
-    pointer-events: none;
-    z-index: 0;
-}
-
-.table__zone,
-.table__center {
-    position: relative;
-    z-index: 1;
+.game-seat {
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    min-width: 0;
-    min-height: 0;
-}
-
-.table__zone--top { grid-area: top; flex-direction: column-reverse; }
-.table__zone--left { grid-area: left; }
-.table__zone--right { grid-area: right; flex-direction: column-reverse; }
-.table__zone--bottom {
-    grid-area: bottom;
     justify-content: flex-end;
-    padding-bottom: var(--space-sm);
-}
-
-.table__zone--bottom .table__hand {
-    flex-direction: column;
-    align-items: center;
-}
-
-/* --------------------------------------------------------------------------
-   每玩家区域：信息卡（姓名 + 分数 + 定缺/操作）
-   -------------------------------------------------------------------------- */
-.zone__info {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--space-xs);
-    padding: var(--space-sm) var(--space-md);
-    background: var(--bg-zone-info);
-    border-radius: var(--radius-sm);
-    margin-top: var(--space-sm);
-    min-width: 80px;
-}
-
-.zone__info--active {
-    box-shadow: 0 0 0 2px var(--accent-blue-soft);
-}
-
-.zone__name {
-    font-size: 0.85rem;
-    color: var(--text-primary);
-    font-weight: 500;
-}
-
-.zone__score {
-    font-size: 1rem;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    color: var(--text-primary);
-}
-
-.zone__badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-xs);
-    justify-content: center;
-    margin-top: 2px;
-}
-
-.zone__dingque {
-    font-size: 0.7rem;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-weight: 600;
-}
-
-.zone__dingque--man { background: rgba(198, 40, 40, 0.4); color: #ffabab; }
-.zone__dingque--pin { background: rgba(21, 101, 192, 0.4); color: #90caf9; }
-.zone__dingque--sou { background: rgba(46, 125, 50, 0.4); color: #a5d6a7; }
-
-.zone__action {
-    font-size: 0.75rem;
-    padding: 4px 10px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: 600;
-    transition: filter 0.15s;
-}
-
-.zone__action:hover { filter: brightness(1.15); }
-
-.zone__action.btn-man { background: var(--suit-man); color: #fff; }
-.zone__action.btn-pin { background: var(--suit-pin); color: #fff; }
-.zone__action.btn-sou { background: var(--suit-sou); color: #fff; }
-.zone__action.btn-win { background: var(--btn-label-bg); color: #fff; }
-.zone__action:not(.btn-man):not(.btn-pin):not(.btn-sou):not(.btn-win) {
-    background: var(--bg-card);
-    color: var(--text-secondary);
-}
-
-/* 上家：信息卡旋转 180°，内文再转回以便阅读 */
-.table__zone--top .zone__info {
-    transform: rotate(180deg);
-    margin-top: 0;
-    margin-bottom: var(--space-sm);
-}
-
-.table__zone--top .zone__info > * { transform: rotate(-180deg); }
-
-/* 左家：信息卡旋转 90° 顺时针 */
-.table__zone--left .zone__info {
-    transform: rotate(90deg);
-    margin-top: 0;
-    margin-left: var(--space-sm);
-}
-
-.table__zone--left .zone__info > * { transform: rotate(-90deg); }
-
-/* 右家：信息卡旋转 90° 逆时针 */
-.table__zone--right .zone__info {
-    transform: rotate(-90deg);
-    margin-top: 0;
-    margin-right: var(--space-sm);
-}
-
-.table__zone--right .zone__info > * { transform: rotate(90deg); }
-
-/* --------------------------------------------------------------------------
-   中央：蓝色下箭头（回合指示）
-   -------------------------------------------------------------------------- */
-.table__center {
-    grid-area: center;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
     gap: var(--space-sm);
+    padding: var(--space-sm);
+    background: var(--bg-seat);
+    border-radius: var(--radius);
 }
 
-.table__center-btn {
-    width: 72px;
-    height: 72px;
+.game-seat--top {
+    grid-area: top;
+    flex-direction: column-reverse;
+    justify-content: flex-start;
+}
+
+.game-seat--left { grid-area: left; }
+.game-seat--right { grid-area: right; flex-direction: column-reverse; }
+.game-seat--bottom { grid-area: bottom; }
+
+.game-seat--active .game-player { box-shadow: 0 0 0 2px var(--accent-glow); }
+
+.game-river {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--bg-card);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-soft);
-    transition: box-shadow 0.3s, background 0.3s;
-}
-
-.table__center-btn--active {
-    background: rgba(74, 158, 255, 0.15);
-    box-shadow: 0 0 24px var(--accent-blue-glow), var(--shadow-soft);
-}
-
-.table__center-chevron {
-    font-size: 2rem;
-    color: var(--accent-blue);
-    line-height: 1;
-    text-shadow: 0 0 12px var(--accent-blue-glow);
-    transition: text-shadow 0.3s;
-}
-
-.table__center-btn--active .table__center-chevron {
-    text-shadow: 0 0 20px var(--accent-blue-glow), 0 0 40px var(--accent-blue-soft);
-}
-
-.table__tiles-left {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-}
-
-/* --------------------------------------------------------------------------
-   河牌
-   -------------------------------------------------------------------------- */
-.table__river {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    flex-wrap: wrap;
     gap: 2px;
-    margin: var(--space-sm);
-    padding: var(--space-xs);
-    background: rgba(0, 0, 0, 0.25);
+    justify-content: center;
+    padding: 4px;
+    background: rgba(0,0,0,0.25);
     border-radius: var(--radius-sm);
-    min-height: 2em;
+    min-height: 36px;
 }
 
-.table__hand {
+.game-hand {
     display: flex;
     flex-wrap: wrap;
     gap: 2px;
     justify-content: center;
     align-items: center;
-    margin: var(--space-sm);
     min-height: var(--tile-h);
 }
 
-.table__hand--closed { flex-wrap: nowrap; }
-.table__zone--top .table__hand { flex-wrap: nowrap; }
-.table__zone--left .table__hand,
-.table__zone--right .table__hand {
+.game-hand--hidden { flex-wrap: nowrap; }
+.game-seat--top .game-hand { flex-wrap: nowrap; }
+.game-seat--left .game-hand,
+.game-seat--right .game-hand {
     flex-direction: column;
     flex-wrap: nowrap;
 }
 
-/* --------------------------------------------------------------------------
-   牌片
-   -------------------------------------------------------------------------- */
-.tile {
-    width: var(--tile-w);
-    height: var(--tile-h);
-    background: #fff;
-    border-radius: 4px;
-    box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.4);
-    image-rendering: crisp-edges;
-    object-fit: contain;
-    cursor: default;
+.game-seat--bottom .game-hand {
+    flex-direction: column;
+    align-items: center;
 }
 
-.tile--river { width: var(--tile-w-sm); height: var(--tile-h-sm); }
+.game-hand--turn {
+    animation: turn-pulse 1.4s ease-in-out infinite;
+}
 
-.tile--hand-my {
-    width: var(--tile-my-w);
-    height: var(--tile-my-h);
+@keyframes turn-pulse {
+    0%, 100% { filter: brightness(1); }
+    50% { filter: brightness(1.06); }
+}
+
+/* ----- 牌 ----- */
+.game-tile {
+    width: var(--tile-w);
+    height: var(--tile-h);
+    border-radius: 4px;
+    background: #fff;
+    box-shadow: 1px 2px 6px rgba(0,0,0,0.4);
+    object-fit: contain;
+}
+
+.game-tile--river {
+    width: var(--tile-w-s);
+    height: var(--tile-h-s);
+}
+
+.game-tile--mine {
+    width: var(--tile-mine-w);
+    height: var(--tile-mine-h);
     cursor: pointer;
     transition: transform 0.12s, box-shadow 0.15s;
 }
 
-.tile--hand-my:hover {
-    transform: translateY(-6px);
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+.game-tile--mine:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 6px 14px rgba(0,0,0,0.45);
 }
 
-.table__zone--left .tile,
-.table__zone--right .tile {
+.game-seat--left .game-tile,
+.game-seat--right .game-tile {
     width: var(--tile-h);
     height: var(--tile-w);
-    margin-bottom: -16px;
+    margin-bottom: -14px;
 }
 
-.table__zone--left .tile--river,
-.table__zone--right .tile--river {
-    width: var(--tile-h-sm);
-    height: var(--tile-w-sm);
+.game-seat--left .game-tile--river,
+.game-seat--right .game-tile--river {
+    width: var(--tile-h-s);
+    height: var(--tile-w-s);
 }
 
-.table__zone--bottom .tile--hand-my {
-    width: var(--tile-my-w);
-    height: var(--tile-my-h);
-}
-
-/* --------------------------------------------------------------------------
-   副露
-   -------------------------------------------------------------------------- */
-.table__melds {
+/* ----- 副露 ----- */
+.game-melds {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-sm);
-    margin: var(--space-xs) var(--space-sm);
 }
 
-.meld {
+.game-meld {
     display: flex;
     gap: 1px;
-    background: rgba(0, 0, 0, 0.4);
+    background: rgba(0,0,0,0.35);
     padding: 2px;
     border-radius: 4px;
 }
 
-.meld .tile--meld {
-    width: var(--tile-w-sm);
-    height: var(--tile-h-sm);
-    opacity: 0.95;
+.game-tile--meld {
+    width: var(--tile-w-s);
+    height: var(--tile-h-s);
 }
 
-.meld .tile--meld-pai-rotate { transform: rotate(90deg); }
+.game-tile--call { transform: rotate(90deg); }
+.game-tile--call-down { transform: rotate(90deg); }
 
-.table__zone--left .meld .tile--meld {
-    width: var(--tile-h-sm);
-    height: var(--tile-w-sm);
+.game-seat--left .game-tile--meld {
+    width: var(--tile-h-s);
+    height: var(--tile-w-s);
     transform: rotate(-90deg);
 }
-.table__zone--left .meld .tile--meld-pai-rotate { transform: rotate(-90deg); }
+.game-seat--left .game-tile--call { transform: rotate(-90deg); }
 
-.table__zone--right .meld .tile--meld {
-    width: var(--tile-h-sm);
-    height: var(--tile-w-sm);
+.game-seat--right .game-tile--meld {
+    width: var(--tile-h-s);
+    height: var(--tile-w-s);
     transform: rotate(90deg);
 }
-.table__zone--right .meld .tile--meld-pai-rotate { transform: rotate(90deg); }
+.game-seat--right .game-tile--call { transform: rotate(90deg); }
 
-.table__zone--left .table__melds { flex-direction: column; align-items: flex-start; }
-.table__zone--right .table__melds { flex-direction: column; align-items: flex-end; }
+.game-seat--left .game-melds { flex-direction: column; align-items: flex-start; }
+.game-seat--right .game-melds { flex-direction: column; align-items: flex-end; }
 
-/* --------------------------------------------------------------------------
-   全屏提示
-   -------------------------------------------------------------------------- */
-.ui-toast {
+/* ----- 玩家信息 ----- */
+.game-player {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 6px 10px;
+    background: var(--bg-table);
+    border-radius: var(--radius-sm);
+    min-width: 72px;
+}
+
+.game-player__name {
+    font-size: 0.8rem;
+    color: var(--fg-dim);
+}
+
+.game-player__score {
+    font-size: 1rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.game-player__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    justify-content: center;
+    margin-top: 2px;
+}
+
+.game-tag {
+    font-size: 0.7rem;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: filter 0.15s;
+}
+
+.game-tag--suit { pointer-events: none; }
+.game-tag--btn:hover { filter: brightness(1.2); }
+
+.game-tag--man { background: rgba(220,38,38,0.4); color: #fca5a5; }
+.game-tag--pin { background: rgba(37,99,235,0.4); color: #93c5fd; }
+.game-tag--sou { background: rgba(22,163,74,0.4); color: #86efac; }
+
+.game-tag--btn.btn-man { background: var(--suit-m); color: #fff; }
+.game-tag--btn.btn-pin { background: var(--suit-p); color: #fff; }
+.game-tag--btn.btn-sou { background: var(--suit-s); color: #fff; }
+.game-tag--btn.btn-win { background: var(--accent); color: #fff; }
+.game-tag--btn:not(.btn-man):not(.btn-pin):not(.btn-sou):not(.btn-win) {
+    background: var(--fg-muted);
+    color: var(--fg);
+}
+
+/* 上/左/右家信息旋转 */
+.game-seat--top .game-player { transform: rotate(180deg); }
+.game-seat--top .game-player > * { transform: rotate(-180deg); }
+
+.game-seat--left .game-player { transform: rotate(90deg); margin-left: 8px; }
+.game-seat--left .game-player > * { transform: rotate(-90deg); }
+
+.game-seat--right .game-player { transform: rotate(-90deg); margin-right: 8px; }
+.game-seat--right .game-player > * { transform: rotate(90deg); }
+
+/* ----- 中央 ----- */
+.game-center {
+    grid-area: mid;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.game-turn {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--bg-table);
+    transition: box-shadow 0.3s, background 0.3s;
+}
+
+.game-turn--on {
+    background: rgba(249, 115, 22, 0.2);
+    box-shadow: 0 0 0 4px var(--accent-glow);
+}
+
+.game-left {
+    font-size: 0.75rem;
+    color: var(--fg-muted);
+}
+
+/* ----- 消息 ----- */
+.game-msg {
     position: fixed;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    padding: var(--space-lg) var(--space-xl);
-    font-size: 1.6rem;
+    padding: var(--space-lg) var(--space-lg);
+    font-size: 1.4rem;
     font-weight: 700;
-    color: var(--accent-blue);
-    text-shadow: 0 0 20px var(--accent-blue-glow);
-    background: rgba(0, 0, 0, 0.8);
-    border-radius: var(--radius-lg);
+    color: var(--accent);
+    background: rgba(0,0,0,0.85);
+    border-radius: var(--radius);
+    z-index: 200;
     pointer-events: none;
-    z-index: 300;
-    animation: toast-in 0.3s ease;
+    animation: msg-in 0.25s ease;
 }
 
-@keyframes toast-in {
-    from { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+@keyframes msg-in {
+    from { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
     to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 
-/* --------------------------------------------------------------------------
-   对局结束弹窗
-   -------------------------------------------------------------------------- */
-.ui-result {
+/* ----- 对局结束 ----- */
+.game-over {
     position: fixed;
     inset: 0;
-    z-index: 400;
+    z-index: 300;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: var(--space-xl);
+    padding: var(--space-lg);
 }
 
-.ui-result__backdrop {
+.game-over__backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.7);
+    background: rgba(0,0,0,0.7);
     cursor: pointer;
 }
 
-.ui-result__card {
+.game-over__box {
     position: relative;
     width: 100%;
-    max-width: 360px;
-    padding: var(--space-xl);
-    background: var(--bg-card);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-card);
+    max-width: 320px;
+    padding: var(--space-lg);
+    background: var(--bg-panel);
+    border-radius: var(--radius);
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
 }
 
-.ui-result__title {
-    margin: 0 0 var(--space-lg);
+.game-over__title {
+    margin: 0 0 var(--space);
     font-size: 1.2rem;
     font-weight: 700;
-    color: var(--text-primary);
     text-align: center;
 }
 
-.ui-result__scores { list-style: none; margin: 0 0 var(--space-xl); padding: 0; }
-
-.ui-result__row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--space-sm) 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+.game-over__list {
+    list-style: none;
+    margin: 0 0 var(--space);
+    padding: 0;
 }
 
-.ui-result__row:last-child { border-bottom: none; }
-.ui-result__name { color: var(--text-secondary); }
-.ui-result__points { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--accent-blue); }
-.ui-result__again { width: 100%; padding: var(--space-md); font-size: 1rem; margin-top: var(--space-sm); }
+.game-over__row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
 
-/* --------------------------------------------------------------------------
-   调试
-   -------------------------------------------------------------------------- */
-.ui-debug {
+.game-over__row:last-child { border-bottom: none; }
+
+.game-over__again {
+    width: 100%;
+    padding: 10px;
+}
+
+/* ----- 调试 ----- */
+.game-debug {
     position: fixed;
-    bottom: var(--space-sm);
-    left: var(--space-sm);
-    max-width: 320px;
-    padding: var(--space-sm) var(--space-md);
-    background: rgba(0, 0, 0, 0.9);
-    color: #8bc34a;
-    font-family: ui-monospace, monospace;
+    bottom: 8px;
+    left: 8px;
+    margin: 0;
+    padding: 6px 10px;
     font-size: 10px;
-    line-height: 1.4;
-    border-radius: var(--radius-sm);
-    z-index: 9999;
+    font-family: ui-monospace, monospace;
+    color: #86efac;
+    background: rgba(0,0,0,0.9);
+    border-radius: 4px;
+    z-index: 500;
     pointer-events: none;
 }
