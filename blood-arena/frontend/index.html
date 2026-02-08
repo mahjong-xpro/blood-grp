@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>血战到底 - 人机对战</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/style.css">
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
 </head>
@@ -16,10 +19,10 @@
             'ui-root--ended': state.gameEnded
         }"
     >
-        <!-- 顶栏：状态 + 开始/再来一局 + 四家分数 -->
         <header class="ui-header" role="banner">
-            <div class="ui-header__status" aria-live="polite">
-                <span class="ui-header__text">{{ state.status }}</span>
+            <div class="ui-header__top">
+                <span class="ui-header__brand">血战到底</span>
+                <span class="ui-header__text" aria-live="polite">{{ state.status }}</span>
                 <button
                     v-if="!state.gameStarted || state.gameEnded"
                     type="button"
