@@ -4,13 +4,34 @@
 <head>
     <meta charset="UTF-8">
     <title>Blood Arena - Pure Vue 3</title>
-    <link rel="stylesheet" href="/css/style_vue.css">
+    <link rel="stylesheet" href="/css/style_vue.css?v=99">
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        .debug-panel {
+            position: fixed;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: lime;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 10px;
+            z-index: 9999;
+            pointer-events: none;
+        }
+    </style>
 </head>
 
 <body>
 
     <div id="app">
+        <div class="debug-panel">
+            DEBUG: Phase={{ state.status }} | Started={{ state.gameStarted }} | Connected={{ state.connected }} |
+            Turn={{ state.isMyTurn }}
+            <br>
+            MyDingQue={{ state.players[state.myPlayerId].dingQueSuit }}
+        </div>
+
         <!-- HUD Header -->
         <div class="hud-header">
             <div class="status">
@@ -131,7 +152,7 @@
         </div>
     </div>
 
-    <script src="/js/app_vue.js"></script>
+    <script src="/js/app_vue.js?v=99"></script>
 
 </body>
 

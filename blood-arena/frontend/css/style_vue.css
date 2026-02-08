@@ -129,6 +129,16 @@ body {
     cursor: default;
 }
 
+/* Side Player Tiles (Landscape) */
+.zone-left .hand img,
+.zone-right .hand img {
+    width: var(--tile-height);
+    /* Swap W/H */
+    height: var(--tile-width);
+    margin-bottom: -20px;
+    /* Overlap for 3D effect look */
+}
+
 /* My Hand Specifics */
 .zone-bottom .hand img {
     width: 60px;
