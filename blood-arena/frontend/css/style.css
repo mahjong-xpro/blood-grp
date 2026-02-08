@@ -17,7 +17,7 @@
 
     --tile-width: 38px;
     --tile-height: 52px;
-    --tile-depth: 5px;
+    --tile-depth: 0;
     --tile-bg: transparent;
     --tile-back-bg: #2d5aa0;
 
@@ -240,8 +240,8 @@ body {
     align-items: center;
     user-select: none;
     position: relative;
-    margin-bottom: var(--tile-depth);
-    padding: 2px;
+    margin: 0;
+    padding: 0;
     overflow: hidden;
 }
 
@@ -250,17 +250,7 @@ body {
     height: 100%;
     object-fit: contain;
     display: block;
-}
-
-.tile::after {
-    content: '';
-    position: absolute;
-    bottom: -4px;
-    left: 0;
-    right: 0;
-    height: 4px;
-    background-color: rgba(0,0,0,0.2);
-    border-radius: 0 0 4px 4px;
+    vertical-align: bottom;
 }
 
 .tile.small {
