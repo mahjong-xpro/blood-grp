@@ -69,10 +69,21 @@
   - 对局线程改为仅在收到前端 `start_game` 时启动（`receiver` 内调用 `start_game_thread`），连接时不再自动开局。
   - `_reconstruct_state` 默认分数已为 60000（血战到底规则）。
 
-## 四、后续可优化
+## 四、第二轮修复（继续优化）
+
+### 已做
+- **Sender 常驻阻塞**：对局线程结束后在 `state_queue` 放入 `_thread_finished`，sender 收到后退出，避免 WebSocket 协程永远阻塞。
+- **新局残留动作**：`start_game_thread` 内先清空 `action_queue`，再启动线程，避免上局残留动作被新局消费。
+- **前端发送前检查**：`handleTileClick`、`sendAction`、`tryStartGame` 先判断 `ws && ws.readyState === WebSocket.OPEN`，避免断线时 `ws.send` 抛错。
+- **end_game 事件**：重放日志时处理 `end_game`（与 `game_over` 一致），设置 `gameEnded` 和通知。
+- **定缺阶段判断**：`hasPlay` 增加 `ankan`、`kakan`，有人杠后正确离开定缺阶段。
+- **dahai 手牌同步**：他人或自己出牌时若 `indexOf(pai)===-1`，仍执行 `tehai.pop()`，防止手牌张数错乱。
+- **暗杠副露展示**：暗杠只显示 4 张 `consumed`，不再多画一张 `m.pai`（`v-if="m.type !== 'ankan'"`），四处副露区已统一。
+- **再来一局**：对局结束后显示「再来一局」按钮，仍调用 `tryStartGame` 发送 `start_game`，后端可开新局。
+
+## 五、后续可优化
 
 - 加杠/暗杠：前端提供 加杠、暗杠 按钮并与后端协议一致。
 - 剩余牌数：若后端在事件中提供剩余张数，前端在中央显示。
 - 断线重连：重连时若对局未结束，用 `latest` 的 `state_update` 重放并恢复 UI。
 - 音效：和牌、出牌等简单音效。
-- 单会话多局：对局结束后清空/重置队列与状态，允许立即再开一局而不刷新页面。

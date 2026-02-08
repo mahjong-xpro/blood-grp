@@ -36,8 +36,8 @@
         <div class="hud-header">
             <div class="status">
                 {{ state.status }}
-                <button v-if="!state.gameStarted" @click="tryStartGame" style="margin-left: 10px;">
-                    开始对局
+                <button v-if="!state.gameStarted || state.gameEnded" @click="tryStartGame" style="margin-left: 10px;">
+                    {{ state.gameEnded ? '再来一局' : '开始对局' }}
                 </button>
             </div>
             <div class="score-panel">
@@ -73,8 +73,8 @@
                     <!-- Melds -->
                     <div class="melds" v-if="state.players[2].melds.length">
                         <div v-for="(m, mi) in state.players[2].melds" :key="mi" class="meld-group">
-                            <img v-for="tile in m.consumed" :src="getPaiImage(tile, 2)">
-                            <img :src="getPaiImage(m.pai, 2)">
+                            <img v-for="tile in m.consumed" :key="tile" :src="getPaiImage(tile, 2)">
+                            <img v-if="m.type !== 'ankan'" :src="getPaiImage(m.pai, 2)">
                         </div>
                     </div>
                 </div>
@@ -89,8 +89,8 @@
                     <img v-for="n in 13" src="/static/images/p_bk_3.gif" />
                     <div class="melds" v-if="state.players[3].melds.length">
                         <div v-for="(m, mi) in state.players[3].melds" :key="mi" class="meld-group">
-                            <img v-for="tile in m.consumed" :src="getPaiImage(tile, 3)">
-                            <img :src="getPaiImage(m.pai, 3)">
+                            <img v-for="tile in m.consumed" :key="tile" :src="getPaiImage(tile, 3)">
+                            <img v-if="m.type !== 'ankan'" :src="getPaiImage(m.pai, 3)">
                         </div>
                     </div>
                 </div>
@@ -114,8 +114,8 @@
                     <img v-for="n in 13" src="/static/images/p_bk_1.gif" />
                     <div class="melds" v-if="state.players[1].melds.length">
                         <div v-for="(m, mi) in state.players[1].melds" :key="mi" class="meld-group">
-                            <img v-for="tile in m.consumed" :src="getPaiImage(tile, 1)">
-                            <img :src="getPaiImage(m.pai, 1)">
+                            <img v-for="tile in m.consumed" :key="tile" :src="getPaiImage(tile, 1)">
+                            <img v-if="m.type !== 'ankan'" :src="getPaiImage(m.pai, 1)">
                         </div>
                     </div>
                 </div>
@@ -133,9 +133,8 @@
                     <!-- Melds -->
                     <div class="melds" v-if="state.players[0].melds.length">
                         <div v-for="(m, mi) in state.players[0].melds" :key="mi" class="meld-group">
-                            <!-- Simplified Meld Render: Consumed + Target. Real MJAI is more complex about who it came from -->
                             <img v-for="tile in m.consumed" :key="tile" :src="getPaiImage(tile, 0)">
-                            <img :src="getPaiImage(m.pai, 0)" style="transform: rotate(90deg);">
+                            <img v-if="m.type !== 'ankan'" :src="getPaiImage(m.pai, 0)" style="transform: rotate(90deg);">
                         </div>
                     </div>
 

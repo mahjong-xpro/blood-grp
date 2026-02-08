@@ -140,6 +140,12 @@ class GameManager:
     def start_game_thread(self, ai_model_path: str):
         if self.running:
             return
+        # Clear stale actions from any previous session so new game doesn't consume them
+        try:
+            while True:
+                self.action_queue.get_nowait()
+        except queue.Empty:
+            pass
         self.running = True
         self.thread = threading.Thread(target=self._run_libblood, args=(ai_model_path,))
         self.thread.start()
@@ -209,3 +215,8 @@ class GameManager:
             logging.error(f"Error in game execution: {e}", exc_info=True)
         finally:
             self.running = False
+            # Let WebSocket sender exit instead of blocking forever on state_queue.get()
+            try:
+                self.state_queue.put({"type": "_thread_finished"}, block=False)
+            except Exception:
+                pass

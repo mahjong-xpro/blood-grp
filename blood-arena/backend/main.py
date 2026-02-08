@@ -64,6 +64,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 msg = await asyncio.get_event_loop().run_in_executor(
                     None, game_manager.state_queue.get
                 )
+                if msg.get("type") == "_thread_finished":
+                    break
                 await websocket.send_json(msg)
             except Exception as e:
                 logging.error(f"Sender error: {e}")

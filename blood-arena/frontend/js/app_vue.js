@@ -123,7 +123,7 @@ const app = createApp({
                 // So we only look for Discards or Melds (Dahai, Chi, Pon, Kan).
 
                 const eventsAfterKyoku = events.slice(lastStartKyokuIdx + 1);
-                const hasPlay = eventsAfterKyoku.some(e => ['dahai', 'chi', 'pon', 'daiminkan', 'kan'].includes(e.type));
+                const hasPlay = eventsAfterKyoku.some(e => ['dahai', 'chi', 'pon', 'daiminkan', 'ankan', 'kakan'].includes(e.type));
 
                 if (!hasPlay) {
                     // We are in Ding Que or Pre-Game phase
@@ -200,7 +200,7 @@ const app = createApp({
                 state.currentActor = actor;
                 const pIdx = state.players[actor].tehai.indexOf(pai);
                 if (pIdx !== -1) state.players[actor].tehai.splice(pIdx, 1);
-                else if (actor !== state.myPlayerId) state.players[actor].tehai.pop();
+                else state.players[actor].tehai.pop();
 
                 state.players[actor].discards.push(pai);
                 if (actor === state.myPlayerId) sortHand(state.players[actor].tehai);
@@ -249,39 +249,39 @@ const app = createApp({
                 }
                 setTimeout(() => state.notification = "", 5000);
             }
-            else if (type === 'game_over') {
+            else if (type === 'game_over' || type === 'end_game') {
+                state.gameEnded = true;
                 state.notification = '对局结束';
             }
         };
 
-        // --- Interaction ---
+        const canSend = () => ws && ws.readyState === WebSocket.OPEN;
+
         const handleTileClick = (tile, index) => {
-            if (state.isMyTurn) {
-                // Determine if valid discard (e.g. Ding Que suit check)
-                // For MVP, just send it.
-                ws.send(JSON.stringify({
-                    type: "dahai",
-                    actor: state.myPlayerId,
-                    pai: tile,
-                    tsumogiri: false
-                }));
-                state.isMyTurn = false;
-                state.validActions = []; // Clear buttons
-            }
+            if (!state.isMyTurn || !canSend()) return;
+            ws.send(JSON.stringify({
+                type: "dahai",
+                actor: state.myPlayerId,
+                pai: tile,
+                tsumogiri: false
+            }));
+            state.isMyTurn = false;
+            state.validActions = [];
         };
 
         const sendAction = (action) => {
+            if (!canSend()) return;
             ws.send(JSON.stringify(action.payload));
             state.validActions = [];
         };
 
         const tryStartGame = () => {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                console.log("Sending manual start_game...");
+            if (canSend()) {
                 ws.send(JSON.stringify({ type: "start_game" }));
-                state.status = "Start Requested...";
+                state.status = '正在开局…';
+                state.gameEnded = false;
             } else {
-                window.location.reload();
+                state.status = '未连接，请刷新页面';
             }
         };
 
