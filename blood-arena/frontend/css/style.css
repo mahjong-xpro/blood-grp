@@ -35,14 +35,22 @@ body { margin: 0; min-height: 100%; font: 14px/1.4 system-ui, "PingFang SC", san
 }
 .x-head-go:hover { background: #0051d5; }
 
-/* 牌桌 */
+/* 牌桌：固定比例四边 + 中央 */
 .x-board {
     flex: 1;
-    min-height: 0;
+    min-height: 280px;
     display: grid;
-    grid-template: "n n n" minmax(5rem,1fr) "w c e" minmax(6rem,1.8fr) "s s s" minmax(10rem,1.2fr) / 1fr 1.5fr 1fr;
-    gap: .5rem;
-    padding: .5rem;
+    grid-template-areas:
+        "top   top   top"
+        "left  mid   right"
+        "bottom bottom bottom";
+    grid-template-columns: minmax(100px, 1fr) minmax(120px, 1.2fr) minmax(100px, 1fr);
+    grid-template-rows: minmax(72px, 1fr) minmax(100px, 1.4fr) minmax(140px, 1.1fr);
+    gap: 8px;
+    padding: 8px;
+    max-width: 960px;
+    margin: 0 auto;
+    width: 100%;
 }
 
 .x-side {
@@ -50,29 +58,33 @@ body { margin: 0; min-height: 100%; font: 14px/1.4 system-ui, "PingFang SC", san
     flex-direction: column;
     align-items: center;
     justify-content: flex-end;
-    gap: .35rem;
-    padding: .5rem;
+    gap: 6px;
+    padding: 8px;
     background: #fff;
-    border-radius: .75rem;
+    border-radius: 10px;
     border: 2px solid transparent;
     transition: border-color .2s;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
 }
-.x-side[data-turn="true"] { border-color: rgba(0,122,255,.35); }
+.x-side[data-turn="true"] { border-color: rgba(0,122,255,.4); }
 
-.x-side[data-side="top"] { grid-area: n; flex-direction: column-reverse; justify-content: flex-start; }
-.x-side[data-side="left"] { grid-area: w; }
-.x-side[data-side="right"] { grid-area: e; flex-direction: column-reverse; }
-.x-side[data-side="bottom"] { grid-area: s; }
+.x-side[data-side="top"] { grid-area: top; flex-direction: column-reverse; justify-content: flex-start; }
+.x-side[data-side="left"] { grid-area: left; }
+.x-side[data-side="right"] { grid-area: right; flex-direction: column-reverse; }
+.x-side[data-side="bottom"] { grid-area: bottom; }
 
 .x-discards {
     display: flex;
     flex-wrap: wrap;
     gap: 2px;
     justify-content: center;
-    padding: 3px;
+    padding: 4px;
     background: #e5e5ea;
-    border-radius: 4px;
-    min-height: 30px;
+    border-radius: 6px;
+    min-height: 28px;
+    max-width: 100%;
 }
 
 .x-hand {
@@ -81,15 +93,16 @@ body { margin: 0; min-height: 100%; font: 14px/1.4 system-ui, "PingFang SC", san
     gap: 4px;
     justify-content: center;
     align-items: center;
-    min-height: 48px;
+    min-height: 44px;
+    max-width: 100%;
 }
 .x-hand[data-hidden="true"] { flex-wrap: nowrap; }
 .x-side[data-side="top"] .x-hand { flex-wrap: nowrap; }
 .x-side[data-side="left"] .x-hand,
 .x-side[data-side="right"] .x-hand { flex-direction: column; flex-wrap: nowrap; }
-.x-side[data-side="bottom"] .x-hand { flex-direction: column; }
+.x-side[data-side="bottom"] .x-hand { flex-direction: column; align-items: center; }
 .x-hand[data-myturn="true"] { animation: x-pulse 1.2s ease-in-out infinite; }
-@keyframes x-pulse { 0%,100% { opacity: 1; } 50% { opacity: .92; } }
+@keyframes x-pulse { 0%,100% { opacity: 1; } 50% { opacity: .9; } }
 
 /* 牌图 */
 .x-pic {
@@ -141,6 +154,8 @@ body { margin: 0; min-height: 100%; font: 14px/1.4 system-ui, "PingFang SC", san
     background: #e5e5ea;
     border-radius: 4px;
     font-size: .75rem;
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 .x-meta-name { color: #6e6e73; }
 .x-meta-score { font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -151,19 +166,21 @@ body { margin: 0; min-height: 100%; font: 14px/1.4 system-ui, "PingFang SC", san
 
 .x-side[data-side="top"] .x-meta { transform: rotate(180deg); }
 .x-side[data-side="top"] .x-meta > * { transform: rotate(-180deg); }
-.x-side[data-side="left"] .x-meta { transform: rotate(90deg); margin-left: 4px; }
+.x-side[data-side="left"] .x-meta { transform: rotate(90deg); margin-left: 6px; }
 .x-side[data-side="left"] .x-meta > * { transform: rotate(-90deg); }
-.x-side[data-side="right"] .x-meta { transform: rotate(-90deg); margin-right: 4px; }
+.x-side[data-side="right"] .x-meta { transform: rotate(-90deg); margin-right: 6px; }
 .x-side[data-side="right"] .x-meta > * { transform: rotate(90deg); }
 
 /* 中央 */
 .x-mid {
-    grid-area: c;
+    grid-area: mid;
     display: flex;
     align-items: center;
     justify-content: center;
+    background: #fff;
+    border-radius: 10px;
 }
-.x-mid-num { font-size: .7rem; color: #8e8e93; }
+.x-mid-num { font-size: .75rem; color: #8e8e93; }
 
 /* 操作区 */
 .x-actions {
