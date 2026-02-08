@@ -43,17 +43,16 @@
                                 </div>
                             </div>
 
-                            <!-- Info card -->
-                            <div class="player-info-card">
-                                <div class="name">{{ state.players[z.seat].name }}</div>
-                                <div class="score" :class="{ 'positive': state.players[z.seat].score >= 60000, 'negative': state.players[z.seat].score < 60000 }">{{ state.players[z.seat].score }}</div>
-                                <div class="player-status-row">
-                                    <span v-if="state.players[z.seat].dingQueSuit" class="badge dingque" :class="state.players[z.seat].dingQueSuit">{{ suitName(state.players[z.seat].dingQueSuit) }}</span>
+                            <!-- 信息卡 + 手牌 同组，保证左右两家与中心的间距一致 -->
+                            <div class="player-info-and-hand">
+                                <div class="player-info-card">
+                                    <div class="name">{{ state.players[z.seat].name }}</div>
+                                    <div class="score" :class="{ 'positive': state.players[z.seat].score >= 60000, 'negative': state.players[z.seat].score < 60000 }">{{ state.players[z.seat].score }}</div>
+                                    <div class="player-status-row">
+                                        <span v-if="state.players[z.seat].dingQueSuit" class="badge dingque" :class="state.players[z.seat].dingQueSuit">{{ suitName(state.players[z.seat].dingQueSuit) }}</span>
+                                    </div>
                                 </div>
-                            </div>
-
-                            <!-- Hand + Fuuro -->
-                            <div class="hand-row">
+                                <div class="hand-row">
                                 <div class="tehai-area">
                                     <template v-if="z.seat !== state.myPlayerId">
                                         <div v-for="n in 13" :key="'b-' + n" class="tile">
@@ -83,6 +82,7 @@
                                             <img :src="getPaiImage(m.pai, z.pose)" class="tile-img" alt="">
                                         </div>
                                     </div>
+                                </div>
                                 </div>
                             </div>
                         </div>
