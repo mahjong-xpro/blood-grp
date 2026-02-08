@@ -176,16 +176,16 @@ body {
     font-size: 16px;
 }
 
-/* Player 1 = 右家 */
+/* Player 1 = 右家、Player 3 = 左家：布局完全一致，仅旋转方向相反 */
+.player-area.player-1 .hand-row,
+.player-area.player-3 .hand-row { margin-bottom: -100px; }
 .player-area.player-1 { transform: rotate(-90deg); }
-.player-area.player-1 .hand-row { margin-bottom: -100px; }
+.player-area.player-3 { transform: rotate(90deg); }
+.player-area.player-1 { transform: rotate(-90deg); }
+.player-area.player-3 { transform: rotate(90deg); }
 
 /* Player 2 = 上家 */
 .player-area.player-2 { transform: rotate(180deg); }
-
-/* Player 3 = 左家 */
-.player-area.player-3 { transform: rotate(90deg); }
-.player-area.player-3 .hand-row { margin-bottom: -100px; }
 
 /* ========== 手牌 + 河牌布局 ========== */
 .hand-row {
