@@ -137,58 +137,88 @@ impl OneVsThree {
             seed_count * 4,
         );
 
-        let seeds: Vec<_> = (seed_start.0..seed_start.0 + seed_count)
-            .flat_map(|seed| iter::repeat_n((seed, seed_start.1), 4))
-            .collect();
+        // When seed_count == 1 (e.g. human vs AI single game), run exactly 1 game.
+        // Otherwise run 4 games per seed (one per rotation so each seat is challenger once).
+        let (challenger_player_ids, champion_player_ids, seeds, indexes) = if seed_count == 1 {
+            let challenger_player_ids: Vec<u8> = vec![0];
+            let champion_player_ids: Vec<u8> = vec![1, 2, 3];
+            let seeds = vec![(seed_start.0, seed_start.1)];
+            let indexes = vec![[
+                Index {
+                    agent_idx: 0,
+                    player_id_idx: 0,
+                },
+                Index {
+                    agent_idx: 1,
+                    player_id_idx: 0,
+                },
+                Index {
+                    agent_idx: 1,
+                    player_id_idx: 1,
+                },
+                Index {
+                    agent_idx: 1,
+                    player_id_idx: 2,
+                },
+            ]];
+            (challenger_player_ids, champion_player_ids, seeds, indexes)
+        } else {
+            let seeds: Vec<_> = (seed_start.0..seed_start.0 + seed_count)
+                .flat_map(|seed| iter::repeat_n((seed, seed_start.1), 4))
+                .collect();
 
-        let challenger_player_ids: Vec<_> = (0..4).cycle().take(seed_count as usize * 4).collect();
+            let challenger_player_ids: Vec<_> =
+                (0..4).cycle().take(seed_count as usize * 4).collect();
 
-        let champion_player_ids_per_seed = [
-            1, 2, 3, // split A
-            0, 2, 3, // split B
-            0, 1, 3, // split C
-            0, 1, 2, // split D
-        ];
-        let champion_player_ids: Vec<_> = champion_player_ids_per_seed
-            .into_iter()
-            .cycle()
-            .take(seed_count as usize * champion_player_ids_per_seed.len())
-            .collect();
+            let champion_player_ids_per_seed = [
+                1, 2, 3, // split A
+                0, 2, 3, // split B
+                0, 1, 3, // split C
+                0, 1, 2, // split D
+            ];
+            let champion_player_ids: Vec<_> = champion_player_ids_per_seed
+                .into_iter()
+                .cycle()
+                .take(seed_count as usize * champion_player_ids_per_seed.len())
+                .collect();
+
+            let mut challenger_idx = 0;
+            let mut champion_idx = 0;
+            let agent_idxs_per_seed = [
+                [0, 1, 1, 1], // split A
+                [1, 0, 1, 1], // split B
+                [1, 1, 0, 1], // split C
+                [1, 1, 1, 0], // split D
+            ];
+            let indexes: Vec<_> = agent_idxs_per_seed
+                .into_iter()
+                .cycle()
+                .take(seed_count as usize * agent_idxs_per_seed.len())
+                .map(|agent_idxs_per_split| {
+                    agent_idxs_per_split.map(|agent_idx| {
+                        let player_id_idx = if agent_idx == 0 {
+                            &mut challenger_idx
+                        } else {
+                            &mut champion_idx
+                        };
+                        let ret = Index {
+                            agent_idx,
+                            player_id_idx: *player_id_idx,
+                        };
+                        *player_id_idx += 1;
+                        ret
+                    })
+                })
+                .collect();
+
+            (challenger_player_ids, champion_player_ids, seeds, indexes)
+        };
 
         let mut agents = [
             new_challenger_agent(&challenger_player_ids)?,
             new_champion_agent(&champion_player_ids)?,
         ];
         let batch_game = BatchGame::standard_game(self.disable_progress_bar);
-
-        let mut challenger_idx = 0;
-        let mut champion_idx = 0;
-        let agent_idxs_per_seed = [
-            [0, 1, 1, 1], // split A
-            [1, 0, 1, 1], // split B
-            [1, 1, 0, 1], // split C
-            [1, 1, 1, 0], // split D
-        ];
-        let indexes: Vec<_> = agent_idxs_per_seed
-            .into_iter()
-            .cycle()
-            .take(seed_count as usize * agent_idxs_per_seed.len())
-            .map(|agent_idxs_per_split| {
-                agent_idxs_per_split.map(|agent_idx| {
-                    let player_id_idx = if agent_idx == 0 {
-                        &mut challenger_idx
-                    } else {
-                        &mut champion_idx
-                    };
-                    let ret = Index {
-                        agent_idx,
-                        player_id_idx: *player_id_idx,
-                    };
-                    *player_id_idx += 1;
-                    ret
-                })
-            })
-            .collect();
 
         let results = batch_game.run(&mut agents, &indexes, &seeds)?;
 

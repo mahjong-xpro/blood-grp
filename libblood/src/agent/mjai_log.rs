@@ -122,9 +122,16 @@ impl BatchAgent for MjaiLogBatchAgent {
         }
 
         let reactions_idx = self.reactions_idxs[index];
-        let event = self.reactions[reactions_idx]
-            .take()
-            .context("take after take")?;
+        let event = self
+            .reactions
+            .get_mut(reactions_idx)
+            .and_then(Option::take)
+            .context(format!(
+                "reaction index {} out of bounds (reactions.len()={}) or already taken; \
+                 engine may have returned fewer reactions than game_states (e.g. human engine returning 1 for batch)",
+                reactions_idx,
+                self.reactions.len()
+            ))?;
 
         Ok(event)
     }
