@@ -142,7 +142,7 @@ html, body { height: 100%; margin: 0; font: 14px/1.4 system-ui, "PingFang SC", s
 .side-river {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--gap-tight);
+    gap: 0;
     justify-content: center;
     align-content: center;
     padding: var(--gap-tight);
@@ -161,7 +161,7 @@ html, body { height: 100%; margin: 0; font: 14px/1.4 system-ui, "PingFang SC", s
 .side-hand {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--gap-tight);
+    gap: 0;
     justify-content: center;
     align-items: center;
     min-height: var(--tile-h);
@@ -174,11 +174,11 @@ html, body { height: 100%; margin: 0; font: 14px/1.4 system-ui, "PingFang SC", s
 @keyframes turn { 0%, 100% { opacity: 1; } 50% { opacity: 0.88; } }
 
 /* 副露 */
-.side-melds { display: flex; flex-wrap: wrap; gap: var(--gap); }
+.side-melds { display: flex; flex-wrap: wrap; gap: 0; }
 .meld {
     display: flex;
-    gap: 1px;
-    padding: 2px;
+    gap: 0;
+    padding: 0;
     background: var(--bg-table);
     border-radius: 3px;
 }
