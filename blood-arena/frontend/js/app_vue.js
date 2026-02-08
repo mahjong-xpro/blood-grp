@@ -118,9 +118,11 @@ const app = createApp({
                 // state.players[0].dingQueSuit reflects the 'ding_que' event.
                 // But strictly, we should offer the buttons if we haven't sent it yet.
                 // Best way: Check if any play events (Dahai/Chi/Pon/Tsumo) happened after Start Kyoku.
+                // UPDATE: 'tsumo' is allowed (Dealer draws 14th tile BEFORE Ding Que).
+                // So we only look for Discards or Melds (Dahai, Chi, Pon, Kan).
 
                 const eventsAfterKyoku = events.slice(lastStartKyokuIdx + 1);
-                const hasPlay = eventsAfterKyoku.some(e => ['dahai', 'chi', 'pon', 'daiminkan', 'kan', 'tsumo'].includes(e.type));
+                const hasPlay = eventsAfterKyoku.some(e => ['dahai', 'chi', 'pon', 'daiminkan', 'kan'].includes(e.type));
 
                 if (!hasPlay) {
                     // We are in Ding Que or Pre-Game phase
@@ -161,6 +163,7 @@ const app = createApp({
                 state.doraMarkers = [];
             }
             else if (type === 'start_kyoku') {
+                state.gameStarted = true; // Ensure logic works on reconnection
                 state.status = `Kyoku ${event.kyoku} Started`;
                 state.doraMarkers = [event.dora_marker];
                 if (scores) scores.forEach((s, i) => state.players[i].score = s);
