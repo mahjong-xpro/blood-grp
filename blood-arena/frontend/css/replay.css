@@ -1,0 +1,857 @@
+:root {
+    --bg-color: #121212;
+    --surface-color: #1e1e1e;
+    --surface-hover: #2d2d2d;
+    --border-color: #333;
+    --text-primary: #e0e0e0;
+    --text-secondary: #a0a0a0;
+    --accent-color: #00bcd4;
+    /* Cyan */
+    --accent-hover: #26c6da;
+    --danger-color: #ef5350;
+    /* Red */
+    --success-color: #66bb6a;
+    /* Green */
+
+    /* Layout */
+    --sidebar-width: 280px;
+    --footer-height: 80px;
+    --right-panel-width: 300px;
+
+    /* Tile Specs */
+    --tile-width: 38px;
+    --tile-height: 52px;
+    --tile-depth: 5px;
+    --tile-bg: linear-gradient(135deg, #fdfbf7 0%, #f3efe6 100%);
+    --tile-back-bg: #2d5aa0;
+
+    /* POV Player (P0) Specs */
+    --pov-tile-width: 56px;
+    --pov-tile-height: 80px;
+}
+
+/* Reset & Base */
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+    font-family: 'Inter', 'Noto Sans SC', sans-serif;
+    font-size: 14px;
+    height: 100vh;
+    overflow: hidden;
+}
+
+[v-cloak] {
+    display: none;
+}
+
+/* App Layout */
+#app {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+}
+
+/* Sidebar */
+.sidebar {
+    width: var(--sidebar-width);
+    background-color: var(--surface-color);
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    z-index: 10;
+}
+
+.sidebar-header {
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-header h2 {
+    margin: 0;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.logo-icon {
+    font-size: 24px;
+}
+
+.search-box {
+    padding: 12px;
+    position: relative;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.search-box input {
+    width: 100%;
+    background: #00000033;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 8px 10px 8px 32px;
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
+.search-box .material-icons {
+    position: absolute;
+    left: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 18px;
+    color: var(--text-secondary);
+}
+
+.upload-area {
+    margin: 12px;
+    padding: 16px;
+    border: 2px dashed var(--border-color);
+    border-radius: 8px;
+    text-align: center;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: all 0.2s;
+}
+
+.upload-area:hover {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+    background: #00bcd411;
+}
+
+.log-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+}
+
+.log-item {
+    padding: 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-bottom: 4px;
+    transition: background 0.2s;
+}
+
+.log-item:hover {
+    background-color: var(--surface-hover);
+}
+
+.log-item.active {
+    background-color: #00bcd422;
+    border-left: 3px solid var(--accent-color);
+}
+
+.log-title {
+    font-weight: 500;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.log-meta {
+    font-size: 11px;
+    color: var(--text-secondary);
+    display: flex;
+    justify-content: space-between;
+}
+
+
+/* Main Content */
+.main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    background: radial-gradient(circle at center, #1a1a1a 0%, #121212 100%);
+    overflow: hidden;
+}
+
+/* Game Header */
+.game-header {
+    height: 48px;
+    background-color: #00000066;
+    backdrop-filter: blur(5px);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 20px;
+    border-bottom: 1px solid #ffffff11;
+    z-index: 5;
+}
+
+.game-header>div {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.game-header .material-icons {
+    font-size: 16px;
+}
+
+/* Game Board Layout */
+.game-board-container {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+}
+
+.game-board {
+    width: 100%;
+    max-width: 900px;
+    /* Limit height to ensure footer is visible. 
+       Calculation: 100vh - Header(48) - Footer(80) - Padding(40) = ~168px gap
+       Safety margin included.
+    */
+    max-height: calc(100vh - 180px);
+    aspect-ratio: 1/1;
+    /* Square board */
+    position: relative;
+    /* debug */
+    /* border: 1px dashed #333; */
+}
+
+/* Center Info */
+/* Center Info: Shrunken to avoid blocking River */
+.center-info {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100px;
+    /* Formerly 200px */
+    height: 100px;
+    /* Formerly 200px */
+    background: #1e1e1e;
+    border: 2px solid #333;
+    border-radius: 12px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2;
+    box-shadow: 0 10px 30px #00000080;
+}
+
+.turn-arrow-container {
+    width: 80px;
+    height: 80px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.turn-arrow-icon {
+    font-size: 48px;
+    color: var(--accent-color);
+    text-shadow: 0 0 15px var(--accent-color);
+}
+
+.center-logo {
+    font-size: 48px;
+    opacity: 0.5;
+}
+
+/* Players Positioning */
+.player-area {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    left: 0;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    /* Align to bottom (which becomes side after rotation) */
+    align-items: center;
+    /* Center along the edge */
+    padding-bottom: 0px;
+    /* Minimize margin from edge: User request "closer to edge" */
+    pointer-events: none;
+    /* Let clicks pass through empty areas */
+    gap: 8px;
+    transition: opacity 0.3s;
+}
+
+.player-area>* {
+    pointer-events: auto;
+    /* Re-enable clicks on content */
+}
+
+.player-area.is-turn {
+    opacity: 1;
+}
+
+.player-area:not(.is-turn) {
+    opacity: 0.7;
+}
+
+/* Flex Order: Kawa(1) -> Info(2) -> Hand(3)
+   User Request: "Hand to edge, Info in middle".
+   This places the Hand at the visual "Back" (Screen Edge)
+   and Info Card between Hand and River.
+*/
+.kawa-area {
+    order: 1;
+    margin-bottom: 4px;
+    /* Space between River and Info */
+}
+
+.player-info-card {
+    order: 2;
+    margin-bottom: 4px;
+    /* Space between Info and Hand */
+}
+
+.hand-row {
+    order: 3;
+    margin-bottom: -15px;
+    /* Push hands slightly outside the logic box (into padding) */
+}
+
+/* Layout Logic for 4 Players */
+/* Player 0 (Bottom) */
+/* Player 0 (Bottom/POV) */
+.player-area.player-0 {
+    transform: none;
+    /* Move hand slightly closer to center? No, user wants more space. */
+    /* Adjust internal gap */
+    gap: 12px;
+}
+
+/* Enlarge P0 tiles */
+.player-area.player-0 .tile {
+    width: var(--pov-tile-width);
+    height: var(--pov-tile-height);
+    font-size: 32px;
+}
+
+.player-area.player-0 .tile.small {
+    /* Fuuro tiles for POV slightly larger too */
+    width: 36px;
+    height: 50px;
+    font-size: 20px;
+}
+
+.player-area.player-0 .hand-row {
+    /* Allow more width for larger hand */
+    gap: 24px;
+}
+
+/* Reset P0 Kawa tile size (do not inherit large size) */
+.player-area.player-0 .kawa-area .tile {
+    width: 28px;
+    height: 39px;
+    font-size: 16px;
+}
+
+/* Player 1 (Right) */
+.player-area.player-1 {
+    transform: rotate(-90deg);
+}
+
+.player-area.player-1 .hand-row {
+    margin-bottom: -100px;
+    /* Push FAR out to the right screen edge */
+}
+
+/* Player 2 (Top) */
+.player-area.player-2 {
+    transform: rotate(180deg);
+}
+
+/* Player 3 (Left) */
+.player-area.player-3 {
+    transform: rotate(90deg);
+}
+
+.player-area.player-3 .hand-row {
+    margin-bottom: -100px;
+    /* Push FAR out to the left screen edge */
+}
+
+/* Hand & Discard Layouts */
+.hand-row {
+    display: flex;
+    gap: 20px;
+}
+
+.tehai-area {
+    display: flex;
+    gap: 2px;
+}
+
+.fuuro-area {
+    display: flex;
+    gap: 8px;
+    margin-left: 20px;
+}
+
+.meld-group {
+    display: flex;
+    gap: 1px;
+    opacity: 0.9;
+}
+
+.kawa-area {
+    display: grid;
+    /* Change to 12 per row to flatten the river (make it wider, not taller) */
+    grid-template-columns: repeat(12, 1fr);
+    grid-auto-rows: auto;
+    gap: 2px;
+    /* Allow wider grid */
+    max-width: 500px;
+    /* Formerly 250px */
+    margin-bottom: 4px;
+}
+
+/* Rotate kawa for visual correctness? usually kawa is just a grid in front of player */
+
+/* Tiles */
+.tile-wrapper {
+    position: relative;
+}
+
+/* Specific Kawa Tile Size */
+.kawa-area .tile {
+    width: 28px;
+    height: 39px;
+    font-size: 16px;
+}
+
+.tile {
+    width: var(--tile-width);
+    height: var(--tile-height);
+    background: var(--tile-bg);
+    border-radius: 4px;
+    box-shadow: 1px 1px 0px #ccc, 2px 2px 3px rgba(0, 0, 0, 0.3);
+    border: 1px solid #dcdcdc;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    user-select: none;
+    position: relative;
+    /* 3D height effect */
+    margin-bottom: var(--tile-depth);
+    padding: 2px;
+    /* Small padding so image doesn't touch border? Or 0. Contain handles it. */
+    overflow: hidden;
+}
+
+.tile-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+/* Kawa adjustments */
+.kawa-area .tile .tile-num {
+    font-size: 14px;
+}
+
+.kawa-area .tile .tile-suit {
+    font-size: 10px;
+}
+
+.tile::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background-color: #dcdcdc;
+    /* simplistic edge */
+    border-radius: 0 0 4px 4px;
+}
+
+.tile.small {
+    width: 26px;
+    height: 36px;
+    font-size: 16px;
+}
+
+/* Suit Colors */
+.tile.man {
+    color: #d32f2f;
+}
+
+/* Red */
+.tile.pin {
+    color: #1976d2;
+}
+
+/* Blue */
+.tile.sou {
+    color: #388e3c;
+}
+
+/* Green */
+.tile.ji {
+    color: #000;
+}
+
+/* Black */
+
+.tile.tsumo-tile {
+    margin-left: 8px;
+    /* Gap for drawn tile */
+    transform: translateY(-5px);
+    /* Pop up slightly */
+    box-shadow: 1px 6px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* Ankan (Face Down) */
+.tile.facedown {
+    background: var(--tile-back-bg);
+    border-color: #1a3c75;
+    box-shadow: 1px 1px 0px #1a3c75, 2px 2px 3px rgba(0, 0, 0, 0.3);
+}
+
+.tile.facedown::after {
+    background-color: #1a3c75;
+}
+
+/* Notes: Info Card Rotation 
+   User requested "Consistent with hand direction".
+   Since we use full-size rotated containers, the info card is naturally rotated 90deg/180deg etc.
+   We REMOVE the counter-rotation logic.
+   This means Side Players' info cards will be vertical on screen (horizontal relative to player).
+*/
+/* Counter-rotation styles removed */
+
+
+/* Info Card Layout */
+.player-info-card {
+    /* order: 2 */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    /* Horizontally center everything */
+    justify-content: center;
+    gap: 4px;
+    padding: 8px;
+    /* Improve spacing */
+    background: rgba(0, 0, 0, 0.4);
+    /* Subtle background for readability */
+    border-radius: 8px;
+    min-width: 120px;
+    /* Ensure space for names */
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(2px);
+}
+
+.name {
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+.score {
+    font-size: 18px;
+    /* Larger score */
+    font-family: 'Roboto Mono', monospace;
+    /* Monospace for numbers */
+    font-weight: 700;
+}
+
+.player-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 2px;
+}
+
+
+
+.score.positive {
+    color: #81c784;
+    /* Softer green */
+}
+
+.score.negative {
+    color: #e57373;
+    /* Softer red */
+}
+
+/* Badges */
+.badge {
+    font-size: 12px;
+    /* Increased from 10px */
+    padding: 3px 6px;
+    /* Increased padding */
+    border-radius: 4px;
+    color: #fff;
+    font-weight: bold;
+    line-height: normal;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+}
+
+.badge.dingque {
+    background: #666;
+}
+
+.badge.dingque.man {
+    background: #d32f2f;
+}
+
+.badge.dingque.pin {
+    background: #1976d2;
+}
+
+.badge.dingque.sou {
+    background: #388e3c;
+}
+
+.badge.agari {
+    background: var(--accent-color);
+}
+
+.badge.riichi {
+    background: #ff9800;
+}
+
+
+/* Footer Controls */
+.controls-bar {
+    height: var(--footer-height);
+    background-color: var(--surface-color);
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    gap: 24px;
+    z-index: 10;
+}
+
+.controls-bar.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.slider-container {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.timeline-slider {
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: #333;
+    outline: none;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.timeline-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent-color);
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+
+.timeline-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+.slider-tooltip {
+    position: absolute;
+    top: -30px;
+    background: var(--accent-color);
+    color: #000;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    transform: translateX(-50%);
+    pointer-events: none;
+}
+
+.control-buttons {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.ctrl-btn {
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    cursor: pointer;
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: background 0.2s;
+}
+
+.ctrl-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.ctrl-btn.main-play {
+    background: var(--accent-color);
+    color: #000;
+    width: 48px;
+    height: 48px;
+    box-shadow: 0 4px 10px rgba(0, 188, 212, 0.4);
+}
+
+.ctrl-btn.main-play:hover {
+    background: var(--accent-hover);
+    transform: scale(1.05);
+}
+
+.speed-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-secondary);
+}
+
+.speed-control select {
+    background: #333;
+    color: white;
+    border: none;
+    padding: 4px;
+    border-radius: 4px;
+}
+
+/* Right Panel */
+.right-panel {
+    width: var(--right-panel-width);
+    background-color: var(--surface-color);
+    border-left: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    transition: width 0.3s;
+    overflow: hidden;
+}
+
+.right-panel.collapsed {
+    width: 40px;
+}
+
+.right-panel.collapsed .event-content,
+.right-panel.collapsed .panel-header h3 {
+    display: none;
+}
+
+.panel-header {
+    padding: 12px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.panel-header h3 {
+    margin: 0;
+    font-size: 14px;
+}
+
+.btn-icon {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.btn-icon:hover {
+    color: var(--text-primary);
+}
+
+.event-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+}
+
+.event-item {
+    display: flex;
+    gap: 10px;
+    padding: 8px 12px;
+    border-bottom: 1px solid #333;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.event-item:hover {
+    background-color: var(--surface-hover);
+}
+
+.event-item.current {
+    background-color: #00bcd411;
+    border-left: 3px solid var(--accent-color);
+}
+
+.event-idx {
+    color: var(--text-secondary);
+    width: 20px;
+    flex-shrink: 0;
+}
+
+.event-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.event-type {
+    font-weight: 600;
+    color: var(--accent-color);
+}
+
+.event-actor {
+    color: #888;
+}
+
+
+/* Utility */
+.loading-spinner,
+.empty-state,
+.welcome-screen {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    color: var(--text-secondary);
+}
+
+.welcome-screen h1 {
+    color: var(--text-primary);
+    margin-bottom: 10px;
+}
