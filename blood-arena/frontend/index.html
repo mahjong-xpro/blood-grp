@@ -9,7 +9,7 @@
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
 </head>
 <body>
-    <div id="app" v-cloak :class="{ 'app-root--over': state.gameEnded }">
+    <div id="app" :class="{ 'app-root--over': state.gameEnded }">
         <header class="game-header bar">
             <span class="bar-title">血战到底</span>
             <span class="bar-status">{{ state.status }}</span>

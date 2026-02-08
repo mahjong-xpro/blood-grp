@@ -29,8 +29,6 @@ body {
     overflow: hidden;
 }
 
-[v-cloak] { display: none; }
-
 #app {
     display: flex;
     flex-direction: column;
