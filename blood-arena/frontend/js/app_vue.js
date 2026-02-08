@@ -49,17 +49,16 @@ const app = createApp({
         // --- State ---
         const state = reactive({
             connected: false,
-            status: "Connecting...",
+            status: '连接中…',
             notification: "", // Big center text
 
             // Game Data
             players: [
-                { name: "Me", score: 25000, tehai: [], discards: [], melds: [], dingQueSuit: null }, // 0
-                { name: "CPU 1", score: 25000, tehai: [], discards: [], melds: [], dingQueSuit: null }, // 1
-                { name: "CPU 2", score: 25000, tehai: [], discards: [], melds: [], dingQueSuit: null }, // 2
-                { name: "CPU 3", score: 25000, tehai: [], discards: [], melds: [], dingQueSuit: null }  // 3
+                { name: '我', score: 60000, tehai: [], discards: [], melds: [], dingQueSuit: null },   // 0
+                { name: '对手1', score: 60000, tehai: [], discards: [], melds: [], dingQueSuit: null }, // 1
+                { name: '对手2', score: 60000, tehai: [], discards: [], melds: [], dingQueSuit: null }, // 2
+                { name: '对手3', score: 60000, tehai: [], discards: [], melds: [], dingQueSuit: null }  // 3
             ],
-            doraMarkers: [],
 
             // Turn Logic
             myPlayerId: 0,
@@ -67,8 +66,9 @@ const app = createApp({
             isMyTurn: false,
             validActions: [],
 
-            // Meta
-            gameStarted: false
+            // Meta（血战到底：无宝牌，可选剩余牌数）
+            gameStarted: false,
+            tilesLeft: null
         });
 
         let ws = null;
@@ -130,9 +130,9 @@ const app = createApp({
                         // I haven't picked a suit yet -> Show Buttons
                         state.status = "Select Void Suit (Ding Que)";
                         state.validActions = [
-                            { label: "Man", class: "btn-action btn-man", payload: { type: "ding_que", actor: state.myPlayerId, suit: "man" } },
-                            { label: "Pin", class: "btn-action btn-pin", payload: { type: "ding_que", actor: state.myPlayerId, suit: "pin" } },
-                            { label: "Sou", class: "btn-action btn-sou", payload: { type: "ding_que", actor: state.myPlayerId, suit: "sou" } }
+                            { label: '万', class: 'btn-action btn-man', payload: { type: 'ding_que', actor: state.myPlayerId, suit: 'man' } },
+                            { label: '筒', class: 'btn-action btn-pin', payload: { type: 'ding_que', actor: state.myPlayerId, suit: 'pin' } },
+                            { label: '条', class: 'btn-action btn-sou', payload: { type: 'ding_que', actor: state.myPlayerId, suit: 'sou' } }
                         ];
                         return; // Exclusive UI
                     } else {
@@ -164,14 +164,13 @@ const app = createApp({
                 state.gameStarted = true;
                 state.status = "Game Started";
                 state.players.forEach(p => {
-                    p.tehai = []; p.discards = []; p.melds = []; p.score = 25000; p.dingQueSuit = null;
+                    p.tehai = []; p.discards = []; p.melds = []; p.score = 60000; p.dingQueSuit = null;
                 });
-                state.doraMarkers = [];
+                state.tilesLeft = null;
             }
             else if (type === 'start_kyoku') {
-                state.gameStarted = true; // Ensure logic works on reconnection
-                state.status = `Kyoku ${event.kyoku} Started`;
-                state.doraMarkers = [event.dora_marker];
+                state.gameStarted = true;
+                state.status = '对局开始';
                 if (scores) scores.forEach((s, i) => state.players[i].score = s);
                 state.players.forEach(p => p.dingQueSuit = null); // Reset Ding Que
 
@@ -183,21 +182,19 @@ const app = createApp({
                 }
             }
             else if (type === 'tsumo') {
-                state.status = `Player ${actor} Tsumo`;
+                state.status = `玩家${actor} 摸牌`;
                 state.currentActor = actor;
-                state.players[actor].tehai.push(pai); // Add tile logic
+                state.players[actor].tehai.push(pai);
                 if (actor === state.myPlayerId) {
                     state.isMyTurn = true;
-                    state.status = "YOUR TURN";
-                    // Only show Win/Reach button if applicable.
-                    // For MVP, enable Tsumo button always on turn (server rejects if invalid).
+                    state.status = '轮到你出牌';
                     state.validActions = [
-                        { label: "Tsumo", type: "hora", payload: { type: "hora", actor: state.myPlayerId, target: state.myPlayerId }, class: "btn-action btn-win" }
+                        { label: '自摸', type: 'hora', payload: { type: 'hora', actor: state.myPlayerId, target: state.myPlayerId }, class: 'btn-action btn-win' }
                     ];
                 }
             }
             else if (type === 'dahai') {
-                state.status = `Player ${actor} Discard`;
+                state.status = `玩家${actor} 出牌`;
                 state.currentActor = actor;
                 const pIdx = state.players[actor].tehai.indexOf(pai);
                 if (pIdx !== -1) state.players[actor].tehai.splice(pIdx, 1);
@@ -206,13 +203,12 @@ const app = createApp({
                 state.players[actor].discards.push(pai);
                 if (actor === state.myPlayerId) sortHand(state.players[actor].tehai);
 
-                // Check Call Ops
                 if (actor !== state.myPlayerId && state.players[state.myPlayerId].dingQueSuit !== null) {
                     state.validActions = [
-                        { label: "Ron", type: "hora", payload: { type: "hora", actor: state.myPlayerId, target: actor }, class: "btn-action btn-win" },
-                        { label: "Pon", type: "pon", payload: { type: "pon", actor: state.myPlayerId, target: actor, pai: pai, consumed: [] }, class: "btn-action" },
-                        { label: "Kan", type: "daiminkan", payload: { type: "daiminkan", actor: state.myPlayerId, target: actor, pai: pai }, class: "btn-action" },
-                        { label: "Pass", type: "none", payload: { type: "none" }, class: "btn-action" }
+                        { label: '荣和', type: 'hora', payload: { type: 'hora', actor: state.myPlayerId, target: actor }, class: 'btn-action btn-win' },
+                        { label: '碰', type: 'pon', payload: { type: 'pon', actor: state.myPlayerId, target: actor, pai: pai, consumed: [] }, class: 'btn-action' },
+                        { label: '杠', type: 'daiminkan', payload: { type: 'daiminkan', actor: state.myPlayerId, target: actor, pai: pai }, class: 'btn-action' },
+                        { label: '过', type: 'none', payload: { type: 'none' }, class: 'btn-action' }
                     ];
                 }
             }
@@ -235,18 +231,18 @@ const app = createApp({
                 }
             }
             else if (type === 'ding_que') {
-                state.status = `Player ${actor} Ding Que: ${suit}`;
+                state.status = `玩家${actor} 定缺`;
                 state.players[actor].dingQueSuit = suit;
             }
             else if (type === 'hora') {
-                state.notification = `RON / TSUMO! Player ${actor}`;
+                state.notification = `和牌！玩家${actor}`;
                 if (event.deltas && event.deltas.length === 4) {
                     event.deltas.forEach((d, i) => state.players[i].score += d);
                 }
                 setTimeout(() => state.notification = "", 5000);
             }
             else if (type === 'game_over') {
-                state.notification = "GAME SET";
+                state.notification = '对局结束';
             }
         };
 
@@ -297,7 +293,7 @@ const app = createApp({
                     state.players.forEach(p => {
                         p.tehai = []; p.discards = []; p.melds = []; p.dingQueSuit = null;
                     });
-                    state.doraMarkers = [];
+                    state.tilesLeft = null;
 
                     // Replay all
                     msg.data.events.forEach(handleEvent);
@@ -309,9 +305,15 @@ const app = createApp({
             ws.onclose = () => state.connected = false;
         });
 
+        const suitName = (suit) => {
+            if (!suit) return '';
+            return { man: '万', pin: '筒', sou: '条' }[suit] || suit;
+        };
+
         return {
             state,
             getPaiImage,
+            suitName,
             handleTileClick,
             sendAction,
             tryStartGame

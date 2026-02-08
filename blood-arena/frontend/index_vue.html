@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Blood Arena - Pure Vue 3</title>
+    <title>血战到底 - 人机对战</title>
     <link rel="stylesheet" href="/css/style_vue.css?v=99">
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <style>
@@ -29,7 +29,7 @@
             DEBUG: Phase={{ state.status }} | Started={{ state.gameStarted }} | Connected={{ state.connected }} |
             Turn={{ state.isMyTurn }}
             <br>
-            MyDingQue={{ state.players[state.myPlayerId].dingQueSuit }}
+            定缺={{ suitName(state.players[state.myPlayerId].dingQueSuit) }}
         </div>
 
         <!-- HUD Header -->
@@ -37,15 +37,15 @@
             <div class="status">
                 {{ state.status }}
                 <button v-if="!state.gameStarted" @click="tryStartGame" style="margin-left: 10px;">
-                    Start Game
+                    开始对局
                 </button>
             </div>
             <div class="score-panel">
                 <div v-for="(p, i) in state.players" :key="i" class="score-item"
                     :class="{ active: state.currentActor === i }">
-                    {{ p.name }} ({{ i }}): {{ p.score }}
+                    {{ p.name }} {{ p.score }}分
                     <span v-if="p.dingQueSuit" :class="'suit-' + p.dingQueSuit">
-                        [{{ p.dingQueSuit.toUpperCase() }}]
+                        定缺{{ suitName(p.dingQueSuit) }}
                     </span>
                 </div>
             </div>
@@ -99,14 +99,12 @@
                 </div>
             </div>
 
-            <!-- Center (Dora, Info) -->
+            <!-- 中央：血战到底无宝牌，仅显示牌桌名称与可选信息 -->
             <div class="zone-center">
-                <div class="dora-display">
-                    <h3>DORA</h3>
-                    <div class="hand">
-                        <img v-for="(tile, i) in state.doraMarkers" :key="i" :src="getPaiImage(tile, 0)">
-                        <img v-if="state.doraMarkers.length < 5" src="/static/images/p_bk_0.gif">
-                    </div>
+                <div class="center-info">
+                    <div class="game-title">血战到底</div>
+                    <div class="game-subtitle">三人和牌即结束 · 定缺一门</div>
+                    <div v-if="state.tilesLeft != null" class="tiles-left">剩余 {{ state.tilesLeft }} 张</div>
                 </div>
             </div>
 

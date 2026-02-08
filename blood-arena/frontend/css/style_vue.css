@@ -63,11 +63,12 @@ body {
         ".        top        ."
         "left     center     right"
         ".        bottom     .";
-    grid-template-columns: 250px 1fr 250px;
-    grid-template-rows: 200px 1fr 250px;
+    grid-template-columns: 220px 1fr 220px;
+    grid-template-rows: 160px 1fr 320px;
     background-color: var(--mat-color);
     position: relative;
-    padding: 20px;
+    padding: 16px;
+    min-height: 0;
 }
 
 /* --- ZONES --- */
@@ -87,6 +88,8 @@ body {
 .zone-bottom {
     grid-area: bottom;
     justify-content: flex-end;
+    min-height: 140px;
+    padding-bottom: 12px;
 }
 
 /* My hand at bottom */
@@ -112,6 +115,27 @@ body {
     border-radius: 20px;
 }
 
+/* 中央：血战到底无宝牌，显示牌桌名称 */
+.center-info {
+    text-align: center;
+    padding: 1rem;
+}
+.center-info .game-title {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: rgba(255,255,255,0.95);
+    margin-bottom: 4px;
+}
+.center-info .game-subtitle {
+    font-size: 0.8rem;
+    color: rgba(255,255,255,0.7);
+}
+.center-info .tiles-left {
+    font-size: 0.85rem;
+    color: rgba(255,255,255,0.8);
+    margin-top: 8px;
+}
+
 /* --- HANDS --- */
 .hand {
     display: flex;
@@ -127,6 +151,9 @@ body {
     border-radius: 4px;
     box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.5);
     cursor: default;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+    object-fit: contain;
 }
 
 /* Side Player Tiles (Landscape/Vertical Stack) */
@@ -148,13 +175,22 @@ body {
     margin-right: 0;
 }
 
-/* My Hand Specifics */
+/* 自己手牌：加大尺寸、清晰渲染，保证可见 */
+.zone-bottom .hand {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    min-height: 100px;
+    padding: 14px 10px;
+}
 .zone-bottom .hand img {
-    width: 60px;
-    /* Larger for me */
-    height: 84px;
+    width: 58px;
+    height: 82px;
     cursor: pointer;
     transition: transform 0.1s;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+    object-fit: contain;
 }
 
 .zone-bottom .hand img:hover {
@@ -186,6 +222,9 @@ body {
 .river img {
     width: var(--tile-width-sm);
     height: var(--tile-height-sm);
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+    object-fit: contain;
 }
 
 /* --- MELDS --- */
@@ -209,6 +248,36 @@ body {
     opacity: 0.9;
 }
 
+/* 左右玩家副露：竖向排列，与手牌方向一致 */
+.zone-left .melds {
+    flex-direction: column;
+    align-items: flex-start;
+}
+.zone-left .meld-group {
+    flex-direction: row;
+    margin-bottom: 4px;
+}
+.zone-left .meld-group img {
+    width: var(--tile-height-sm);
+    height: var(--tile-width-sm);
+    transform: rotate(-90deg);
+    image-rendering: crisp-edges;
+}
+.zone-right .melds {
+    flex-direction: column;
+    align-items: flex-end;
+}
+.zone-right .meld-group {
+    flex-direction: row;
+    margin-bottom: 4px;
+}
+.zone-right .meld-group img {
+    width: var(--tile-height-sm);
+    height: var(--tile-width-sm);
+    transform: rotate(90deg);
+    image-rendering: crisp-edges;
+}
+
 /* --- INDICATORS / CENTER --- */
 .notification-overlay {
     position: absolute;
@@ -226,8 +295,7 @@ body {
 /* --- ACTION PANEL --- */
 .action-panel {
     position: absolute;
-    bottom: 120px;
-    /* Above my hand */
+    bottom: 200px;
     left: 50%;
     transform: translateX(-50%);
     display: flex;
