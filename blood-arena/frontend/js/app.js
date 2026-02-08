@@ -255,7 +255,7 @@ function evaluatePhase(state, events) {
 // ---------------------------------------------------------------------------
 const app = createApp({
     setup() {
-        const mounted = ref(false);
+        const appReady = ref(false);
         const state = createInitialState();
         const handlers = createEventHandlers(state);
 
@@ -291,7 +291,7 @@ const app = createApp({
         const getDisplayPose = (z) => (z.seat === 3 ? 1 : z.pose);
 
         onMounted(() => {
-            mounted.value = true;
+            appReady.value = true;
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(`${protocol}//${window.location.host}/ws/game`);
             ws.onopen = () => {
@@ -319,7 +319,7 @@ const app = createApp({
         });
 
         return {
-            mounted,
+            appReady,
             state,
             playerZones: PLAYER_ZONES,
             showResultPanel: computed(() => state.gameEnded),
