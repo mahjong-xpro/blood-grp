@@ -35,9 +35,9 @@ submit_every = 1000
 games = 6400
 log_dir = '/data/mortal/train_play'
 
-# 探索参数 - 阶段 2: 深度收敛 (Step 200k - 300k)
-boltzmann_epsilon = 0.15  # 保持中等探索，寻求更深层的收敛
-boltzmann_temp = 0.2      # 阶段 2: 中等温度
+# 探索参数 - 阶段 3: 精调期 (Step 300k+)
+boltzmann_epsilon = 0.05  # 阶段 3: 极低探索，逼迫输出最优解
+boltzmann_temp = 0.1      # 阶段 3: 低温，分布尖锐化
 
 # 阶段转换指南:
 # ┌──────────────────────────────────────────────────────┐
