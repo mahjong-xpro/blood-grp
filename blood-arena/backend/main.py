@@ -40,47 +40,55 @@ async def get():
         logging.error("index.html not found at %s", index_path)
     return FileResponse(index_path)
 
+@app.post("/start_game")
+async def start_game(ai_model: str = None):
+    # Determine model path
+    model_path = ai_model
+    if not model_path:
+        model_path = os.environ.get('MORTAL_MODEL', os.path.join(parent_dir, "mortal", "models", "best.pth"))
+    
+    # Start thread
+    try:
+        game_manager.start_game_thread(model_path)
+        return {"status": "started", "model": model_path}
+    except Exception as e:
+        logging.error(f"Failed to start game: {e}")
+        return {"status": "error", "message": str(e)}
+
+# Startup/Shutdown events to manage broadcaster
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(broadcast_loop())
+
+async def broadcast_loop():
+    logging.info("Global broadcast loop started")
+    while True:
+        try:
+            msg = await asyncio.get_event_loop().run_in_executor(
+                None, game_manager.state_queue.get
+            )
+            if msg.get("type") == "_thread_finished":
+                continue 
+            
+            await game_manager.broadcast(msg)
+        except Exception as e:
+            logging.error(f"Broadcast loop error: {e}")
+
 @app.websocket("/ws/game")
 async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    
-    # Reconnection: send latest state (state_update or game_over) so client can restore UI
-    if 'latest' in game_manager.shared_state:
-        await websocket.send_json(game_manager.shared_state['latest'])
-
-    model_path = os.path.join(parent_dir, "mortal", "models", "best.pth")
-
-    # Listener loop for Queue -> WebSocket
-    async def sender():
+    await game_manager.connect(websocket)
+    try:
         while True:
-            # Non-blocking get from queue? No, we need async wait
-            # But queue is thread-safe, not asyncio-aware.
-            # We can use run_in_executor to wait for queue
-            try:
-                msg = await asyncio.get_event_loop().run_in_executor(
-                    None, game_manager.state_queue.get
-                )
-                if msg.get("type") == "_thread_finished":
-                    break
-                await websocket.send_json(msg)
-            except Exception as e:
-                logging.error(f"Sender error: {e}")
-                break
-
-    # Listener loop for WebSocket -> Queue
-    async def receiver():
-        try:
-            while True:
-                data = await websocket.receive_json()
-                if data.get("type") == "start_game":
-                    # Start game thread only when user clicks "开始对局" (single game per start)
-                    game_manager.start_game_thread(model_path)
-                    continue
-                game_manager.action_queue.put(data)
-        except WebSocketDisconnect:
-            logging.info("Client disconnected")
-        except Exception as e:
-            logging.error(f"Receiver error: {e}")
-
-    # Run both
-    await asyncio.gather(sender(), receiver())
+            data = await websocket.receive_json()
+            if data.get("type") == "start_game":
+                 # Start game thread
+                 # Actually model path should be passed or used default
+                 model_path = os.environ.get('MORTAL_MODEL', os.path.join(parent_dir, "mortal", "models", "best.pth"))
+                 game_manager.start_game_thread(model_path)
+            else:
+                 game_manager.action_queue.put(data)
+    except WebSocketDisconnect:
+        await game_manager.disconnect(websocket)
+    except Exception as e:
+        logging.error(f"WebSocket error: {e}")
+        await game_manager.disconnect(websocket)
