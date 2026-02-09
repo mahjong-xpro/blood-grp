@@ -651,8 +651,11 @@ impl BoardState {
                              // We can get it from the winner's state (chankan_kakan_tile) or derive it.
                              // Since we are inside the 'is_chankan' block and 'single_actor' is the winner:
                              let winner_state = &self.player_states[single_actor as usize];
+                             // Use the actor recorded in the winner's state to ensure we target the correct victim.
+                             // Fallback to kan_actor (from action) if not found (though it should be).
+                             let target_actor = winner_state.chankan_kakan_actor.unwrap_or(kan_actor);
                              if let Some(tile) = winner_state.chankan_kakan_tile {
-                                 let victim_state = &mut self.player_states[kan_actor as usize];
+                                 let victim_state = &mut self.player_states[target_actor as usize];
                                  
                                  // Check if this tile exists in minkans (it should)
                                  // Note: minkans stores u8 tile IDs.
@@ -689,15 +692,15 @@ impl BoardState {
                                     victim_state.update_shanten();
                                     victim_state.update_waits();
                                     
-                                    // 抢杠时每发生一次打一条；大批量对局（如 6400 局）会累积很多条，故用 debug 降噪
-                                    log::debug!("ChanKan State Fix: Reverted Player {}'s MinKan of tile {} to Pon", kan_actor, tile);
+                                     // 抢杠时每发生一次打一条；大批量对局（如 6400 局）会累积很多条，故用 debug 降噪
+                                    log::debug!("ChanKan State Fix: Reverted Player {}'s MinKan of tile {} to Pon", target_actor, tile);
                                  } else {
                                      // Kakan event might have been preempted by Ron, so state is still Pon.
                                      // Check if it is indeed a Pon.
                                      if victim_state.pons.contains(&tile) {
-                                         log::debug!("ChanKan State Fix: Player {} state is already Pon for tile {} (Kakan preempted by Ron). No revert needed.", kan_actor, tile);
+                                         log::debug!("ChanKan State Fix: Player {} state is already Pon for tile {} (Kakan preempted by Ron). No revert needed.", target_actor, tile);
                                      } else {
-                                         log::warn!("ChanKan State Fix: Failed to find MinKan OR Pon for tile {} in Player {}'s state. Consistency might be broken.", tile, kan_actor);
+                                         log::warn!("ChanKan State Fix: Failed to find MinKan OR Pon for tile {} in Player {}'s state. Consistency might be broken.", tile, target_actor);
                                      }
                                  }
                              } else {
