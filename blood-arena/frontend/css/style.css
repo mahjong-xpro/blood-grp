@@ -81,7 +81,7 @@ body {
 }
 .bar-btn:hover { background: var(--accent-hover); }
 
-/* ========== 主区域（可收缩，保证顶栏+牌桌+操作栏都在视口内） ========== */
+/* ========== 主区域：不裁切伸出牌桌的手牌（左右、下家） ========== */
 .main-content {
     flex: 1;
     min-height: 0;
@@ -89,7 +89,7 @@ body {
     flex-direction: column;
     position: relative;
     background: radial-gradient(circle at center, #1a1a1a 0%, #121212 100%);
-    overflow: hidden;
+    overflow: auto;
 }
 
 .game-board-container {
@@ -98,7 +98,9 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
-    padding: 12px;
+    /* 留出空间给伸出牌桌的手牌：左右约 120px，下家约 140px，避免被裁掉 */
+    padding: 12px 100px 130px 100px;
+    overflow: visible;
 }
 
 .game-board {
@@ -106,7 +108,8 @@ body {
     aspect-ratio: 1/1;
     width: auto;
     height: auto;
-    max-width: min(100%, 900px);
+    /* 缩小牌桌，使「牌桌 + 四周伸出的手牌」整体能放进视口 */
+    max-width: min(75vmin, 720px);
     max-height: 100%;
 }
 
