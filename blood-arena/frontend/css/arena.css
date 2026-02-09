@@ -1,0 +1,202 @@
+/* 血战到底 - 单文件布局，结构清晰 */
+
+:root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --border: #2a2a2a;
+    --text: #e8e8e8;
+    --muted: #888;
+    --accent: #0ea5e9;
+    --danger: #dc2626;
+    --tile-w: 40px;
+    --tile-h: 54px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.4 system-ui, sans-serif;
+    height: 100vh;
+    overflow: hidden;
+}
+
+#app {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* ----- 顶栏 ----- */
+.arena-header {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+}
+.arena-title { font-weight: 600; color: var(--accent); }
+.arena-status {
+    font-size: 12px;
+    color: var(--muted);
+}
+.arena-status.connected { color: #22c55e; }
+.arena-header .btn {
+    padding: 8px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+}
+.arena-header .btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* ----- 主区域：居中牌桌 ----- */
+.arena-main {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.board {
+    display: grid;
+    grid-template-columns: 1fr 1.6fr 1fr;
+    grid-template-rows: auto 1fr auto;
+    gap: 8px;
+    width: 100%;
+    max-width: 720px;
+    min-height: 320px;
+    background: var(--surface);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    padding: 12px;
+}
+
+/* 四家 + 中央 */
+.zone { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.zone-inner { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+.zone-top   { grid-column: 2; grid-row: 1; flex-direction: column-reverse; }
+.zone-left  { grid-column: 1; grid-row: 2; flex-direction: row-reverse; }
+.zone-right { grid-column: 3; grid-row: 2; flex-direction: row; }
+.zone-bottom{ grid-column: 2; grid-row: 3; flex-direction: column; }
+.zone-center{ grid-column: 2; grid-row: 2; place-self: center; }
+
+.zone-center {
+    flex-direction: column;
+    padding: 12px;
+    background: rgba(0,0,0,0.4);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+}
+.zone-center .turn { font-size: 15px; font-weight: 600; }
+.zone-center .turn.my { color: var(--accent); }
+.zone-center .tiles-left { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+/* 玩家信息条：分数 + 和牌标记 */
+.player-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--muted);
+}
+.player-bar.active { color: var(--accent); font-weight: 600; }
+.player-bar .score { color: var(--text); }
+.player-bar .agari { color: var(--danger); font-weight: 600; }
+
+/* 手牌行 */
+.hand-row { display: flex; gap: 2px; flex-wrap: wrap; justify-content: center; }
+.tile-wrap {
+    width: var(--tile-w);
+    height: var(--tile-h);
+    flex-shrink: 0;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #2a2a2a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: border-color .15s, transform .15s;
+}
+.tile-wrap img { width: 100%; height: 100%; object-fit: contain; }
+.tile-wrap.clickable:hover { border-color: var(--accent); transform: translateY(-2px); }
+.tile-wrap.selected { border-color: var(--accent); transform: translateY(-4px); }
+.tile-wrap.recommended { box-shadow: 0 0 0 2px var(--accent); }
+.hand-row .tile-wrap { cursor: default; }
+.zone-bottom .hand-row .tile-wrap { cursor: pointer; }
+
+/* 舍牌行：小一点，多列 */
+.river-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    max-width: 100%;
+    justify-content: center;
+}
+.river-row .tile-wrap {
+    width: 28px;
+    height: 38px;
+    cursor: default;
+}
+
+/* 底部：AI 推荐（简洁横条） */
+.ai-bar {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: rgba(0,0,0,0.3);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--muted);
+}
+.ai-bar.hidden { display: none; }
+.ai-bar .label { color: var(--accent); }
+.ai-bar .tile-wrap { width: 24px; height: 32px; }
+
+/* 左/右竖排：手牌与舍牌纵向排列，牌缩小 */
+.zone-left .zone-inner,
+.zone-right .zone-inner {
+    flex-direction: column;
+    max-height: 100%;
+    overflow: hidden;
+}
+.zone-left .hand-row,
+.zone-right .hand-row {
+    flex-direction: column;
+    max-height: 140px;
+    overflow: auto;
+}
+.zone-left .tile-wrap,
+.zone-right .tile-wrap {
+    width: 28px;
+    height: 38px;
+}
+.zone-left .river-row .tile-wrap,
+.zone-right .river-row .tile-wrap {
+    width: 22px;
+    height: 30px;
+}
+.zone-left .river-row,
+.zone-right .river-row {
+    flex-direction: column;
+    max-height: 80px;
+    overflow: auto;
+}
