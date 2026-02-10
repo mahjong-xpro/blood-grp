@@ -106,7 +106,8 @@ const app = createApp({
                         break;
                     case 'start_kyoku':
                         // Reset Round State
-                        state.tehai = ev.tehai || ev.hand || [];
+                        // Fix for One Tile Hand: Use tehais array if available
+                        state.tehai = (ev.tehais ? ev.tehais[state.myPlayerId] : []) || ev.tehai || ev.hand || [];
                         state.tsumoTile = null;
                         state.discards = [[], [], [], []];
                         state.agari = [false, false, false, false];
@@ -115,7 +116,8 @@ const app = createApp({
                         // Correct Tile Count (108 - 13*4 = 56)
                         state.tilesLeft = 56;
 
-                        // Phase Stability: Only reset to playing if not in specific interactive phase
+                        // Phase Stability: only 'playing' if we don't know better.
+                        // Ideally, we wait for 'ding_que' message.
                         if (state.phase !== 'dingque') {
                             state.phase = 'playing';
                         }
@@ -129,8 +131,7 @@ const app = createApp({
                     case 'tsumo':
                         state.currentActor = ev.actor;
 
-                        // Auto-correct phase if stuck
-                        if (state.phase === 'dingque') state.phase = 'playing';
+                        // DONT reset phase here. Tsumo happens before Ding Que in many flows.
 
                         state.tilesLeft = Math.max(0, state.tilesLeft - 1);
                         if (ev.actor === state.myPlayerId && ev.pai) {
@@ -140,7 +141,7 @@ const app = createApp({
                     case 'dahai':
                         state.currentActor = (ev.actor + 1) % 4; // Speculative next
 
-                        if (state.phase === 'dingque') state.phase = 'playing';
+                        // DONT reset phase here.
 
                         if (!state.discards[ev.actor]) state.discards[ev.actor] = [];
                         state.discards[ev.actor].push(ev.pai);
