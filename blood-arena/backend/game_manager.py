@@ -13,16 +13,19 @@ except ImportError:
     logging.warning("libblood not found. AI opponents will not work.")
     arena = None
 
-class HumanEngine:
     def __init__(self, action_queue: queue.Queue, state_queue: queue.Queue, shared_state: Dict[str, Any], ai_engine=None):
         self.name = "Human"
-        # Trick libblood to use MjaiLogBatchAgent, which passes full event logs
         self.engine_type = "mjai-log" 
         self.action_queue = action_queue
         self.state_queue = state_queue
         self.shared_state = shared_state
-        self.player_id = 0 # Will be set by set_player_ids
+        self.player_id = 0 
         self.ai_engine = ai_engine
+        
+        # Shadow State for Protocol Translation
+        self.tehai = [] # List of strings: ["1m", "5z"]
+        self.last_kawa = None # Tuple: (actor_id, tile_str)
+        self.last_tsumo_tile = None # Latest tile drawn by self
 
     def set_player_ids(self, ids):
         self.player_id = ids[0]
@@ -34,16 +37,79 @@ class HumanEngine:
     def update_state(self, game_index, events_json):
         """
         Called by libblood's set_scene for real-time updates.
+        Also updates local shadow state.
         """
         try:
             events = json.loads(events_json)
+            
+            # Update Shadow State
+            for ev in events:
+                etype = ev.get("type")
+                actor = ev.get("actor")
+                
+                if etype == "start_kyoku":
+                    self.tehai = ev["tehais"][self.player_id]
+                    self.last_kawa = None
+                    self.last_tsumo_tile = None
+                    logging.info(f"Kyoku Start. Hand: {self.tehai}")
+                    
+                elif etype == "tsumo":
+                    if actor == self.player_id:
+                        pai = ev["pai"]
+                        self.tehai.append(pai)
+                        self.last_tsumo_tile = pai
+                        
+                elif etype == "dahai":
+                    pai = ev["pai"]
+                    self.last_kawa = (actor, pai)
+                    if actor == self.player_id:
+                        # Remove from hand (handle tsumogiri optimization if needed)
+                        # We just remove the first matching instance to be safe
+                        if pai in self.tehai:
+                            self.tehai.remove(pai)
+                        self.last_tsumo_tile = None # Discarded
+
+                elif etype == "pon":
+                    if actor == self.player_id:
+                        consumed = ev["consumed"] # ["1m", "1m"]
+                        for t in consumed:
+                            if t in self.tehai:
+                                self.tehai.remove(t)
+                        # Track Peng for Kakan
+                        self.peng.append(ev["pai"]) # Record the pon-ed tile
+                    self.last_kawa = None # Consumed
+
+                elif etype == "daiminkan": # Open Kan
+                    if actor == self.player_id: # Call it
+                        # Consumed 3 tiles from hand? No, Daiminkan consumes 3.
+                        # Wait, Daiminkan is Calling a Kan. 
+                        # It consumes 3 tiles from hand.
+                        consumed = ev.get("consumed", []) 
+                        for t in consumed: 
+                             if t in self.tehai:
+                                self.tehai.remove(t)
+                    self.last_kawa = None
+                
+                elif etype == "kakan": # Added Kan
+                     if actor == self.player_id:
+                        pai = ev["pai"]
+                        if pai in self.tehai:
+                            self.tehai.remove(pai)
+                        # Remove from peng
+                        if pai in self.peng:
+                            self.peng.remove(pai)
+                            
+                elif etype == "ankan": # Closed Kan
+                     if actor == self.player_id:
+                        consumed = ev["consumed"] # 4 tiles
+                        for t in consumed:
+                            if t in self.tehai:
+                                self.tehai.remove(t)
+
             msg = {
                 "type": "state_update",
                 "data": {
                     "events": events,
-                    # Analysis is expensive, usually done only on turn.
-                    # We can skip analysis here for speed, or add it if needed.
-                    # For now, let's keep it snappy.
                     "analysis": {}
                 }
             }
@@ -51,6 +117,52 @@ class HumanEngine:
             self.state_queue.put(msg)
         except Exception as e:
             logging.error(f"Error in update_state: {e}")
+
+    # ... (rest of methods) ...
+
+    def _translate_to_mjai(self, client_action, game_state):
+        # ... (previous code) ...
+        # (Inside Kan block)
+            if act_type == "kan":
+                # Daiminkan or Ankan/Kakan?
+                if self.last_kawa and self.last_kawa[0] != actor_id:
+                     # Daiminkan (Open Kan from discard)
+                     target, pai = self.last_kawa
+                     return {
+                        "type": "daiminkan",
+                        "actor": actor_id,
+                        "target": target,
+                        "pai": pai,
+                        "consumed": [pai, pai, pai] 
+                    }
+                else:
+                    # Ankan or Kakan (Self Kan)
+                    from collections import Counter
+                    counts = Counter(self.tehai)
+                    
+                    # 1. Check Kakan (Added Kan) - Priority? 
+                    # If we have a Pon of X, and we have X in hand.
+                    for p in self.peng:
+                        if counts[p] >= 1:
+                            return {
+                                "type": "kakan",
+                                "actor": actor_id,
+                                "pai": p,
+                                "consumed": [p, p, p] # consumed the pon?
+                            }
+                    
+                    # 2. Check Ankan (4 in hand)
+                    for t, c in counts.items():
+                        if c == 4:
+                             return {
+                                "type": "ankan",
+                                "actor": actor_id,
+                                "consumed": [t, t, t, t]
+                            }
+                            
+                    logging.warning("Kan requested but no candidate found.")
+                    return {"type": "none"}
+
 
     def end_kyoku(self, index):
         logging.info(f"Kyoku {index} ended")
@@ -65,6 +177,9 @@ class HumanEngine:
         self.shared_state['latest'] = msg
         self.state_queue.put(msg)
 
+    # ... (react_batch remains mostly same, just calling new _translate_to_mjai) ...
+    # Wait, need to preserve react_batch structure but allow it to use the new translate.
+
     def react_batch(self, game_states):
         """
         Called by libblood from Rust thread.
@@ -72,27 +187,19 @@ class HumanEngine:
         """
         game_state = game_states[0] 
         events_json = game_state.events_json
-        
-        # 1. Parse events for simple logging or legacy support
         events = json.loads(events_json)
         
-        # 2. Get AI Analysis (and Mask)
+        # 2. Get AI Analysis
         analysis = {}
         mask = None
         if self.ai_engine:
             try:
-                # We need to access the mask from the AI engine helper or manually encode
                 obs, mask = game_state.state.encode_obs(4, False)
                 analysis = self._get_ai_analysis(game_state, obs, mask)
             except Exception as e:
                 logging.error(f"AI Analysis failed: {e}")
 
-        # 3. Determine Legal Actions from Mask
-        # Action Space: 34
-        # 0-26: Discard
-        # 27: Pon, 28: Kan, 29: Agari, 30: Pass
-        # 31: DQ-Man, 32: DQ-Pin, 33: DQ-Sou
-        
+        # 3. Determine Legal Actions
         is_interactive = False
         
         if mask is not None:
@@ -113,43 +220,34 @@ class HumanEngine:
                 msg_actions = { "type": "allow_actions", "actions": actions_list }
                 self.state_queue.put(msg_actions)
                 
-            # Check Discard (Must affect is_interactive)
-            # If we can discard, we MUST wait for user.
+            # Check Discard
             if any(mask[0:27]):
                 is_interactive = True
                 
-        # 4. Send State Update (Events + Analysis)
+        # 4. State Update
         msg = {
             "type": "state_update",
-            "data": {
-                "events": events,
-                "analysis": analysis
-            }
+            "data": { "events": events, "analysis": analysis }
         }
         self.shared_state['latest'] = msg
         self.state_queue.put(msg)
         
         # 5. Handle Control Flow
         if is_interactive:
-            # Wait for Action
             logging.info("Waiting for human action...")
             action_data = self.action_queue.get()
             logging.info(f"Received human action: {action_data}")
             mjai_action = self._translate_to_mjai(action_data, game_state)
             return [json.dumps(mjai_action)]
         else:
-            # Auto-pass (Observer Mode)
-            # logging.info("Auto-passing (Observer)")
             return [json.dumps({"type": "none"})]
 
     def _get_ai_analysis(self, game_state, obs, mask) -> Dict[str, Any]:
         """ Generate AI analysis. """
         import torch
-        import numpy as np
         
         # Query AI
         with torch.no_grad():
-             # MortalEngine.react_batch expects list of obs/masks
              actions, q_out, masks, is_greedy = self.ai_engine.react_batch([obs], [mask], None)
              
         q_values = q_out[0]
@@ -166,7 +264,6 @@ class HumanEngine:
         for i in range(action_space):
             if valid_mask[i]:
                 tile = idx_to_tile(i)
-                # Map special actions
                 type_str = "discard"
                 if i == 27: type_str = "pon"
                 elif i == 28: type_str = "kan"
@@ -187,36 +284,22 @@ class HumanEngine:
 
         return {
             "candidates": candidates[:5],
-            "best_action": {"type": "dahai", "pai": best_tile, "idx": best_idx} # Simplified
+            "best_action": {"type": "dahai", "pai": best_tile, "idx": best_idx}
         }
 
     def _translate_to_mjai(self, client_action, game_state):
-        """ Convert simplified client action to full MJAI event. """
+        """ Convert simplified client action to full MJAI event using Shadow State. """
         atype = client_action.get("type")
         actor_id = self.player_id
         
         if atype == "ding_que":
-            # Client: {"type": "ding_que", "suit": "m"}
-            # MJAI: {"type": "ding_que", "actor": 0, "color": "m"} (Wait, proper MJAI for Blood might differ?)
-            # libblood expects {"type":"ding_que", "actor":.., "color":..} ?
-            # Let's verify libblood expected format or just guess standard.
-            # blood-arena usually uses "color" for suit? "suit" vs "color".
-            # The client sends 'suit'='m'.
-            # libblood `ding_que.rs` likely parses "color" or "suit".
-            # Let's try to infer from typical usage. "color" is safer for "m/p/s".
             suit = client_action.get("suit")
-            return {"type": "ding_que", "actor": actor_id, "color": suit} # Try color
+            if not suit: suit = "m" # Fallback
+            return {"type": "ding_que", "actor": actor_id, "color": suit} 
             
         if atype == "dahai":
-            # Client: {"type": "dahai", "pai": "1m"}
             pai = client_action.get("pai")
-            # Calculate tsumogiri
-            tsumogiri = False
-            last_tsumo = game_state.state.last_self_tsumo
-            # last_self_tsumo is Tile object. Need string comparison.
-            if last_tsumo and str(last_tsumo) == pai:
-                tsumogiri = True
-            
+            tsumogiri = (pai == self.last_tsumo_tile)
             return {
                 "type": "dahai", 
                 "actor": actor_id, 
@@ -225,81 +308,86 @@ class HumanEngine:
             }
 
         if atype == "action":
-            # Client: {"type": "action", "action": {"type": "pon"}}
             act_type = client_action["action"]["type"]
             
             if act_type == "pass":
                 return {"type": "none"}
                 
             if act_type == "hu":
-                # Check target (Tsumo or Ron)
-                # If last event was Discard (from other), it's Ron.
-                # If last event was Tsumo (from self), it's Tsumo.
-                # Use game_state.state.last_kawa_tile
-                last_kawa = game_state.state.last_kawa_tile
-                target = game_state.state.last_kawa_tile_actor() if hasattr(game_state.state, 'last_kawa_tile_actor') else (actor_id + 3) % 4 # Hacky fallback
-                
-                # Check if tsumo
-                if game_state.state.last_self_tsumo:
-                    return {"type": "hora", "actor": actor_id, "target": actor_id, "pai": str(game_state.state.last_self_tsumo)}
-                else:
-                    # Ron
-                    # Need real target.
-                    # game_state.state doesn not easily expose "who discarded last".
-                    # But we can infer from `kawa`? Or just let libblood handle "target" if omitted? 
-                    # MJAI requires target.
-                    # Let's hope `last_kawa_tile` implies the target is the turn player?
-                    # The turn player is NOT us.
-                    # We can iterate players to find who turned last?
-                    # `at_turn` might be the opponent.
-                    target = game_state.state.at_turn
-                    return {"type": "hora", "actor": actor_id, "target": target, "pai": str(last_kawa)}
+                # Tsumo or Ron?
+                if self.last_tsumo_tile: # If we just drew a tile, it's Tsumo
+                    return {
+                        "type": "hora", 
+                        "actor": actor_id, 
+                        "target": actor_id, 
+                        "pai": self.last_tsumo_tile
+                    }
+                else: # Ron
+                    target, pai = self.last_kawa if self.last_kawa else (0, "?")
+                    return {
+                        "type": "hora", 
+                        "actor": actor_id, 
+                        "target": target, 
+                        "pai": pai
+                    }
 
             if act_type == "pon":
-                # Need consumed tiles
-                # tile = last_kawa_tile
-                last_kawa = str(game_state.state.last_kawa_tile)
-                target = game_state.state.at_turn
-                # Find 2 matching tiles in hand
+                if not self.last_kawa:
+                     logging.error("Pon requested but no last_kawa!")
+                     return {"type": "none"}
+                target, pai = self.last_kawa
                 return {
                     "type": "pon",
                     "actor": actor_id,
                     "target": target,
-                    "pai": last_kawa,
-                    "consumed": [last_kawa, last_kawa] 
+                    "pai": pai,
+                    "consumed": [pai, pai] # Consumes 2 matching tiles
                 }
                 
             if act_type == "kan":
-                # Daiminkan or Ankan or Kakan?
-                # If we have last_kawa_tile, it's Daiminkan.
-                # If not, it's Ankan or Kakan.
-                last_kawa = game_state.state.last_kawa_tile
-                if last_kawa:
-                    # Daiminkan
-                    t = str(last_kawa)
-                    target = game_state.state.at_turn
-                    return {
+                # Daiminkan or Ankan/Kakan?
+                if self.last_kawa and self.last_kawa[0] != actor_id:
+                     # Daiminkan (Open Kan from discard)
+                     target, pai = self.last_kawa
+                     return {
                         "type": "daiminkan",
                         "actor": actor_id,
                         "target": target,
-                        "pai": t,
-                        "consumed": [t, t, t]
+                        "pai": pai,
+                        "consumed": [pai, pai, pai] 
                     }
                 else:
-                    # Ankan or Kakan
-                    # Complex logic to pick which tile to Kan if multiple options
-                    # For MVP, pick the first valid one?
-                    # Or check hand.
-                    # We need `kakan_candidates` or `ankan_candidates` from state logic.
-                    # Assuming client just says "Kan", we pick one.
-                    # game_state.state.ankan_candidates -> List[Tile]
-                    # This is PyObject, might not be iterable easily?
-                    # Let's try to assume Ankan first.
-                    pass
+                    # Ankan or Kakan (Self Kan)
+                    # We need to know WHICH tile to kan.
+                    # Frontend sending just "kan" is ambiguous if multiple options.
+                    # AI Analysis result usually has specific "kan" action index?
+                    # Or we just find the first valid quad/triplet in hand.
+                    
+                    # Heuristic: Check for 4 same tiles (Ankan) or Triplet+Pon (Kakan)
+                    # For MVP: Look for 4 copies in tehai.
+                    from collections import Counter
+                    counts = Counter(self.tehai)
+                    
+                    # Check Ankan (4 in hand)
+                    for t, c in counts.items():
+                        if c == 4:
+                             return {
+                                "type": "ankan",
+                                "actor": actor_id,
+                                "consumed": [t, t, t, t]
+                            }
+                            
+                    # Check Kakan (1 in hand + 3 in Pon)
+                    # We don't track 'peng' in shadow state yet, but we should.
+                    # Fallback/TODO: If strict checking needed, add 'peng' list.
+                    # For now, if we found nothing, maybe return None?
+                    logging.warning("Kan requested but no obvious candidate found in hand.")
+                    return {"type": "none"}
 
-        # Fallback
         logging.warning(f"Unhandled client action: {client_action}")
-        return {} # Should error
+        return {"type": "none"} # Safety fallback
+
+
 
 class GameManager:
     def __init__(self):
