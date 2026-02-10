@@ -364,9 +364,9 @@ const app = createApp({
             tileSrc, player, hand, discards, isRecommended, actionLabel, dingqueLabel,
             getFuuro, canDiscardTile, handTiles,
             getHandTileCount(p) {
-                const meldCount = state.fuuro[p] ? state.fuuro[p].length : 0;
-                let count = 13 - (meldCount * 3);
-                // If it's AI's turn, they have one extra tile (drawn)
+                const fuuro = state.fuuro[p] || [];
+                const meldTiles = fuuro.reduce((sum, m) => sum + (m.tiles ? m.tiles.length : 3), 0);
+                let count = 13 - meldTiles;
                 if (state.currentActor === p && state.gaming && !state.gameEnded) {
                     count += 1;
                 }

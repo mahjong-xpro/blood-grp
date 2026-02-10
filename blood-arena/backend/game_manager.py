@@ -232,8 +232,12 @@ class HumanEngine:
             if is_valid:
                 logging.info(f"Received valid action: {action_data}")
                 mjai_action = self._translate_to_mjai(action_data, player_state)
-                # Defensive check: if mjai translation fails (returns None/Error)?
-                # Current implementation returns dict.
+                # Drain leftover actions so next turn does not consume a stale click
+                try:
+                    while True:
+                        self.action_queue.get_nowait()
+                except queue.Empty:
+                    pass
                 return [json.dumps(mjai_action)]
             
             # Invalid Fallback
@@ -281,10 +285,14 @@ class HumanEngine:
         
         best_idx = int(actions[0])
         best_tile = idx_to_tile(best_idx)
+        if best_idx >= 31:
+            best_action = {"type": "ding_que", "pai": None, "idx": best_idx}
+        else:
+            best_action = {"type": "dahai", "pai": best_tile, "idx": best_idx}
 
         return {
             "candidates": candidates[:5],
-            "best_action": {"type": "dahai", "pai": best_tile, "idx": best_idx}
+            "best_action": best_action
         }
 
     def _translate_to_mjai(self, client_action, game_state):
