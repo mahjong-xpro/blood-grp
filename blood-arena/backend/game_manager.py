@@ -71,36 +71,32 @@ class HumanEngine:
         # 0-26: Discard
         # 27: Pon, 28: Kan, 29: Agari, 30: Pass
         # 31: DQ-Man, 32: DQ-Pin, 33: DQ-Sou
-        legal_actions = []
-        is_ding_que_phase = False
+        
+        is_interactive = False
         
         if mask is not None:
             # Check Ding Que
             if mask[31] or mask[32] or mask[33]:
-                is_ding_que_phase = True
-                # Trigger frontend Ding Que UI
-                self.shared_state['latest'] = {"type": "ding_que"} # Optimization
+                is_interactive = True
+                self.shared_state['latest'] = {"type": "ding_que"} 
                 self.state_queue.put({"type": "ding_que"})
             
-            # Check Actions (Pon/Kan/Hu/Pass)
-            # Only trigger allow_actions if it's NOT just Discard/DingQue
-            # Usually if Pon/Kan/Hu is possible, Pass is also possible (30)
-            if mask[27] or mask[28] or mask[29]: # Pon, Kan, Agari
+            # Check Actions (Pon/Kan/Hu)
+            if mask[27] or mask[28] or mask[29]: 
+                is_interactive = True
                 actions_list = []
                 if mask[27]: actions_list.append({"type": "pon"})
-                if mask[28]: actions_list.append({"type": "kan"}) # Logic to distinguish Kan types later
+                if mask[28]: actions_list.append({"type": "kan"}) 
                 if mask[29]: actions_list.append({"type": "hu"})
                 
-                # If we have special actions, Pass is implied (unless forced agari?)
-                # Mask[30] is pass.
-                
-                # Send explicit allow_actions signal
-                msg_actions = {
-                    "type": "allow_actions",
-                    "actions": actions_list
-                }
+                msg_actions = { "type": "allow_actions", "actions": actions_list }
                 self.state_queue.put(msg_actions)
-
+                
+            # Check Discard (Must affect is_interactive)
+            # If we can discard, we MUST wait for user.
+            if any(mask[0:27]):
+                is_interactive = True
+                
         # 4. Send State Update (Events + Analysis)
         msg = {
             "type": "state_update",
@@ -112,15 +108,18 @@ class HumanEngine:
         self.shared_state['latest'] = msg
         self.state_queue.put(msg)
         
-        # 5. Wait for Action
-        logging.info("Waiting for human action...")
-        action_data = self.action_queue.get()
-        logging.info(f"Received human action: {action_data}")
-        
-        # 6. Protocol Translation (Frontend JSON -> MJAI JSON)
-        mjai_action = self._translate_to_mjai(action_data, game_state)
-        
-        return [json.dumps(mjai_action)]
+        # 5. Handle Control Flow
+        if is_interactive:
+            # Wait for Action
+            logging.info("Waiting for human action...")
+            action_data = self.action_queue.get()
+            logging.info(f"Received human action: {action_data}")
+            mjai_action = self._translate_to_mjai(action_data, game_state)
+            return [json.dumps(mjai_action)]
+        else:
+            # Auto-pass (Observer Mode)
+            # logging.info("Auto-passing (Observer)")
+            return [json.dumps({"type": "none"})]
 
     def _get_ai_analysis(self, game_state, obs, mask) -> Dict[str, Any]:
         """ Generate AI analysis. """
