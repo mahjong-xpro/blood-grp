@@ -199,9 +199,21 @@ class HumanEngine:
         # 2. Get AI Analysis
         analysis = {}
         mask = None
+        # 2. Get State & Mask
+        game_state = game_states[self.player_id] # Use game_states from input
+        obs, mask = game_state.encode_obs(4, False)
+        
+        # DEBUG: Check consistency
+        cans = game_state.last_cans
+        dq_mask = mask[31] if mask is not None and len(mask) > 31 else False
+        logging.info(f"[DEBUG] State Check: can_ding_que={cans.can_ding_que} vs mask[31]={dq_mask}. mask_len={len(mask) if mask is not None else 0}")
+        
+        # 2.5 Decode Events for Frontend (Re-implementation of MJAI translation)
+        # The original `events = json.loads(events_json)` is sufficient for now.
+        # The comment "logic continues" implies the AI analysis part should still be there.
         if self.ai_engine:
             try:
-                obs, mask = game_state.state.encode_obs(4, False)
+                # obs, mask are already obtained above
                 analysis = self._get_ai_analysis(game_state, obs, mask)
             except Exception as e:
                 logging.error(f"AI Analysis failed: {e}")
