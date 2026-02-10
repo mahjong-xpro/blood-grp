@@ -257,8 +257,10 @@ class HumanEngine:
                 
                 if atype == "ding_que":
                     valid = mask[31] or mask[32] or mask[33]
+                    logging.info(f"[DEBUG] Validating DingQue: mask[31]={mask[31]}, mask[32]={mask[32]}, mask[33]={mask[33]} => valid={valid}")
                 elif atype == "dahai":
                     valid = any(mask[0:27])
+                    logging.info(f"[DEBUG] Validating Dahai: valid={valid}")
                 elif atype == "action": # from frontend action bar
                     sub_act = action_data.get("action", {})
                     act_type = sub_act.get("type")
