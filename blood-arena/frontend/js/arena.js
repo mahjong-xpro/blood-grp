@@ -244,6 +244,7 @@ const app = createApp({
                         break;
 
                     case 'agari':
+                    case 'hora':  // MJAI/libblood 用 hora 表示和了（自摸、荣和）
                         state.agari[ev.actor] = true;
                         break;
                 }
