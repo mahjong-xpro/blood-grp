@@ -248,11 +248,34 @@ class HumanEngine:
         # 5. Handle Control Flow
         if is_interactive:
             logging.info("Waiting for human action...")
-            action_data = self.action_queue.get()
-            logging.info(f"Received human action: {action_data}")
-            mjai_action = self._translate_to_mjai(action_data, game_state)
-            logging.info(f"[DEBUG] react_batch submitting: {mjai_action}")
-            return [json.dumps(mjai_action)]
+            while True:
+                action_data = self.action_queue.get()
+                logging.info(f"Received human action: {action_data}")
+                
+                atype = action_data.get("type")
+                valid = False
+                
+                if atype == "ding_que":
+                    valid = mask[31] or mask[32] or mask[33]
+                elif atype == "dahai":
+                    valid = any(mask[0:27])
+                elif atype == "action": # from frontend action bar
+                    sub_act = action_data.get("action", {})
+                    act_type = sub_act.get("type")
+                    if act_type == "pon": valid = mask[27]
+                    elif act_type == "kan": valid = mask[28]
+                    elif act_type == "hu": valid = mask[29]
+                    elif act_type == "pass": valid = True # Pass usually valid if interactive
+                elif atype == "pass":
+                    valid = True
+
+                if not valid:
+                    logging.warning(f"Ignored invalid action {atype} for current state mask. mask[31]={mask[31] if len(mask)>31 else '?'}")
+                    continue
+                
+                mjai_action = self._translate_to_mjai(action_data, game_state)
+                logging.info(f"[DEBUG] react_batch submitting: {mjai_action}")
+                return [json.dumps(mjai_action)]
         else:
             return [json.dumps({"type": "none"})]
 
