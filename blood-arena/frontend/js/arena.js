@@ -177,11 +177,44 @@ const app = createApp({
                         break;
                     case 'pon':
                     case 'kan':
-                    case 'chi': // Bloody Battle doesn't usually have Chi but for completeness
+                    case 'ankan':
+                    case 'daiminkan':
+                    case 'kakan':
                         state.currentActor = ev.actor;
                         state.validActions = [];
-                        // Remove from hand implementation (simplified, ideally we remove tiles)
-                        // This visualization is imperfect for opened sets but acceptable for "My Hand" view
+
+                        if (ev.actor === state.myPlayerId) {
+                            // 1. Determine tiles to remove
+                            let toRemove = [];
+                            if (ev.type === 'kakan') {
+                                // Added Kan: removes the specific added tile (pai)
+                                if (ev.pai) toRemove.push(ev.pai);
+                            } else {
+                                // Pon/Daiminkan/Ankan: remove 'consumed' tiles
+                                if (ev.consumed) toRemove = [...ev.consumed];
+                            }
+
+                            // 2. Remove them from hand/tsumo
+                            for (const t of toRemove) {
+                                if (state.tsumoTile === t) {
+                                    state.tsumoTile = null;
+                                } else {
+                                    const idx = state.tehai.indexOf(t);
+                                    if (idx > -1) state.tehai.splice(idx, 1);
+                                }
+                            }
+
+                            // 3. Consolidate Tsumo (if we Ankan'd using hand tiles, Tsumo might still be there)
+                            // Actually, if we Pon/Daiminkan, we shouldn't have a Tsumo tile usually (turn change).
+                            // But for Ankan/Kakan, we do.
+                            if (state.tsumoTile) {
+                                state.tehai.push(state.tsumoTile);
+                                state.tsumoTile = null;
+                            }
+
+                            // 4. Sort
+                            sortTiles(state.tehai);
+                        }
                         break;
                     case 'agari':
                         state.agari[ev.actor] = true;
