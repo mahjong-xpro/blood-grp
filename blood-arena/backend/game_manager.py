@@ -125,52 +125,6 @@ class HumanEngine:
         except Exception as e:
             logging.error(f"Error in update_state: {e}")
 
-    # ... (rest of methods) ...
-
-    def _translate_to_mjai(self, client_action, game_state):
-        # ... (previous code) ...
-        # (Inside Kan block)
-            if act_type == "kan":
-                # Daiminkan or Ankan/Kakan?
-                if self.last_kawa and self.last_kawa[0] != actor_id:
-                     # Daiminkan (Open Kan from discard)
-                     target, pai = self.last_kawa
-                     return {
-                        "type": "daiminkan",
-                        "actor": actor_id,
-                        "target": target,
-                        "pai": pai,
-                        "consumed": [pai, pai, pai] 
-                    }
-                else:
-                    # Ankan or Kakan (Self Kan)
-                    from collections import Counter
-                    counts = Counter(self.tehai)
-                    
-                    # 1. Check Kakan (Added Kan) - Priority? 
-                    # If we have a Pon of X, and we have X in hand.
-                    for p in self.peng:
-                        if counts[p] >= 1:
-                            return {
-                                "type": "kakan",
-                                "actor": actor_id,
-                                "pai": p,
-                                "consumed": [p, p, p] # consumed the pon?
-                            }
-                    
-                    # 2. Check Ankan (4 in hand)
-                    for t, c in counts.items():
-                        if c == 4:
-                             return {
-                                "type": "ankan",
-                                "actor": actor_id,
-                                "consumed": [t, t, t, t]
-                            }
-                            
-                    logging.warning("Kan requested but no candidate found.")
-                    return {"type": "none"}
-
-
     def end_kyoku(self, index):
         logging.info(f"Kyoku {index} ended")
 
@@ -406,30 +360,26 @@ class HumanEngine:
                     }
                 else:
                     # Ankan or Kakan (Self Kan)
-                    # We need to know WHICH tile to kan.
-                    # Frontend sending just "kan" is ambiguous if multiple options.
-                    # AI Analysis result usually has specific "kan" action index?
-                    # Or we just find the first valid quad/triplet in hand.
-                    
-                    # Heuristic: Check for 4 same tiles (Ankan) or Triplet+Pon (Kakan)
-                    # For MVP: Look for 4 copies in tehai.
                     from collections import Counter
                     counts = Counter(self.tehai)
-                    
-                    # Check Ankan (4 in hand)
+                    # 1. Kakan (Added Kan): we have a Pon of X and one more X in hand
+                    for p in self.peng:
+                        if counts.get(p, 0) >= 1:
+                            return {
+                                "type": "kakan",
+                                "actor": actor_id,
+                                "pai": p,
+                                "consumed": [p, p, p],  # the three from the pon (MJAI required)
+                            }
+                    # 2. Ankan (4 in hand)
                     for t, c in counts.items():
                         if c == 4:
-                             return {
+                            return {
                                 "type": "ankan",
                                 "actor": actor_id,
                                 "consumed": [t, t, t, t]
                             }
-                            
-                    # Check Kakan (1 in hand + 3 in Pon)
-                    # We don't track 'peng' in shadow state yet, but we should.
-                    # Fallback/TODO: If strict checking needed, add 'peng' list.
-                    # For now, if we found nothing, maybe return None?
-                    logging.warning("Kan requested but no obvious candidate found in hand.")
+                    logging.warning("Kan requested but no candidate found (no kakan from peng, no ankan).")
                     return {"type": "none"}
 
         logging.warning(f"Unhandled client action: {client_action}")
@@ -466,38 +416,6 @@ class GameManager:
                 await connection.send_json(message)
             except Exception as e:
                 logging.error(f"Error broadcasting to client: {e}")
-
-    def start_game_thread(self, ai_model_path: str):
-        if self.running:
-            return
-        # Clear stale actions
-        try:
-            while True:
-                self.action_queue.get_nowait()
-        except queue.Empty:
-            pass
-        self.running = True
-        self.thread = threading.Thread(target=self._run_libblood, args=(ai_model_path,))
-        self.thread.start()
-        logging.info("Game thread started")
-
-    def _run_libblood(self, ai_model_path: str):
-        # ... (setup code remains same) ...
-        # But we need an async loop to call broadcast?
-        # No, _run_libblood is in a THREAD.
-        # We cannot call async methods describing websocket directly.
-        # We need a thread-safe way to trigger broadcast in the main loop.
-        # OPTION: Use `asyncio.run_coroutine_threadsafe` if we have reference to loop.
-        # OR: Keep `state_queue` but make `main.py` handle broadcasting.
-        pass
-
-# ...
-# Actually, let's keep it simple.
-# Restore `state_queue` but make `main.py` consume it ONCE and broadcast to ALL.
-# The previous design had the CONSUMER inside the connection handler.
-# That means each connection consumed one item. THAT WAS THE BUG.
-# Only ONE connection (the first one) got the message.
-# WE NEED A SINGLE BACKGROUND TASK IN MAIN.PY TO CONSUME QUEUE AND BROADCAST.
 
     def start_game_thread(self, ai_model_path: str):
         if self.running:

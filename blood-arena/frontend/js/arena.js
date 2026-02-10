@@ -79,6 +79,7 @@ const app = createApp({
 
         function handleActionRequest(actions) {
             console.log("Action Request:", actions);
+            state.gaming = true; // we are in a game when backend asks for an action
             state.validActions = [];
             state.canDiscard = false;
 
@@ -132,10 +133,13 @@ const app = createApp({
                     case 'start_game':
                         state.gaming = true;
                         state.gameEnded = false;
-                        state.scores = [25000, 25000, 25000, 25000];
+                        state.scores = [60000, 60000, 60000, 60000];
                         state.fuuro = [[], [], [], []];
                         break;
                     case 'start_kyoku':
+                        state.gaming = true; // log has no start_game; set gaming when kyoku starts
+                        state.gameEnded = false;
+                        state.scores = (ev.scores && ev.scores.length === 4) ? [...ev.scores] : [60000, 60000, 60000, 60000];
                         state.tehai = (ev.tehais ? ev.tehais[state.myPlayerId] : []) || [];
                         sortTiles(state.tehai);
                         state.tsumoTile = null;
