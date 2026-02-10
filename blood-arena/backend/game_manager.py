@@ -295,8 +295,9 @@ class HumanEngine:
         
         if atype == "ding_que":
             suit = client_action.get("suit")
-            if not suit: suit = "m" # Fallback
-            return {"type": "ding_que", "actor": actor_id, "color": suit} 
+            suit_map = {"m": "man", "p": "pin", "s": "sou"}
+            suit_full = suit_map.get(suit, "man")
+            return {"type": "ding_que", "actor": actor_id, "suit": suit_full} 
             
         if atype == "dahai":
             pai = client_action.get("pai")
