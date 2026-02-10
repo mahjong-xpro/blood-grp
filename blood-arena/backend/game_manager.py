@@ -241,6 +241,7 @@ class HumanEngine:
             action_data = self.action_queue.get()
             logging.info(f"Received human action: {action_data}")
             mjai_action = self._translate_to_mjai(action_data, game_state)
+            logging.info(f"[DEBUG] react_batch submitting: {mjai_action}")
             return [json.dumps(mjai_action)]
         else:
             return [json.dumps({"type": "none"})]
@@ -295,11 +296,11 @@ class HumanEngine:
         atype = client_action.get("type")
         actor_id = self.player_id
         
-        if atype == "ding_que":
-            suit = client_action.get("suit")
             suit_map = {"m": "man", "p": "pin", "s": "sou"}
             suit_full = suit_map.get(suit, "man")
-            return {"type": "ding_que", "actor": actor_id, "suit": suit_full} 
+            ret = {"type": "ding_que", "actor": actor_id, "suit": suit_full}
+            logging.info(f"[DEBUG] Sending DingQue to libblood: {ret}")
+            return ret 
             
         if atype == "dahai":
             pai = client_action.get("pai")
