@@ -37,6 +37,9 @@ const app = createApp({
             // Interactive
             validActions: [],
             canDiscard: false,
+
+            // AI 手牌是否显示（背牌张数）
+            showAiHands: true,
         });
 
         const analysis = reactive({ best_action: null });

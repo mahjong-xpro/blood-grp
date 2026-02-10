@@ -20,6 +20,10 @@
                 </div>
             </div>
             <div class="header-right">
+                <label class="toggle-ai-hands">
+                    <input type="checkbox" v-model="state.showAiHands">
+                    <span>显示AI手牌</span>
+                </label>
                 <button class="btn btn-primary" @click="startGame" :disabled="state.gaming">
                     {{ state.gameEnded ? '再来一局' : '开始对局' }}
                 </button>
@@ -70,7 +74,7 @@
                         </div>
                     </div>
                     <!-- Hand -->
-                    <div class="hand-area">
+                    <div class="hand-area" v-show="state.showAiHands">
                         <div class="tile-group hand">
                             <div class="tile back" v-for="n in getHandTileCount(2)" :key="n"></div>
                         </div>
@@ -112,7 +116,7 @@
                         </div>
                     </div>
                     <!-- Hand -->
-                    <div class="hand-area">
+                    <div class="hand-area" v-show="state.showAiHands">
                         <div class="tile-group hand">
                             <div class="tile back" v-for="n in getHandTileCount(3)" :key="n"></div>
                         </div>
@@ -153,7 +157,7 @@
                         </div>
                     </div>
                     <!-- Hand -->
-                    <div class="hand-area">
+                    <div class="hand-area" v-show="state.showAiHands">
                         <div class="tile-group hand">
                             <div class="tile back" v-for="n in getHandTileCount(1)" :key="n"></div>
                         </div>

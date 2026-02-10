@@ -118,6 +118,25 @@ body {
     cursor: not-allowed;
 }
 
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.toggle-ai-hands {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #aaa;
+    cursor: pointer;
+    user-select: none;
+}
+.toggle-ai-hands input {
+    cursor: pointer;
+}
+
 /* Game Board (Grid Layout) */
 .game-board {
     flex: 1;

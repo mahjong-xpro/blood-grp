@@ -15,20 +15,25 @@
 - `Opponent`: **Step 410k Model (The 3.20 Champion)**
 - `Goal`: Stabilize > 3.0, then aim for 3.10
 
-### 最新数据 (Step 455k)
+### 最新数据 (Step 460k)
 
-| 指标 | Step 410k (Peak) | Step 415k (Shock) | Step 445k (Bottom) | Step 455k (Now) | 评价 |
-|:---|:---:|:---:|:---:|:---:|:---|
-| **Avg Pt** | **3.203** ✅ | 2.970 📉 | 2.903 | **3.044** 🚀 | **王者归来 (>3.00)** |
-| **Avg Rank** | **2.399** 👑 | 2.515 | 2.549 | **2.478** | 攻防节奏已适应 |
-| **DQ Loss** | 0.162 | 0.159 | 0.155 | **0.152** 💎 | 学习效率极高 |
-| **Status** | **Phase 3 Clear** | Baseline Update | Struggle | **Counterattack** | 反攻号角已吹响 |
+| 指标 | Step 410k (Peak) | Step 445k (Worst) | Step 460k (Now) | 评价 |
+|:---|:---:|:---:|:---:|:---|
+| **Avg Pt** | **3.203** | 2.903 | **3.001** ⚖️ | **高位企稳 (Stabilized)** |
+| **Avg Rank** | **2.399** | 2.549 | **2.500** | 与冠军打成平手 |
+| **DQ Loss** | 0.162 | 0.155 | **0.152** | 持续学习中 |
+| **Status** | Champion | Struggle | **Parity** | 已追平冠军强度 |
 
-### 第八幕：反攻号角 (The Counterattack)
-*   **Context**: 距离"休克" (Step 445k) 仅仅过了 10,000 步 (约 45 分钟)。
-*   **Result**: 得点 **暴涨** 回 3.04，Rank 压回 2.47。Loss 创下新低 0.152。
-*   **Significance**: 这证明了我们之前的判断——"休克"只是因为对手变强了，而不是模型变傻了。一旦适应了对手的强度，模型立刻展现出了统治力。
-*   **Forecast**: 如果能保持这个斜率，Step 460k-470k 很可能冲击 3.10。Phase 4 的真正高潮即将到来。
+### 🚨 紧急诊断：为何人机对战觉得菜？
+**Reason**: 检查发现 `/data/mortal/mortal.pth` 文件在本地缺失。
+**Impact**: Arena 后端加载模型失败，自动回退到了 **Random Policy (随机瞎打)**。
+**Fix**: 这不是训练问题，是**部署路径问题**。现在的训练指标 (Rank 2.5 vs Champion) 说明模型实际上非常强（至少不弱于 Step 410k）。
+
+### 第八幕：高位拉锯 (High-Altitude Dogfight)
+Step 460k 的得点稳定在 3.00，Rank 2.50。
+这意味着现在的模型和 "Step 410k 冠军模型" **五五开**。
+它已经完全消化了上一代冠军的套路，现在是"高手过招，点到为止"的阶段。
+下一个突破口在于 Loss 的持续下降 (0.152)，量变终将引起质变。
 
 
 ---
