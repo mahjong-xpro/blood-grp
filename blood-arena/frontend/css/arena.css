@@ -221,6 +221,7 @@ body {
 .zone-left .tile-group,
 .zone-right .tile-group {
     flex-direction: column;
+    gap: 0;
 }
 
 .zone-left .hand .tile,
@@ -239,13 +240,13 @@ body {
 
 .zone-left .river .tile {
     transform: rotate(90deg);
-    margin: 2px 0;
+    margin: -5px 0;
     /* Vertical spacing */
 }
 
 .zone-right .river .tile {
     transform: rotate(-90deg);
-    margin: 2px 0;
+    margin: -5px 0;
 }
 
 .zone-top .hand .tile {
