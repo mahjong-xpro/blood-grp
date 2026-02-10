@@ -98,13 +98,23 @@ impl BatchAgent for MjaiLogBatchAgent {
     ) -> Result<()> {
         self.evaluated = false;
 
+        let events_json = json::to_string(&log)?;
         let game_state = GameState {
             game_index: index,
             state: state.clone(),
-            events_json: json::to_string(&log)?,
+            events_json: events_json.clone(),
         };
         self.game_states.push(game_state);
         self.reactions_idxs[index] = self.game_states.len() - 1;
+
+        // Try to call update_state if available for real-time streaming
+        // We ignore errors to stay compatible with engines that don't satisfy this.
+        let _ = Python::with_gil(|py| {
+             let _ = self.engine.bind_borrowed(py).call_method1(
+                 intern!(py, "update_state"),
+                 (index, events_json),
+             );
+        });
 
         Ok(())
     }

@@ -31,6 +31,27 @@ class HumanEngine:
     def start_game(self, index):
         logging.info(f"Game {index} started")
 
+    def update_state(self, game_index, events_json):
+        """
+        Called by libblood's set_scene for real-time updates.
+        """
+        try:
+            events = json.loads(events_json)
+            msg = {
+                "type": "state_update",
+                "data": {
+                    "events": events,
+                    # Analysis is expensive, usually done only on turn.
+                    # We can skip analysis here for speed, or add it if needed.
+                    # For now, let's keep it snappy.
+                    "analysis": {}
+                }
+            }
+            self.shared_state['latest'] = msg
+            self.state_queue.put(msg)
+        except Exception as e:
+            logging.error(f"Error in update_state: {e}")
+
     def end_kyoku(self, index):
         logging.info(f"Kyoku {index} ended")
 
