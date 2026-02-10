@@ -211,16 +211,21 @@ class HumanEngine:
         """
         Refactored: Strictly logic-driven interaction.
         """
-        # 1. Get State
-        game_state = game_states[self.player_id] 
-        events = json.loads(game_state.events_json)
+        # 1. Get GameState Wrapper
+        # game_states is List[GameState] from libblood
+        # GameState has attributes: .state (PlayerState) and .events_json (str)
+        wrapper = game_states[self.player_id] 
+        events = json.loads(wrapper.events_json)
+        
+        # Get actual PlayerState object for logic query
+        player_state = wrapper.state
         
         # 2. Get AI Analysis (Optional)
         analysis = {}
         if self.ai_engine:
             try:
-                obs, mask = game_state.encode_obs(4, False)
-                analysis = self._get_ai_analysis(game_state, obs, mask)
+                obs, mask = player_state.encode_obs(4, False)
+                analysis = self._get_ai_analysis(player_state, obs, mask)
             except Exception as e:
                 logging.error(f"AI Analysis failed: {e}")
 
@@ -234,7 +239,7 @@ class HumanEngine:
 
         # 4. Determine Legal Actions (Logic Layer)
         try:
-            cans = game_state.last_cans
+            cans = player_state.last_cans
             legal_actions = self._get_legal_actions(cans)
         except Exception as e:
             logging.error(f"Failed to get ActionCandidate: {e}")
