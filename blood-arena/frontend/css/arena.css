@@ -163,47 +163,107 @@ body {
 .player-zone {
     position: relative;
     display: flex;
-    flex-direction: column;
+    /* Default centering, overridden per zone */
     justify-content: center;
     align-items: center;
 }
 
+/* Container for Hand + Fuuro */
+.hand-container {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    /* Small gap between Meld and Hand */
+    z-index: 50;
+    /* Above River */
+}
+
+/* Top: Hand Top, River Bottom (Center) */
 .zone-top {
     grid-column: 2;
     grid-row: 1;
-    flex-direction: column-reverse;
+    flex-direction: column;
+    /* Hand, River */
+    justify-content: flex-end;
+    padding-bottom: 10px;
 }
 
+/* Left: Hand Left, River Right (Center) */
 .zone-left {
     grid-column: 1;
     grid-row: 2;
-    flex-direction: row-reverse;
+    flex-direction: row;
+    /* Hand, River */
+    justify-content: flex-end;
+    padding-right: 10px;
 }
 
+/* Right: Hand Right, River Left (Center) */
 .zone-right {
     grid-column: 3;
     grid-row: 2;
-    flex-direction: row;
+    flex-direction: row-reverse;
+    /* Hand, River */
+    justify-content: flex-end;
+    padding-left: 10px;
 }
 
+/* Bottom: River Top (Center), Hand Bottom */
 .zone-bottom {
     grid-column: 2;
     grid-row: 3;
-    justify-content: flex-end;
+    flex-direction: column;
+    /* River, Hand */
+    justify-content: flex-start;
+    padding-top: 10px;
 }
 
-/* Hand & River Layouts */
+/* Side Layouts for Hand Container */
+.zone-left .hand-container,
+.zone-right .hand-container {
+    flex-direction: column;
+    /* Meld Above Hand */
+}
+
+/* Info Positioning - Make Absolute to avoid affecting layout flow */
+.player-info {
+    position: absolute;
+    z-index: 100;
+}
+
+.zone-top .player-info {
+    top: 10px;
+    left: 10px;
+    flex-direction: row;
+}
+
+.zone-left .player-info {
+    top: 10px;
+    left: 10px;
+    width: 100px;
+}
+
+.zone-right .player-info {
+    top: 10px;
+    right: 10px;
+    width: 100px;
+    flex-direction: row-reverse;
+    text-align: right;
+}
+
+.zone-bottom .player-info {
+    bottom: 10px;
+    left: 10px;
+}
+
+/* Hand Area Cleanup */
 .hand-area {
-    margin: 10px;
-    perspective: 1000px;
+    margin: 0;
+    padding: 0;
 }
 
 .river-area {
     margin: 10px;
-    max-width: 360px;
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
 }
 
 .tile-group {
