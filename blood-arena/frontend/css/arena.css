@@ -346,21 +346,49 @@ body {
     height: var(--tile-h-sm);
 }
 
-/* Rotate Side Melds */
+/* Rotate Side Melds (FIX: Rotate Image inside Container) */
 .zone-left .meld .tile {
-    transform: rotate(90deg);
+    /* Container is Landscape (36x26) */
     width: var(--tile-h-sm);
-    /* Swap for layout */
     height: var(--tile-w-sm);
+    /* transform: rotate(90deg); REMOVED - Container stays horizontal */
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .zone-right .meld .tile {
-    transform: rotate(-90deg);
     width: var(--tile-h-sm);
     height: var(--tile-w-sm);
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .zone-top .meld .tile {
+    /* transform: rotate(180deg); MOVED TO IMG */
+}
+
+/* Side Meld Images */
+.zone-left .meld .tile img {
+    width: var(--tile-w-sm);
+    /* 26 */
+    height: var(--tile-h-sm);
+    /* 36 */
+    max-width: none;
+    max-height: none;
+    transform: rotate(90deg);
+}
+
+.zone-right .meld .tile img {
+    width: var(--tile-w-sm);
+    height: var(--tile-h-sm);
+    max-width: none;
+    max-height: none;
+    transform: rotate(-90deg);
+}
+
+.zone-top .meld .tile img {
     transform: rotate(180deg);
 }
 
