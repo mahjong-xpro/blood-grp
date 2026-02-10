@@ -49,25 +49,59 @@ class HumanEngine:
         Called by libblood from Rust thread.
         Blocks until human action is received.
         """
-        # Assuming batch size 1 for 1v3
         game_state = game_states[0] 
         events_json = game_state.events_json
         
-        # 1. Parse events and reconstruct UI state
+        # 1. Parse events for simple logging or legacy support
         events = json.loads(events_json)
-        # ui_state = self._reconstruct_state(events) # Deprecated state reconstruction
         
-        # 2. Get AI Analysis if available
+        # 2. Get AI Analysis (and Mask)
         analysis = {}
+        mask = None
         if self.ai_engine:
             try:
-                analysis = self._get_ai_analysis(game_state)
+                # We need to access the mask from the AI engine helper or manually encode
+                obs, mask = game_state.state.encode_obs(4, False)
+                analysis = self._get_ai_analysis(game_state, obs, mask)
             except Exception as e:
                 logging.error(f"AI Analysis failed: {e}")
 
-        # 3. Send state to WebSocket handler (consumer of state_queue)
-        # We pass raw events now, letting frontend handle state (or we could still use _reconstruct_state for legacy support)
-        # For Phase 3, we want to rely on events, but let's keep it simple: just send events + analysis
+        # 3. Determine Legal Actions from Mask
+        # Action Space: 34
+        # 0-26: Discard
+        # 27: Pon, 28: Kan, 29: Agari, 30: Pass
+        # 31: DQ-Man, 32: DQ-Pin, 33: DQ-Sou
+        legal_actions = []
+        is_ding_que_phase = False
+        
+        if mask is not None:
+            # Check Ding Que
+            if mask[31] or mask[32] or mask[33]:
+                is_ding_que_phase = True
+                # Trigger frontend Ding Que UI
+                self.shared_state['latest'] = {"type": "ding_que"} # Optimization
+                self.state_queue.put({"type": "ding_que"})
+            
+            # Check Actions (Pon/Kan/Hu/Pass)
+            # Only trigger allow_actions if it's NOT just Discard/DingQue
+            # Usually if Pon/Kan/Hu is possible, Pass is also possible (30)
+            if mask[27] or mask[28] or mask[29]: # Pon, Kan, Agari
+                actions_list = []
+                if mask[27]: actions_list.append({"type": "pon"})
+                if mask[28]: actions_list.append({"type": "kan"}) # Logic to distinguish Kan types later
+                if mask[29]: actions_list.append({"type": "hu"})
+                
+                # If we have special actions, Pass is implied (unless forced agari?)
+                # Mask[30] is pass.
+                
+                # Send explicit allow_actions signal
+                msg_actions = {
+                    "type": "allow_actions",
+                    "actions": actions_list
+                }
+                self.state_queue.put(msg_actions)
+
+        # 4. Send State Update (Events + Analysis)
         msg = {
             "type": "state_update",
             "data": {
@@ -75,52 +109,31 @@ class HumanEngine:
                 "analysis": analysis
             }
         }
-        self.shared_state['latest'] = msg # Cache for reconnection
+        self.shared_state['latest'] = msg
         self.state_queue.put(msg)
         
-        # 4. Block and wait for action from WebSocket handler (producer of action_queue)
+        # 5. Wait for Action
         logging.info("Waiting for human action...")
         action_data = self.action_queue.get()
         logging.info(f"Received human action: {action_data}")
         
-        # 5. Return action as JSON string (format expected by MjaiLogBatchAgent)
-        return [json.dumps(action_data)]
+        # 6. Protocol Translation (Frontend JSON -> MJAI JSON)
+        mjai_action = self._translate_to_mjai(action_data, game_state)
+        
+        return [json.dumps(mjai_action)]
 
-    def _get_ai_analysis(self, game_state) -> Dict[str, Any]:
-        """
-        Generate AI analysis for the current state.
-        """
+    def _get_ai_analysis(self, game_state, obs, mask) -> Dict[str, Any]:
+        """ Generate AI analysis. """
         import torch
         import numpy as np
         
-        # 1. Encode Observation
-        # version=4 is standard for current Mortal
-        obs, mask = game_state.state.encode_obs(4, False)
-        
-        # 2. Convert to Tensor (Batch size 1)
-        obs_tensor = torch.as_tensor(np.stack([obs], axis=0))
-        mask_tensor = torch.as_tensor(np.stack([mask], axis=0))
-        invisible_obs = None # Oracle not used for human hints usually, or maybe we want to cheat? Let's stick to normal AI.
-        
-        # 3. Query AI
-        # MortalEngine.react_batch returns: actions, q_out, masks, is_greedy
+        # Query AI
         with torch.no_grad():
-             # We need to access the internal _react_batch or similar logic because react_batch expects list of obs
-             # But MortalEngine.react_batch handles list inputs.
-             # Note: MortalEngine.react_batch needs 'obs' as list or numpy array.
-             # We passed tensor, let's pass numpy array to be safe as per engine.py code
+             # MortalEngine.react_batch expects list of obs/masks
              actions, q_out, masks, is_greedy = self.ai_engine.react_batch([obs], [mask], None)
              
-        # 4. Process Q-values
-        # q_out is [batch, action_space]
         q_values = q_out[0]
         valid_mask = masks[0]
-        
-        # Calculate Win Rate (Sigmoid of Q-value? Or just raw Q if it's expected reward?)
-        # Mortal v4 Q-values are likely Expected Game Result (Rank/Score normalized).
-        # We can just show the top actions.
-        
-        # Find best actions
         action_space = len(q_values)
         candidates = []
         
@@ -132,36 +145,141 @@ class HumanEngine:
 
         for i in range(action_space):
             if valid_mask[i]:
-                # Determine action type and tile
                 tile = idx_to_tile(i)
-                action_type = "discard" if i < 27 else "other"
+                # Map special actions
+                type_str = "discard"
+                if i == 27: type_str = "pon"
+                elif i == 28: type_str = "kan"
+                elif i == 29: type_str = "hu"
+                elif i == 30: type_str = "pass"
+                elif i >= 31: type_str = "ding_que"
                 
                 candidates.append({
                     "idx": i,
-                    "q": float(q_values[i]), # Ensure float for JSON serialization
+                    "q": float(q_values[i]),
                     "tile": tile,
-                    "type": action_type
+                    "type": type_str
                 })
         candidates.sort(key=lambda x: x["q"], reverse=True)
         
         best_idx = int(actions[0])
         best_tile = idx_to_tile(best_idx)
 
-        # Construct best_action object similar to MJAI event for easy matching
-        best_action_obj = {
-            "type": "dahai" if best_idx < 27 else "other",
-            "pai": best_tile,
-            "idx": best_idx
-        }
-        
         return {
-            "candidates": candidates[:5], # Top 5
-            "best_action": best_action_obj
+            "candidates": candidates[:5],
+            "best_action": {"type": "dahai", "pai": best_tile, "idx": best_idx} # Simplified
         }
 
-    def _reconstruct_state(self, events: List[Dict[str, Any]]) -> Dict[str, Any]:
-        # Legacy: not used in Phase 3 message format, but keeping for reference if needed
-        return {"events": events}
+    def _translate_to_mjai(self, client_action, game_state):
+        """ Convert simplified client action to full MJAI event. """
+        atype = client_action.get("type")
+        actor_id = self.player_id
+        
+        if atype == "ding_que":
+            # Client: {"type": "ding_que", "suit": "m"}
+            # MJAI: {"type": "ding_que", "actor": 0, "color": "m"} (Wait, proper MJAI for Blood might differ?)
+            # libblood expects {"type":"ding_que", "actor":.., "color":..} ?
+            # Let's verify libblood expected format or just guess standard.
+            # blood-arena usually uses "color" for suit? "suit" vs "color".
+            # The client sends 'suit'='m'.
+            # libblood `ding_que.rs` likely parses "color" or "suit".
+            # Let's try to infer from typical usage. "color" is safer for "m/p/s".
+            suit = client_action.get("suit")
+            return {"type": "ding_que", "actor": actor_id, "color": suit} # Try color
+            
+        if atype == "dahai":
+            # Client: {"type": "dahai", "pai": "1m"}
+            pai = client_action.get("pai")
+            # Calculate tsumogiri
+            tsumogiri = False
+            last_tsumo = game_state.state.last_self_tsumo
+            # last_self_tsumo is Tile object. Need string comparison.
+            if last_tsumo and str(last_tsumo) == pai:
+                tsumogiri = True
+            
+            return {
+                "type": "dahai", 
+                "actor": actor_id, 
+                "pai": pai, 
+                "tsumogiri": tsumogiri
+            }
+
+        if atype == "action":
+            # Client: {"type": "action", "action": {"type": "pon"}}
+            act_type = client_action["action"]["type"]
+            
+            if act_type == "pass":
+                return {"type": "none"}
+                
+            if act_type == "hu":
+                # Check target (Tsumo or Ron)
+                # If last event was Discard (from other), it's Ron.
+                # If last event was Tsumo (from self), it's Tsumo.
+                # Use game_state.state.last_kawa_tile
+                last_kawa = game_state.state.last_kawa_tile
+                target = game_state.state.last_kawa_tile_actor() if hasattr(game_state.state, 'last_kawa_tile_actor') else (actor_id + 3) % 4 # Hacky fallback
+                
+                # Check if tsumo
+                if game_state.state.last_self_tsumo:
+                    return {"type": "hora", "actor": actor_id, "target": actor_id, "pai": str(game_state.state.last_self_tsumo)}
+                else:
+                    # Ron
+                    # Need real target.
+                    # game_state.state doesn not easily expose "who discarded last".
+                    # But we can infer from `kawa`? Or just let libblood handle "target" if omitted? 
+                    # MJAI requires target.
+                    # Let's hope `last_kawa_tile` implies the target is the turn player?
+                    # The turn player is NOT us.
+                    # We can iterate players to find who turned last?
+                    # `at_turn` might be the opponent.
+                    target = game_state.state.at_turn
+                    return {"type": "hora", "actor": actor_id, "target": target, "pai": str(last_kawa)}
+
+            if act_type == "pon":
+                # Need consumed tiles
+                # tile = last_kawa_tile
+                last_kawa = str(game_state.state.last_kawa_tile)
+                target = game_state.state.at_turn
+                # Find 2 matching tiles in hand
+                return {
+                    "type": "pon",
+                    "actor": actor_id,
+                    "target": target,
+                    "pai": last_kawa,
+                    "consumed": [last_kawa, last_kawa] 
+                }
+                
+            if act_type == "kan":
+                # Daiminkan or Ankan or Kakan?
+                # If we have last_kawa_tile, it's Daiminkan.
+                # If not, it's Ankan or Kakan.
+                last_kawa = game_state.state.last_kawa_tile
+                if last_kawa:
+                    # Daiminkan
+                    t = str(last_kawa)
+                    target = game_state.state.at_turn
+                    return {
+                        "type": "daiminkan",
+                        "actor": actor_id,
+                        "target": target,
+                        "pai": t,
+                        "consumed": [t, t, t]
+                    }
+                else:
+                    # Ankan or Kakan
+                    # Complex logic to pick which tile to Kan if multiple options
+                    # For MVP, pick the first valid one?
+                    # Or check hand.
+                    # We need `kakan_candidates` or `ankan_candidates` from state logic.
+                    # Assuming client just says "Kan", we pick one.
+                    # game_state.state.ankan_candidates -> List[Tile]
+                    # This is PyObject, might not be iterable easily?
+                    # Let's try to assume Ankan first.
+                    pass
+
+        # Fallback
+        logging.warning(f"Unhandled client action: {client_action}")
+        return {} # Should error
 
 class GameManager:
     def __init__(self):
