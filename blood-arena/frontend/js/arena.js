@@ -267,10 +267,34 @@ const app = createApp({
             state.phase = 'playing';
         }
 
+        /** 定缺花色字符（m/p/s），未定缺为 null */
+        function getDingqueSuitChar() {
+            const dq = state.dingque[state.myPlayerId];
+            if (!dq) return null;
+            const map = { man: 'm', pin: 'p', sou: 's', m: 'm', p: 'p', s: 's' };
+            return map[dq] || dq;
+        }
+        /** 手牌（含自摸牌）是否还有定缺花色的牌 */
+        function hasDingqueTilesInHand() {
+            const suit = getDingqueSuitChar();
+            if (!suit) return false;
+            const handTiles = [...state.tehai];
+            if (state.tsumoTile) handTiles.push(state.tsumoTile);
+            return handTiles.some(t => t && t[1] === suit);
+        }
+        /** 当前是否允许打出这张牌（定缺未打完时只能打定缺花色） */
+        function canDiscardTile(tile) {
+            if (!tile || tile === '?') return false;
+            const suit = getDingqueSuitChar();
+            if (!suit) return true;
+            if (!hasDingqueTilesInHand()) return true;
+            return tile[1] === suit;
+        }
+
         function onTileClick(tile, idx) {
-            // Only allow click if Backend explicitly authorized Discard
             if (!state.canDiscard) return;
             if (tile === '?') return;
+            if (!canDiscardTile(tile)) return; // 定缺未打完时只能打定缺牌
 
             if (ui.selectedIdx === idx) {
                 send({ type: 'dahai', actor: state.myPlayerId, pai: tile });
@@ -334,7 +358,7 @@ const app = createApp({
             state, analysis, ui, isMyTurn,
             startGame, doDingQue, onTileClick, doAction,
             tileSrc, player, hand, discards, isRecommended, actionLabel, dingqueLabel,
-            getFuuro,
+            getFuuro, canDiscardTile,
             getHandTileCount(p) {
                 const meldCount = state.fuuro[p] ? state.fuuro[p].length : 0;
                 let count = 13 - (meldCount * 3);

@@ -196,13 +196,13 @@
                         <div class="tile-group hand">
                             <!-- Hand Tiles -->
                             <div class="tile" v-for="(t, i) in hand(0)" :key="i"
-                                :class="{ selected: ui.selectedIdx === i, recommended: isRecommended(t) }"
+                                :class="{ selected: ui.selectedIdx === i, recommended: isRecommended(t), 'tile-forbidden': state.canDiscard && !canDiscardTile(t) }"
                                 @click.stop="onTileClick(t, i)">
                                 <img :src="tileSrc(t)">
                             </div>
                             <!-- Tsumo Tile (Separate) -->
                             <div class="tile tsumo" v-if="state.tsumoTile"
-                                :class="{ selected: ui.selectedIdx === 'tsumo', recommended: isRecommended(state.tsumoTile) }"
+                                :class="{ selected: ui.selectedIdx === 'tsumo', recommended: isRecommended(state.tsumoTile), 'tile-forbidden': state.canDiscard && !canDiscardTile(state.tsumoTile) }"
                                 @click.stop="onTileClick(state.tsumoTile, 'tsumo')">
                                 <img :src="tileSrc(state.tsumoTile)">
                             </div>

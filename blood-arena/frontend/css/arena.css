@@ -477,6 +477,16 @@ body {
     z-index: 10;
 }
 
+/* 定缺未打完时不可打的牌：灰显、不可点击 */
+.tile.tile-forbidden {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+.zone-bottom .hand .tile.tile-forbidden:hover {
+    transform: none;
+}
+
 /* Player Info */
 .player-info {
     display: flex;
