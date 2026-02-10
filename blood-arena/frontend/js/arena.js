@@ -138,10 +138,9 @@ const app = createApp({
         }
 
         // --- Event Replay ---
-        const AI_DISCARD_SOUND_DELAY_MS = 420; // 每张 AI 打牌音效间隔，不要太快
         function replayEvents(events) {
             state.tsumoTile = null;
-            const aiDiscardsThisBatch = []; // 本批事件中 AI 打出的牌，用于延迟播放音效
+            let lastAiDiscardPai = null; // 本批中最后一次 AI 出牌，只播这一张的声音
             for (const ev of events) {
                 switch (ev.type) {
                     case 'start_game':
@@ -181,7 +180,7 @@ const app = createApp({
                         if (!state.discards[ev.actor]) state.discards[ev.actor] = [];
                         state.discards[ev.actor].push(ev.pai);
                         if (ev.actor !== state.myPlayerId && ev.pai && ev.pai !== '?') {
-                            aiDiscardsThisBatch.push(ev.pai);
+                            lastAiDiscardPai = ev.pai;
                         }
 
                         if (ev.actor === state.myPlayerId) {
@@ -266,10 +265,8 @@ const app = createApp({
                         break;
                 }
             }
-            // AI 打牌音效：按顺序延迟播放，避免太快
-            aiDiscardsThisBatch.forEach((pai, idx) => {
-                setTimeout(() => playTileSound(pai), idx * AI_DISCARD_SOUND_DELAY_MS);
-            });
+            // 只播当前出牌的一张牌声音（本批中最后一次 AI 打出的牌）
+            if (lastAiDiscardPai) playTileSound(lastAiDiscardPai);
         }
 
         // --- Interaction ---
