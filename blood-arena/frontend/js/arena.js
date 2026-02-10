@@ -73,7 +73,9 @@ const app = createApp({
                 state.gameEnded = true;
                 state.phase = 'result';
                 state.gaming = false;
-                alert(`Game Over! Scores: ${msg.scores.join(', ')}`);
+                if (msg.scores && msg.scores.length === 4) {
+                    state.scores = [...msg.scores];
+                }
             }
         }
 

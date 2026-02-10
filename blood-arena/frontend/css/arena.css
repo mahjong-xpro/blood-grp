@@ -317,11 +317,19 @@ body {
     border-radius: 2px;
 }
 
-/* Meld Area (Fuuro) - vertical stack: each meld is a row, melds stack vertically */
+/* Meld Area (Fuuro) - default: melds stack vertically */
 .meld-area {
     margin: 5px;
     display: flex;
     flex-direction: column;
+    gap: 6px;
+}
+
+/* 对家、自家：多个副露横向排列 */
+.zone-top .meld-area,
+.zone-bottom .meld-area {
+    flex-direction: row;
+    flex-wrap: wrap;
     gap: 6px;
 }
 
