@@ -296,6 +296,8 @@ class HumanEngine:
         atype = client_action.get("type")
         actor_id = self.player_id
         
+        if atype == "ding_que":
+            suit = client_action.get("suit")
             suit_map = {"m": "man", "p": "pin", "s": "sou"}
             suit_full = suit_map.get(suit, "man")
             ret = {"type": "ding_que", "actor": actor_id, "suit": suit_full}
