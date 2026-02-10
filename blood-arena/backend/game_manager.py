@@ -460,25 +460,29 @@ class GameManager:
             import os
 
             ai_engine = None
-            # Load model for AI
+            # Load model for AI（未找到文件或加载失败会用随机权重，AI 会非常弱）
             try:
                 if os.path.exists(ai_model_path):
+                    logging.info("Loading AI model from: %s", ai_model_path)
                     state = torch.load(ai_model_path, map_location='cpu', weights_only=True)
                     cfg = state['config']
                     version = cfg['control'].get('version', 4)
-                    
                     mortal = Brain(version=version, conv_channels=cfg['resnet']['conv_channels'], num_blocks=cfg['resnet']['num_blocks']).eval()
                     dqn = DQN(version=version).eval()
                     mortal.load_state_dict(state['mortal'])
                     dqn.load_state_dict(state['current_dqn'])
+                    logging.info("AI model loaded successfully from %s", ai_model_path)
                 else:
-                     logging.warning(f"Model file not found: {ai_model_path}, using random init")
-                     version = 4
-                     mortal = Brain(version=version, conv_channels=192, num_blocks=40).eval()
-                     dqn = DQN(version=version).eval()
+                    logging.warning(
+                        "Model file not found at %s — using RANDOM weights (AI will be very weak). "
+                        "Set MORTAL_MODEL or pass model path in start_game.",
+                        ai_model_path,
+                    )
+                    version = 4
+                    mortal = Brain(version=version, conv_channels=192, num_blocks=40).eval()
+                    dqn = DQN(version=version).eval()
             except Exception as e:
-                logging.warning(f"Failed to load model: {e}")
-                # Random init fallback
+                logging.warning("Failed to load model from %s: %s — using RANDOM weights.", ai_model_path, e)
                 version = 4
                 mortal = Brain(version=version, conv_channels=192, num_blocks=40).eval()
                 dqn = DQN(version=version).eval()

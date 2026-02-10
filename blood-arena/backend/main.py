@@ -45,7 +45,7 @@ async def start_game(ai_model: str = None):
     # Determine model path
     model_path = ai_model
     if not model_path:
-        model_path = os.environ.get('MORTAL_MODEL', os.path.join(parent_dir, "mortal", "models", "best.pth"))
+        model_path = os.environ.get('MORTAL_MODEL', '/data/mortal/mortal.pth')
     
     # Start thread
     try:
@@ -81,12 +81,11 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             data = await websocket.receive_json()
             if data.get("type") == "start_game":
-                 # Start game thread
-                 # Actually model path should be passed or used default
-                 model_path = os.environ.get('MORTAL_MODEL', os.path.join(parent_dir, "mortal", "models", "best.pth"))
-                 game_manager.start_game_thread(model_path)
+                # 支持前端或消息里传 model 路径，否则用环境变量或默认路径
+                model_path = data.get("model") or os.environ.get('MORTAL_MODEL') or '/data/mortal/mortal.pth'
+                game_manager.start_game_thread(model_path)
             else:
-                 game_manager.action_queue.put(data)
+                game_manager.action_queue.put(data)
     except WebSocketDisconnect:
         await game_manager.disconnect(websocket)
     except Exception as e:

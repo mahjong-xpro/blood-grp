@@ -130,6 +130,8 @@ const app = createApp({
 
         // --- Event Replay ---
         function replayEvents(events) {
+            // 每次重放前清空自摸牌，只根据本批事件重新设置，避免沿用上一条消息的 tsumo
+            state.tsumoTile = null;
             for (const ev of events) {
                 switch (ev.type) {
                     case 'start_game':
