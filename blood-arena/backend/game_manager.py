@@ -3,6 +3,7 @@ import asyncio
 import threading
 import queue
 import logging
+import random
 from typing import List, Dict, Any, Optional
 from fastapi import WebSocket
 
@@ -497,18 +498,15 @@ class GameManager:
             # Initialize Human Engine with AI Engine injected
             human = HumanEngine(self.action_queue, self.state_queue, self.shared_state, ai_engine=ai_engine)
             
-            # Setup 1v3 Arena
-            # Seed doesn't matter much for human play
+            # Setup 1v3 Arena，每局使用随机种子避免发牌相同
             env = arena.OneVsThree(disable_progress_bar=True, log_dir=None)
-            
-            # Run 1 game
-            # human is Challenger (Player 0 usually)
-            # ai_engine is Champion
+            seed = (random.getrandbits(32), random.getrandbits(32))
+            logging.info("Game seed: %s", seed)
             env.py_vs_py(
-                human,      # Challenger (Python Object)
-                ai_engine,  # Champion (Python Object)
-                (12345, 0), # Seed
-                1,          # 1 game
+                human,
+                ai_engine,
+                seed,
+                1,
             )
             logging.info("Game finished.")
             
