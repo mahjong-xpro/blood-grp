@@ -329,7 +329,16 @@ const app = createApp({
             state, analysis, ui, isMyTurn,
             startGame, doDingQue, onTileClick, doAction,
             tileSrc, player, hand, discards, isRecommended, actionLabel, dingqueLabel,
-            getFuuro
+            getFuuro,
+            getHandTileCount(p) {
+                const meldCount = state.fuuro[p] ? state.fuuro[p].length : 0;
+                let count = 13 - (meldCount * 3);
+                // If it's AI's turn, they have one extra tile (drawn)
+                if (state.currentActor === p && state.gaming && !state.gameEnded) {
+                    count += 1;
+                }
+                return Math.max(0, count);
+            }
         };
     }
 });

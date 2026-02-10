@@ -388,6 +388,16 @@ body {
     transform: rotate(-90deg);
 }
 
+/* Side Meld Areas - Vertical Stack */
+.zone-left .meld-area,
+.zone-right .meld-area {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-bottom: 5px;
+}
+
+/* Top Meld: Rotate 180 (Vertical flip) */
 .zone-top .meld .tile img {
     transform: rotate(180deg);
 }

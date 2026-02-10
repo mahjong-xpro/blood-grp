@@ -72,7 +72,7 @@
                     <!-- Hand -->
                     <div class="hand-area">
                         <div class="tile-group hand">
-                            <div class="tile back" v-for="n in 13" :key="n"></div>
+                            <div class="tile back" v-for="n in getHandTileCount(2)" :key="n"></div>
                         </div>
                     </div>
                 </div>
@@ -114,7 +114,7 @@
                     <!-- Hand -->
                     <div class="hand-area">
                         <div class="tile-group hand">
-                            <div class="tile back" v-for="n in 13" :key="n"></div>
+                            <div class="tile back" v-for="n in getHandTileCount(3)" :key="n"></div>
                         </div>
                     </div>
                 </div>
@@ -155,7 +155,7 @@
                     <!-- Hand -->
                     <div class="hand-area">
                         <div class="tile-group hand">
-                            <div class="tile back" v-for="n in 13" :key="n"></div>
+                            <div class="tile back" v-for="n in getHandTileCount(1)" :key="n"></div>
                         </div>
                     </div>
                 </div>
