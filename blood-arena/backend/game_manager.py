@@ -205,12 +205,14 @@ class HumanEngine:
         # 3. Determine Legal Actions
         is_interactive = False
         
+        action_msgs = []
+        is_interactive = False
+        
         if mask is not None:
             # Check Ding Que
             if mask[31] or mask[32] or mask[33]:
                 is_interactive = True
-                self.shared_state['latest'] = {"type": "ding_que"} 
-                self.state_queue.put({"type": "ding_que"})
+                action_msgs.append({"type": "ding_que"})
             
             # Check Actions (Pon/Kan/Hu)
             if mask[27] or mask[28] or mask[29]: 
@@ -220,20 +222,24 @@ class HumanEngine:
                 if mask[28]: actions_list.append({"type": "kan"}) 
                 if mask[29]: actions_list.append({"type": "hu"})
                 
-                msg_actions = { "type": "allow_actions", "actions": actions_list }
-                self.state_queue.put(msg_actions)
+                action_msgs.append({ "type": "allow_actions", "actions": actions_list })
                 
             # Check Discard
             if any(mask[0:27]):
                 is_interactive = True
                 
-        # 4. State Update
-        msg = {
+        # 4. State Update (FIRST, to set the scene)
+        msg_state = {
             "type": "state_update",
             "data": { "events": events, "analysis": analysis }
         }
-        self.shared_state['latest'] = msg
-        self.state_queue.put(msg)
+        self.shared_state['latest'] = msg_state
+        self.state_queue.put(msg_state)
+
+        # 4.5 Send Action Requests (SECOND, to override phase)
+        for m in action_msgs:
+            self.shared_state['latest'] = m
+            self.state_queue.put(m)
         
         # 5. Handle Control Flow
         if is_interactive:
