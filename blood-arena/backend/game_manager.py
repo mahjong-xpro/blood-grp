@@ -187,78 +187,44 @@ class HumanEngine:
     # ... (react_batch remains mostly same, just calling new _translate_to_mjai) ...
     # Wait, need to preserve react_batch structure but allow it to use the new translate.
 
+    def _get_legal_actions(self, cans) -> List[Dict[str, Any]]:
+        """ Convert Rust ActionCandidate to list of allowed client actions. """
+        actions = []
+        if cans.can_ding_que:
+            actions.append({"type": "ding_que"})
+        
+        if cans.can_discard:
+            actions.append({"type": "dahai"})
+        
+        # Interactive Actions
+        if cans.can_pon: actions.append({"type": "pon"})
+        # kan covers ankan, daiminkan, kakan
+        if cans.can_kan: actions.append({"type": "kan"}) 
+        # agari covers tsumo and ron
+        if cans.can_agari: actions.append({"type": "hu"})
+        
+        if cans.can_pass: actions.append({"type": "pass"})
+        
+        return actions
+
     def react_batch(self, game_states):
         """
-        Called by libblood from Rust thread.
-        Blocks until human action is received.
+        Refactored: Strictly logic-driven interaction.
         """
-        game_state = game_states[0] 
-        events_json = game_state.events_json
-        events = json.loads(events_json)
+        # 1. Get State
+        game_state = game_states[self.player_id] 
+        events = json.loads(game_state.events_json)
         
-        # 2. Get AI Analysis
+        # 2. Get AI Analysis (Optional)
         analysis = {}
-        mask = None
-        # 2. Get State & Mask
-        game_state = game_states[self.player_id] # Use game_states from input
-        obs, mask = game_state.encode_obs(4, False)
-        
-        # DEBUG: Check presence of Ding Que mask
-        dq_mask = mask[31] if mask is not None and len(mask) > 31 else False
-        logging.info(f"[DEBUG] State Check: mask[31]={dq_mask}. mask_len={len(mask) if mask is not None else 0}")
-        
-        # CRITICAL FIX: Sync Mask with Logical Rules (ActionCandidate)
-        # Sometimes encode_obs mask generation fails (e.g. version mismatch), causing hidden buttons.
-        # We trust `last_cans` (Rust Logic) more than `mask` (NN Input).
-        try:
-            cans = game_state.last_cans
-            if cans.can_ding_que:
-                logging.info("[DEBUG] Force-enabling Ding Que based on Rule Logic")
-                # Force mask bits to True so is_interactive and validation pass
-                if mask is not None and len(mask) > 33:
-                    mask[31] = 1
-                    mask[32] = 1
-                    mask[33] = 1
-        except Exception as e:
-            logging.warning(f"Could not access last_cans for validation: {e}")
-
-        # 2.5 Decode Events for Frontend (Re-implementation of MJAI translation)
-        # The original `events = json.loads(events_json)` is sufficient for now.
-        # The comment "logic continues" implies the AI analysis part should still be there.
         if self.ai_engine:
             try:
-                # obs, mask are already obtained above
+                obs, mask = game_state.encode_obs(4, False)
                 analysis = self._get_ai_analysis(game_state, obs, mask)
             except Exception as e:
                 logging.error(f"AI Analysis failed: {e}")
 
-        # 3. Determine Legal Actions
-        is_interactive = False
-        
-        action_msgs = []
-        is_interactive = False
-        
-        if mask is not None:
-            # Check Ding Que
-            if mask[31] or mask[32] or mask[33]:
-                is_interactive = True
-                action_msgs.append({"type": "ding_que"})
-            
-            # Check Actions (Pon/Kan/Hu)
-            if mask[27] or mask[28] or mask[29]: 
-                is_interactive = True
-                actions_list = []
-                if mask[27]: actions_list.append({"type": "pon"})
-                if mask[28]: actions_list.append({"type": "kan"}) 
-                if mask[29]: actions_list.append({"type": "hu"})
-                
-                action_msgs.append({ "type": "allow_actions", "actions": actions_list })
-                
-            # Check Discard
-            if any(mask[0:27]):
-                is_interactive = True
-                
-        # 4. State Update (FIRST, to set the scene)
+        # 3. Send Full State Update (Base Layer)
         msg_state = {
             "type": "state_update",
             "data": { "events": events, "analysis": analysis }
@@ -266,51 +232,55 @@ class HumanEngine:
         self.shared_state['latest'] = msg_state
         self.state_queue.put(msg_state)
 
-        # 4.5 Send Action Requests (SECOND, to override phase)
-        for m in action_msgs:
-            self.shared_state['latest'] = m
-            self.state_queue.put(m)
-        
-        # 5. Handle Control Flow
-        if is_interactive:
-            logging.info("Waiting for human action...")
-            while True:
-                action_data = self.action_queue.get()
-                logging.info(f"Received human action: {action_data}")
-                
-                atype = action_data.get("type")
-                valid = False
-                
-                if atype == "ding_que":
-                    valid = mask[31] or mask[32] or mask[33]
-                    logging.info(f"[DEBUG] Validating DingQue: mask[31]={mask[31]}, mask[32]={mask[32]}, mask[33]={mask[33]} => valid={valid}")
-                elif atype == "dahai":
-                    valid = any(mask[0:27])
-                    logging.info(f"[DEBUG] Validating Dahai: valid={valid}")
-                elif atype == "action": # from frontend action bar
-                    sub_act = action_data.get("action", {})
-                    act_type = sub_act.get("type")
-                    if act_type == "pon": valid = mask[27]
-                    elif act_type == "kan": valid = mask[28]
-                    elif act_type == "hu": valid = mask[29]
-                    elif act_type == "pass": valid = True # Pass usually valid if interactive
-                elif atype == "pass":
-                    valid = True
-
-                if not valid:
-                    logging.warning(f"Ignored invalid action {atype} for current state mask. mask[31]={mask[31] if len(mask)>31 else '?'}")
-                    # Re-send the latest state/action request to the client to force a sync
-                    # This fixes "User stuck in Ding Que UI while Backend is in Discard Phase"
-                    if 'latest' in self.shared_state:
-                        logging.info("[DEBUG] Resending latest state to sync client...")
-                        self.state_queue.put(self.shared_state['latest'])
-                    continue
-                
-                mjai_action = self._translate_to_mjai(action_data, game_state)
-                logging.info(f"[DEBUG] react_batch submitting: {mjai_action}")
-                return [json.dumps(mjai_action)]
-        else:
+        # 4. Determine Legal Actions (Logic Layer)
+        try:
+            cans = game_state.last_cans
+            legal_actions = self._get_legal_actions(cans)
+        except Exception as e:
+            logging.error(f"Failed to get ActionCandidate: {e}")
             return [json.dumps({"type": "none"})]
+
+        if not legal_actions:
+            return [json.dumps({"type": "none"})]
+
+        # 5. Send Action Request (Interaction Layer)
+        msg_req = {
+            "type": "action_request",
+            "actions": legal_actions
+        }
+        self.shared_state['latest'] = msg_req # Update latest to be the request
+        self.state_queue.put(msg_req)
+        
+        logging.info(f"Waiting for human action. Legal: {[a['type'] for a in legal_actions]}")
+
+        # 6. Wait for Valid Action
+        while True:
+            action_data = self.action_queue.get()
+            atype = action_data.get("type")
+            
+            # Validation: match atype against legal_actions
+            is_valid = False
+            for allowed in legal_actions:
+                allowed_type = allowed["type"]
+                if atype == allowed_type:
+                    is_valid = True
+                elif atype == "action": # Frontend action bar (pon/kan/hu/pass)
+                    sub_act = action_data.get("action", {}).get("type")
+                    if sub_act == allowed_type:
+                        is_valid = True
+            
+            if is_valid:
+                logging.info(f"Received valid action: {action_data}")
+                mjai_action = self._translate_to_mjai(action_data, game_state)
+                # Defensive check: if mjai translation fails (returns None/Error)?
+                # Current implementation returns dict.
+                return [json.dumps(mjai_action)]
+            
+            # Invalid Fallback
+            logging.warning(f"Ignored invalid action {atype}. Legal: {legal_actions}")
+            # Resend State and Request to force sync
+            self.state_queue.put(msg_state)
+            self.state_queue.put(msg_req)
 
     def _get_ai_analysis(self, game_state, obs, mask) -> Dict[str, Any]:
         """ Generate AI analysis. """

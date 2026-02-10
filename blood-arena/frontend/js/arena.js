@@ -1,6 +1,6 @@
 /**
  * Blood Arena Frontend Logic
- * Supports: Phase Management (DingQue/Playing), Action Buttons, AI Suggestions
+ * Supports: Phase Management (Backend-Driven), Action Buttons, AI Suggestions
  */
 import { createApp, reactive, computed } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js';
 
@@ -35,6 +35,7 @@ const app = createApp({
 
             // Interactive
             validActions: [], // [{type: 'pon', ...}]
+            canDiscard: false, // Controlled by backend action_request
         });
 
         const analysis = reactive({ best_action: null });
@@ -66,12 +67,8 @@ const app = createApp({
             // console.log('WS Msg:', msg); // Verbose
             if (msg.type === 'state_update') {
                 updateFullState(msg.data);
-            } else if (msg.type === 'ding_que') {
-                // Server asking for Ding Que
-                state.phase = 'dingque';
-            } else if (msg.type === 'allow_actions') {
-                // Server offering actions (Pon/Kan/Hu)
-                state.validActions = msg.actions;
+            } else if (msg.type === 'action_request') {
+                handleActionRequest(msg.actions);
             } else if (msg.type === 'game_over') {
                 state.gameEnded = true;
                 state.phase = 'result';
@@ -80,11 +77,39 @@ const app = createApp({
             }
         }
 
+        function handleActionRequest(actions) {
+            console.log("Action Request:", actions);
+            state.validActions = [];
+            state.canDiscard = false;
+
+            let isDingQue = false;
+            let isDiscard = false;
+
+            for (const act of actions) {
+                if (act.type === 'ding_que') isDingQue = true;
+                if (act.type === 'dahai') isDiscard = true;
+                if (['pon', 'kan', 'hu', 'pass'].includes(act.type)) {
+                    state.validActions.push(act);
+                }
+            }
+
+            if (isDingQue) {
+                state.phase = 'dingque';
+            } else {
+                state.phase = 'playing'; // Default phase for most actions
+                if (isDiscard) {
+                    state.canDiscard = true;
+                    state.currentActor = state.myPlayerId; // Ensure visual sync
+                }
+            }
+        }
+
         function updateFullState(data) {
             // Mapping complex server state to frontend state
             if (data.analysis) {
                 analysis.best_action = data.analysis.best_action;
             }
+            // Events update visual state only
             if (data.events) {
                 replayEvents(data.events);
             }
@@ -101,11 +126,10 @@ const app = createApp({
             });
         }
 
-        // --- Event Replay (Reconstruct State) ---
+        // --- Event Replay (Reconstruct Visual State) ---
         function replayEvents(events) {
-            // IMPORTANT: Do NOT wipe state here.
-            // If backend sends incremental updates (e.g. only new events), wiping would destroy the hand.
-            // State reset should only happen on 'start_game' or 'start_kyoku'.
+            // IMPORTANT: Do NOT wipe state here. Use events to build visual board.
+            // Phase and Interaction are controlled by handleActionRequest.
 
             for (const ev of events) {
                 switch (ev.type) {
@@ -113,35 +137,27 @@ const app = createApp({
                         state.gaming = true;
                         state.gameEnded = false;
                         state.scores = [25000, 25000, 25000, 25000];
-                        // Don't force phase reset here, wait for flow
                         break;
                     case 'start_kyoku':
                         // Reset Round State
-                        // Fix for One Tile Hand: Use tehais array if available
-                        state.tehai = (ev.tehais ? ev.tehais[state.myPlayerId] : []) || ev.tehai || ev.hand || [];
+                        state.tehai = (ev.tehais ? ev.tehais[state.myPlayerId] : []) || [];
                         sortTiles(state.tehai);
                         state.tsumoTile = null;
                         state.discards = [[], [], [], []];
                         state.agari = [false, false, false, false];
                         state.dingque = [null, null, null, null];
-
-                        // Correct Tile Count (108 - 13*4 = 56)
                         state.tilesLeft = 56;
 
-                        // Reset phase to playing at start of kyoku.
-                        // Specific phases (Ding Que, Result) will be set by subsequent events/messages.
-                        state.phase = 'playing';
+                        // NOTE: We do NOT set state.phase = 'playing' here.
+                        // We wait for 'action_request' to tell us if we are playing or dingque-ing.
                         break;
                     case 'ding_que':
-                        // If we see a ding_que EVENT in history, it means someone declared it
                         if (ev.actor !== undefined && (ev.suit || ev.color)) {
                             state.dingque[ev.actor] = ev.suit || ev.color;
                         }
                         break;
                     case 'tsumo':
                         state.currentActor = ev.actor;
-                        state.phase = 'playing'; // Resume playing
-
                         state.tilesLeft = Math.max(0, state.tilesLeft - 1);
                         if (ev.actor === state.myPlayerId && ev.pai) {
                             state.tsumoTile = ev.pai;
@@ -149,7 +165,6 @@ const app = createApp({
                         break;
                     case 'dahai':
                         state.currentActor = (ev.actor + 1) % 4; // Speculative next
-                        state.phase = 'playing'; // Resume playing
 
                         if (!state.discards[ev.actor]) state.discards[ev.actor] = [];
                         state.discards[ev.actor].push(ev.pai);
@@ -160,16 +175,14 @@ const app = createApp({
                             } else {
                                 const idx = state.tehai.indexOf(ev.pai);
                                 if (idx > -1) state.tehai.splice(idx, 1);
-                                // If we tsumogiri'd from hand, move tsumo to hand
                                 if (state.tsumoTile) {
                                     state.tehai.push(state.tsumoTile);
-                                    sortTiles(state.tehai); // Proper sort
+                                    sortTiles(state.tehai);
                                     state.tsumoTile = null;
                                 }
                             }
                         }
                         ui.selectedIdx = -1;
-                        state.validActions = []; // Clear actions on new move
                         break;
                     case 'pon':
                     case 'kan':
@@ -177,20 +190,15 @@ const app = createApp({
                     case 'daiminkan':
                     case 'kakan':
                         state.currentActor = ev.actor;
-                        state.validActions = [];
 
                         if (ev.actor === state.myPlayerId) {
-                            // 1. Determine tiles to remove
                             let toRemove = [];
                             if (ev.type === 'kakan') {
-                                // Added Kan: removes the specific added tile (pai)
                                 if (ev.pai) toRemove.push(ev.pai);
                             } else {
-                                // Pon/Daiminkan/Ankan: remove 'consumed' tiles
                                 if (ev.consumed) toRemove = [...ev.consumed];
                             }
 
-                            // 2. Remove them from hand/tsumo
                             for (const t of toRemove) {
                                 if (state.tsumoTile === t) {
                                     state.tsumoTile = null;
@@ -200,15 +208,10 @@ const app = createApp({
                                 }
                             }
 
-                            // 3. Consolidate Tsumo (if we Ankan'd using hand tiles, Tsumo might still be there)
-                            // Actually, if we Pon/Daiminkan, we shouldn't have a Tsumo tile usually (turn change).
-                            // But for Ankan/Kakan, we do.
                             if (state.tsumoTile) {
                                 state.tehai.push(state.tsumoTile);
                                 state.tsumoTile = null;
                             }
-
-                            // 4. Sort
                             sortTiles(state.tehai);
                         }
                         break;
@@ -231,18 +234,21 @@ const app = createApp({
             const map = { 'm': 'man', 'p': 'pin', 's': 'sou' };
             state.dingque[state.myPlayerId] = map[suit] || suit;
 
+            // Optimistically move to playing to avoid UI stutter
+            // Backend failure will revert this via state_update/action_request
             state.phase = 'playing';
         }
 
         function onTileClick(tile, idx) {
-            // Only allow click if my turn and playing
-            if (!isMyTurn.value || state.phase !== 'playing') return;
+            // Only allow click if Backend explicitly authorized Discard
+            if (!state.canDiscard) return;
 
             // Toggle selection
             if (ui.selectedIdx === idx) {
                 // Confirm discard
                 send({ type: 'dahai', actor: state.myPlayerId, pai: tile });
                 state.tsumoTile = null; // Client side optimistic update
+                state.canDiscard = false; // Lock immediately
                 ui.selectedIdx = -1;
             } else {
                 ui.selectedIdx = idx;
@@ -252,6 +258,7 @@ const app = createApp({
         function doAction(act) {
             send({ type: 'action', action: act });
             state.validActions = [];
+            state.canDiscard = false;
         }
 
         function actionLabel(type) {
@@ -278,7 +285,6 @@ const app = createApp({
         }
 
         function hand(offset) {
-            // For now only show my hand
             if (offset === 0) return state.tehai;
             return [];
         }
@@ -298,7 +304,7 @@ const app = createApp({
         return {
             state, analysis, ui, isMyTurn,
             startGame, doDingQue, onTileClick, doAction,
-            tileSrc, player, hand, discards, isRecommended, actionLabel
+            tileSrc, player, hand, discards, isRecommended, actionLabel, dingqueLabel
         };
     }
 });
