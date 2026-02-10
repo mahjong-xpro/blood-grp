@@ -5,11 +5,20 @@
 import { createApp, reactive, computed } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js';
 
 const TILE_BASE = '/static/images/tiles';
+const AUDIO_BASE = '/static/audio';
 function tileSrc(tile) {
     if (!tile || tile === 'back' || tile === '?') return `${TILE_BASE}/Back.png`;
     const n = tile[0], s = tile[1];
     const suit = { m: 'Man', p: 'Pin', s: 'Sou' }[s] || 'Man';
     return `${TILE_BASE}/${suit}${n}.png`;
+}
+function playTileSound(pai) {
+    if (!pai || pai === '?') return;
+    try {
+        const audio = new Audio(`${AUDIO_BASE}/${pai}.m4a`);
+        audio.volume = 0.6;
+        audio.play().catch(() => {});
+    } catch (_) {}
 }
 
 const app = createApp({
@@ -129,9 +138,10 @@ const app = createApp({
         }
 
         // --- Event Replay ---
+        const AI_DISCARD_SOUND_DELAY_MS = 420; // 每张 AI 打牌音效间隔，不要太快
         function replayEvents(events) {
-            // 每次重放前清空自摸牌，只根据本批事件重新设置，避免沿用上一条消息的 tsumo
             state.tsumoTile = null;
+            const aiDiscardsThisBatch = []; // 本批事件中 AI 打出的牌，用于延迟播放音效
             for (const ev of events) {
                 switch (ev.type) {
                     case 'start_game':
@@ -166,10 +176,13 @@ const app = createApp({
                         }
                         break;
                     case 'dahai':
-                        state.currentActor = (ev.actor + 1) % 4; // Speculative next
+                        state.currentActor = (ev.actor + 1) % 4;
 
                         if (!state.discards[ev.actor]) state.discards[ev.actor] = [];
                         state.discards[ev.actor].push(ev.pai);
+                        if (ev.actor !== state.myPlayerId && ev.pai && ev.pai !== '?') {
+                            aiDiscardsThisBatch.push(ev.pai);
+                        }
 
                         if (ev.actor === state.myPlayerId) {
                             if (state.tsumoTile === ev.pai) {
@@ -248,11 +261,15 @@ const app = createApp({
                         break;
 
                     case 'agari':
-                    case 'hora':  // MJAI/libblood 用 hora 表示和了（自摸、荣和）
+                    case 'hora':
                         state.agari[ev.actor] = true;
                         break;
                 }
             }
+            // AI 打牌音效：按顺序延迟播放，避免太快
+            aiDiscardsThisBatch.forEach((pai, idx) => {
+                setTimeout(() => playTileSound(pai), idx * AI_DISCARD_SOUND_DELAY_MS);
+            });
         }
 
         // --- Interaction ---
@@ -351,6 +368,14 @@ const app = createApp({
             return analysis.best_action && analysis.best_action.pai === tile;
         }
 
+        /** AI 玩家河牌中是否为“刚打出”的那张（用于播放动画） */
+        function isLastDiscard(offset, index) {
+            if (offset === 0) return false; // 自己的河牌不播动画
+            if (!state.gaming || state.gameEnded) return false;
+            const d = discards(offset);
+            return d.length > 0 && index === d.length - 1;
+        }
+
         // Init
         connect();
 
@@ -358,7 +383,7 @@ const app = createApp({
             state, analysis, ui, isMyTurn,
             startGame, doDingQue, onTileClick, doAction,
             tileSrc, player, hand, discards, isRecommended, actionLabel, dingqueLabel,
-            getFuuro, canDiscardTile,
+            getFuuro, canDiscardTile, isLastDiscard,
             getHandTileCount(p) {
                 const meldCount = state.fuuro[p] ? state.fuuro[p].length : 0;
                 let count = 13 - (meldCount * 3);
