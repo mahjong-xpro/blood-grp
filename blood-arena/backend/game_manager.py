@@ -273,6 +273,11 @@ class HumanEngine:
 
                 if not valid:
                     logging.warning(f"Ignored invalid action {atype} for current state mask. mask[31]={mask[31] if len(mask)>31 else '?'}")
+                    # Re-send the latest state/action request to the client to force a sync
+                    # This fixes "User stuck in Ding Que UI while Backend is in Discard Phase"
+                    if 'latest' in self.shared_state:
+                        logging.info("[DEBUG] Resending latest state to sync client...")
+                        self.state_queue.put(self.shared_state['latest'])
                     continue
                 
                 mjai_action = self._translate_to_mjai(action_data, game_state)

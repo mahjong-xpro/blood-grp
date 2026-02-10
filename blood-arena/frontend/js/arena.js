@@ -128,11 +128,9 @@ const app = createApp({
                         // Correct Tile Count (108 - 13*4 = 56)
                         state.tilesLeft = 56;
 
-                        // Phase Stability: only 'playing' if we don't know better.
-                        // Ideally, we wait for 'ding_que' message.
-                        if (state.phase !== 'dingque') {
-                            state.phase = 'playing';
-                        }
+                        // Reset phase to playing at start of kyoku.
+                        // Specific phases (Ding Que, Result) will be set by subsequent events/messages.
+                        state.phase = 'playing';
                         break;
                     case 'ding_que':
                         // If we see a ding_que EVENT in history, it means someone declared it
