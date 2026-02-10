@@ -13,6 +13,7 @@ except ImportError:
     logging.warning("libblood not found. AI opponents will not work.")
     arena = None
 
+class HumanEngine:
     def __init__(self, action_queue: queue.Queue, state_queue: queue.Queue, shared_state: Dict[str, Any], ai_engine=None):
         self.name = "Human"
         self.engine_type = "mjai-log" 
