@@ -14,7 +14,7 @@
         <!-- Top Bar -->
         <header class="game-header">
             <div class="header-left">
-                <h1 class="game-title">Blood Arena <span class="version">v1.2</span></h1>
+                <h1 class="game-title">Blood Arena <span class="version">v1.3</span></h1>
                 <div class="connection-status" :class="{ connected: state.connected }">
                     <span class="dot"></span> {{ state.connected ? 'Connected' : 'Connecting...' }}
                 </div>
@@ -49,6 +49,15 @@
                         <div class="tile back" v-for="n in 13" :key="n"></div>
                     </div>
                 </div>
+                <!-- Top Fuuro -->
+                <div class="meld-area" v-if="getFuuro(2).length > 0">
+                    <div class="meld" v-for="(m, mi) in getFuuro(2)" :key="mi">
+                        <div class="tile" v-for="(t, ti) in m.tiles" :key="ti">
+                            <img :src="tileSrc(t)">
+                        </div>
+                    </div>
+                </div>
+
                 <div class="river-area">
                     <div class="tile-group river">
                         <div class="tile" v-for="(t, i) in discards(2)" :key="i">
@@ -91,6 +100,14 @@
                         </div>
                     </div>
                 </div>
+                <!-- Left Fuuro -->
+                <div class="meld-area" v-if="getFuuro(3).length > 0">
+                    <div class="meld" v-for="(m, mi) in getFuuro(3)" :key="mi">
+                        <div class="tile" v-for="(t, ti) in m.tiles" :key="ti">
+                            <img :src="tileSrc(t)">
+                        </div>
+                    </div>
+                </div>
                 <div class="hand-area">
                     <div class="tile-group hand">
                         <div class="tile back" v-for="n in 13" :key="n"></div>
@@ -115,6 +132,14 @@
                 <div class="river-area">
                     <div class="tile-group river">
                         <div class="tile" v-for="(t, i) in discards(1)" :key="i">
+                            <img :src="tileSrc(t)">
+                        </div>
+                    </div>
+                </div>
+                <!-- Right Fuuro -->
+                <div class="meld-area" v-if="getFuuro(1).length > 0">
+                    <div class="meld" v-for="(m, mi) in getFuuro(1)" :key="mi">
+                        <div class="tile" v-for="(t, ti) in m.tiles" :key="ti">
                             <img :src="tileSrc(t)">
                         </div>
                     </div>
@@ -150,6 +175,15 @@
                             :class="{ selected: ui.selectedIdx === 'tsumo', recommended: isRecommended(state.tsumoTile) }"
                             @click="onTileClick(state.tsumoTile, 'tsumo')">
                             <img :src="tileSrc(state.tsumoTile)">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- My Fuuro -->
+                <div class="meld-area" v-if="getFuuro(0).length > 0">
+                    <div class="meld" v-for="(m, mi) in getFuuro(0)" :key="mi">
+                        <div class="tile" v-for="(t, ti) in m.tiles" :key="ti">
+                            <img :src="tileSrc(t)">
                         </div>
                     </div>
                 </div>
