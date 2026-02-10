@@ -317,18 +317,14 @@ body {
     border-radius: 2px;
 }
 
-/* Meld Area (Fuuro) */
+/* Meld Area (Fuuro) - vertical stack: each meld is a row, melds stack vertically */
 .meld-area {
     margin: 5px;
     display: flex;
-    gap: 10px;
+    flex-direction: column;
+    gap: 6px;
 }
 
-/* Side Melds need vertical layout? 
-   Usually melds are displayed alongside the hand.
-   For simplicity, let's keep them horizontal for Top/Me, and Vertical for Side?
-   Or just wrap them.
-*/
 .zone-left .meld-area,
 .zone-right .meld-area {
     flex-direction: column;

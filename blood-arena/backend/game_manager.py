@@ -362,8 +362,16 @@ class HumanEngine:
                     # Ankan or Kakan (Self Kan)
                     from collections import Counter
                     counts = Counter(self.tehai)
-                    # 1. Kakan (Added Kan): we have a Pon of X and one more X in hand
-                    for p in self.peng:
+                    # 1. Kakan: must use a tile from game_state.kakan_candidates (libblood validates this)
+                    try:
+                        kakan_candidates = getattr(game_state, "kakan_candidates", None)
+                        if callable(kakan_candidates):
+                            kakan_candidates = kakan_candidates()
+                        else:
+                            kakan_candidates = []
+                    except Exception:
+                        kakan_candidates = []
+                    for p in (kakan_candidates if kakan_candidates else self.peng):
                         if counts.get(p, 0) >= 1:
                             return {
                                 "type": "kakan",
