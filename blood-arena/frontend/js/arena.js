@@ -142,8 +142,7 @@ const app = createApp({
                         break;
                     case 'tsumo':
                         state.currentActor = ev.actor;
-
-                        // DONT reset phase here. Tsumo happens before Ding Que in many flows.
+                        state.phase = 'playing'; // Resume playing
 
                         state.tilesLeft = Math.max(0, state.tilesLeft - 1);
                         if (ev.actor === state.myPlayerId && ev.pai) {
@@ -152,8 +151,7 @@ const app = createApp({
                         break;
                     case 'dahai':
                         state.currentActor = (ev.actor + 1) % 4; // Speculative next
-
-                        // DONT reset phase here.
+                        state.phase = 'playing'; // Resume playing
 
                         if (!state.discards[ev.actor]) state.discards[ev.actor] = [];
                         state.discards[ev.actor].push(ev.pai);
