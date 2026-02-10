@@ -1,14 +1,204 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>血战到底</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>Blood Arena | Mortal AI</title>
     <link rel="stylesheet" href="/css/arena.css">
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
 </head>
+
 <body>
-    <div id="app"></div>
+    <div id="app" v-cloak>
+        <!-- Top Bar -->
+        <header class="game-header">
+            <div class="header-left">
+                <h1 class="game-title">Blood Arena <span class="version">v1.2</span></h1>
+                <div class="connection-status" :class="{ connected: state.connected }">
+                    <span class="dot"></span> {{ state.connected ? 'Connected' : 'Connecting...' }}
+                </div>
+            </div>
+            <div class="header-right">
+                <button class="btn btn-primary" @click="startGame" :disabled="state.gaming">
+                    {{ state.gameEnded ? '再来一局' : '开始对局' }}
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Game Area -->
+        <main class="game-board" :class="{ 'phase-dingque': state.phase === 'dingque' }">
+
+            <!-- Center Info (Round, Tiles Left) -->
+            <div class="center-info">
+                <div class="tiles-left">
+                    <span class="label">剩余</span>
+                    <span class="value">{{ state.tilesLeft }}</span>
+                </div>
+                <div class="turn-indicator" v-if="state.gaming && !state.gameEnded">
+                    {{ isMyTurn ? '你的回合' : `等待 ${['下家','对家','上家'][state.currentActor > 0 ? state.currentActor-1 :
+                    0]}...` }}
+                </div>
+            </div>
+
+            <!-- Player Zones -->
+            <!-- 2: Top (Opposite) -->
+            <div class="player-zone zone-top">
+                <div class="hand-area">
+                    <div class="tile-group hand">
+                        <div class="tile back" v-for="n in 13" :key="n"></div>
+                    </div>
+                </div>
+                <div class="river-area">
+                    <div class="tile-group river">
+                        <div class="tile" v-for="(t, i) in discards(2)" :key="i">
+                            <img :src="tileSrc(t)">
+                        </div>
+                    </div>
+                </div>
+                <div class="player-info">
+                    <div class="avatar">AI</div>
+                    <div class="details">
+                        <div class="name">对家</div>
+                        <div class="score">{{ player(2).score }}</div>
+                        <div class="badges">
+                            <span class="badge dingque" v-if="player(2).dingque">{{ player(2).dingque }}</span>
+                            <span class="badge agari" v-if="player(2).agari">胡</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3: Left -->
+            <div class="player-zone zone-left">
+                <div class="player-info">
+                    <div class="avatar">AI</div>
+                    <div class="details">
+                        <div class="name">上家</div>
+                        <div class="score">{{ player(3).score }}</div>
+                        <div class="badges">
+                            <span class="badge dingque" v-if="player(3).dingque">{{ player(3).dingque }}</span>
+                            <span class="badge agari" v-if="player(3).agari">胡</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="river-area">
+                    <div class="tile-group river">
+                        <div class="tile" v-for="(t, i) in discards(3)" :key="i">
+                            <img :src="tileSrc(t)">
+                        </div>
+                    </div>
+                </div>
+                <div class="hand-area">
+                    <div class="tile-group hand">
+                        <div class="tile back" v-for="n in 13" :key="n"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 1: Right -->
+            <div class="player-zone zone-right">
+                <div class="player-info">
+                    <div class="avatar">AI</div>
+                    <div class="details">
+                        <div class="name">下家</div>
+                        <div class="score">{{ player(1).score }}</div>
+                        <div class="badges">
+                            <span class="badge dingque" v-if="player(1).dingque">{{ player(1).dingque }}</span>
+                            <span class="badge agari" v-if="player(1).agari">胡</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="river-area">
+                    <div class="tile-group river">
+                        <div class="tile" v-for="(t, i) in discards(1)" :key="i">
+                            <img :src="tileSrc(t)">
+                        </div>
+                    </div>
+                </div>
+                <div class="hand-area">
+                    <div class="tile-group hand">
+                        <div class="tile back" v-for="n in 13" :key="n"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 0: Bottom (Me) -->
+            <div class="player-zone zone-bottom" :class="{ 'my-turn': isMyTurn }">
+                <div class="river-area">
+                    <div class="tile-group river">
+                        <div class="tile" v-for="(t, i) in discards(0)" :key="i">
+                            <img :src="tileSrc(t)">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- My Hand (Interactive) -->
+                <div class="hand-area">
+                    <div class="tile-group hand">
+                        <!-- Hand Tiles -->
+                        <div class="tile" v-for="(t, i) in hand(0)" :key="i"
+                            :class="{ selected: ui.selectedIdx === i, recommended: isRecommended(t) }"
+                            @click="onTileClick(t, i)">
+                            <img :src="tileSrc(t)">
+                        </div>
+                        <!-- Tsumo Tile (Separate) -->
+                        <div class="tile tsumo" v-if="state.tsumoTile"
+                            :class="{ selected: ui.selectedIdx === 'tsumo', recommended: isRecommended(state.tsumoTile) }"
+                            @click="onTileClick(state.tsumoTile, 'tsumo')">
+                            <img :src="tileSrc(state.tsumoTile)">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="player-info">
+                    <div class="avatar">ME</div>
+                    <div class="details">
+                        <div class="name">我</div>
+                        <div class="score">{{ player(0).score }}</div>
+                        <div class="badges">
+                            <span class="badge dingque" v-if="player(0).dingque">{{ player(0).dingque }}</span>
+                            <span class="badge agari" v-if="player(0).agari">胡</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Overlays / Panels -->
+
+        <!-- Ding Que Panel -->
+        <div class="overlay-panel" v-if="state.phase === 'dingque'">
+            <div class="panel-content">
+                <h3>请定缺 (Select Void Suit)</h3>
+                <div class="btn-group">
+                    <button class="btn btn-suit man" @click="doDingQue('m')">万 (Man)</button>
+                    <button class="btn btn-suit pin" @click="doDingQue('p')">筒 (Pin)</button>
+                    <button class="btn btn-suit sou" @click="doDingQue('s')">条 (Sou)</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Bar (Chi/Pon/Kan/Hu) -->
+        <div class="action-bar" v-if="state.validActions.length > 0">
+            <button class="btn-action" v-for="act in state.validActions" :key="act.type" :class="act.type"
+                @click="doAction(act)">
+                {{ actionLabel(act.type) }}
+            </button>
+            <button class="btn-action pass" @click="doAction({type:'pass'})">过</button>
+        </div>
+
+        <!-- AI Recommendation (Debug) -->
+        <div class="ai-suggestion" v-if="analysis.best_action">
+            <span class="label">AI Suggest:</span>
+            <span class="val">{{ actionLabel(analysis.best_action.type) }}</span>
+            <div class="tile mini" v-if="analysis.best_action.pai">
+                <img :src="tileSrc(analysis.best_action.pai)">
+            </div>
+        </div>
+
+    </div>
     <script type="module" src="/js/arena.js"></script>
 </body>
+
 </html>

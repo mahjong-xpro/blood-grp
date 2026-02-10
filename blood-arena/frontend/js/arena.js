@@ -1,5 +1,6 @@
 /**
- * 血战到底 - 单入口界面，结构清晰，无多组件嵌套
+ * Blood Arena Frontend Logic
+ * Supports: Phase Management (DingQue/Playing), Action Buttons, AI Suggestions
  */
 import { createApp, reactive, computed } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js';
 
@@ -13,265 +14,222 @@ function tileSrc(tile) {
 
 const app = createApp({
     setup() {
+        // --- State ---
         const state = reactive({
             connected: false,
+            gaming: false,
+            phase: 'idle', // idle, dingque, playing, result
+            gameEnded: false,
+
             myPlayerId: 0,
             currentActor: -1,
+            tilesLeft: 108,
+
+            // Game Data
             scores: [25000, 25000, 25000, 25000],
-            tehai: [],
+            tehai: [], // My hand
+            tsumoTile: null, // Last drawn tile
             discards: [[], [], [], []],
             agari: [false, false, false, false],
-            tilesLeft: 108,
-            gameEnded: false
+            dingque: [null, null, null, null], // m, p, s for each player
+
+            // Interactive
+            validActions: [], // [{type: 'pon', ...}]
         });
 
-        const analysis = reactive({ candidates: [], best_action: null });
+        const analysis = reactive({ best_action: null });
         const ui = reactive({ selectedIdx: -1 });
         let ws = null;
 
+        // --- Computed ---
+        const isMyTurn = computed(() => state.currentActor === state.myPlayerId);
+
+        // --- Network ---
         const connect = () => {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(`${protocol}//${window.location.host}/ws/game`);
+
             ws.onopen = () => { state.connected = true; };
-            ws.onmessage = (e) => {
-                const msg = JSON.parse(e.data);
-                if (msg.type === 'state_update') {
-                    const d = msg.data;
-                    if (d.analysis) {
-                        analysis.candidates = d.analysis.candidates || [];
-                        analysis.best_action = d.analysis.best_action || null;
-                    }
-                    if (d.events) replayEvents(d.events);
-                } else if (msg.type === 'game_over') {
-                    state.gameEnded = true;
-                    alert(`对局结束 分数: ${msg.scores?.join(', ')}`);
-                }
-            };
             ws.onclose = () => {
                 state.connected = false;
                 setTimeout(connect, 3000);
             };
+            ws.onmessage = (e) => handleMessage(JSON.parse(e.data));
         };
 
         const send = (data) => {
             if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
         };
 
+        // --- Message Handling ---
+        function handleMessage(msg) {
+            console.log('WS Msg:', msg);
+            if (msg.type === 'state_update') {
+                updateFullState(msg.data);
+            } else if (msg.type === 'ding_que') {
+                // Server asking for Ding Que
+                state.phase = 'dingque';
+            } else if (msg.type === 'allow_actions') {
+                // Server offering actions (Pon/Kan/Hu)
+                state.validActions = msg.actions;
+            } else if (msg.type === 'game_over') {
+                state.gameEnded = true;
+                state.phase = 'result';
+                state.gaming = false;
+                alert(`Game Over! Scores: ${msg.scores.join(', ')}`);
+            }
+        }
+
+        function updateFullState(data) {
+            // Mapping complex server state to frontend state
+            // In a real app, this might be partial updates.
+            // Here we mostly rely on event replay or direct data.
+
+            if (data.analysis) {
+                analysis.best_action = data.analysis.best_action;
+            }
+            if (data.events) {
+                replayEvents(data.events);
+            }
+        }
+
+        // --- Event Replay (Reconstruct State) ---
         function replayEvents(events) {
-            state.discards = [[], [], [], []];
-            state.tehai = [];
-            state.agari = [false, false, false, false];
-            state.tilesLeft = 56;
+            // Reset per-kyoku state if start_kyoku
+            // This logic matches previous arena.js but expanded
+
             for (const ev of events) {
                 switch (ev.type) {
                     case 'start_game':
+                        state.gaming = true;
                         state.gameEnded = false;
-                        state.agari = [false, false, false, false];
+                        state.phase = 'playing'; // Default, might switch to dingque later
+                        state.scores = [25000, 25000, 25000, 25000];
                         break;
                     case 'start_kyoku':
                         state.tehai = ev.tehai || [];
-                        if (ev.scores) state.scores = ev.scores;
+                        state.tsumoTile = null;
+                        state.discards = [[], [], [], []];
+                        state.agari = [false, false, false, false];
+                        state.dingque = [null, null, null, null];
+                        state.tilesLeft = 108; // Approx (Blood is 108)
+                        state.phase = 'playing';
+                        break;
+                    case 'ding_que':
+                        // ev.choices might inform us, but usually we wait for active request
+                        // If event is "ding_que_done", update badges
                         break;
                     case 'tsumo':
                         state.currentActor = ev.actor;
-                        state.tilesLeft = Math.max(0, state.tilesLeft - 1);
-                        if (ev.actor === state.myPlayerId && ev.pai) state.tehai.push(ev.pai);
-                        break;
-                    case 'dahai':
-                        state.currentActor = (ev.actor + 1) % 4;
-                        if (!state.discards[ev.actor]) state.discards[ev.actor] = [];
-                        state.discards[ev.actor].push(ev.pai);
-                        if (ev.actor === state.myPlayerId) {
-                            const i = state.tehai.lastIndexOf(ev.pai);
-                            if (i > -1) state.tehai.splice(i, 1);
+                        state.tilesLeft--;
+                        if (ev.actor === state.myPlayerId && ev.pai) {
+                            state.tsumoTile = ev.pai;
                         }
                         break;
+                    case 'dahai':
+                        state.currentActor = (ev.actor + 1) % 4; // Speculative next
+                        if (!state.discards[ev.actor]) state.discards[ev.actor] = [];
+                        state.discards[ev.actor].push(ev.pai);
+
+                        if (ev.actor === state.myPlayerId) {
+                            if (state.tsumoTile === ev.pai) {
+                                state.tsumoTile = null;
+                            } else {
+                                const idx = state.tehai.indexOf(ev.pai);
+                                if (idx > -1) state.tehai.splice(idx, 1);
+                                // If we tsumogiri'd from hand, move tsumo to hand
+                                if (state.tsumoTile) {
+                                    state.tehai.push(state.tsumoTile);
+                                    state.tehai.sort(); // Simple sort
+                                    state.tsumoTile = null;
+                                }
+                            }
+                        }
+                        ui.selectedIdx = -1;
+                        state.validActions = []; // Clear actions on new move
+                        break;
                     case 'pon':
-                    case 'chi':
-                    case 'daiminkan':
-                    case 'kakan':
-                    case 'ankan':
+                    case 'kan':
                         state.currentActor = ev.actor;
-                        if (ev.actor === state.myPlayerId && ev.consumed)
-                            ev.consumed.forEach(t => {
-                                const i = state.tehai.lastIndexOf(t);
-                                if (i > -1) state.tehai.splice(i, 1);
-                            });
+                        state.validActions = [];
+                        // Remove from hand implementation (simplified)
                         break;
                     case 'agari':
                         state.agari[ev.actor] = true;
-                        break;
-                    case 'ryukyoku':
-                        state.gameEnded = true;
                         break;
                 }
             }
         }
 
-        function player(offset) {
-            const id = (state.myPlayerId + offset) % 4;
-            return {
-                id,
-                score: state.scores[id],
-                isTurn: state.currentActor === id,
-                agari: state.agari && state.agari[id]
-            };
+        // --- Interaction ---
+        function startGame() {
+            send({ type: 'start_game' });
         }
 
-        function hand(offset) {
-            if (offset === 0) return state.tehai;
-            return Array(13).fill('back');
-        }
-
-        function discards(offset) {
-            return state.discards[(state.myPlayerId + offset) % 4] || [];
+        function doDingQue(suit) {
+            send({ type: 'ding_que', suit: suit });
+            state.phase = 'playing'; // Assume done, wait for server
         }
 
         function onTileClick(tile, idx) {
-            if (player(0).isTurn !== true) return;
+            // Only allow click if my turn and playing
+            if (!isMyTurn.value || state.phase !== 'playing') return;
+
+            // Toggle selection
             if (ui.selectedIdx === idx) {
-                send({ type: 'dahai', actor: state.myPlayerId, pai: tile, tsumogiri: false });
+                // Confirm discard
+                send({ type: 'dahai', actor: state.myPlayerId, pai: tile });
+                state.tsumoTile = null; // Client side optimistic update
                 ui.selectedIdx = -1;
             } else {
                 ui.selectedIdx = idx;
             }
         }
 
+        function doAction(act) {
+            send({ type: 'action', action: act });
+            state.validActions = [];
+        }
+
+        function actionLabel(type) {
+            const map = { 'hu': '胡', 'pon': '碰', 'kan': '杠', 'pass': '过' };
+            return map[type] || type.toUpperCase();
+        }
+
+        // --- Helpers ---
+        function player(offset) {
+            const id = (state.myPlayerId + offset) % 4;
+            return {
+                score: state.scores[id],
+                dingque: state.dingque[id],
+                agari: state.agari[id]
+            };
+        }
+
+        function hand(offset) {
+            // For now only show my hand
+            if (offset === 0) return state.tehai;
+            return [];
+        }
+
+        function discards(offset) {
+            const id = (state.myPlayerId + offset) % 4;
+            return state.discards[id] || [];
+        }
+
         function isRecommended(tile) {
             return analysis.best_action && analysis.best_action.pai === tile;
         }
 
-        function startGame() {
-            fetch('/start_game', { method: 'POST' });
-            send({ type: 'start_game' });
-        }
-
+        // Init
         connect();
 
         return {
-            state,
-            analysis,
-            ui,
-            tileSrc,
-            player,
-            hand,
-            discards,
-            onTileClick,
-            isRecommended,
-            startGame
+            state, analysis, ui, isMyTurn,
+            startGame, doDingQue, onTileClick, doAction,
+            tileSrc, player, hand, discards, isRecommended, actionLabel
         };
-    },
-    template: `
-    <div class="arena">
-        <header class="arena-header">
-            <span class="arena-title">血战到底</span>
-            <span class="arena-status" :class="{ connected: state.connected }">
-                {{ state.connected ? '已连接' : '连接中…' }}
-            </span>
-            <button class="btn" @click="startGame">开始对局</button>
-        </header>
-
-        <main class="arena-main">
-            <div class="board">
-                <!-- 对家 -->
-                <div class="zone zone-top">
-                    <div class="zone-inner">
-                        <div class="player-bar" :class="{ active: player(2).isTurn }">
-                            <span>对家</span>
-                            <span class="score">{{ player(2).score }}</span>
-                            <span class="agari" v-if="player(2).agari">和</span>
-                        </div>
-                        <div class="hand-row">
-                            <div class="tile-wrap" v-for="(t, i) in hand(2)" :key="'t'+i">
-                                <img :src="tileSrc(t)" :alt="t">
-                            </div>
-                        </div>
-                        <div class="river-row">
-                            <div class="tile-wrap" v-for="(d, i) in discards(2)" :key="'dt'+i">
-                                <img :src="tileSrc(d)" :alt="d">
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 上家 -->
-                <div class="zone zone-left">
-                    <div class="zone-inner">
-                        <div class="player-bar" :class="{ active: player(3).isTurn }">上家 {{ player(3).score }}</div>
-                        <div class="hand-row">
-                            <div class="tile-wrap" v-for="(t, i) in hand(3)" :key="'l'+i">
-                                <img :src="tileSrc(t)" :alt="t">
-                            </div>
-                        </div>
-                        <div class="river-row">
-                            <div class="tile-wrap" v-for="(d, i) in discards(3)" :key="'dl'+i">
-                                <img :src="tileSrc(d)" :alt="d">
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 下家 -->
-                <div class="zone zone-right">
-                    <div class="zone-inner">
-                        <div class="player-bar" :class="{ active: player(1).isTurn }">下家 {{ player(1).score }}</div>
-                        <div class="hand-row">
-                            <div class="tile-wrap" v-for="(t, i) in hand(1)" :key="'r'+i">
-                                <img :src="tileSrc(t)" :alt="t">
-                            </div>
-                        </div>
-                        <div class="river-row">
-                            <div class="tile-wrap" v-for="(d, i) in discards(1)" :key="'dr'+i">
-                                <img :src="tileSrc(d)" :alt="d">
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 自己 -->
-                <div class="zone zone-bottom">
-                    <div class="zone-inner">
-                        <div class="river-row">
-                            <div class="tile-wrap" v-for="(d, i) in discards(0)" :key="'db'+i">
-                                <img :src="tileSrc(d)" :alt="d">
-                            </div>
-                        </div>
-                        <div class="hand-row">
-                            <div class="tile-wrap clickable"
-                                 v-for="(t, i) in hand(0)"
-                                 :key="'b'+i"
-                                 :class="{ selected: ui.selectedIdx === i, recommended: isRecommended(t) }"
-                                 @click="onTileClick(t, i)">
-                                <img :src="tileSrc(t)" :alt="t">
-                            </div>
-                        </div>
-                        <div class="player-bar" :class="{ active: player(0).isTurn }">
-                            <span>我</span>
-                            <span class="score">{{ player(0).score }}</span>
-                            <span class="agari" v-if="player(0).agari">和</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 中央 -->
-                <div class="zone zone-center">
-                    <div class="turn" :class="{ my: player(0).isTurn }">
-                        {{ player(0).isTurn ? '请打牌' : '等待' }}
-                    </div>
-                    <div class="tiles-left">剩余 {{ state.tilesLeft }} 张</div>
-                </div>
-
-                <!-- AI 推荐 -->
-                <div class="ai-bar" :class="{ hidden: !analysis.best_action || analysis.best_action.type !== 'dahai' }">
-                    <span class="label">推荐打</span>
-                    <div class="tile-wrap" v-if="analysis.best_action && analysis.best_action.pai">
-                        <img :src="tileSrc(analysis.best_action.pai)" :alt="analysis.best_action.pai">
-                    </div>
-                </div>
-            </div>
-        </main>
-    </div>
-    `
+    }
 });
 
 app.mount('#app');
