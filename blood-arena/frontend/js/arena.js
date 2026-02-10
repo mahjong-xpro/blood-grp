@@ -121,7 +121,7 @@ const app = createApp({
                 analysis.best_action = data.analysis.best_action;
             }
             if (data.events) {
-                replayEvents(data.events);
+                void replayEvents(data.events);
             }
         }
 
@@ -137,10 +137,19 @@ const app = createApp({
             });
         }
 
+        const ACTION_DELAY_MS = 2000;
+        const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
         // --- Event Replay ---
-        function replayEvents(events) {
+        async function replayEvents(events) {
             state.tsumoTile = null;
+            let firstAction = true;
+            const isAction = (ev) => ['dahai', 'pon', 'kan', 'ankan', 'daiminkan', 'kakan'].includes(ev.type);
             for (const ev of events) {
+                if (isAction(ev)) {
+                    if (!firstAction) await delay(ACTION_DELAY_MS);
+                    firstAction = false;
+                }
                 switch (ev.type) {
                     case 'start_game':
                         state.gaming = true;
