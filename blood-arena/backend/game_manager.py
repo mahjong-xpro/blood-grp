@@ -207,6 +207,21 @@ class HumanEngine:
         dq_mask = mask[31] if mask is not None and len(mask) > 31 else False
         logging.info(f"[DEBUG] State Check: mask[31]={dq_mask}. mask_len={len(mask) if mask is not None else 0}")
         
+        # CRITICAL FIX: Sync Mask with Logical Rules (ActionCandidate)
+        # Sometimes encode_obs mask generation fails (e.g. version mismatch), causing hidden buttons.
+        # We trust `last_cans` (Rust Logic) more than `mask` (NN Input).
+        try:
+            cans = game_state.last_cans
+            if cans.can_ding_que:
+                logging.info("[DEBUG] Force-enabling Ding Que based on Rule Logic")
+                # Force mask bits to True so is_interactive and validation pass
+                if mask is not None and len(mask) > 33:
+                    mask[31] = 1
+                    mask[32] = 1
+                    mask[33] = 1
+        except Exception as e:
+            logging.warning(f"Could not access last_cans for validation: {e}")
+
         # 2.5 Decode Events for Frontend (Re-implementation of MJAI translation)
         # The original `events = json.loads(events_json)` is sufficient for now.
         # The comment "logic continues" implies the AI analysis part should still be there.
