@@ -1,12 +1,12 @@
 /**
  * Blood Arena Frontend Logic
- * Supports: Phase Management (Backend-Driven), Action Buttons, AI Suggestions
+ * Supports: Phase Management, Action Buttons, AI Suggestions, Melds (Fuuro)
  */
 import { createApp, reactive, computed } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js';
 
 const TILE_BASE = '/static/images/tiles';
 function tileSrc(tile) {
-    if (!tile || tile === 'back') return `${TILE_BASE}/Back.png`;
+    if (!tile || tile === 'back' || tile === '?') return `${TILE_BASE}/Back.png`;
     const n = tile[0], s = tile[1];
     const suit = { m: 'Man', p: 'Pin', s: 'Sou' }[s] || 'Man';
     return `${TILE_BASE}/${suit}${n}.png`;
@@ -31,11 +31,12 @@ const app = createApp({
             tsumoTile: null, // Last drawn tile
             discards: [[], [], [], []],
             agari: [false, false, false, false],
-            dingque: [null, null, null, null], // m, p, s for each player
+            dingque: [null, null, null, null], // m, p, s
+            fuuro: [[], [], [], []], // Melds
 
             // Interactive
-            validActions: [], // [{type: 'pon', ...}]
-            canDiscard: false, // Controlled by backend action_request
+            validActions: [],
+            canDiscard: false,
         });
 
         const analysis = reactive({ best_action: null });
@@ -64,7 +65,6 @@ const app = createApp({
 
         // --- Message Handling ---
         function handleMessage(msg) {
-            // console.log('WS Msg:', msg); // Verbose
             if (msg.type === 'state_update') {
                 updateFullState(msg.data);
             } else if (msg.type === 'action_request') {
@@ -96,20 +96,18 @@ const app = createApp({
             if (isDingQue) {
                 state.phase = 'dingque';
             } else {
-                state.phase = 'playing'; // Default phase for most actions
+                state.phase = 'playing';
                 if (isDiscard) {
                     state.canDiscard = true;
-                    state.currentActor = state.myPlayerId; // Ensure visual sync
+                    state.currentActor = state.myPlayerId;
                 }
             }
         }
 
         function updateFullState(data) {
-            // Mapping complex server state to frontend state
             if (data.analysis) {
                 analysis.best_action = data.analysis.best_action;
             }
-            // Events update visual state only
             if (data.events) {
                 replayEvents(data.events);
             }
@@ -119,6 +117,7 @@ const app = createApp({
         function sortTiles(tiles) {
             const suitOrder = { 'm': 0, 'p': 1, 's': 2, 'z': 3 };
             tiles.sort((a, b) => {
+                if (a === '?' || b === '?') return 0; // Don't sort unknowns
                 const suitA = a[1], suitB = b[1];
                 const numA = parseInt(a[0]), numB = parseInt(b[0]);
                 if (suitOrder[suitA] !== suitOrder[suitB]) return suitOrder[suitA] - suitOrder[suitB];
@@ -126,30 +125,25 @@ const app = createApp({
             });
         }
 
-        // --- Event Replay (Reconstruct Visual State) ---
+        // --- Event Replay ---
         function replayEvents(events) {
-            // IMPORTANT: Do NOT wipe state here. Use events to build visual board.
-            // Phase and Interaction are controlled by handleActionRequest.
-
             for (const ev of events) {
                 switch (ev.type) {
                     case 'start_game':
                         state.gaming = true;
                         state.gameEnded = false;
                         state.scores = [25000, 25000, 25000, 25000];
+                        state.fuuro = [[], [], [], []];
                         break;
                     case 'start_kyoku':
-                        // Reset Round State
                         state.tehai = (ev.tehais ? ev.tehais[state.myPlayerId] : []) || [];
                         sortTiles(state.tehai);
                         state.tsumoTile = null;
                         state.discards = [[], [], [], []];
                         state.agari = [false, false, false, false];
                         state.dingque = [null, null, null, null];
+                        state.fuuro = [[], [], [], []];
                         state.tilesLeft = 56;
-
-                        // NOTE: We do NOT set state.phase = 'playing' here.
-                        // We wait for 'action_request' to tell us if we are playing or dingque-ing.
                         break;
                     case 'ding_que':
                         if (ev.actor !== undefined && (ev.suit || ev.color)) {
@@ -159,7 +153,7 @@ const app = createApp({
                     case 'tsumo':
                         state.currentActor = ev.actor;
                         state.tilesLeft = Math.max(0, state.tilesLeft - 1);
-                        if (ev.actor === state.myPlayerId && ev.pai) {
+                        if (ev.actor === state.myPlayerId && ev.pai && ev.pai !== '?') {
                             state.tsumoTile = ev.pai;
                         }
                         break;
@@ -184,6 +178,7 @@ const app = createApp({
                         }
                         ui.selectedIdx = -1;
                         break;
+
                     case 'pon':
                     case 'kan':
                     case 'ankan':
@@ -191,6 +186,7 @@ const app = createApp({
                     case 'kakan':
                         state.currentActor = ev.actor;
 
+                        // 1. Hand Management (Remove Used Tiles)
                         if (ev.actor === state.myPlayerId) {
                             let toRemove = [];
                             if (ev.type === 'kakan') {
@@ -207,14 +203,42 @@ const app = createApp({
                                     if (idx > -1) state.tehai.splice(idx, 1);
                                 }
                             }
-
                             if (state.tsumoTile) {
                                 state.tehai.push(state.tsumoTile);
                                 state.tsumoTile = null;
                             }
                             sortTiles(state.tehai);
                         }
+
+                        // 2. Fuuro Management (Visual)
+                        if (!state.fuuro[ev.actor]) state.fuuro[ev.actor] = [];
+
+                        if (ev.type === 'kakan') {
+                            // Upgrade Pon
+                            // Find pon of same suit/rank
+                            const p = ev.pai;
+                            const target = state.fuuro[ev.actor].find(m =>
+                                m.type === 'pon' && m.tiles[0] && m.tiles[0][0] == p[0] && m.tiles[0][1] == p[1]
+                            );
+                            if (target) {
+                                target.type = 'kakan'; // Visual upgrade
+                                target.tiles.push(p);
+                            } else {
+                                // Should not happen, but fallback
+                                state.fuuro[ev.actor].push({ type: 'kakan', tiles: [p, p, p, p] });
+                            }
+                        } else {
+                            // New Meld
+                            let tiles = [];
+                            if (ev.type === 'ankan') tiles = ev.consumed;
+                            else if (ev.type === 'daiminkan') tiles = [ev.pai, ...ev.consumed];
+                            else if (ev.type === 'pon') tiles = [ev.pai, ...ev.consumed];
+                            else tiles = [ev.pai, ...ev.consumed]; // kan?
+
+                            state.fuuro[ev.actor].push({ type: ev.type, tiles: tiles });
+                        }
                         break;
+
                     case 'agari':
                         state.agari[ev.actor] = true;
                         break;
@@ -229,26 +253,20 @@ const app = createApp({
 
         function doDingQue(suit) {
             send({ type: 'ding_que', suit: suit });
-
-            // Optimistic Update
             const map = { 'm': 'man', 'p': 'pin', 's': 'sou' };
             state.dingque[state.myPlayerId] = map[suit] || suit;
-
-            // Optimistically move to playing to avoid UI stutter
-            // Backend failure will revert this via state_update/action_request
             state.phase = 'playing';
         }
 
         function onTileClick(tile, idx) {
             // Only allow click if Backend explicitly authorized Discard
             if (!state.canDiscard) return;
+            if (tile === '?') return;
 
-            // Toggle selection
             if (ui.selectedIdx === idx) {
-                // Confirm discard
                 send({ type: 'dahai', actor: state.myPlayerId, pai: tile });
-                state.tsumoTile = null; // Client side optimistic update
-                state.canDiscard = false; // Lock immediately
+                state.tsumoTile = null;
+                state.canDiscard = false;
                 ui.selectedIdx = -1;
             } else {
                 ui.selectedIdx = idx;
@@ -267,10 +285,7 @@ const app = createApp({
         }
 
         function dingqueLabel(suit) {
-            const map = {
-                'm': '万', 'p': '筒', 's': '条',
-                'man': '万', 'pin': '筒', 'sou': '条'
-            };
+            const map = { 'm': '万', 'p': '筒', 's': '条', 'man': '万', 'pin': '筒', 'sou': '条' };
             return map[suit] || suit;
         }
 
@@ -294,6 +309,11 @@ const app = createApp({
             return state.discards[id] || [];
         }
 
+        function getFuuro(offset) {
+            const id = (state.myPlayerId + offset) % 4;
+            return state.fuuro[id] || [];
+        }
+
         function isRecommended(tile) {
             return analysis.best_action && analysis.best_action.pai === tile;
         }
@@ -304,7 +324,8 @@ const app = createApp({
         return {
             state, analysis, ui, isMyTurn,
             startGame, doDingQue, onTileClick, doAction,
-            tileSrc, player, hand, discards, isRecommended, actionLabel, dingqueLabel
+            tileSrc, player, hand, discards, isRecommended, actionLabel, dingqueLabel,
+            getFuuro
         };
     }
 });

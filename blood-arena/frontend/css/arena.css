@@ -232,12 +232,86 @@ body {
     border-radius: 2px;
 }
 
+/* Rotate River Tiles */
+.zone-top .river .tile {
+    transform: rotate(180deg);
+}
+
+.zone-left .river .tile {
+    transform: rotate(90deg);
+    margin: 2px 0;
+    /* Vertical spacing */
+}
+
+.zone-right .river .tile {
+    transform: rotate(-90deg);
+    margin: 2px 0;
+}
+
 .zone-top .hand .tile {
     width: var(--tile-w-sm);
     height: var(--tile-h-sm);
     background: #222;
     border: 1px solid #444;
     border-radius: 2px;
+}
+
+/* Meld Area (Fuuro) */
+.meld-area {
+    margin: 5px;
+    display: flex;
+    gap: 10px;
+}
+
+/* Side Melds need vertical layout? 
+   Usually melds are displayed alongside the hand.
+   For simplicity, let's keep them horizontal for Top/Me, and Vertical for Side?
+   Or just wrap them.
+*/
+.zone-left .meld-area,
+.zone-right .meld-area {
+    flex-direction: column;
+}
+
+.meld {
+    display: flex;
+    gap: 0;
+    border: 1px solid #555;
+    /* Group border */
+}
+
+.meld .tile {
+    width: var(--tile-w-sm);
+    height: var(--tile-h-sm);
+}
+
+/* Rotate Side Melds */
+.zone-left .meld .tile {
+    transform: rotate(90deg);
+    width: var(--tile-h-sm);
+    /* Swap for layout */
+    height: var(--tile-w-sm);
+}
+
+.zone-right .meld .tile {
+    transform: rotate(-90deg);
+    width: var(--tile-h-sm);
+    height: var(--tile-w-sm);
+}
+
+.zone-top .meld .tile {
+    transform: rotate(180deg);
+}
+
+/* My Melds */
+.zone-bottom .meld-area {
+    margin-left: 20px;
+}
+
+.zone-bottom .meld .tile {
+    width: var(--tile-w-sm);
+    /* Slightly smaller than hand */
+    height: var(--tile-h-sm);
 }
 
 /* My Hand (Bottom) */
