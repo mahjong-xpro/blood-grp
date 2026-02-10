@@ -119,6 +119,7 @@ const app = createApp({
                         // Reset Round State
                         // Fix for One Tile Hand: Use tehais array if available
                         state.tehai = (ev.tehais ? ev.tehais[state.myPlayerId] : []) || ev.tehai || ev.hand || [];
+                        sortTiles(state.tehai);
                         state.tsumoTile = null;
                         state.discards = [[], [], [], []];
                         state.agari = [false, false, false, false];
