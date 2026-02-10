@@ -136,8 +136,8 @@ const app = createApp({
                         break;
                     case 'ding_que':
                         // If we see a ding_que EVENT in history, it means someone declared it
-                        if (ev.actor !== undefined && ev.color) {
-                            state.dingque[ev.actor] = ev.color;
+                        if (ev.actor !== undefined && (ev.suit || ev.color)) {
+                            state.dingque[ev.actor] = ev.suit || ev.color;
                         }
                         break;
                     case 'tsumo':
@@ -259,7 +259,10 @@ const app = createApp({
         }
 
         function dingqueLabel(suit) {
-            const map = { 'm': '万', 'p': '筒', 's': '条' };
+            const map = {
+                'm': '万', 'p': '筒', 's': '条',
+                'man': '万', 'pin': '筒', 'sou': '条'
+            };
             return map[suit] || suit;
         }
 
