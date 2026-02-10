@@ -276,7 +276,7 @@ class HumanEngine:
             
             if is_valid:
                 logging.info(f"Received valid action: {action_data}")
-                mjai_action = self._translate_to_mjai(action_data, game_state)
+                mjai_action = self._translate_to_mjai(action_data, player_state)
                 # Defensive check: if mjai translation fails (returns None/Error)?
                 # Current implementation returns dict.
                 return [json.dumps(mjai_action)]
