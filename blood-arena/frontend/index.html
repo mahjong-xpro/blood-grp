@@ -20,9 +20,9 @@
                 </div>
             </div>
             <div class="header-right">
-                <label class="toggle-ai-hands">
+                <label class="toggle-ai-hands" title="牌局结束时显示各家实际牌面">
                     <input type="checkbox" v-model="state.showAiHands">
-                    <span>显示AI手牌</span>
+                    <span>显示AI手牌（结束时）</span>
                 </label>
                 <button class="btn btn-primary" @click="startGame" :disabled="state.gaming">
                     {{ state.gameEnded ? '再来一局' : '开始对局' }}
@@ -73,10 +73,15 @@
                             </div>
                         </div>
                     </div>
-                    <!-- Hand -->
-                    <div class="hand-area" v-show="state.showAiHands">
+                    <!-- Hand：勾选“显示AI手牌”且牌局结束有数据时显示实际牌面，否则背牌 -->
+                    <div class="hand-area">
                         <div class="tile-group hand">
-                            <div class="tile back" v-for="n in getHandTileCount(2)" :key="n"></div>
+                            <template v-if="state.showAiHands && handTiles(2).length">
+                                <div class="tile" v-for="(t, i) in handTiles(2)" :key="i">
+                                    <img :src="tileSrc(t)">
+                                </div>
+                            </template>
+                            <div class="tile back" v-else v-for="n in getHandTileCount(2)" :key="n"></div>
                         </div>
                     </div>
                 </div>
@@ -116,9 +121,14 @@
                         </div>
                     </div>
                     <!-- Hand -->
-                    <div class="hand-area" v-show="state.showAiHands">
+                    <div class="hand-area">
                         <div class="tile-group hand">
-                            <div class="tile back" v-for="n in getHandTileCount(3)" :key="n"></div>
+                            <template v-if="state.showAiHands && handTiles(3).length">
+                                <div class="tile" v-for="(t, i) in handTiles(3)" :key="i">
+                                    <img :src="tileSrc(t)">
+                                </div>
+                            </template>
+                            <div class="tile back" v-else v-for="n in getHandTileCount(3)" :key="n"></div>
                         </div>
                     </div>
                 </div>
@@ -157,9 +167,14 @@
                         </div>
                     </div>
                     <!-- Hand -->
-                    <div class="hand-area" v-show="state.showAiHands">
+                    <div class="hand-area">
                         <div class="tile-group hand">
-                            <div class="tile back" v-for="n in getHandTileCount(1)" :key="n"></div>
+                            <template v-if="state.showAiHands && handTiles(1).length">
+                                <div class="tile" v-for="(t, i) in handTiles(1)" :key="i">
+                                    <img :src="tileSrc(t)">
+                                </div>
+                            </template>
+                            <div class="tile back" v-else v-for="n in getHandTileCount(1)" :key="n"></div>
                         </div>
                     </div>
                 </div>

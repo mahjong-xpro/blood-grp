@@ -38,8 +38,9 @@ const app = createApp({
             validActions: [],
             canDiscard: false,
 
-            // AI 手牌是否显示（背牌张数）
+            // 是否在牌局结束时显示 AI 实际牌面（需要后端 game_over 带 tehais）
             showAiHands: true,
+            finalTehais: null, // 牌局结束时四家手牌 [p0[], p1[], p2[], p3[]]
         });
 
         const analysis = reactive({ best_action: null });
@@ -78,6 +79,11 @@ const app = createApp({
                 state.gaming = false;
                 if (msg.scores && msg.scores.length === 4) {
                     state.scores = [...msg.scores];
+                }
+                if (msg.tehais && msg.tehais.length === 4) {
+                    state.finalTehais = msg.tehais.map(h => [...(h || [])]);
+                } else {
+                    state.finalTehais = null;
                 }
             }
         }
@@ -139,12 +145,14 @@ const app = createApp({
                     case 'start_game':
                         state.gaming = true;
                         state.gameEnded = false;
+                        state.finalTehais = null;
                         state.scores = [60000, 60000, 60000, 60000];
                         state.fuuro = [[], [], [], []];
                         break;
                     case 'start_kyoku':
                         state.gaming = true;
                         state.gameEnded = false;
+                        state.finalTehais = null;
                         state.scores = (ev.scores && ev.scores.length === 4) ? [...ev.scores] : [60000, 60000, 60000, 60000];
                         state.tehai = (ev.tehais ? ev.tehais[state.myPlayerId] : []) || [];
                         sortTiles(state.tehai);
@@ -323,6 +331,16 @@ const app = createApp({
             return [];
         }
 
+        /** 用于显示的手牌：牌局结束且有 finalTehais 时返回该玩家牌面，否则自家为 tehai，他家为空 */
+        function handTiles(offset) {
+            const id = (state.myPlayerId + offset) % 4;
+            if (state.gameEnded && state.finalTehais && state.finalTehais[id]) {
+                return state.finalTehais[id];
+            }
+            if (offset === 0) return state.tehai;
+            return [];
+        }
+
         function discards(offset) {
             const id = (state.myPlayerId + offset) % 4;
             return state.discards[id] || [];
@@ -344,7 +362,7 @@ const app = createApp({
             state, analysis, ui, isMyTurn,
             startGame, doDingQue, onTileClick, doAction,
             tileSrc, player, hand, discards, isRecommended, actionLabel, dingqueLabel,
-            getFuuro, canDiscardTile,
+            getFuuro, canDiscardTile, handTiles,
             getHandTileCount(p) {
                 const meldCount = state.fuuro[p] ? state.fuuro[p].length : 0;
                 let count = 13 - (meldCount * 3);
