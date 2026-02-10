@@ -27,6 +27,7 @@ class HumanEngine:
         self.tehai = [] # List of strings: ["1m", "5z"]
         self.last_kawa = None # Tuple: (actor_id, tile_str)
         self.last_tsumo_tile = None # Latest tile drawn by self
+        self.peng = [] # List of pon-ed tiles (e.g. ["1m", "5z"])
 
     def set_player_ids(self, ids):
         self.player_id = ids[0]
@@ -52,6 +53,7 @@ class HumanEngine:
                     self.tehai = ev["tehais"][self.player_id]
                     self.last_kawa = None
                     self.last_tsumo_tile = None
+                    self.peng = []
                     logging.info(f"Kyoku Start. Hand: {self.tehai}")
                     
                 elif etype == "tsumo":
