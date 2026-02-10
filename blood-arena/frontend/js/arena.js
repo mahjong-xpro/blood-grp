@@ -63,7 +63,7 @@ const app = createApp({
 
         // --- Message Handling ---
         function handleMessage(msg) {
-            console.log('WS Msg:', msg);
+            // console.log('WS Msg:', msg); // Verbose
             if (msg.type === 'state_update') {
                 updateFullState(msg.data);
             } else if (msg.type === 'ding_que') {
@@ -82,9 +82,6 @@ const app = createApp({
 
         function updateFullState(data) {
             // Mapping complex server state to frontend state
-            // In a real app, this might be partial updates.
-            // Here we mostly rely on event replay or direct data.
-
             if (data.analysis) {
                 analysis.best_action = data.analysis.best_action;
             }
@@ -95,39 +92,56 @@ const app = createApp({
 
         // --- Event Replay (Reconstruct State) ---
         function replayEvents(events) {
-            // Reset per-kyoku state if start_kyoku
-            // This logic matches previous arena.js but expanded
+            // IMPORTANT: Do NOT wipe state here.
+            // If backend sends incremental updates (e.g. only new events), wiping would destroy the hand.
+            // State reset should only happen on 'start_game' or 'start_kyoku'.
 
             for (const ev of events) {
                 switch (ev.type) {
                     case 'start_game':
                         state.gaming = true;
                         state.gameEnded = false;
-                        state.phase = 'playing'; // Default, might switch to dingque later
                         state.scores = [25000, 25000, 25000, 25000];
+                        // Don't force phase reset here, wait for flow
                         break;
                     case 'start_kyoku':
-                        state.tehai = ev.tehai || [];
+                        // Reset Round State
+                        state.tehai = ev.tehai || ev.hand || [];
                         state.tsumoTile = null;
                         state.discards = [[], [], [], []];
                         state.agari = [false, false, false, false];
                         state.dingque = [null, null, null, null];
-                        state.tilesLeft = 108; // Approx (Blood is 108)
-                        state.phase = 'playing';
+
+                        // Correct Tile Count (108 - 13*4 = 56)
+                        state.tilesLeft = 56;
+
+                        // Phase Stability: Only reset to playing if not in specific interactive phase
+                        if (state.phase !== 'dingque') {
+                            state.phase = 'playing';
+                        }
                         break;
                     case 'ding_que':
-                        // ev.choices might inform us, but usually we wait for active request
-                        // If event is "ding_que_done", update badges
+                        // If we see a ding_que EVENT in history, it means someone declared it
+                        if (ev.actor !== undefined && ev.color) {
+                            state.dingque[ev.actor] = ev.color;
+                        }
                         break;
                     case 'tsumo':
                         state.currentActor = ev.actor;
-                        state.tilesLeft--;
+
+                        // Auto-correct phase if stuck
+                        if (state.phase === 'dingque') state.phase = 'playing';
+
+                        state.tilesLeft = Math.max(0, state.tilesLeft - 1);
                         if (ev.actor === state.myPlayerId && ev.pai) {
                             state.tsumoTile = ev.pai;
                         }
                         break;
                     case 'dahai':
                         state.currentActor = (ev.actor + 1) % 4; // Speculative next
+
+                        if (state.phase === 'dingque') state.phase = 'playing';
+
                         if (!state.discards[ev.actor]) state.discards[ev.actor] = [];
                         state.discards[ev.actor].push(ev.pai);
 
@@ -150,9 +164,11 @@ const app = createApp({
                         break;
                     case 'pon':
                     case 'kan':
+                    case 'chi': // Bloody Battle doesn't usually have Chi but for completeness
                         state.currentActor = ev.actor;
                         state.validActions = [];
-                        // Remove from hand implementation (simplified)
+                        // Remove from hand implementation (simplified, ideally we remove tiles)
+                        // This visualization is imperfect for opened sets but acceptable for "My Hand" view
                         break;
                     case 'agari':
                         state.agari[ev.actor] = true;
@@ -168,7 +184,7 @@ const app = createApp({
 
         function doDingQue(suit) {
             send({ type: 'ding_que', suit: suit });
-            state.phase = 'playing'; // Assume done, wait for server
+            state.phase = 'playing'; // Assume done, optimistic update
         }
 
         function onTileClick(tile, idx) {
