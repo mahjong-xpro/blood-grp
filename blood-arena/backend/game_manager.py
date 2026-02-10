@@ -116,6 +116,10 @@ class HumanEngine:
                     "analysis": {}
                 }
             }
+            logging.info(f"[DEBUG] update_state events count: {len(events)}")
+            # Optional: log specific event types to see if DingQue is there
+            # dqs = [e for e in events if e['type'] == 'ding_que']
+            # if dqs: logging.info(f"[DEBUG] DingQue events found: {dqs}")
             self.shared_state['latest'] = msg
             self.state_queue.put(msg)
         except Exception as e:

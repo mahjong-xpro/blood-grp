@@ -228,7 +228,12 @@ const app = createApp({
 
         function doDingQue(suit) {
             send({ type: 'ding_que', suit: suit });
-            state.phase = 'playing'; // Assume done, optimistic update
+
+            // Optimistic Update
+            const map = { 'm': 'man', 'p': 'pin', 's': 'sou' };
+            state.dingque[state.myPlayerId] = map[suit] || suit;
+
+            state.phase = 'playing';
         }
 
         function onTileClick(tile, idx) {
