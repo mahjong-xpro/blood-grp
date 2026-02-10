@@ -62,7 +62,8 @@
                         <div class="name">对家</div>
                         <div class="score">{{ player(2).score }}</div>
                         <div class="badges">
-                            <span class="badge dingque" v-if="player(2).dingque">{{ player(2).dingque }}</span>
+                            <span class="badge dingque" v-if="player(2).dingque" :class="player(2).dingque">{{
+                                dingqueLabel(player(2).dingque) }}</span>
                             <span class="badge agari" v-if="player(2).agari">胡</span>
                         </div>
                     </div>
@@ -77,7 +78,8 @@
                         <div class="name">上家</div>
                         <div class="score">{{ player(3).score }}</div>
                         <div class="badges">
-                            <span class="badge dingque" v-if="player(3).dingque">{{ player(3).dingque }}</span>
+                            <span class="badge dingque" v-if="player(3).dingque" :class="player(3).dingque">{{
+                                dingqueLabel(player(3).dingque) }}</span>
                             <span class="badge agari" v-if="player(3).agari">胡</span>
                         </div>
                     </div>
@@ -104,7 +106,8 @@
                         <div class="name">下家</div>
                         <div class="score">{{ player(1).score }}</div>
                         <div class="badges">
-                            <span class="badge dingque" v-if="player(1).dingque">{{ player(1).dingque }}</span>
+                            <span class="badge dingque" v-if="player(1).dingque" :class="player(1).dingque">{{
+                                dingqueLabel(player(1).dingque) }}</span>
                             <span class="badge agari" v-if="player(1).agari">胡</span>
                         </div>
                     </div>
@@ -157,7 +160,8 @@
                         <div class="name">我</div>
                         <div class="score">{{ player(0).score }}</div>
                         <div class="badges">
-                            <span class="badge dingque" v-if="player(0).dingque">{{ player(0).dingque }}</span>
+                            <span class="badge dingque" v-if="player(0).dingque" :class="player(0).dingque">{{
+                                dingqueLabel(player(0).dingque) }}</span>
                             <span class="badge agari" v-if="player(0).agari">胡</span>
                         </div>
                     </div>

@@ -90,6 +90,17 @@ const app = createApp({
             }
         }
 
+        // Helper
+        function sortTiles(tiles) {
+            const suitOrder = { 'm': 0, 'p': 1, 's': 2, 'z': 3 };
+            tiles.sort((a, b) => {
+                const suitA = a[1], suitB = b[1];
+                const numA = parseInt(a[0]), numB = parseInt(b[0]);
+                if (suitOrder[suitA] !== suitOrder[suitB]) return suitOrder[suitA] - suitOrder[suitB];
+                return numA - numB;
+            });
+        }
+
         // --- Event Replay (Reconstruct State) ---
         function replayEvents(events) {
             // IMPORTANT: Do NOT wipe state here.
@@ -155,97 +166,129 @@ const app = createApp({
                                 // If we tsumogiri'd from hand, move tsumo to hand
                                 if (state.tsumoTile) {
                                     state.tehai.push(state.tsumoTile);
-                                    state.tehai.sort(); // Simple sort
+                                    sortTiles(state.tehai); // Proper sort
+                                    state.tsumoTile = null;
+                                }
+
+        // ... (inside replayEvents) ...
+                    case 'start_kyoku':
+                        // ...
+                        state.tehai = (ev.tehais ? ev.tehais[state.myPlayerId] : []) || ev.tehai || ev.hand || [];
+                        sortTiles(state.tehai);
+                        // ...
+                        break;
+
+                    case 'dahai':
+                        // ...
+                        if (ev.actor === state.myPlayerId) {
+                            if (state.tsumoTile === ev.pai) {
+                                state.tsumoTile = null;
+                            } else {
+                                const idx = state.tehai.indexOf(ev.pai);
+                                if (idx > -1) state.tehai.splice(idx, 1);
+                                // If we tsumogiri'd from hand, move tsumo to hand
+                                if (state.tsumoTile) {
+                                    state.tehai.push(state.tsumoTile);
+                                    sortTiles(state.tehai); // Proper sort
                                     state.tsumoTile = null;
                                 }
                             }
                         }
-                        ui.selectedIdx = -1;
-                        state.validActions = []; // Clear actions on new move
-                        break;
-                    case 'pon':
-                    case 'kan':
-                    case 'chi': // Bloody Battle doesn't usually have Chi but for completeness
-                        state.currentActor = ev.actor;
-                        state.validActions = [];
-                        // Remove from hand implementation (simplified, ideally we remove tiles)
-                        // This visualization is imperfect for opened sets but acceptable for "My Hand" view
-                        break;
-                    case 'agari':
-                        state.agari[ev.actor] = true;
-                        break;
+                    // ...
                 }
             }
         }
-
-        // --- Interaction ---
-        function startGame() {
-            send({ type: 'start_game' });
-        }
-
-        function doDingQue(suit) {
-            send({ type: 'ding_que', suit: suit });
-            state.phase = 'playing'; // Assume done, optimistic update
-        }
-
-        function onTileClick(tile, idx) {
-            // Only allow click if my turn and playing
-            if (!isMyTurn.value || state.phase !== 'playing') return;
-
-            // Toggle selection
-            if (ui.selectedIdx === idx) {
-                // Confirm discard
-                send({ type: 'dahai', actor: state.myPlayerId, pai: tile });
-                state.tsumoTile = null; // Client side optimistic update
-                ui.selectedIdx = -1;
-            } else {
-                ui.selectedIdx = idx;
+        ui.selectedIdx = -1;
+        state.validActions = []; // Clear actions on new move
+        break;
+                    case 'pon':
+    case 'kan':
+    case 'chi': // Bloody Battle doesn't usually have Chi but for completeness
+    state.currentActor = ev.actor;
+    state.validActions = [];
+    // Remove from hand implementation (simplified, ideally we remove tiles)
+    // This visualization is imperfect for opened sets but acceptable for "My Hand" view
+    break;
+    case 'agari':
+    state.agari[ev.actor] = true;
+    break;
+}
             }
         }
 
-        function doAction(act) {
-            send({ type: 'action', action: act });
-            state.validActions = [];
-        }
+// --- Interaction ---
+function startGame() {
+    send({ type: 'start_game' });
+}
 
-        function actionLabel(type) {
-            const map = { 'hu': '胡', 'pon': '碰', 'kan': '杠', 'pass': '过' };
-            return map[type] || type.toUpperCase();
-        }
+function doDingQue(suit) {
+    send({ type: 'ding_que', suit: suit });
+    state.phase = 'playing'; // Assume done, optimistic update
+}
 
-        // --- Helpers ---
-        function player(offset) {
-            const id = (state.myPlayerId + offset) % 4;
-            return {
-                score: state.scores[id],
-                dingque: state.dingque[id],
-                agari: state.agari[id]
-            };
-        }
+function onTileClick(tile, idx) {
+    // Only allow click if my turn and playing
+    if (!isMyTurn.value || state.phase !== 'playing') return;
 
-        function hand(offset) {
-            // For now only show my hand
-            if (offset === 0) return state.tehai;
-            return [];
-        }
+    // Toggle selection
+    if (ui.selectedIdx === idx) {
+        // Confirm discard
+        send({ type: 'dahai', actor: state.myPlayerId, pai: tile });
+        state.tsumoTile = null; // Client side optimistic update
+        ui.selectedIdx = -1;
+    } else {
+        ui.selectedIdx = idx;
+    }
+}
 
-        function discards(offset) {
-            const id = (state.myPlayerId + offset) % 4;
-            return state.discards[id] || [];
-        }
+function doAction(act) {
+    send({ type: 'action', action: act });
+    state.validActions = [];
+}
 
-        function isRecommended(tile) {
-            return analysis.best_action && analysis.best_action.pai === tile;
-        }
+function actionLabel(type) {
+    const map = { 'hu': '胡', 'pon': '碰', 'kan': '杠', 'pass': '过' };
+    return map[type] || type.toUpperCase();
+}
 
-        // Init
-        connect();
+function dingqueLabel(suit) {
+    const map = { 'm': '万', 'p': '筒', 's': '条' };
+    return map[suit] || suit;
+}
 
-        return {
-            state, analysis, ui, isMyTurn,
-            startGame, doDingQue, onTileClick, doAction,
-            tileSrc, player, hand, discards, isRecommended, actionLabel
-        };
+// --- Helpers ---
+function player(offset) {
+    const id = (state.myPlayerId + offset) % 4;
+    return {
+        score: state.scores[id],
+        dingque: state.dingque[id],
+        agari: state.agari[id]
+    };
+}
+
+function hand(offset) {
+    // For now only show my hand
+    if (offset === 0) return state.tehai;
+    return [];
+}
+
+function discards(offset) {
+    const id = (state.myPlayerId + offset) % 4;
+    return state.discards[id] || [];
+}
+
+function isRecommended(tile) {
+    return analysis.best_action && analysis.best_action.pai === tile;
+}
+
+// Init
+connect();
+
+return {
+    state, analysis, ui, isMyTurn,
+    startGame, doDingQue, onTileClick, doAction,
+    tileSrc, player, hand, discards, isRecommended, actionLabel
+};
     }
 });
 
