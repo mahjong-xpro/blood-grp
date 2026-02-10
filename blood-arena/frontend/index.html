@@ -80,8 +80,7 @@
                 <!-- River (Closer to Center) -->
                 <div class="river-area">
                     <div class="tile-group river">
-                        <div class="tile" v-for="(t, i) in discards(2)" :key="i"
-                            :class="{ 'tile-just-played': isLastDiscard(2, i) }">
+                        <div class="tile" v-for="(t, i) in discards(2)" :key="i">
                             <img :src="tileSrc(t)">
                         </div>
                     </div>
@@ -122,8 +121,7 @@
 
                 <div class="river-area">
                     <div class="tile-group river">
-                        <div class="tile" v-for="(t, i) in discards(3)" :key="i"
-                            :class="{ 'tile-just-played': isLastDiscard(3, i) }">
+                        <div class="tile" v-for="(t, i) in discards(3)" :key="i">
                             <img :src="tileSrc(t)">
                         </div>
                     </div>
@@ -164,8 +162,7 @@
 
                 <div class="river-area">
                     <div class="tile-group river">
-                        <div class="tile" v-for="(t, i) in discards(1)" :key="i"
-                            :class="{ 'tile-just-played': isLastDiscard(1, i) }">
+                        <div class="tile" v-for="(t, i) in discards(1)" :key="i">
                             <img :src="tileSrc(t)">
                         </div>
                     </div>

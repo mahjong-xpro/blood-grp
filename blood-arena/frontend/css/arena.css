@@ -487,25 +487,6 @@ body {
     transform: none;
 }
 
-/* AI 打牌动画：刚打出的牌出现时缓动，速度放慢约 0.85s */
-@keyframes tile-just-played {
-    0% {
-        transform: scale(0.5);
-        opacity: 0;
-    }
-    45% {
-        transform: scale(1.06);
-        opacity: 1;
-    }
-    100% {
-        transform: scale(1);
-        opacity: 1;
-    }
-}
-.tile.tile-just-played {
-    animation: tile-just-played 0.85s ease-out forwards;
-}
-
 /* Player Info */
 .player-info {
     display: flex;
