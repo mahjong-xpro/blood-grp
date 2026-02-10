@@ -332,9 +332,16 @@ body {
 
 .meld {
     display: flex;
+    flex-direction: row;
     gap: 0;
     border: 1px solid #555;
     /* Group border */
+}
+
+/* 左右玩家副露：每组牌竖向排列（碰/杠的几张牌上下叠放） */
+.zone-left .meld,
+.zone-right .meld {
+    flex-direction: column;
 }
 
 .meld .tile {

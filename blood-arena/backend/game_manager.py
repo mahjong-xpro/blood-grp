@@ -347,22 +347,24 @@ class HumanEngine:
                 }
                 
             if act_type == "kan":
-                # Daiminkan or Ankan/Kakan?
-                if self.last_kawa and self.last_kawa[0] != actor_id:
-                     # Daiminkan (Open Kan from discard)
-                     target, pai = self.last_kawa
-                     return {
+                # Use game_state.last_cans to decide type: only return the kan type that is actually allowed.
+                cans = getattr(game_state, "last_cans", None)
+                can_daiminkan = getattr(cans, "can_daiminkan", False) if cans else False
+                can_kakan = getattr(cans, "can_kakan", False) if cans else False
+                can_ankan = getattr(cans, "can_ankan", False) if cans else False
+
+                if can_daiminkan and self.last_kawa and self.last_kawa[0] != actor_id:
+                    target, pai = self.last_kawa
+                    return {
                         "type": "daiminkan",
                         "actor": actor_id,
                         "target": target,
                         "pai": pai,
-                        "consumed": [pai, pai, pai] 
+                        "consumed": [pai, pai, pai],
                     }
-                else:
-                    # Ankan or Kakan (Self Kan)
+                if can_kakan:
                     from collections import Counter
                     counts = Counter(self.tehai)
-                    # 1. Kakan: must use a tile from game_state.kakan_candidates (libblood validates this)
                     try:
                         kakan_candidates = getattr(game_state, "kakan_candidates", None)
                         if callable(kakan_candidates):
@@ -377,18 +379,24 @@ class HumanEngine:
                                 "type": "kakan",
                                 "actor": actor_id,
                                 "pai": p,
-                                "consumed": [p, p, p],  # the three from the pon (MJAI required)
+                                "consumed": [p, p, p],
                             }
-                    # 2. Ankan (4 in hand)
+                    logging.warning("Kan: can_kakan true but no valid candidate found.")
+                    return {"type": "none"}
+                if can_ankan:
+                    from collections import Counter
+                    counts = Counter(self.tehai)
                     for t, c in counts.items():
                         if c == 4:
                             return {
                                 "type": "ankan",
                                 "actor": actor_id,
-                                "consumed": [t, t, t, t]
+                                "consumed": [t, t, t, t],
                             }
-                    logging.warning("Kan requested but no candidate found (no kakan from peng, no ankan).")
+                    logging.warning("Kan: can_ankan true but no quad in hand.")
                     return {"type": "none"}
+                logging.warning("Kan requested but no can_daiminkan/can_kakan/can_ankan.")
+                return {"type": "none"}
 
         logging.warning(f"Unhandled client action: {client_action}")
         return {"type": "none"} # Safety fallback
