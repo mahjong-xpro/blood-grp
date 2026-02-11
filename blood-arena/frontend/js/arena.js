@@ -144,12 +144,14 @@ const app = createApp({
             }
         }
 
+        let replayId = 0;
         async function updateFullState(data) {
             if (data.analysis) {
                 analysis.best_action = data.analysis.best_action;
             }
             if (data.events) {
-                await replayEvents(data.events);
+                replayId += 1;
+                void replayEvents(data.events, replayId);
             }
         }
 
@@ -169,11 +171,12 @@ const app = createApp({
         const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
         // --- Event Replay ---
-        // 增量重放：仅处理新增事件，避免每次从头重放历史河牌
-        async function replayEvents(events) {
+        // 增量重放：仅处理新增事件；fire-and-forget 以便 action_request 能立即处理，用户可出牌
+        async function replayEvents(events, myReplayId) {
             if (!events || events.length === 0) return;
             const last = state.lastReplayedEventCount;
-            if (events.length === last) return; // 重复推送，跳过
+            if (events.length === last) return;
+            if (myReplayId !== undefined && myReplayId !== replayId) return; // 被更新的 replay 取代
             const startIdx = (events.length < last) ? 0 : last; // 新局从头，否则只处理新增
             if (startIdx === 0) state.tsumoTile = null;
 
@@ -182,7 +185,10 @@ const app = createApp({
             for (let i = startIdx; i < events.length; i++) {
                 const ev = events[i];
                 if (isAction(ev)) {
-                    if (!firstNewAction) await delay(ACTION_DELAY_MS);
+                    if (!firstNewAction) {
+                        await delay(ACTION_DELAY_MS);
+                        if (myReplayId !== undefined && myReplayId !== replayId) return;
+                    }
                     firstNewAction = false;
                 }
                 switch (ev.type) {

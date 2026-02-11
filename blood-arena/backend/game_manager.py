@@ -202,15 +202,7 @@ class HumanEngine:
             except Exception as e:
                 logging.error(f"AI Analysis failed: {e}")
 
-        # 3. Send Full State Update (Base Layer)
-        msg_state = {
-            "type": "state_update",
-            "data": { "events": events, "analysis": analysis }
-        }
-        self.shared_state['latest'] = msg_state
-        self.state_queue.put(msg_state)
-
-        # 4. Determine Legal Actions (Logic Layer)
+        # 3. Determine Legal Actions (Logic Layer)
         try:
             cans = player_state.last_cans
             legal_actions = self._get_legal_actions(cans)
@@ -221,13 +213,21 @@ class HumanEngine:
         if not legal_actions:
             return [json.dumps({"type": "none"})]
 
-        # 5. Send Action Request (Interaction Layer)
+        # 4. Send Action Request FIRST so user can click immediately (replay may have delays)
         msg_req = {
             "type": "action_request",
             "actions": legal_actions
         }
-        self.shared_state['latest'] = msg_req # Update latest to be the request
+        self.shared_state['latest'] = msg_req
         self.state_queue.put(msg_req)
+
+        # 5. Send Full State Update (Base Layer) - replay may have delays, user already has canDiscard
+        msg_state = {
+            "type": "state_update",
+            "data": { "events": events, "analysis": analysis }
+        }
+        self.shared_state['latest'] = msg_state
+        self.state_queue.put(msg_state)
         
         logging.info(f"Waiting for human action. Legal: {[a['type'] for a in legal_actions]}")
 
