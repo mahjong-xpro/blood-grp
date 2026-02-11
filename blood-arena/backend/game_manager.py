@@ -134,12 +134,16 @@ class HumanEngine:
                                 self.tehai.remove(t)
 
             # 使用 shadow state 作为手牌权威来源，避免前端 replay 推导 bug
+            # tehai 与 tsumoTile 分离：tehais 不含刚摸的牌，my_tsumo 单独表示（显示 13+1=14，非 14+1=15）
+            disp_tehai = list(self.tehai)
+            if self.last_tsumo_tile and self.last_tsumo_tile in disp_tehai:
+                disp_tehai.remove(self.last_tsumo_tile)
             msg = {
                 "type": "state_update",
                 "data": {
                     "events": events,
                     "analysis": {},
-                    "tehais": [list(self.tehai), [], [], []],
+                    "tehais": [disp_tehai, [], [], []],
                     "my_tsumo": self.last_tsumo_tile,
                 }
             }
@@ -260,13 +264,16 @@ class HumanEngine:
         self.state_queue.put(msg_req)
 
         # 5. Send Full State Update (Base Layer) - include authoritative hand from libblood
-        #    避免前端 replay 推导手牌导致的 15 张/少一张 bug
+        #    tehai 与 tsumoTile 分离：tehais 不含刚摸的牌，my_tsumo 单独表示（定缺时 13+1=14）
+        disp_tehai = list(self.tehai)
+        if self.last_tsumo_tile and self.last_tsumo_tile in disp_tehai:
+            disp_tehai.remove(self.last_tsumo_tile)
         msg_state = {
             "type": "state_update",
             "data": {
                 "events": events,
                 "analysis": analysis,
-                "tehais": [list(self.tehai), [], [], []],  # 已从 sync 同步
+                "tehais": [disp_tehai, [], [], []],
                 "my_tsumo": self.last_tsumo_tile,
             }
         }
