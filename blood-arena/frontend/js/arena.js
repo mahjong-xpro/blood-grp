@@ -266,8 +266,10 @@ const app = createApp({
                         state.currentActor = ev.actor;
                         state.tilesLeft = Math.max(0, state.tilesLeft - 1);
                         if (ev.actor === state.myPlayerId && ev.pai && ev.pai !== '?') {
-                            // 杠后补牌、普通摸牌都需显示：自家收到 tsumo 即展示
-                            state.tsumoTile = ev.pai;
+                            // 杠后补牌、普通摸牌都需显示；但 tehai 已达 14 张时不再加 tsumoTile，避免 15 张 bug
+                            if (state.tehai.length < 14) {
+                                state.tsumoTile = ev.pai;
+                            }
                         }
                         break;
                     case 'dahai':
