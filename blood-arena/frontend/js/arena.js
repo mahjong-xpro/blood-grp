@@ -227,7 +227,10 @@ const app = createApp({
                         state.currentActor = ev.actor;
                         state.tilesLeft = Math.max(0, state.tilesLeft - 1);
                         if (ev.actor === state.myPlayerId && ev.pai && ev.pai !== '?') {
-                            if (state.tehai.length < 14) {
+                            const fuuro = state.fuuro[ev.actor] || [];
+                            const meldTiles = fuuro.reduce((sum, m) => sum + (m.tiles ? m.tiles.length : 3), 0);
+                            const expectedWithTsumo = 14 - meldTiles;
+                            if (state.tehai.length < expectedWithTsumo) {
                                 state.tsumoTile = ev.pai;
                             }
                         }
