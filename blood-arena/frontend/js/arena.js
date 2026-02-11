@@ -170,16 +170,15 @@ const app = createApp({
 
         // --- Event Replay ---
         async function replayEvents(events) {
-            state.tsumoTile = null;
+            if (!events || events.length === 0) return;
+            const last = state.lastReplayedEventCount;
+            // 只处理新增事件；若事件数变少（新一局）或尚未处理过，则从头处理
+            const startIdx = (last < events.length && last > 0) ? last : 0;
+
             const isAction = (ev) => ['dahai', 'pon', 'kan', 'ankan', 'daiminkan', 'kakan'].includes(ev.type);
-            let effectiveLast = state.lastReplayedEventCount;
-            for (let i = 0; i < events.length; i++) {
+            for (let i = startIdx; i < events.length; i++) {
                 const ev = events[i];
-                if (ev.type === 'start_kyoku') effectiveLast = 0; // 新一局，重置
-                const isNew = i >= effectiveLast;
-                if (isAction(ev) && isNew) {
-                    if (i > effectiveLast) await delay(ACTION_DELAY_MS);
-                }
+                if (isAction(ev) && i > startIdx) await delay(ACTION_DELAY_MS);
                 switch (ev.type) {
                     case 'start_game':
                         state.gaming = true;
