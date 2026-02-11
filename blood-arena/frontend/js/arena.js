@@ -369,7 +369,19 @@ const app = createApp({
 
             if (ui.selectedIdx === idx) {
                 send({ type: 'dahai', actor: state.myPlayerId, pai: tile });
-                state.tsumoTile = null;
+                if (idx === 'tsumo') {
+                    state.tsumoTile = null;
+                } else {
+                    const i = state.tehai.indexOf(tile);
+                    if (i > -1) {
+                        state.tehai.splice(i, 1);
+                        if (state.tsumoTile) {
+                            state.tehai.push(state.tsumoTile);
+                            sortTiles(state.tehai);
+                        }
+                    }
+                    state.tsumoTile = null;
+                }
                 state.canDiscard = false;
                 ui.selectedIdx = -1;
             } else {
