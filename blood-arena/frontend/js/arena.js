@@ -26,13 +26,18 @@ const app = createApp({
             tilesLeft: 108,
 
             // Game Data
-            scores: [25000, 25000, 25000, 25000],
+            scores: [60000, 60000, 60000, 60000],
             tehai: [], // My hand
             tsumoTile: null, // Last drawn tile
             discards: [[], [], [], []],
             agari: [false, false, false, false],
             dingque: [null, null, null, null], // m, p, s
             fuuro: [[], [], [], []], // Melds
+
+            // 8 局制：当前局数 1..8，累计输赢（相对每局 60000），是否整场已结束
+            gameNumber: 0,
+            matchDeltas: [0, 0, 0, 0],
+            matchOver: false,
 
             // Interactive
             validActions: [],
@@ -74,16 +79,23 @@ const app = createApp({
             } else if (msg.type === 'action_request') {
                 handleActionRequest(msg.actions);
             } else if (msg.type === 'game_over') {
-                state.gameEnded = true;
-                state.phase = 'result';
-                state.gaming = false;
                 if (msg.scores && msg.scores.length === 4) {
                     state.scores = [...msg.scores];
                 }
+                if (msg.match_deltas && msg.match_deltas.length === 4) {
+                    state.matchDeltas = [...msg.match_deltas];
+                }
+                state.gameNumber = msg.game_number || 0;
                 if (msg.tehais && msg.tehais.length === 4) {
                     state.finalTehais = msg.tehais.map(h => [...(h || [])]);
                 } else {
                     state.finalTehais = null;
+                }
+                if (msg.is_match_over) {
+                    state.matchOver = true;
+                    state.gameEnded = true;
+                    state.phase = 'result';
+                    state.gaming = false;
                 }
             }
         }
@@ -145,13 +157,16 @@ const app = createApp({
                     case 'start_game':
                         state.gaming = true;
                         state.gameEnded = false;
+                        state.matchOver = false;
+                        state.gameNumber = 0;
+                        state.matchDeltas = [0, 0, 0, 0];
                         state.finalTehais = null;
                         state.scores = [60000, 60000, 60000, 60000];
                         state.fuuro = [[], [], [], []];
                         break;
                     case 'start_kyoku':
                         state.gaming = true;
-                        state.gameEnded = false;
+                        if (!state.matchOver) state.gameEnded = false;
                         state.finalTehais = null;
                         state.scores = (ev.scores && ev.scores.length === 4) ? [...ev.scores] : [60000, 60000, 60000, 60000];
                         state.tehai = (ev.tehais ? ev.tehais[state.myPlayerId] : []) || [];
@@ -251,7 +266,17 @@ const app = createApp({
 
         // --- Interaction ---
         function startGame() {
+            state.gameNumber = 0;
+            state.matchDeltas = [0, 0, 0, 0];
+            state.matchOver = false;
+            state.gameEnded = false;
             send({ type: 'start_game' });
+        }
+
+        /** 当前显示的局数（1..8），对局中为正在打的局，结束后为 8 */
+        function currentGameDisplay() {
+            if (state.matchOver) return 8;
+            return state.gaming ? (state.gameNumber + 1) : Math.max(1, state.gameNumber);
         }
 
         function doDingQue(suit) {
@@ -358,11 +383,20 @@ const app = createApp({
         // Init
         connect();
 
+        /** 累计输赢文案：自家/下家/对家/上家 */
+        function matchDeltaLabel(offset) {
+            const id = (state.myPlayerId + offset) % 4;
+            const d = state.matchDeltas[id];
+            if (d == null) return '';
+            const sign = d >= 0 ? '+' : '';
+            return sign + d;
+        }
+
         return {
             state, analysis, ui, isMyTurn,
             startGame, doDingQue, onTileClick, doAction,
             tileSrc, player, hand, discards, isRecommended, actionLabel, dingqueLabel,
-            getFuuro, canDiscardTile, handTiles,
+            getFuuro, canDiscardTile, handTiles, currentGameDisplay, matchDeltaLabel,
             getHandTileCount(p) {
                 const fuuro = state.fuuro[p] || [];
                 const meldTiles = fuuro.reduce((sum, m) => sum + (m.tiles ? m.tiles.length : 3), 0);

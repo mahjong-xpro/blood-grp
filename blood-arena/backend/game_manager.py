@@ -14,6 +14,10 @@ except ImportError:
     logging.warning("libblood not found. AI opponents will not work.")
     arena = None
 
+# 每局初始分（与 rules.md / libblood 一致），用于计算 8 局累计输赢
+INITIAL_SCORE = 60000
+MATCH_GAMES = 8  # 一场对局共 8 局
+
 class HumanEngine:
     def __init__(self, action_queue: queue.Queue, state_queue: queue.Queue, shared_state: Dict[str, Any], ai_engine=None):
         self.name = "Human"
@@ -29,6 +33,10 @@ class HumanEngine:
         self.last_kawa = None # Tuple: (actor_id, tile_str)
         self.last_tsumo_tile = None # Latest tile drawn by self
         self.peng = [] # List of pon-ed tiles (e.g. ["1m", "5z"])
+
+        # 8 局制：累计输赢（相对每局初始分）、当前已完成局数（1..8）
+        self.match_deltas = [0, 0, 0, 0]
+        self.match_game_index = 0
 
     def set_player_ids(self, ids):
         self.player_id = ids[0]
@@ -130,11 +138,21 @@ class HumanEngine:
         logging.info(f"Kyoku {index} ended")
 
     def end_game(self, index, scores):
+        """一局结束：累计本局得失分，推送 game_over；若已打满 8 局则标记 match_over。"""
         logging.info(f"Game {index} ended with scores: {scores}")
-        # Send end game signal to UI
+        # 本局相对初始分的得失
+        deltas = [int(s) - INITIAL_SCORE for s in scores]
+        for i in range(4):
+            self.match_deltas[i] += deltas[i]
+        self.match_game_index += 1
+        is_match_over = self.match_game_index >= MATCH_GAMES
+
         msg = {
             "type": "game_over",
-            "scores": scores
+            "scores": list(scores),
+            "match_deltas": list(self.match_deltas),
+            "game_number": self.match_game_index,
+            "is_match_over": is_match_over,
         }
         self.shared_state['latest'] = msg
         self.state_queue.put(msg)
@@ -505,18 +523,17 @@ class GameManager:
 
             # Initialize Human Engine with AI Engine injected
             human = HumanEngine(self.action_queue, self.state_queue, self.shared_state, ai_engine=ai_engine)
-            
-            # Setup 1v3 Arena，每局使用随机种子避免发牌相同
+            human.match_deltas = [0, 0, 0, 0]
+            human.match_game_index = 0
+
+            # 8 局制：连续打满 8 局，每局独立种子
             env = arena.OneVsThree(disable_progress_bar=True, log_dir=None)
-            seed = (random.getrandbits(32), random.getrandbits(32))
-            logging.info("Game seed: %s", seed)
-            env.py_vs_py(
-                human,
-                ai_engine,
-                seed,
-                1,
-            )
-            logging.info("Game finished.")
+            seed_base = random.getrandbits(32)
+            for game_num in range(MATCH_GAMES):
+                seed = (seed_base, game_num)
+                logging.info("Match game %d/8 seed: %s", game_num + 1, seed)
+                env.py_vs_py(human, ai_engine, seed, 1)
+            logging.info("Match finished. Final deltas: %s", human.match_deltas)
             
         except Exception as e:
             import traceback

@@ -33,15 +33,25 @@
         <!-- Main Game Area -->
         <main class="game-board" :class="{ 'phase-dingque': state.phase === 'dingque' }">
 
-            <!-- Center Info (Round, Tiles Left) -->
+            <!-- Center Info: 第 X/8 局、剩余牌数、累计输赢 -->
             <div class="center-info">
-                <div class="tiles-left">
-                    <span class="label">{{ state.gameEnded ? '' : '剩余' }}</span>
-                    <span class="value">{{ state.gameEnded ? '已结束' : state.tilesLeft }}</span>
+                <div class="match-progress" v-if="state.gaming || state.gameNumber > 0 || state.matchOver">
+                    <span class="match-label">{{ state.matchOver ? '8局结束' : `第 ${currentGameDisplay()}/8 局` }}</span>
+                </div>
+                <div class="tiles-left" v-if="!state.matchOver">
+                    <span class="label">剩余</span>
+                    <span class="value">{{ state.tilesLeft }}</span>
                 </div>
                 <div class="turn-indicator" v-if="state.gaming && !state.gameEnded">
                     {{ isMyTurn ? '你的回合' : `等待 ${['下家','对家','上家'][state.currentActor > 0 ? state.currentActor-1 :
                     0]}...` }}
+                </div>
+                <div class="match-deltas" v-if="state.gameNumber > 0 || state.matchOver">
+                    <span class="deltas-title">累计输赢：</span>
+                    <span>自 {{ matchDeltaLabel(0) }}</span>
+                    <span>下家 {{ matchDeltaLabel(1) }}</span>
+                    <span>对家 {{ matchDeltaLabel(2) }}</span>
+                    <span>上家 {{ matchDeltaLabel(3) }}</span>
                 </div>
             </div>
 

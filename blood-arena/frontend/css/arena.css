@@ -154,8 +154,9 @@ body {
     grid-row: 2;
     align-self: center;
     justify-self: center;
-    width: 200px;
-    height: 120px;
+    width: 220px;
+    min-height: 100px;
+    padding: 10px;
     border: 2px solid var(--table-border);
     border-radius: 12px;
     background: rgba(0, 0, 0, 0.2);
@@ -163,7 +164,14 @@ body {
     flex-direction: column;
     justify-content: center;
     align-items: center;
+    gap: 6px;
     color: rgba(255, 255, 255, 0.7);
+}
+
+.match-progress .match-label {
+    font-size: 16px;
+    font-weight: bold;
+    color: var(--highlight-color);
 }
 
 .tiles-left .value {
@@ -173,9 +181,22 @@ body {
 }
 
 .turn-indicator {
-    margin-top: 10px;
     font-size: 14px;
     color: var(--highlight-color);
+}
+
+.match-deltas {
+    font-size: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px 12px;
+}
+
+.match-deltas .deltas-title {
+    width: 100%;
+    text-align: center;
+    color: var(--text-secondary);
 }
 
 /* Player Zones */
