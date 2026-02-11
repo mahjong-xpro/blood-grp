@@ -332,7 +332,13 @@ body {
 .zone-left .tile-group.river,
 .zone-right .tile-group.river {
     flex-direction: column-reverse;
-    gap: 0;  /* 左右河牌间距缩小，与 ME 视觉密度更接近 */
+    gap: 0;
+}
+
+/* 左右河牌：负 margin 让牌更紧凑，视觉上与 ME 更接近 */
+.zone-left .river .tile:not(:first-child),
+.zone-right .river .tile:not(:first-child) {
+    margin-top: -8px;
 }
 
 /* Side Players Hand (Vertical/Compact) - 仅影响手牌，不影响河牌 */
