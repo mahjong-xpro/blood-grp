@@ -74,7 +74,8 @@ class HumanEngine:
                 actor = ev.get("actor")
                 
                 if etype == "start_kyoku":
-                    self.tehai = ev["tehais"][self.player_id]
+                    tehais = ev.get("tehais") or [[] for _ in range(4)]
+                    self.tehai = list(tehais[self.player_id]) if self.player_id < len(tehais) else []
                     self.last_kawa = None
                     self.last_tsumo_tile = None
                     self.peng = []
@@ -82,12 +83,15 @@ class HumanEngine:
                     
                 elif etype == "tsumo":
                     if actor == self.player_id:
-                        pai = ev["pai"]
-                        self.tehai.append(pai)
-                        self.last_tsumo_tile = pai
+                        pai = ev.get("pai")
+                        if pai:
+                            self.tehai.append(pai)
+                            self.last_tsumo_tile = pai
                         
                 elif etype == "dahai":
-                    pai = ev["pai"]
+                    pai = ev.get("pai")
+                    if not pai:
+                        continue
                     self.last_kawa = (actor, pai)
                     if actor == self.player_id:
                         # Remove from hand (handle tsumogiri optimization if needed)
@@ -98,12 +102,13 @@ class HumanEngine:
 
                 elif etype == "pon":
                     if actor == self.player_id:
-                        consumed = ev["consumed"] # ["1m", "1m"]
+                        consumed = ev.get("consumed", [])
                         for t in consumed:
                             if t in self.tehai:
                                 self.tehai.remove(t)
                         # Track Peng for Kakan
-                        self.peng.append(ev["pai"]) # Record the pon-ed tile
+                        if ev.get("pai"):
+                            self.peng.append(ev["pai"])  # Record the pon-ed tile
                     self.last_kawa = None # Consumed
 
                 elif etype == "daiminkan": # Open Kan
@@ -119,16 +124,16 @@ class HumanEngine:
                 
                 elif etype == "kakan": # Added Kan
                      if actor == self.player_id:
-                        pai = ev["pai"]
-                        if pai in self.tehai:
-                            self.tehai.remove(pai)
-                        # Remove from peng
-                        if pai in self.peng:
-                            self.peng.remove(pai)
+                        pai = ev.get("pai")
+                        if pai:
+                            if pai in self.tehai:
+                                self.tehai.remove(pai)
+                            if pai in self.peng:
+                                self.peng.remove(pai)
                             
                 elif etype == "ankan": # Closed Kan
                      if actor == self.player_id:
-                        consumed = ev["consumed"] # 4 tiles
+                        consumed = ev.get("consumed", [])
                         for t in consumed:
                             if t in self.tehai:
                                 self.tehai.remove(t)
@@ -155,6 +160,12 @@ class HumanEngine:
             self.state_queue.put(msg)
         except Exception as e:
             logging.error(f"Error in update_state: {e}")
+            # BUG-D: 异常时仍发送降级 state_update，避免前端卡死
+            fallback = {
+                "type": "state_update",
+                "data": {"events": [], "tehais": [[], [], [], []], "my_tsumo": None, "analysis": {}},
+            }
+            self.state_queue.put(fallback)
 
     def end_kyoku(self, index):
         logging.info(f"Kyoku {index} ended")
@@ -445,7 +456,11 @@ class GameManager:
         self.active_connections.append(websocket)
         logging.info(f"Client connected. Total: {len(self.active_connections)}")
         if 'latest' in self.shared_state:
-            await websocket.send_json(self.shared_state['latest'])
+            latest = self.shared_state['latest']
+            # BUG-B: 重连时若 latest 为 action_request，先发 state_update 再发 action_request，避免状态脱节
+            if latest.get('type') == 'action_request' and 'last_state_update' in self.shared_state:
+                await websocket.send_json(self.shared_state['last_state_update'])
+            await websocket.send_json(latest)
 
     async def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
@@ -454,6 +469,8 @@ class GameManager:
 
     async def broadcast(self, message: dict):
         self.shared_state['latest'] = message
+        if message.get('type') == 'state_update':
+            self.shared_state['last_state_update'] = message
         # Broadcast to all active connections
         for connection in self.active_connections:
             try:

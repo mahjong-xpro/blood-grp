@@ -43,7 +43,7 @@ const app = createApp({
 
             myPlayerId: 0,
             currentActor: -1,
-            tilesLeft: 108,
+            tilesLeft: 56, // 墙牌数，start_kyoku 会覆盖
 
             // Game Data
             scores: [60000, 60000, 60000, 60000],
@@ -100,14 +100,26 @@ const app = createApp({
             let msgQueue = [];
             let processing = false;
             ws.onmessage = (e) => {
-                msgQueue.push(JSON.parse(e.data));
+                let msg;
+                try {
+                    msg = JSON.parse(e.data);
+                } catch (err) {
+                    console.error('WebSocket: invalid JSON', err);
+                    return;
+                }
+                msgQueue.push(msg);
                 if (!processing) {
                     processing = true;
                     (async function drain() {
-                        while (msgQueue.length > 0) {
-                            await handleMessage(msgQueue.shift());
+                        try {
+                            while (msgQueue.length > 0) {
+                                await handleMessage(msgQueue.shift());
+                            }
+                        } catch (err) {
+                            console.error('handleMessage error:', err);
+                        } finally {
+                            processing = false;
                         }
-                        processing = false;
                     })();
                 }
             };
@@ -141,9 +153,13 @@ const app = createApp({
                     state.gameEnded = true;
                     state.phase = 'result';
                     state.gaming = false;
+                } else {
+                    state.phase = 'between_games'; // 单局结束，等待下一局
                 }
                 state.canDiscard = false;
                 state.validActions = [];
+            } else if (msg != null) {
+                console.warn('Unknown message type:', msg.type ?? '(no type)');
             }
         }
 
@@ -155,8 +171,9 @@ const app = createApp({
 
             let isDingQue = false;
             let isDiscard = false;
+            const acts = actions || [];
 
-            for (const act of actions) {
+            for (const act of acts) {
                 if (act.type === 'ding_que') isDingQue = true;
                 if (act.type === 'dahai') isDiscard = true;
                 if (['pon', 'kan', 'hu', 'pass'].includes(act.type)) {
@@ -164,8 +181,8 @@ const app = createApp({
                 }
             }
 
-            const hasPonKanHu = state.validActions.some(a => ['pon', 'kan', 'hu'].includes(a.type));
-            state.validActionsShown = !hasPonKanHu;
+            // 动作栏在 state_update 重放对手出牌后显示；因消息顺序是先 state_update 后 action_request，此时已同步
+            state.validActionsShown = true;
 
             if (isDingQue) {
                 state.phase = 'dingque';
@@ -180,7 +197,10 @@ const app = createApp({
 
         let replayId = 0;
         async function updateFullState(data) {
-            if (!data) return;
+            if (!data) {
+                console.warn('state_update: missing data');
+                return;
+            }
             const hasAuthoritativeHand = !!(data.tehais && Array.isArray(data.tehais) && data.tehais[state.myPlayerId]);
             if (data.events) {
                 replayId += 1;
@@ -247,6 +267,7 @@ const app = createApp({
                         if (!state.matchOver) state.gameEnded = false;
                         state.lastReplayedEventCount = 0;
                         state.finalTehais = null;
+                        state.currentActor = -1; // BUG-F: 显式重置，等待 tsumo 设为正确值
                         state.scores = (ev.scores && ev.scores.length === 4) ? [...ev.scores] : [60000, 60000, 60000, 60000];
                         if (!hasAuthoritativeHand) {
                             state.tehai = (ev.tehais ? ev.tehais[state.myPlayerId] : []) || [];
@@ -269,29 +290,30 @@ const app = createApp({
                         }
                         break;
                     case 'tsumo':
-                        state.currentActor = ev.actor;
+                        state.currentActor = ev.actor != null ? ev.actor : state.currentActor;
                         state.tilesLeft = Math.max(0, state.tilesLeft - 1);
                         if (!hasAuthoritativeHand && ev.actor === state.myPlayerId && ev.pai && ev.pai !== '?') {
                             if (state.tehai.length < 14) state.tsumoTile = ev.pai;
                         }
                         break;
-                    case 'dahai':
-                        if (ev.actor !== state.myPlayerId) {
+                    case 'dahai': {
+                        const actor = ev.actor != null ? ev.actor : 0;
+                        if (actor !== state.myPlayerId) {
                             state.validActionsShown = true;
                             playDiscardSound(ev.pai);
                         }
-                        let nextActor = (ev.actor + 1) % 4;
+                        let nextActor = (actor + 1) % 4;
                         for (let _ = 0; _ < 4; _++) {
                             if (!state.agari[nextActor]) break;
                             nextActor = (nextActor + 1) % 4;
                         }
                         state.currentActor = nextActor;
-                        if (!state.discards[ev.actor]) state.discards[ev.actor] = [];
-                        const expectedDiscardCount = events.slice(0, i + 1).filter(e => e.type === 'dahai' && e.actor === ev.actor).length;
-                        if (state.discards[ev.actor].length < expectedDiscardCount) {
-                            state.discards[ev.actor].push(ev.pai);
+                        if (!state.discards[actor]) state.discards[actor] = [];
+                        const expectedDiscardCount = events.slice(0, i + 1).filter(e => e.type === 'dahai' && e.actor === actor).length;
+                        if (state.discards[actor].length < expectedDiscardCount) {
+                            state.discards[actor].push(ev.pai);
                         }
-                        if (!hasAuthoritativeHand && ev.actor === state.myPlayerId) {
+                        if (!hasAuthoritativeHand && actor === state.myPlayerId) {
                             if (state.tsumoTile === ev.pai) {
                                 state.tsumoTile = null;
                                 state.optimisticDahai = null;
@@ -315,12 +337,16 @@ const app = createApp({
                         }
                         ui.selectedIdx = -1;
                         break;
+                    }
                     case 'pon':
                     case 'kan':
                     case 'ankan':
                     case 'daiminkan':
                     case 'kakan':
                         state.currentActor = ev.actor;
+                        if (ev.deltas && ev.deltas.length === 4) {
+                            for (let j = 0; j < 4; j++) state.scores[j] = (state.scores[j] || 0) + ev.deltas[j];
+                        }
                         if (ev.type === 'pon') playActionSound('pon.m4a');
                         else playActionSound('kan.m4a');
                         if (!hasAuthoritativeHand && ev.actor === state.myPlayerId) {
@@ -367,7 +393,15 @@ const app = createApp({
                     case 'agari':
                     case 'hora':
                         state.agari[ev.actor] = true;
+                        if (ev.deltas && ev.deltas.length === 4) {
+                            for (let j = 0; j < 4; j++) state.scores[j] = (state.scores[j] || 0) + ev.deltas[j];
+                        }
                         playActionSound((ev.target === undefined || ev.actor === ev.target) ? 'tsumo.m4a' : 'ron.m4a');
+                        break;
+                    case 'ryukyoku':
+                        if (ev.deltas && ev.deltas.length === 4) {
+                            for (let j = 0; j < 4; j++) state.scores[j] = (state.scores[j] || 0) + ev.deltas[j];
+                        }
                         break;
                 }
             }
@@ -386,6 +420,7 @@ const app = createApp({
             state.matchDeltas = [0, 0, 0, 0];
             state.matchOver = false;
             state.gameEnded = false;
+            state.phase = 'idle';
             state.lastReplayedEventCount = 0;
             send({ type: 'start_game' });
         }
@@ -477,7 +512,7 @@ const app = createApp({
         function player(offset) {
             const id = (state.myPlayerId + offset) % 4;
             return {
-                score: state.scores[id],
+                score: state.scores[id] ?? 0,
                 dingque: state.dingque[id],
                 agari: state.agari[id]
             };
