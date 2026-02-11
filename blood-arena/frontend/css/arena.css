@@ -306,6 +306,14 @@ body {
     margin: 10px;
 }
 
+/* 左右玩家河牌：去掉手牌与河牌之间的 margin，消除第一张牌前的空隙 */
+.zone-left .river-area {
+    margin: 10px 10px 10px 0;
+}
+.zone-right .river-area {
+    margin: 10px 0 10px 10px;
+}
+
 .tile-group {
     display: flex;
     gap: 2px;
