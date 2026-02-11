@@ -239,11 +239,13 @@ const app = createApp({
                                 state.tsumoTile = null;
                             } else {
                                 const idx = state.tehai.indexOf(ev.pai);
-                                if (idx > -1) state.tehai.splice(idx, 1);
-                                if (state.tsumoTile) {
-                                    state.tehai.push(state.tsumoTile);
-                                    sortTiles(state.tehai);
-                                    state.tsumoTile = null;
+                                if (idx > -1) {
+                                    state.tehai.splice(idx, 1);
+                                    if (state.tsumoTile) {
+                                        state.tehai.push(state.tsumoTile);
+                                        sortTiles(state.tehai);
+                                        state.tsumoTile = null;
+                                    }
                                 }
                             }
                         }
