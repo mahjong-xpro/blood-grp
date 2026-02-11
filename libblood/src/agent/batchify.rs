@@ -90,7 +90,8 @@ where
     }
 
     #[inline]
-    fn end_kyoku(&mut self, index: usize) -> Result<()> {
+    fn end_kyoku(&mut self, index: usize, log: Option<&[EventExt]>) -> Result<()> {
+        let _ = log;
         self.inner[index].end_kyoku()
     }
 

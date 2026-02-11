@@ -107,8 +107,9 @@ impl Game {
                 self.kyoku_started = false;
                 self.in_renchan = false;
 
+                let ctx = self.board.agent_context();
                 for idx in &self.indexes {
-                    agents[idx.agent_idx].end_kyoku(idx.player_id_idx)?;
+                    agents[idx.agent_idx].end_kyoku(idx.player_id_idx, Some(ctx.log))?;
                 }
 
                 let kyoku_result = self.board.end();

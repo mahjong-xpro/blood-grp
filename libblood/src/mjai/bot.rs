@@ -51,8 +51,8 @@ impl Bot {
                 self.agent.start_game(0)?;
             }
             Event::EndKyoku => {
+                self.agent.end_kyoku(0, Some(&self.log))?;
                 self.log.clear();
-                self.agent.end_kyoku(0)?;
             }
             Event::EndGame => {
                 self.agent.end_game(0, &Default::default())?;

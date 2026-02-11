@@ -63,8 +63,8 @@ pub trait BatchAgent {
         Ok(())
     }
 
-    fn end_kyoku(&mut self, index: usize) -> Result<()> {
-        let _ = index;
+    fn end_kyoku(&mut self, index: usize, log: Option<&[EventExt]>) -> Result<()> {
+        let _ = (index, log);
         Ok(())
     }
 

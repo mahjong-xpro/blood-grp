@@ -155,7 +155,16 @@ impl BatchAgent for MjaiLogBatchAgent {
         })
     }
 
-    fn end_kyoku(&mut self, index: usize) -> Result<()> {
+    fn end_kyoku(&mut self, index: usize, log: Option<&[EventExt]>) -> Result<()> {
+        if let Some(log) = log {
+            if let Ok(events_json) = json::to_string(log) {
+                let _ = Python::with_gil(|py| {
+                    let _ = self.engine
+                        .bind_borrowed(py)
+                        .call_method1(intern!(py, "update_state"), (index, events_json));
+                });
+            }
+        }
         Python::with_gil(|py| {
             self.engine
                 .bind_borrowed(py)
