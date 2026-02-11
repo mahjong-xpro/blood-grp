@@ -22,6 +22,16 @@ function playDiscardSound(pai) {
     } catch (_) {}
 }
 
+function playActionSound(filename) {
+    if (!filename) return;
+    const src = `/static/audio/${filename}`;
+    try {
+        const a = new Audio(src);
+        a.volume = 0.6;
+        a.play().catch(() => {});
+    } catch (_) {}
+}
+
 const app = createApp({
     setup() {
         // --- State ---
@@ -256,12 +266,8 @@ const app = createApp({
                         state.currentActor = ev.actor;
                         state.tilesLeft = Math.max(0, state.tilesLeft - 1);
                         if (ev.actor === state.myPlayerId && ev.pai && ev.pai !== '?') {
-                            const fuuro = state.fuuro[ev.actor] || [];
-                            const meldTiles = fuuro.reduce((sum, m) => sum + (m.tiles ? m.tiles.length : 3), 0);
-                            const expectedWithTsumo = 14 - meldTiles;
-                            if (state.tehai.length < expectedWithTsumo) {
-                                state.tsumoTile = ev.pai;
-                            }
+                            // 杠后补牌、普通摸牌都需显示：自家收到 tsumo 即展示
+                            state.tsumoTile = ev.pai;
                         }
                         break;
                     case 'dahai':
@@ -312,6 +318,8 @@ const app = createApp({
                     case 'daiminkan':
                     case 'kakan':
                         state.currentActor = ev.actor;
+                        if (ev.type === 'pon') playActionSound('pon.m4a');
+                        else playActionSound('kan.m4a');
                         if (ev.actor === state.myPlayerId) {
                             // canDiscard 仅由 action_request 与用户交互控制，replay 不修改
                             let toRemove = [];
@@ -357,6 +365,7 @@ const app = createApp({
                     case 'agari':
                     case 'hora':
                         state.agari[ev.actor] = true;
+                        playActionSound((ev.target === undefined || ev.actor === ev.target) ? 'tsumo.m4a' : 'ron.m4a');
                         break;
                 }
             }
