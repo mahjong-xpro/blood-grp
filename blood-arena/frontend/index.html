@@ -268,7 +268,8 @@
         </div>
 
         <!-- Action Bar (Chi/Pon/Kan/Hu) - 碰/杠/胡需等对手出牌显示后再展示 -->
-        <div class="action-bar" v-if="state.validActions.length > 0 && state.validActionsShown">
+        <!-- 修复：有 hu 时也显示，避免 validActionsShown 被意外清除导致胡牌按钮不出现 -->
+        <div class="action-bar" v-if="(state.validActions.length > 0 && state.validActionsShown) || state.validActions.some(a => a.type === 'hu')">
             <button class="btn-action" v-for="act in state.validActions" :key="act.type" :class="act.type"
                 @click.stop="doAction(act)">
                 {{ actionLabel(act.type) }}

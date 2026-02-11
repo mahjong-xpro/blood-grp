@@ -357,7 +357,11 @@ body {
     transform: rotate(180deg);
 }
 
-.zone-left .river .tile {
+/* 左右玩家河牌：交换宽高使主轴尺寸 26px，与 ME 河牌间距一致（28px 中心距） */
+.zone-left .river .tile,
+.zone-right .river .tile {
+    width: var(--tile-h-sm);   /* 36px 跨轴 */
+    height: var(--tile-w-sm);  /* 26px 主轴 */
     transform: rotate(90deg);
 }
 

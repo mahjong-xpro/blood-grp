@@ -182,6 +182,7 @@ const app = createApp({
             }
 
             // 动作栏在 state_update 重放对手出牌后显示；因消息顺序是先 state_update 后 action_request，此时已同步
+            // 有 hu 时强制显示，避免因 replay 竞态等导致 validActionsShown 被错误清除
             state.validActionsShown = true;
 
             if (isDingQue) {
