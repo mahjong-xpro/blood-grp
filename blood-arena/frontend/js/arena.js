@@ -169,21 +169,19 @@ const app = createApp({
         const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
         // --- Event Replay ---
-        // 必须完整重放以保持状态一致；仅对新增动作加延迟
+        // 增量重放：仅处理新增事件，避免每次从头重放历史河牌
         async function replayEvents(events) {
             if (!events || events.length === 0) return;
-            state.tsumoTile = null;
+            const last = state.lastReplayedEventCount;
+            if (events.length === last) return; // 重复推送，跳过
+            const startIdx = (events.length < last) ? 0 : last; // 新局从头，否则只处理新增
+            if (startIdx === 0) state.tsumoTile = null;
+
             const isAction = (ev) => ['dahai', 'pon', 'kan', 'ankan', 'daiminkan', 'kakan'].includes(ev.type);
-            let effectiveLast = state.lastReplayedEventCount;
             let firstNewAction = true;
-            for (let i = 0; i < events.length; i++) {
+            for (let i = startIdx; i < events.length; i++) {
                 const ev = events[i];
-                if (ev.type === 'start_kyoku' || ev.type === 'start_game') {
-                    effectiveLast = 0;
-                    firstNewAction = true;
-                }
-                const isNew = i >= effectiveLast;
-                if (isAction(ev) && isNew) {
+                if (isAction(ev)) {
                     if (!firstNewAction) await delay(ACTION_DELAY_MS);
                     firstNewAction = false;
                 }
