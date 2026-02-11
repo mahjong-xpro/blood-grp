@@ -657,6 +657,14 @@ body {
     z-index: 150;
 }
 
+/* 可胡时：动作栏紧贴手牌，确保可见（与 hand-container 同排） */
+.action-bar-inline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
 .btn-action {
     width: 60px;
     height: 60px;
@@ -694,12 +702,6 @@ body {
     height: 40px;
     font-size: 14px;
     margin-top: 10px;
-}
-
-/* 自摸时胡牌按钮紧贴手牌，fallback 当 action_bar 未显示时 */
-.hand-area .hu-fallback {
-    margin-left: 12px;
-    flex-shrink: 0;
 }
 
 .ai-suggestion {

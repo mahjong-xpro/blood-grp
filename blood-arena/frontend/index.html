@@ -219,6 +219,12 @@
                         </div>
                     </div>
 
+                    <!-- 可胡时：动作栏紧贴手牌，确保胡牌按钮可见 -->
+                    <div class="action-bar-inline" v-if="state.validActions.some(a => a.type === 'hu')">
+                        <button v-for="act in state.validActions" :key="act.type" class="btn-action" :class="act.type"
+                            @click.stop="doAction(act)">{{ actionLabel(act.type) }}</button>
+                        <button class="btn-action pass" @click.stop="doAction({type:'pass'})">过</button>
+                    </div>
                     <!-- My Hand (Interactive) -->
                     <div class="hand-area">
                         <div class="tile-group hand">
@@ -236,9 +242,6 @@
                             </div>
                         </div>
                     </div>
-                    <!-- 自摸时：始终显示胡牌按钮，用户可点击胡或选择打牌 -->
-                    <button v-if="state.canDiscard && state.tsumoTile" class="btn-action hu hu-fallback"
-                        @click.stop="doAction({type:'hu'})">胡</button>
                 </div>
 
                 <div class="player-info">
