@@ -65,7 +65,7 @@ const app = createApp({
                 state.connected = false;
                 setTimeout(connect, 3000);
             };
-            ws.onmessage = (e) => handleMessage(JSON.parse(e.data));
+            ws.onmessage = async (e) => { await handleMessage(JSON.parse(e.data)); };
         };
 
         const send = (data) => {
@@ -73,9 +73,9 @@ const app = createApp({
         };
 
         // --- Message Handling ---
-        function handleMessage(msg) {
+        async function handleMessage(msg) {
             if (msg.type === 'state_update') {
-                updateFullState(msg.data);
+                await updateFullState(msg.data);
             } else if (msg.type === 'action_request') {
                 handleActionRequest(msg.actions);
             } else if (msg.type === 'game_over') {
@@ -128,12 +128,12 @@ const app = createApp({
             }
         }
 
-        function updateFullState(data) {
+        async function updateFullState(data) {
             if (data.analysis) {
                 analysis.best_action = data.analysis.best_action;
             }
             if (data.events) {
-                replayEvents(data.events);
+                await replayEvents(data.events);
             }
         }
 
@@ -149,10 +149,19 @@ const app = createApp({
             });
         }
 
+        const ACTION_DELAY_MS = 1500;
+        const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
         // --- Event Replay ---
-        function replayEvents(events) {
+        async function replayEvents(events) {
             state.tsumoTile = null;
+            const isAction = (ev) => ['dahai', 'pon', 'kan', 'ankan', 'daiminkan', 'kakan'].includes(ev.type);
+            let firstAction = true;
             for (const ev of events) {
+                if (isAction(ev)) {
+                    if (!firstAction) await delay(ACTION_DELAY_MS);
+                    firstAction = false;
+                }
                 switch (ev.type) {
                     case 'start_game':
                         state.gaming = true;
