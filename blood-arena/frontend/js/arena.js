@@ -63,7 +63,6 @@ const app = createApp({
             finalTehais: null, // 牌局结束时四家手牌 [p0[], p1[], p2[], p3[]]
         });
 
-        const analysis = reactive({ best_action: null });
         const ui = reactive({ selectedIdx: -1 });
         let ws = null;
 
@@ -171,9 +170,6 @@ const app = createApp({
 
         let replayId = 0;
         async function updateFullState(data) {
-            if (data.analysis) {
-                analysis.best_action = data.analysis.best_action;
-            }
             if (data.events) {
                 replayId += 1;
                 void replayEvents(data.events, replayId);
@@ -495,10 +491,6 @@ const app = createApp({
             return state.fuuro[id] || [];
         }
 
-        function isRecommended(tile) {
-            return analysis.best_action && analysis.best_action.pai === tile;
-        }
-
         // Init
         connect();
 
@@ -512,9 +504,9 @@ const app = createApp({
         }
 
         return {
-            state, analysis, ui, isMyTurn, turnIndicatorText,
+            state, ui, isMyTurn, turnIndicatorText,
             startGame, doDingQue, onTileClick, doAction,
-            tileSrc, player, hand, discards, isRecommended, actionLabel, dingqueLabel,
+            tileSrc, player, hand, discards, actionLabel, dingqueLabel,
             getFuuro, canDiscardTile, handTiles, currentGameDisplay, matchDeltaLabel,
             getHandTileCount(p) {
                 const fuuro = state.fuuro[p] || [];

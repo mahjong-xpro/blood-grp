@@ -35,14 +35,13 @@ class _ChampionWithHumanObserver:
 
 
 class HumanEngine:
-    def __init__(self, action_queue: queue.Queue, state_queue: queue.Queue, shared_state: Dict[str, Any], ai_engine=None):
+    def __init__(self, action_queue: queue.Queue, state_queue: queue.Queue, shared_state: Dict[str, Any]):
         self.name = "Human"
         self.engine_type = "mjai-log" 
         self.action_queue = action_queue
         self.state_queue = state_queue
         self.shared_state = shared_state
-        self.player_id = 0 
-        self.ai_engine = ai_engine
+        self.player_id = 0
         
         # Shadow State for Protocol Translation
         self.tehai = [] # List of strings: ["1m", "5z"]
@@ -209,14 +208,8 @@ class HumanEngine:
         # Get actual PlayerState object for logic query
         player_state = wrapper.state
         
-        # 2. Get AI Analysis (Optional)
+        # 2. ME 玩家不需要 AI 分析提醒，不请求
         analysis = {}
-        if self.ai_engine:
-            try:
-                obs, mask = player_state.encode_obs(4, False)
-                analysis = self._get_ai_analysis(player_state, obs, mask)
-            except Exception as e:
-                logging.error(f"AI Analysis failed: {e}")
 
         # 3. Determine Legal Actions (Logic Layer)
         try:
@@ -279,55 +272,6 @@ class HumanEngine:
             # Resend State and Request to force sync
             self.state_queue.put(msg_state)
             self.state_queue.put(msg_req)
-
-    def _get_ai_analysis(self, game_state, obs, mask) -> Dict[str, Any]:
-        """ Generate AI analysis. """
-        import torch
-        
-        # Query AI
-        with torch.no_grad():
-             actions, q_out, masks, is_greedy = self.ai_engine.react_batch([obs], [mask], None)
-             
-        q_values = q_out[0]
-        valid_mask = masks[0]
-        action_space = len(q_values)
-        candidates = []
-        
-        def idx_to_tile(idx):
-            if 0 <= idx < 9: return f"{idx + 1}m"
-            if 9 <= idx < 18: return f"{idx - 9 + 1}p"
-            if 18 <= idx < 27: return f"{idx - 18 + 1}s"
-            return None
-
-        for i in range(action_space):
-            if valid_mask[i]:
-                tile = idx_to_tile(i)
-                type_str = "discard"
-                if i == 27: type_str = "pon"
-                elif i == 28: type_str = "kan"
-                elif i == 29: type_str = "hu"
-                elif i == 30: type_str = "pass"
-                elif i >= 31: type_str = "ding_que"
-                
-                candidates.append({
-                    "idx": i,
-                    "q": float(q_values[i]),
-                    "tile": tile,
-                    "type": type_str
-                })
-        candidates.sort(key=lambda x: x["q"], reverse=True)
-        
-        best_idx = int(actions[0])
-        best_tile = idx_to_tile(best_idx)
-        if best_idx >= 31:
-            best_action = {"type": "ding_que", "pai": None, "idx": best_idx}
-        else:
-            best_action = {"type": "dahai", "pai": best_tile, "idx": best_idx}
-
-        return {
-            "candidates": candidates[:5],
-            "best_action": best_action
-        }
 
     def _translate_to_mjai(self, client_action, game_state):
         """ Convert simplified client action to full MJAI event using Shadow State. """
@@ -538,7 +482,7 @@ class GameManager:
             )
 
             # Initialize Human Engine with AI Engine injected
-            human = HumanEngine(self.action_queue, self.state_queue, self.shared_state, ai_engine=ai_engine)
+            human = HumanEngine(self.action_queue, self.state_queue, self.shared_state)
             human.match_deltas = [0, 0, 0, 0]
             human.match_game_index = 0
 

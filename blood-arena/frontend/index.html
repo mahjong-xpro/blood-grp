@@ -224,13 +224,13 @@
                         <div class="tile-group hand">
                             <!-- Hand Tiles -->
                             <div class="tile" v-for="(t, i) in hand(0)" :key="i"
-                                :class="{ selected: ui.selectedIdx === i, recommended: isRecommended(t), 'tile-forbidden': state.canDiscard && !canDiscardTile(t) }"
+                                :class="{ selected: ui.selectedIdx === i, 'tile-forbidden': state.canDiscard && !canDiscardTile(t) }"
                                 @click.stop="onTileClick(t, i)">
                                 <img :src="tileSrc(t)">
                             </div>
                             <!-- Tsumo Tile (Separate) -->
                             <div class="tile tsumo" v-if="state.tsumoTile"
-                                :class="{ selected: ui.selectedIdx === 'tsumo', recommended: isRecommended(state.tsumoTile), 'tile-forbidden': state.canDiscard && !canDiscardTile(state.tsumoTile) }"
+                                :class="{ selected: ui.selectedIdx === 'tsumo', 'tile-forbidden': state.canDiscard && !canDiscardTile(state.tsumoTile) }"
                                 @click.stop="onTileClick(state.tsumoTile, 'tsumo')">
                                 <img :src="tileSrc(state.tsumoTile)">
                             </div>
@@ -274,15 +274,6 @@
                 {{ actionLabel(act.type) }}
             </button>
             <button class="btn-action pass" @click.stop="doAction({type:'pass'})">过</button>
-        </div>
-
-        <!-- AI Recommendation (Debug) -->
-        <div class="ai-suggestion" v-if="analysis.best_action">
-            <span class="label">AI Suggest:</span>
-            <span class="val">{{ actionLabel(analysis.best_action.type) }}</span>
-            <div class="tile mini" v-if="analysis.best_action.pai">
-                <img :src="tileSrc(analysis.best_action.pai)">
-            </div>
         </div>
 
     </div>
