@@ -268,8 +268,8 @@
             </div>
         </div>
 
-        <!-- Action Bar (Chi/Pon/Kan/Hu) -->
-        <div class="action-bar" v-if="state.validActions.length > 0">
+        <!-- Action Bar (Chi/Pon/Kan/Hu) - 碰/杠/胡需等对手出牌显示后再展示 -->
+        <div class="action-bar" v-if="state.validActions.length > 0 && state.validActionsShown">
             <button class="btn-action" v-for="act in state.validActions" :key="act.type" :class="act.type"
                 @click.stop="doAction(act)">
                 {{ actionLabel(act.type) }}

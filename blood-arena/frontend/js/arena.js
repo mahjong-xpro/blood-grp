@@ -12,6 +12,16 @@ function tileSrc(tile) {
     return `${TILE_BASE}/${suit}${n}.png`;
 }
 
+function playDiscardSound(pai) {
+    if (!pai || pai === '?') return;
+    const src = `/static/audio/${pai}.m4a`;
+    try {
+        const a = new Audio(src);
+        a.volume = 0.5;
+        a.play().catch(() => {});
+    } catch (_) {}
+}
+
 const app = createApp({
     setup() {
         // --- State ---
@@ -45,6 +55,7 @@ const app = createApp({
             // Interactive
             validActions: [],
             canDiscard: false,
+            validActionsShown: false, // 碰/杠/胡：仅在与对手出牌同步后显示
 
             // 是否在牌局结束时显示 AI 实际牌面（需要后端 game_over 带 tehais）
             showAiHands: true,
@@ -132,6 +143,9 @@ const app = createApp({
                     state.validActions.push(act);
                 }
             }
+
+            const hasPonKanHu = state.validActions.some(a => ['pon', 'kan', 'hu'].includes(a.type));
+            state.validActionsShown = !hasPonKanHu;
 
             if (isDingQue) {
                 state.phase = 'dingque';
@@ -236,6 +250,10 @@ const app = createApp({
                         }
                         break;
                     case 'dahai':
+                        if (ev.actor !== state.myPlayerId) {
+                            state.validActionsShown = true;
+                            playDiscardSound(ev.pai);
+                        }
                         state.currentActor = (ev.actor + 1) % 4;
                         if (!state.discards[ev.actor]) state.discards[ev.actor] = [];
                         const expectedDiscardCount = events.slice(0, i + 1).filter(e => e.type === 'dahai' && e.actor === ev.actor).length;
@@ -367,10 +385,12 @@ const app = createApp({
 
         function onTileClick(tile, idx) {
             if (!state.canDiscard) return;
+            if (state.currentActor !== state.myPlayerId) return;
             if (tile === '?') return;
             if (!canDiscardTile(tile)) return; // 定缺未打完时只能打定缺牌
 
             if (ui.selectedIdx === idx) {
+                playDiscardSound(tile);
                 send({ type: 'dahai', actor: state.myPlayerId, pai: tile });
                 if (idx === 'tsumo') {
                     state.tsumoTile = null;
