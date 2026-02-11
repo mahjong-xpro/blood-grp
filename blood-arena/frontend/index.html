@@ -43,8 +43,7 @@
                     <span class="value">{{ state.tilesLeft }}</span>
                 </div>
                 <div class="turn-indicator" v-if="state.gaming && !state.gameEnded">
-                    {{ isMyTurn ? '你的回合' : `等待 ${['下家','对家','上家'][state.currentActor > 0 ? state.currentActor-1 :
-                    0]}...` }}
+                    {{ turnIndicatorText }}
                 </div>
                 <div class="match-deltas" v-if="state.gameNumber > 0 || state.matchOver">
                     <span class="deltas-title">累计输赢：</span>

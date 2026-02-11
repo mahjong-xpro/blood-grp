@@ -69,6 +69,14 @@ const app = createApp({
 
         // --- Computed ---
         const isMyTurn = computed(() => state.currentActor === state.myPlayerId);
+        const turnIndicatorText = computed(() => {
+            if (!state.gaming || state.gameEnded) return '';
+            if (state.currentActor === state.myPlayerId) return '你的回合';
+            if (state.currentActor === -1) return '等待中...';
+            const names = ['下家', '对家', '上家'];
+            const idx = state.currentActor >= 1 && state.currentActor <= 3 ? state.currentActor - 1 : 0;
+            return `等待 ${names[idx]}...`;
+        });
 
         // --- Network ---
         const connect = () => {
@@ -125,6 +133,8 @@ const app = createApp({
                     state.phase = 'result';
                     state.gaming = false;
                 }
+                state.canDiscard = false;
+                state.validActions = [];
             }
         }
 
@@ -133,7 +143,6 @@ const app = createApp({
             state.gaming = true; // we are in a game when backend asks for an action
             state.validActions = [];
             state.canDiscard = false;
-            state.optimisticDahai = null;
 
             let isDingQue = false;
             let isDiscard = false;
@@ -218,6 +227,10 @@ const app = createApp({
                         state.finalTehais = null;
                         state.scores = [60000, 60000, 60000, 60000];
                         state.fuuro = [[], [], [], []];
+                        state.optimisticDahai = null;
+                        state.canDiscard = false;
+                        state.validActions = [];
+                        state.validActionsShown = false;
                         break;
                     case 'start_kyoku':
                         state.gaming = true;
@@ -228,11 +241,15 @@ const app = createApp({
                         state.tehai = (ev.tehais ? ev.tehais[state.myPlayerId] : []) || [];
                         sortTiles(state.tehai);
                         state.tsumoTile = null;
+                        state.optimisticDahai = null;
                         state.discards = [[], [], [], []];
                         state.agari = [false, false, false, false];
                         state.dingque = [null, null, null, null];
                         state.fuuro = [[], [], [], []];
                         state.tilesLeft = 56;
+                        state.canDiscard = false;
+                        state.validActions = [];
+                        state.validActionsShown = false;
                         break;
                     case 'ding_que':
                         if (ev.actor !== undefined && (ev.suit || ev.color)) {
@@ -256,15 +273,22 @@ const app = createApp({
                             state.validActionsShown = true;
                             playDiscardSound(ev.pai);
                         }
-                        state.currentActor = (ev.actor + 1) % 4;
+                        let nextActor = (ev.actor + 1) % 4;
+                        for (let _ = 0; _ < 4; _++) {
+                            if (!state.agari[nextActor]) break;
+                            nextActor = (nextActor + 1) % 4;
+                        }
+                        state.currentActor = nextActor;
                         if (!state.discards[ev.actor]) state.discards[ev.actor] = [];
                         const expectedDiscardCount = events.slice(0, i + 1).filter(e => e.type === 'dahai' && e.actor === ev.actor).length;
                         if (state.discards[ev.actor].length < expectedDiscardCount) {
                             state.discards[ev.actor].push(ev.pai);
                         }
                         if (ev.actor === state.myPlayerId) {
+                            state.canDiscard = false;
                             if (state.tsumoTile === ev.pai) {
                                 state.tsumoTile = null;
+                                state.optimisticDahai = null;
                             } else if (state.optimisticDahai === ev.pai) {
                                 state.optimisticDahai = null;
                                 state.tsumoTile = null;
@@ -277,8 +301,10 @@ const app = createApp({
                                         sortTiles(state.tehai);
                                         state.tsumoTile = null;
                                     }
+                                    state.optimisticDahai = null;
                                 } else {
                                     state.tsumoTile = null;
+                                    state.optimisticDahai = null;
                                 }
                             }
                         }
@@ -291,6 +317,7 @@ const app = createApp({
                     case 'kakan':
                         state.currentActor = ev.actor;
                         if (ev.actor === state.myPlayerId) {
+                            state.canDiscard = false;
                             let toRemove = [];
                             if (ev.type === 'kakan') {
                                 if (ev.pai) toRemove.push(ev.pai);
@@ -485,7 +512,7 @@ const app = createApp({
         }
 
         return {
-            state, analysis, ui, isMyTurn,
+            state, analysis, ui, isMyTurn, turnIndicatorText,
             startGame, doDingQue, onTileClick, doAction,
             tileSrc, player, hand, discards, isRecommended, actionLabel, dingqueLabel,
             getFuuro, canDiscardTile, handTiles, currentGameDisplay, matchDeltaLabel,
