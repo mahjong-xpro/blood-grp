@@ -159,9 +159,9 @@ impl BatchAgent for MjaiLogBatchAgent {
         if let Some(log) = log {
             if let Ok(events_json) = json::to_string(log) {
                 let _ = Python::with_gil(|py| {
-                    let _ = self.engine
+                    drop(self.engine
                         .bind_borrowed(py)
-                        .call_method1(intern!(py, "update_state"), (index, events_json));
+                        .call_method1(intern!(py, "update_state"), (index, events_json)));
                 });
             }
         }
