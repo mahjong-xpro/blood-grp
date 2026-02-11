@@ -39,6 +39,9 @@ const app = createApp({
             matchDeltas: [0, 0, 0, 0],
             matchOver: false,
 
+            // 已重放的事件数，用于只对“新动作”做延迟，避免每次从头重放
+            lastReplayedEventCount: 0,
+
             // Interactive
             validActions: [],
             canDiscard: false,
@@ -65,7 +68,20 @@ const app = createApp({
                 state.connected = false;
                 setTimeout(connect, 3000);
             };
-            ws.onmessage = async (e) => { await handleMessage(JSON.parse(e.data)); };
+            let msgQueue = [];
+            let processing = false;
+            ws.onmessage = (e) => {
+                msgQueue.push(JSON.parse(e.data));
+                if (!processing) {
+                    processing = true;
+                    (async function drain() {
+                        while (msgQueue.length > 0) {
+                            await handleMessage(msgQueue.shift());
+                        }
+                        processing = false;
+                    })();
+                }
+            };
         };
 
         const send = (data) => {
@@ -156,11 +172,13 @@ const app = createApp({
         async function replayEvents(events) {
             state.tsumoTile = null;
             const isAction = (ev) => ['dahai', 'pon', 'kan', 'ankan', 'daiminkan', 'kakan'].includes(ev.type);
-            let firstAction = true;
-            for (const ev of events) {
-                if (isAction(ev)) {
-                    if (!firstAction) await delay(ACTION_DELAY_MS);
-                    firstAction = false;
+            let effectiveLast = state.lastReplayedEventCount;
+            for (let i = 0; i < events.length; i++) {
+                const ev = events[i];
+                if (ev.type === 'start_kyoku') effectiveLast = 0; // 新一局，重置
+                const isNew = i >= effectiveLast;
+                if (isAction(ev) && isNew) {
+                    if (i > effectiveLast) await delay(ACTION_DELAY_MS);
                 }
                 switch (ev.type) {
                     case 'start_game':
@@ -169,6 +187,7 @@ const app = createApp({
                         state.matchOver = false;
                         state.gameNumber = 0;
                         state.matchDeltas = [0, 0, 0, 0];
+                        state.lastReplayedEventCount = 0;
                         state.finalTehais = null;
                         state.scores = [60000, 60000, 60000, 60000];
                         state.fuuro = [[], [], [], []];
@@ -176,6 +195,7 @@ const app = createApp({
                     case 'start_kyoku':
                         state.gaming = true;
                         if (!state.matchOver) state.gameEnded = false;
+                        state.lastReplayedEventCount = 0;
                         state.finalTehais = null;
                         state.scores = (ev.scores && ev.scores.length === 4) ? [...ev.scores] : [60000, 60000, 60000, 60000];
                         state.tehai = (ev.tehais ? ev.tehais[state.myPlayerId] : []) || [];
@@ -271,6 +291,7 @@ const app = createApp({
                         break;
                 }
             }
+            state.lastReplayedEventCount = events.length;
         }
 
         // --- Interaction ---
@@ -279,6 +300,7 @@ const app = createApp({
             state.matchDeltas = [0, 0, 0, 0];
             state.matchOver = false;
             state.gameEnded = false;
+            state.lastReplayedEventCount = 0;
             send({ type: 'start_game' });
         }
 
