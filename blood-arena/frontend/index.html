@@ -208,6 +208,13 @@
                     </div>
                 </div>
 
+                <!-- 碰/杠/胡：河牌与手牌之间，反应对手出牌时自然视线流 -->
+                <div class="action-bar-inline" v-if="(state.validActions.length > 0 && state.validActionsShown) || state.validActions.some(a => a.type === 'hu')">
+                    <button v-for="act in state.validActions" :key="act.type" class="btn-action" :class="act.type"
+                        @click.stop="doAction(act)">{{ actionLabel(act.type) }}</button>
+                    <button class="btn-action pass" @click.stop="doAction({type:'pass'})">过</button>
+                </div>
+
                 <!-- Hand Container (Meld + Hand) -->
                 <div class="hand-container">
                     <!-- Fuuro (Left of Hand) -->
@@ -219,12 +226,6 @@
                         </div>
                     </div>
 
-                    <!-- 碰/杠/胡：动作栏紧贴手牌，唯一展示位置 -->
-                    <div class="action-bar-inline" v-if="(state.validActions.length > 0 && state.validActionsShown) || state.validActions.some(a => a.type === 'hu')">
-                        <button v-for="act in state.validActions" :key="act.type" class="btn-action" :class="act.type"
-                            @click.stop="doAction(act)">{{ actionLabel(act.type) }}</button>
-                        <button class="btn-action pass" @click.stop="doAction({type:'pass'})">过</button>
-                    </div>
                     <!-- My Hand (Interactive) -->
                     <div class="hand-area">
                         <div class="tile-group hand">

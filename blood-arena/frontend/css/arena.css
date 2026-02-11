@@ -657,12 +657,13 @@ body {
     z-index: 150;
 }
 
-/* 可胡时：动作栏紧贴手牌，确保可见（与 hand-container 同排） */
+/* 碰/杠/胡：河牌与手牌之间，居中 */
 .action-bar-inline {
     display: flex;
     align-items: center;
-    gap: 10px;
-    flex-shrink: 0;
+    justify-content: center;
+    gap: 12px;
+    padding: 8px 0;
 }
 
 .btn-action {

@@ -79,8 +79,15 @@ impl Game {
         match poll {
             Poll::InGame => {
                 let ctx = self.board.agent_context();
+
+                // 血战到底规则：有人能胡时，胡优先，仅向能胡的玩家 set_scene
+                let ron_takes_priority = !self.board.is_ding_que_phase()
+                    && ctx
+                        .player_states
+                        .iter()
+                        .any(|s| s.last_cans().can_ron_agari);
+
                 for (player_id, state) in ctx.player_states.iter().enumerate() {
-                    // Determine if the agent needs to act
                     let needs_reaction = if self.board.is_ding_que_phase() {
                         !self.board.ding_que_selected(player_id)
                     } else {
@@ -88,6 +95,11 @@ impl Game {
                     };
 
                     if !needs_reaction {
+                        continue;
+                    }
+
+                    // 有人能胡时，只有能胡的玩家才 set_scene
+                    if ron_takes_priority && !state.last_cans().can_ron_agari {
                         continue;
                     }
 
@@ -184,11 +196,16 @@ impl Game {
         }
 
         let ctx = self.board.agent_context();
+
+        // 血战到底规则：有人能胡时，胡优先于碰/杠，其他人不能碰/杠
+        // 因此仅向能胡的玩家请求反应，能碰/杠但不能胡的玩家视为过
+        let ron_takes_priority = !self.board.is_ding_que_phase()
+            && ctx
+                .player_states
+                .iter()
+                .any(|s| s.last_cans().can_ron_agari);
+
         for (player_id, state) in ctx.player_states.iter().enumerate() {
-            // Determine if the agent needs to act
-            // Determine if the agent needs to act
-            // 修复：统一使用 can_act() 作为判断标准，包括定缺阶段
-            // PlayerState 已经正确维护了 can_ding_que 状态
             let needs_reaction = if self.board.is_ding_que_phase() {
                 !self.board.ding_que_selected(player_id)
             } else {
@@ -196,6 +213,12 @@ impl Game {
             };
 
             if !needs_reaction {
+                continue;
+            }
+
+            // 有人能胡时，只有能胡的玩家才请求反应；能碰/杠的玩家视为过
+            if ron_takes_priority && !state.last_cans().can_ron_agari {
+                self.last_reactions[player_id] = EventExt::default();
                 continue;
             }
 
