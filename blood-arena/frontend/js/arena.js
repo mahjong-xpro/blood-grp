@@ -249,6 +249,9 @@ const app = createApp({
                                         sortTiles(state.tehai);
                                         state.tsumoTile = null;
                                     }
+                                } else {
+                                    // idx=-1: 牌已移除（乐观更新或前次 replay），摸牌已并入 tehai，避免重复显示
+                                    state.tsumoTile = null;
                                 }
                             }
                         }
