@@ -18,6 +18,22 @@ except ImportError:
 INITIAL_SCORE = 60000
 MATCH_GAMES = 8  # 一场对局共 8 局
 
+
+class _ChampionWithHumanObserver:
+    """包装 AI 引擎：libblood 在 AI 回合调用 set_scene 时会尝试 update_state；
+    人已和牌后不再轮到人，只有 AI 收到 set_scene，必须由此转发 state 给前端，否则界面卡死。"""
+
+    def __init__(self, ai_engine, human_engine: "HumanEngine"):
+        self._ai = ai_engine
+        self._human = human_engine
+
+    def update_state(self, game_index, events_json):
+        self._human.update_state(game_index, events_json)
+
+    def __getattr__(self, name):
+        return getattr(self._ai, name)
+
+
 class HumanEngine:
     def __init__(self, action_queue: queue.Queue, state_queue: queue.Queue, shared_state: Dict[str, Any], ai_engine=None):
         self.name = "Human"
@@ -526,13 +542,16 @@ class GameManager:
             human.match_deltas = [0, 0, 0, 0]
             human.match_game_index = 0
 
+            # AI 回合时也需向前端推送 state_update（人已和牌后不再轮到人，set_scene 只调 AI，否则前端卡死）
+            champion = _ChampionWithHumanObserver(ai_engine, human)
+
             # 8 局制：连续打满 8 局，每局独立种子
             env = arena.OneVsThree(disable_progress_bar=True, log_dir=None)
             seed_base = random.getrandbits(32)
             for game_num in range(MATCH_GAMES):
                 seed = (seed_base, game_num)
                 logging.info("Match game %d/8 seed: %s", game_num + 1, seed)
-                env.py_vs_py(human, ai_engine, seed, 1)
+                env.py_vs_py(human, champion, seed, 1)
             logging.info("Match finished. Final deltas: %s", human.match_deltas)
             
         except Exception as e:
