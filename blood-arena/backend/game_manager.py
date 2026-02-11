@@ -355,22 +355,30 @@ class HumanEngine:
                 return {"type": "none"}
                 
             if act_type == "hu":
-                # Tsumo or Ron?
-                if self.last_tsumo_tile: # If we just drew a tile, it's Tsumo
+                # 用 last_cans 区分 tsumo/ron，而非 last_tsumo_tile（上轮自摸可能残存）
+                cans = getattr(game_state, "last_cans", None)
+                can_tsumo = getattr(cans, "can_tsumo_agari", False) if cans else False
+                can_ron = getattr(cans, "can_ron_agari", False) if cans else False
+                if can_tsumo and self.last_tsumo_tile:
                     return {
-                        "type": "hora", 
-                        "actor": actor_id, 
-                        "target": actor_id, 
+                        "type": "hora",
+                        "actor": actor_id,
+                        "target": actor_id,
                         "pai": self.last_tsumo_tile
                     }
-                else: # Ron
-                    target, pai = self.last_kawa if self.last_kawa else (0, "?")
+                if can_ron and self.last_kawa:
+                    target, pai = self.last_kawa
                     return {
-                        "type": "hora", 
-                        "actor": actor_id, 
-                        "target": target, 
+                        "type": "hora",
+                        "actor": actor_id,
+                        "target": target,
                         "pai": pai
                     }
+                # 回退：按 last_tsumo_tile 推断
+                if self.last_tsumo_tile:
+                    return {"type": "hora", "actor": actor_id, "target": actor_id, "pai": self.last_tsumo_tile}
+                target, pai = self.last_kawa if self.last_kawa else (0, "?")
+                return {"type": "hora", "actor": actor_id, "target": target, "pai": pai}
 
             if act_type == "pon":
                 if not self.last_kawa:
