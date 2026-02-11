@@ -180,9 +180,17 @@ const app = createApp({
 
         let replayId = 0;
         async function updateFullState(data) {
+            if (!data) return;
+            const hasAuthoritativeHand = !!(data.tehais && Array.isArray(data.tehais) && data.tehais[state.myPlayerId]);
+            if (hasAuthoritativeHand) {
+                state.tehai = [...(data.tehais[state.myPlayerId] || [])];
+                sortTiles(state.tehai);
+                state.tsumoTile = data.my_tsumo ?? null;
+                state.optimisticDahai = null;  // 权威状态覆盖，无需乐观更新标记
+            }
             if (data.events) {
                 replayId += 1;
-                void replayEvents(data.events, replayId);
+                void replayEvents(data.events, replayId, hasAuthoritativeHand);
             }
         }
 
@@ -203,13 +211,14 @@ const app = createApp({
 
         // --- Event Replay ---
         // 增量重放：仅处理新增事件；fire-and-forget 以便 action_request 能立即处理，用户可出牌
-        async function replayEvents(events, myReplayId) {
+        // hasAuthoritativeHand: 当 state_update 含 tehais 时，手牌由后端权威状态覆盖，replay 不修改 tehai/tsumoTile
+        async function replayEvents(events, myReplayId, hasAuthoritativeHand = false) {
             if (!events || events.length === 0) return;
             const last = state.lastReplayedEventCount;
             if (events.length === last) return;
             if (myReplayId !== undefined && myReplayId !== replayId) return; // 被更新的 replay 取代
             const startIdx = (events.length < last) ? 0 : last; // 新局从头，否则只处理新增
-            if (startIdx === 0) state.tsumoTile = null;
+            if (startIdx === 0 && !hasAuthoritativeHand) state.tsumoTile = null;
 
             const isAction = (ev) => ['dahai', 'pon', 'kan', 'ankan', 'daiminkan', 'kakan'].includes(ev.type);
             let firstNewAction = true;
@@ -244,9 +253,11 @@ const app = createApp({
                         state.lastReplayedEventCount = 0;
                         state.finalTehais = null;
                         state.scores = (ev.scores && ev.scores.length === 4) ? [...ev.scores] : [60000, 60000, 60000, 60000];
-                        state.tehai = (ev.tehais ? ev.tehais[state.myPlayerId] : []) || [];
-                        sortTiles(state.tehai);
-                        state.tsumoTile = null;
+                        if (!hasAuthoritativeHand) {
+                            state.tehai = (ev.tehais ? ev.tehais[state.myPlayerId] : []) || [];
+                            sortTiles(state.tehai);
+                            state.tsumoTile = null;
+                        }
                         state.optimisticDahai = null;
                         state.discards = [[], [], [], []];
                         state.agari = [false, false, false, false];
@@ -265,11 +276,8 @@ const app = createApp({
                     case 'tsumo':
                         state.currentActor = ev.actor;
                         state.tilesLeft = Math.max(0, state.tilesLeft - 1);
-                        if (ev.actor === state.myPlayerId && ev.pai && ev.pai !== '?') {
-                            // 杠后补牌、普通摸牌都需显示；但 tehai 已达 14 张时不再加 tsumoTile，避免 15 张 bug
-                            if (state.tehai.length < 14) {
-                                state.tsumoTile = ev.pai;
-                            }
+                        if (!hasAuthoritativeHand && ev.actor === state.myPlayerId && ev.pai && ev.pai !== '?') {
+                            if (state.tehai.length < 14) state.tsumoTile = ev.pai;
                         }
                         break;
                     case 'dahai':
@@ -288,14 +296,12 @@ const app = createApp({
                         if (state.discards[ev.actor].length < expectedDiscardCount) {
                             state.discards[ev.actor].push(ev.pai);
                         }
-                        if (ev.actor === state.myPlayerId) {
-                            // canDiscard 仅由 action_request 与用户交互控制，replay 不修改
+                        if (!hasAuthoritativeHand && ev.actor === state.myPlayerId) {
                             if (state.tsumoTile === ev.pai) {
                                 state.tsumoTile = null;
                                 state.optimisticDahai = null;
                             } else if (state.optimisticDahai === ev.pai) {
                                 state.tsumoTile = null;
-                                // 不在此清 optimisticDahai：若同一 dahai 被重复 replay，else 分支会 indexOf 找到另一张同牌并误删
                             } else {
                                 const idx = state.tehai.indexOf(ev.pai);
                                 if (idx > -1) {
@@ -322,8 +328,7 @@ const app = createApp({
                         state.currentActor = ev.actor;
                         if (ev.type === 'pon') playActionSound('pon.m4a');
                         else playActionSound('kan.m4a');
-                        if (ev.actor === state.myPlayerId) {
-                            // canDiscard 仅由 action_request 与用户交互控制，replay 不修改
+                        if (!hasAuthoritativeHand && ev.actor === state.myPlayerId) {
                             let toRemove = [];
                             if (ev.type === 'kakan') {
                                 if (ev.pai) toRemove.push(ev.pai);

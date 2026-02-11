@@ -133,11 +133,14 @@ class HumanEngine:
                             if t in self.tehai:
                                 self.tehai.remove(t)
 
+            # 使用 shadow state 作为手牌权威来源，避免前端 replay 推导 bug
             msg = {
                 "type": "state_update",
                 "data": {
                     "events": events,
-                    "analysis": {}
+                    "analysis": {},
+                    "tehais": [list(self.tehai), [], [], []],
+                    "my_tsumo": self.last_tsumo_tile,
                 }
             }
             logging.info(f"[DEBUG] update_state events count: {len(events)}")
@@ -197,6 +200,22 @@ class HumanEngine:
         
         return actions
 
+    @staticmethod
+    def _tehai_from_counts(counts):
+        """Convert PlayerState.tehai ([u8;27] count array) to mjai string list."""
+        suits = ['m', 'p', 's']
+        result = []
+        for tid, count in enumerate(list(counts) if counts else []):
+            if tid >= 27:
+                break
+            c = int(count) if count else 0
+            if c > 0:
+                num = tid % 9 + 1
+                suit = suits[tid // 9]
+                tile = f"{num}{suit}"
+                result.extend([tile] * c)
+        return result
+
     def react_batch(self, game_states):
         """
         Refactored: Strictly logic-driven interaction.
@@ -209,7 +228,15 @@ class HumanEngine:
         
         # Get actual PlayerState object for logic query
         player_state = wrapper.state
-        
+
+        # Sync shadow state from libblood (authoritative) for _translate_to_mjai
+        self.tehai = self._tehai_from_counts(player_state.tehai)
+        try:
+            ls = getattr(player_state, 'last_self_tsumo', None)
+            self.last_tsumo_tile = ls() if callable(ls) else ls
+        except Exception:
+            self.last_tsumo_tile = None
+
         # 2. ME 玩家不需要 AI 分析提醒，不请求
         analysis = {}
 
@@ -232,10 +259,16 @@ class HumanEngine:
         self.shared_state['latest'] = msg_req
         self.state_queue.put(msg_req)
 
-        # 5. Send Full State Update (Base Layer) - replay may have delays, user already has canDiscard
+        # 5. Send Full State Update (Base Layer) - include authoritative hand from libblood
+        #    避免前端 replay 推导手牌导致的 15 张/少一张 bug
         msg_state = {
             "type": "state_update",
-            "data": { "events": events, "analysis": analysis }
+            "data": {
+                "events": events,
+                "analysis": analysis,
+                "tehais": [list(self.tehai), [], [], []],  # 已从 sync 同步
+                "my_tsumo": self.last_tsumo_tile,
+            }
         }
         self.shared_state['latest'] = msg_state
         self.state_queue.put(msg_state)
