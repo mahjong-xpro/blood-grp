@@ -255,16 +255,8 @@ class HumanEngine:
         if not legal_actions:
             return [json.dumps({"type": "none"})]
 
-        # 4. Send Action Request FIRST so user can click immediately (replay may have delays)
-        msg_req = {
-            "type": "action_request",
-            "actions": legal_actions
-        }
-        self.shared_state['latest'] = msg_req
-        self.state_queue.put(msg_req)
-
-        # 5. Send Full State Update (Base Layer) - include authoritative hand from libblood
-        #    tehai 与 tsumoTile 分离：tehais 不含刚摸的牌，my_tsumo 单独表示（定缺时 13+1=14）
+        # 4. Send Full State Update FIRST so frontend replays in correct order before showing canDiscard
+        # 5. Then Action Request (user can click after state is synced)
         disp_tehai = list(self.tehai)
         if self.last_tsumo_tile and self.last_tsumo_tile in disp_tehai:
             disp_tehai.remove(self.last_tsumo_tile)
@@ -279,7 +271,14 @@ class HumanEngine:
         }
         self.shared_state['latest'] = msg_state
         self.state_queue.put(msg_state)
-        
+
+        msg_req = {
+            "type": "action_request",
+            "actions": legal_actions
+        }
+        self.shared_state['latest'] = msg_req
+        self.state_queue.put(msg_req)
+
         logging.info(f"Waiting for human action. Legal: {[a['type'] for a in legal_actions]}")
 
         # 6. Wait for Valid Action

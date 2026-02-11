@@ -184,7 +184,7 @@ const app = createApp({
             const hasAuthoritativeHand = !!(data.tehais && Array.isArray(data.tehais) && data.tehais[state.myPlayerId]);
             if (data.events) {
                 replayId += 1;
-                void replayEvents(data.events, replayId, hasAuthoritativeHand, hasAuthoritativeHand ? data : null);
+                await replayEvents(data.events, replayId, hasAuthoritativeHand, hasAuthoritativeHand ? data : null);
             }
         }
 
