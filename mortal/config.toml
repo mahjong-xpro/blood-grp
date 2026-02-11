@@ -87,16 +87,17 @@ td_lambda_enabled = true # 启用 TD(λ) 训练 (替代纯 Monte Carlo)
 # 阶段 3.5: 疯狗模式 (Mad Dog Mode) - 极度鼓励进攻和争第一
 rank_bonus_enabled = true
 # 旧配置: [0.3, 0.1, -0.1, -0.3]
-rank_bonuses = [0.6, 0.2, -0.3, -0.5] # 拉大 1/2 位差距 (0.2 -> 0.4)
+rank_bonuses = [0.6, 0.2, -0.3, -1.0] # Phase 4: 铁幕模式 - 严惩吃四 (-0.5 -> -1.0)
 
 # 动作级奖励 (和牌/放铳) - 阶段 2 开启
 action_bonus_enabled = true  # 启用动作奖励
 agari_bonus = 0.5            # 强力鼓励和牌 (0.1 -> 0.5)
-houjuu_penalty = -0.5        # 强力惩罚放铳 (-0.1 -> -0.5)
+houjuu_penalty = -0.6        # 铁幕防御: 进一步加大放铳惩罚 (-0.5 -> -0.6)
 
 # 自动更新 baseline 的阈值 (阶梯式训练)
 # 当 avg_pt 超过此值时，自动用当前模型替换 baseline
-baseline_update_threshold = 3.2
+# 阶段 3.5: 暂时禁用自动更新 (设为 4.0)，保护 Champion 不被疯狗模型覆盖
+baseline_update_threshold = 4.0
 
 # 阶段转换指南:
 # ┌──────────────────────────────────────────────────────┐
