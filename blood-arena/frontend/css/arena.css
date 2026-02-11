@@ -306,12 +306,13 @@ body {
 .zone-right .tile-group.river {
     flex-direction: column-reverse;
     gap: 0;
+    row-gap: 0;
 }
 
-/* 左右河牌：负 margin 拉近牌距，牌大小不变 */
-.zone-left .river .tile:not(:first-child),
-.zone-right .river .tile:not(:first-child) {
-    margin-top: -6px;
+/* 左右河牌：margin-bottom 负值拉近牌距，牌大小不变。:not(:last-child) 使第一、二张与其它间距一致 */
+.zone-left .river .tile:not(:last-child),
+.zone-right .river .tile:not(:last-child) {
+    margin-bottom: -8px;
 }
 
 /* 河牌旋转：牌面朝向中心 */
