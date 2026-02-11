@@ -299,13 +299,25 @@ body {
     opacity: 0.9;
 }
 
+/* 左右河牌：交换宽高使主轴尺寸 26px，与 ME 河牌间距一致（根因：column 时 height 决定间距） */
+.zone-left .river .tile,
+.zone-right .river .tile {
+    width: var(--tile-h-sm);
+    height: var(--tile-w-sm);
+}
+
+.zone-left .river .tile img,
+.zone-right .river .tile img {
+    object-fit: contain;
+}
+
 /* 河牌方向：ME/对家横向，左右竖向 */
 .zone-bottom .tile-group.river { flex-direction: row; }
 .zone-top .tile-group.river { flex-direction: row-reverse; }
 .zone-left .tile-group.river,
 .zone-right .tile-group.river {
     flex-direction: column-reverse;
-    gap: 0;
+    gap: 2px;
 }
 
 /* 河牌旋转：牌面朝向中心 */
