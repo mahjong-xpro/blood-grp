@@ -302,23 +302,19 @@ body {
     padding: 0;
 }
 
-.river-area {
-    margin: 10px;
-}
-
-/* 左右玩家河牌：去掉顶部 margin，消除玩家信息与第一张河牌之间的空隙 */
-.zone-left .river-area,
-.zone-right .river-area {
-    margin: 0 10px 10px 10px;  /* top=0, 其余保持 10px */
-}
-
 .tile-group {
     display: flex;
     gap: 2px;
 }
 
-/* 河牌：所有玩家统一样式（与 ME 一致），间距 2px */
+/* ========== River 河牌（重新布局） ========== */
+.river-area {
+    display: flex;
+    align-items: center;
+}
+
 .tile-group.river {
+    display: flex;
     gap: 2px;
 }
 
@@ -328,24 +324,18 @@ body {
     opacity: 0.9;
 }
 
-/* 河牌方向：各自从自己方向的左到右依次出牌 */
-.zone-bottom .tile-group.river {
-    flex-direction: row;
-}
-.zone-top .tile-group.river {
-    flex-direction: row-reverse;
-}
+/* 方向：ME/对家横向，左右竖向 */
+.zone-bottom .tile-group.river { flex-direction: row; }
+.zone-top .tile-group.river { flex-direction: row-reverse; }
 .zone-left .tile-group.river,
 .zone-right .tile-group.river {
     flex-direction: column-reverse;
-    gap: 0;
 }
 
-/* 左右河牌：负 margin 让牌更紧凑，视觉上与 ME 更接近 */
-.zone-left .river .tile:not(:first-child),
-.zone-right .river .tile:not(:first-child) {
-    margin-top: -8px;
-}
+/* 牌面朝向中心 */
+.zone-top .river .tile { transform: rotate(180deg); }
+.zone-left .river .tile { transform: rotate(90deg); }
+.zone-right .river .tile { transform: rotate(-90deg); }
 
 /* Side Players Hand (Vertical/Compact) - 仅影响手牌，不影响河牌 */
 .zone-left .tile-group.hand,
@@ -361,19 +351,6 @@ body {
     background: #222;
     border: 1px solid #444;
     border-radius: 2px;
-}
-
-/* Rotate River Tiles（牌面朝向中心） */
-.zone-top .river .tile {
-    transform: rotate(180deg);
-}
-
-.zone-left .river .tile {
-    transform: rotate(90deg);
-}
-
-.zone-right .river .tile {
-    transform: rotate(-90deg);
 }
 
 .zone-top .hand .tile {
