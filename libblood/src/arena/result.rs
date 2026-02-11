@@ -17,6 +17,8 @@ pub struct GameResult {
     pub scores: [i32; 4],
     pub seed: (u64, u64),
     pub game_log: Vec<Vec<EventExt>>,
+    /// Final hand tiles per player at game end, for display (e.g. 显示AI手牌).
+    pub final_tehais: Option<Vec<Vec<String>>>,
 }
 
 impl GameResult {

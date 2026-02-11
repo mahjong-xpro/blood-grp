@@ -162,5 +162,5 @@ class ExampleMjaiLogEngine:
         pass
     def end_kyoku(self, game_idx: int):
         pass
-    def end_game(self, game_idx: int, scores: List[int]):
+    def end_game(self, game_idx: int, scores: List[int], final_tehais=None):
         pass

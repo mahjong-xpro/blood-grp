@@ -152,7 +152,7 @@ class HumanEngine:
     def end_kyoku(self, index):
         logging.info(f"Kyoku {index} ended")
 
-    def end_game(self, index, scores):
+    def end_game(self, index, scores, final_tehais=None):
         """一局结束：累计本局得失分，推送 game_over；若已打满 8 局则标记 match_over。"""
         logging.info(f"Game {index} ended with scores: {scores}")
         # 本局相对初始分的得失
@@ -169,6 +169,8 @@ class HumanEngine:
             "game_number": self.match_game_index,
             "is_match_over": is_match_over,
         }
+        if final_tehais is not None and len(final_tehais) == 4:
+            msg["tehais"] = final_tehais
         self.shared_state['latest'] = msg
         self.state_queue.put(msg)
 

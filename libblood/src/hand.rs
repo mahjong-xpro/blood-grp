@@ -61,6 +61,15 @@ pub fn tile27_to_vec(tiles: &[u8; 27]) -> Vec<Tile> {
     ret
 }
 
+/// Convert tehai count array to mjai-format string list (e.g. ["1m","2m","3m",...]).
+#[must_use]
+pub fn tehai_to_strings(tehai: &[u8; 27]) -> Vec<String> {
+    tile27_to_vec(tehai)
+        .iter()
+        .map(|t| t.to_string())
+        .collect()
+}
+
 #[must_use]
 pub fn tiles_to_string(tiles: &[u8; 27]) -> String {
     let suhai = tiles[..3 * 9]

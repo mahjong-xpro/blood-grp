@@ -2,6 +2,7 @@ use super::board::{Board, BoardState, Poll};
 use super::result::GameResult;
 use crate::agent::BatchAgent;
 use crate::consts::INITIAL_SCORE;
+use crate::hand::tehai_to_strings;
 use crate::mjai::EventExt;
 use std::time::Duration;
 use std::{array, mem};
@@ -162,11 +163,18 @@ impl Game {
         if self.ended {
 
             let names = array::from_fn(|i| agents[self.indexes[i].agent_idx].name());
+            let ctx = self.board.agent_context();
+            let final_tehais = ctx
+                .player_states
+                .iter()
+                .map(|s| tehai_to_strings(&s.tehai))
+                .collect::<Vec<_>>();
             let game_result = GameResult {
                 names,
                 scores: self.scores,
                 seed: self.seed,
                 game_log: mem::take(&mut self.game_log),
+                final_tehais: Some(final_tehais),
             };
 
             for idx in &self.indexes {

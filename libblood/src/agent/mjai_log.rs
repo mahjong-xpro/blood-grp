@@ -177,7 +177,10 @@ impl BatchAgent for MjaiLogBatchAgent {
         Python::with_gil(|py| {
             self.engine
                 .bind_borrowed(py)
-                .call_method1(intern!(py, "end_game"), (index, game_result.scores))?;
+                .call_method1(
+                    intern!(py, "end_game"),
+                    (index, game_result.scores, game_result.final_tehais.as_ref()),
+                )?;
             Ok(())
         })
     }
