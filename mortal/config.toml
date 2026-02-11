@@ -55,7 +55,7 @@ keep_data = false
 
 # 测试对局配置
 [test_play]
-games = 3000
+games = 5000 # Phase 4: 增加样本量 (3000->5000) 以对抗方差，确保 Rank 变化是真实的
 log_dir = '/data/mortal/test_play'
 
 # 数据集配置
