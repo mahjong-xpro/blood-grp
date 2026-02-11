@@ -199,104 +199,76 @@ body {
     color: var(--text-secondary);
 }
 
-/* Player Zones */
+/* ========== Player Zones 玩家区域 ========== */
 .player-zone {
     position: relative;
     display: flex;
-    /* Default centering, overridden per zone */
+    gap: 6px;
     justify-content: center;
     align-items: center;
 }
 
-/* Container for Hand + Fuuro */
-.hand-container {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    /* Small gap between Meld and Hand */
-    z-index: 50;
-    /* Above River */
-}
-
-/* Top: Hand Top, River Bottom (Center) */
+/* 对家：上，手牌在上，河牌在下 */
 .zone-top {
     grid-column: 2;
     grid-row: 1;
     flex-direction: column;
-    /* Hand, River */
     justify-content: flex-end;
-    padding-bottom: 10px;
+    padding-bottom: 8px;
 }
 
-/* Left: Hand Left, River Right (Center) */
+/* 上家：左，手牌在左，河牌在右 */
 .zone-left {
     grid-column: 1;
     grid-row: 2;
     flex-direction: row;
-    /* Hand, River */
     justify-content: flex-end;
-    padding-right: 10px;
+    padding-right: 8px;
 }
 
-/* Right: Hand Right, River Left (Center) */
+/* 下家：右，手牌在右，河牌在左 */
 .zone-right {
     grid-column: 3;
     grid-row: 2;
     flex-direction: row-reverse;
-    /* Hand, River */
     justify-content: flex-end;
-    padding-left: 10px;
+    padding-left: 8px;
 }
 
-/* Bottom: River Top (Center), Hand Bottom */
+/* ME：下，河牌在上，手牌在下 */
 .zone-bottom {
     grid-column: 2;
     grid-row: 3;
     flex-direction: column;
-    /* River, Hand */
     justify-content: flex-start;
-    padding-top: 10px;
+    padding-top: 8px;
 }
 
-/* Side Layouts for Hand Container */
+/* Hand Container - 手牌+副露 */
+.hand-container {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    z-index: 50;
+}
+
 .zone-left .hand-container,
 .zone-right .hand-container {
     flex-direction: column;
-    /* Meld Above Hand */
 }
 
-/* Info Positioning - Make Absolute to avoid affecting layout flow */
+/* Player Info - 绝对定位不占流 */
 .player-info {
     position: absolute;
     z-index: 100;
 }
 
-.zone-top .player-info {
-    top: 10px;
-    left: 10px;
-    flex-direction: row;
-}
+.zone-top .player-info { top: 8px; left: 8px; }
+.zone-left .player-info { top: 8px; left: 8px; width: 100px; }
+.zone-right .player-info { top: 8px; right: 8px; width: 100px; flex-direction: row-reverse; text-align: right; }
+.zone-bottom .player-info { bottom: 8px; left: 8px; }
 
-.zone-left .player-info {
-    top: 10px;
-    left: 10px;
-    width: 100px;
-}
-
-.zone-right .player-info {
-    top: 10px;
-    right: 10px;
-    width: 100px;
-    flex-direction: row-reverse;
-    text-align: right;
-}
-
-.zone-bottom .player-info {
-    bottom: 10px;
-    left: 10px;
-}
-
-/* Hand Area Cleanup */
+/* Hand Area */
 .hand-area {
     margin: 0;
     padding: 0;
@@ -307,10 +279,11 @@ body {
     gap: 2px;
 }
 
-/* ========== River 河牌（重新布局） ========== */
+/* ========== River 河牌 ========== */
 .river-area {
     display: flex;
     align-items: center;
+    justify-content: center;
 }
 
 .tile-group.river {
@@ -324,15 +297,13 @@ body {
     opacity: 0.9;
 }
 
-/* 方向：ME/对家横向，左右竖向 */
+/* 河牌方向：ME/对家横向，左右竖向 */
 .zone-bottom .tile-group.river { flex-direction: row; }
 .zone-top .tile-group.river { flex-direction: row-reverse; }
 .zone-left .tile-group.river,
-.zone-right .tile-group.river {
-    flex-direction: column-reverse;
-}
+.zone-right .tile-group.river { flex-direction: column-reverse; }
 
-/* 牌面朝向中心 */
+/* 河牌旋转：牌面朝向中心 */
 .zone-top .river .tile { transform: rotate(180deg); }
 .zone-left .river .tile { transform: rotate(90deg); }
 .zone-right .river .tile { transform: rotate(-90deg); }
@@ -540,12 +511,6 @@ body {
     padding: 6px 12px;
     border-radius: 20px;
     border: 1px solid #333;
-}
-
-.zone-bottom .player-info {
-    position: absolute;
-    bottom: 10px;
-    left: 10px;
 }
 
 .avatar {
