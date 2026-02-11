@@ -233,7 +233,10 @@ const app = createApp({
                     case 'dahai':
                         state.currentActor = (ev.actor + 1) % 4;
                         if (!state.discards[ev.actor]) state.discards[ev.actor] = [];
-                        state.discards[ev.actor].push(ev.pai);
+                        const expectedDiscardCount = events.slice(0, i + 1).filter(e => e.type === 'dahai' && e.actor === ev.actor).length;
+                        if (state.discards[ev.actor].length < expectedDiscardCount) {
+                            state.discards[ev.actor].push(ev.pai);
+                        }
                         if (ev.actor === state.myPlayerId) {
                             if (state.tsumoTile === ev.pai) {
                                 state.tsumoTile = null;
