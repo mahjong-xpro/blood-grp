@@ -286,8 +286,8 @@ const app = createApp({
                                 state.tsumoTile = null;
                                 state.optimisticDahai = null;
                             } else if (state.optimisticDahai === ev.pai) {
-                                state.optimisticDahai = null;
                                 state.tsumoTile = null;
+                                // 不在此清 optimisticDahai：若同一 dahai 被重复 replay，else 分支会 indexOf 找到另一张同牌并误删
                             } else {
                                 const idx = state.tehai.indexOf(ev.pai);
                                 if (idx > -1) {
