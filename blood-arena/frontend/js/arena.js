@@ -227,7 +227,9 @@ const app = createApp({
                         state.currentActor = ev.actor;
                         state.tilesLeft = Math.max(0, state.tilesLeft - 1);
                         if (ev.actor === state.myPlayerId && ev.pai && ev.pai !== '?') {
-                            state.tsumoTile = ev.pai;
+                            if (!state.tehai.includes(ev.pai)) {
+                                state.tsumoTile = ev.pai;
+                            }
                         }
                         break;
                     case 'dahai':
