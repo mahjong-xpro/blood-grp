@@ -696,6 +696,12 @@ body {
     margin-top: 10px;
 }
 
+/* 自摸时胡牌按钮紧贴手牌，fallback 当 action_bar 未显示时 */
+.hand-area .hu-fallback {
+    margin-left: 12px;
+    flex-shrink: 0;
+}
+
 .ai-suggestion {
     position: absolute;
     bottom: 180px;

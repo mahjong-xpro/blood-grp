@@ -236,6 +236,9 @@
                             </div>
                         </div>
                     </div>
+                    <!-- 自摸时：始终显示胡牌按钮，用户可点击胡或选择打牌 -->
+                    <button v-if="state.canDiscard && state.tsumoTile" class="btn-action hu hu-fallback"
+                        @click.stop="doAction({type:'hu'})">胡</button>
                 </div>
 
                 <div class="player-info">
