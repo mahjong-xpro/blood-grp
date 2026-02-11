@@ -56,6 +56,7 @@ const app = createApp({
             validActions: [],
             canDiscard: false,
             validActionsShown: false, // 碰/杠/胡：仅在与对手出牌同步后显示
+            optimisticDahai: null, // 刚乐观更新打出的牌，replay 时跳过避免一对牌被移除两次
 
             // 是否在牌局结束时显示 AI 实际牌面（需要后端 game_over 带 tehais）
             showAiHands: true,
@@ -132,6 +133,7 @@ const app = createApp({
             state.gaming = true; // we are in a game when backend asks for an action
             state.validActions = [];
             state.canDiscard = false;
+            state.optimisticDahai = null;
 
             let isDingQue = false;
             let isDiscard = false;
@@ -263,6 +265,9 @@ const app = createApp({
                         if (ev.actor === state.myPlayerId) {
                             if (state.tsumoTile === ev.pai) {
                                 state.tsumoTile = null;
+                            } else if (state.optimisticDahai === ev.pai) {
+                                state.optimisticDahai = null;
+                                state.tsumoTile = null;
                             } else {
                                 const idx = state.tehai.indexOf(ev.pai);
                                 if (idx > -1) {
@@ -273,7 +278,6 @@ const app = createApp({
                                         state.tsumoTile = null;
                                     }
                                 } else {
-                                    // idx=-1: 牌已移除（乐观更新或前次 replay），摸牌已并入 tehai，避免重复显示
                                     state.tsumoTile = null;
                                 }
                             }
@@ -402,6 +406,7 @@ const app = createApp({
                             state.tehai.push(state.tsumoTile);
                             sortTiles(state.tehai);
                         }
+                        state.optimisticDahai = tile;
                     }
                     state.tsumoTile = null;
                 }
