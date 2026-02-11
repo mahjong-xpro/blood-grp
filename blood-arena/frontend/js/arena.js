@@ -463,6 +463,14 @@ const app = createApp({
         }
 
         function onTileClick(tile, idx) {
+            // 自摸时：点击自摸牌 = 直接胡，无需两次点击
+            if (idx === 'tsumo' && state.validActions.some(a => a.type === 'hu')) {
+                send({ type: 'action', action: { type: 'hu' } });
+                state.validActions = [];
+                state.canDiscard = false;
+                ui.selectedIdx = -1;
+                return;
+            }
             if (!state.canDiscard) return;
             if (state.currentActor !== state.myPlayerId) return;
             if (tile === '?') return;
