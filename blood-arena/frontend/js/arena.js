@@ -227,7 +227,7 @@ const app = createApp({
                         state.currentActor = ev.actor;
                         state.tilesLeft = Math.max(0, state.tilesLeft - 1);
                         if (ev.actor === state.myPlayerId && ev.pai && ev.pai !== '?') {
-                            if (!state.tehai.includes(ev.pai)) {
+                            if (state.tehai.length < 14) {
                                 state.tsumoTile = ev.pai;
                             }
                         }
