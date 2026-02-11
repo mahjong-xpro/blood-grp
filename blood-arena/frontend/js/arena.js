@@ -182,15 +182,9 @@ const app = createApp({
         async function updateFullState(data) {
             if (!data) return;
             const hasAuthoritativeHand = !!(data.tehais && Array.isArray(data.tehais) && data.tehais[state.myPlayerId]);
-            if (hasAuthoritativeHand) {
-                state.tehai = [...(data.tehais[state.myPlayerId] || [])];
-                sortTiles(state.tehai);
-                state.tsumoTile = data.my_tsumo ?? null;
-                state.optimisticDahai = null;  // 权威状态覆盖，无需乐观更新标记
-            }
             if (data.events) {
                 replayId += 1;
-                void replayEvents(data.events, replayId, hasAuthoritativeHand);
+                void replayEvents(data.events, replayId, hasAuthoritativeHand, hasAuthoritativeHand ? data : null);
             }
         }
 
@@ -211,8 +205,9 @@ const app = createApp({
 
         // --- Event Replay ---
         // 增量重放：仅处理新增事件；fire-and-forget 以便 action_request 能立即处理，用户可出牌
-        // hasAuthoritativeHand: 当 state_update 含 tehais 时，手牌由后端权威状态覆盖，replay 不修改 tehai/tsumoTile
-        async function replayEvents(events, myReplayId, hasAuthoritativeHand = false) {
+        // hasAuthoritativeHand: 当 state_update 含 tehais 时，replay 不修改 tehai/tsumoTile
+        // authData: 权威手牌，在 replay 结束时应用，避免「AI 未出牌就显示人类已摸牌」的时序错乱
+        async function replayEvents(events, myReplayId, hasAuthoritativeHand = false, authData = null) {
             if (!events || events.length === 0) return;
             const last = state.lastReplayedEventCount;
             if (events.length === last) return;
@@ -377,6 +372,12 @@ const app = createApp({
                 }
             }
             state.lastReplayedEventCount = events.length;
+            if (hasAuthoritativeHand && authData) {
+                state.tehai = [...(authData.tehais[state.myPlayerId] || [])];
+                sortTiles(state.tehai);
+                state.tsumoTile = authData.my_tsumo ?? null;
+                state.optimisticDahai = null;
+            }
         }
 
         // --- Interaction ---
