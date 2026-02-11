@@ -35,9 +35,9 @@ submit_every = 1000
 games = 6400
 log_dir = '/data/mortal/train_play'
 
-# 探索参数 - 阶段 3.5: 激进重塑期 (Step 470k+)
-boltzmann_epsilon = 0.25  # 提高探索，打破防御性均势
-boltzmann_temp = 0.4      # 提高温度，尝试更多攻击性策略
+# 探索参数 - Phase 5: 精调收敛期 (Step 650k+)
+boltzmann_epsilon = 0.08  # Phase 5: 大幅降低探索 (0.25 -> 0.08)，让策略 exploit 已有知识
+boltzmann_temp = 0.15     # Phase 5: 低温度 (0.4 -> 0.15)，策略分布更尖锐
 
 # 阶段转换指南:
 # ┌──────────────────────────────────────────────────────┐
@@ -84,20 +84,19 @@ td_lambda_enabled = true # 启用 TD(λ) 训练 (替代纯 Monte Carlo)
 
 # 奖励塑形配置
 [reward_shaping]
-# 阶段 3.5: 疯狗模式 (Mad Dog Mode) - 极度鼓励进攻和争第一
+# Phase 5: 精调收敛 - 精简奖励信号
 rank_bonus_enabled = true
-# 旧配置: [0.3, 0.1, -0.1, -0.3]
-rank_bonuses = [0.6, 0.2, -0.3, -1.0] # Phase 4: 铁幕模式 - 严惩吃四 (-0.5 -> -1.0)
+# Phase 4: [0.6, 0.2, -0.3, -1.0] → Phase 5: 减半，防止过度冒险
+rank_bonuses = [0.3, 0.1, -0.1, -0.5]
 
-# 动作级奖励 (和牌/放铳) - 阶段 2 开启
-action_bonus_enabled = true  # 启用动作奖励
-agari_bonus = 0.5            # 强力鼓励和牌 (0.1 -> 0.5)
-houjuu_penalty = -0.6        # 铁幕防御: 进一步加大放铳惩罚 (-0.5 -> -0.6)
+# 动作级奖励 (和牌/放铳)
+action_bonus_enabled = true
+agari_bonus = 0.15           # Phase 5: 大幅降低 (0.5 -> 0.15)，停止"鸣牌赏金猎人"行为
+houjuu_penalty = -0.3        # Phase 5: 适度保留 (-0.6 -> -0.3)，防御本能已内化
 
 # 自动更新 baseline 的阈值 (阶梯式训练)
-# 当 avg_pt 超过此值时，自动用当前模型替换 baseline
-# 阶段 3.5: 暂时禁用自动更新 (设为 4.0)，保护 Champion 不被疯狗模型覆盖
-baseline_update_threshold = 4.0
+# Phase 5: 重新激活自我追逐 (当 avg_pt > 3.1 时更新 baseline)
+baseline_update_threshold = 4
 
 # 阶段转换指南:
 # ┌──────────────────────────────────────────────────────┐
@@ -144,10 +143,10 @@ max_grad_norm = 1.0
 
 # 学习率调度器配置
 [optim.scheduler]
-peak = 5e-4   # 阶段 1: 高学习率加速初期学习
-final = 1e-4  # 最终稳定在 1e-4
+peak = 5e-4   # 不变 (已被 offset 跳过 warmup)
+final = 5e-5  # Phase 5: 降低最终 LR (1e-4 -> 5e-5) 实现精调
 warm_up_steps = 2000
-max_steps = 1000000
+max_steps = 850000  # Phase 5: 更早进入 final plateau (1M -> 850k)
 
 # Baseline 模型配置
 [baseline.train]
