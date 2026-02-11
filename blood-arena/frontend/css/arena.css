@@ -329,11 +329,10 @@ body {
 .zone-top .tile-group.river {
     flex-direction: row-reverse;
 }
-.zone-left .tile-group.river {
-    flex-direction: column-reverse;
-}
+.zone-left .tile-group.river,
 .zone-right .tile-group.river {
     flex-direction: column-reverse;
+    gap: 0;  /* 左右河牌间距缩小，与 ME 视觉密度更接近 */
 }
 
 /* Side Players Hand (Vertical/Compact) - 仅影响手牌，不影响河牌 */
