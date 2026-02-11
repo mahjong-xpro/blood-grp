@@ -285,7 +285,7 @@ const app = createApp({
                             state.discards[ev.actor].push(ev.pai);
                         }
                         if (ev.actor === state.myPlayerId) {
-                            state.canDiscard = false;
+                            // canDiscard 仅由 action_request 与用户交互控制，replay 不修改
                             if (state.tsumoTile === ev.pai) {
                                 state.tsumoTile = null;
                                 state.optimisticDahai = null;
@@ -317,7 +317,7 @@ const app = createApp({
                     case 'kakan':
                         state.currentActor = ev.actor;
                         if (ev.actor === state.myPlayerId) {
-                            state.canDiscard = false;
+                            // canDiscard 仅由 action_request 与用户交互控制，replay 不修改
                             let toRemove = [];
                             if (ev.type === 'kakan') {
                                 if (ev.pai) toRemove.push(ev.pai);
