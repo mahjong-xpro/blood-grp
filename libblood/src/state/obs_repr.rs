@@ -395,10 +395,10 @@ impl<'a> ObsEncoderContext<'a> {
             if !self.at_kan_select {
                 self.mask[30] = true;
             } else if cans.can_daiminkan {
+                // daiminkan kan_select: 目标牌作为选择项（仅此一张）
                 self.mask[tile_id] = true;
             } else if !cans.can_ankan && !cans.can_kakan {
-                // If at_kan_select is true but neither can_ankan nor can_kakan is true,
-                // we should still allow pass action (fallback to normal actions)
+                // Fallback: at_kan_select but no actual kan source → restore pass action.
                 self.mask[30] = true;
             }
         }
@@ -455,9 +455,9 @@ impl<'a> ObsEncoderContext<'a> {
             self.arr.fill(self.idx, 1.);
             if !self.at_kan_select {
                 self.mask[27] = true; // pon action
-            } else if !cans.can_ankan && !cans.can_kakan {
-                // If at_kan_select is true but neither can_ankan nor can_kakan is true,
-                // we should still allow pon action (fallback to normal actions)
+            } else if !cans.can_ankan && !cans.can_kakan && !cans.can_daiminkan {
+                // Fallback: at_kan_select but no actual kan source → restore normal actions.
+                // 注意: can_daiminkan 时不触发 fallback，其 kan_select 仅含目标牌（由 pass 分支设置）。
                 self.mask[27] = true; // pon action
             }
         }
@@ -467,9 +467,7 @@ impl<'a> ObsEncoderContext<'a> {
             self.arr.fill(self.idx, 1.);
             if !self.at_kan_select {
                 self.mask[28] = true; // kan action
-            } else if !cans.can_ankan && !cans.can_kakan {
-                // If at_kan_select is true but neither can_ankan nor can_kakan is true,
-                // we should still allow daiminkan action (fallback to normal actions)
+            } else if !cans.can_ankan && !cans.can_kakan && !cans.can_daiminkan {
                 self.mask[28] = true; // kan action
             }
         }
@@ -500,9 +498,9 @@ impl<'a> ObsEncoderContext<'a> {
             }
         }
         
-        // If at_kan_select is true but neither can_ankan nor can_kakan is true,
-        // we should still allow discard actions (fallback to normal discard)
-        if self.at_kan_select && !cans.can_ankan && !cans.can_kakan && cans.can_discard {
+        // Fallback: at_kan_select but no actual kan source → restore normal discard actions.
+        // can_daiminkan 时不触发（其 kan_select 仅含目标牌）。
+        if self.at_kan_select && !cans.can_ankan && !cans.can_kakan && !cans.can_daiminkan && cans.can_discard {
             let discard_candidates = state.discard_candidates();
             discard_candidates
                 .iter()
@@ -518,9 +516,8 @@ impl<'a> ObsEncoderContext<'a> {
             self.arr.fill(self.idx, 1.);
             if !self.at_kan_select {
                 self.mask[29] = true; // agari action
-            } else if !cans.can_ankan && !cans.can_kakan {
-                // If at_kan_select is true but neither can_ankan nor can_kakan is true,
-                // we should still allow agari action (fallback to normal actions)
+            } else if !cans.can_ankan && !cans.can_kakan && !cans.can_daiminkan {
+                // Fallback: at_kan_select but no actual kan source → restore normal actions.
                 self.mask[29] = true; // agari action
             }
         }
