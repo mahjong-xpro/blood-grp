@@ -344,8 +344,18 @@ class HumanEngine:
         
         if atype == "ding_que":
             suit = client_action.get("suit")
-            suit_map = {"m": "man", "p": "pin", "s": "sou"}
-            suit_full = suit_map.get(suit, "man")
+            suit_map = {
+                "m": "man",
+                "p": "pin",
+                "s": "sou",
+                "man": "man",
+                "pin": "pin",
+                "sou": "sou",
+            }
+            suit_full = suit_map.get(suit)
+            if suit_full is None:
+                logging.warning("Invalid ding_que suit from client: %r", suit)
+                return {"type": "none"}
             ret = {"type": "ding_que", "actor": actor_id, "suit": suit_full}
             logging.info(f"[DEBUG] Sending DingQue to libblood: {ret}")
             return ret 
