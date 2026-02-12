@@ -263,6 +263,16 @@ class HumanEngine:
             self.last_tsumo_tile = ls() if callable(ls) else ls
         except Exception:
             self.last_tsumo_tile = None
+        try:
+            lkt = getattr(player_state, 'last_kawa_tile', None)
+            lkt = lkt() if callable(lkt) else lkt
+            cans_for_sync = getattr(player_state, "last_cans", None)
+            target_for_sync = getattr(cans_for_sync, "target_actor", None) if cans_for_sync else None
+            if lkt and target_for_sync is not None and target_for_sync != self.player_id:
+                self.last_kawa = (target_for_sync, lkt)
+        except Exception:
+            # Keep existing shadow state if sync fails.
+            pass
 
         # 2. ME 玩家不需要 AI 分析提醒，不请求
         analysis = {}
@@ -384,21 +394,43 @@ class HumanEngine:
                 cans = getattr(game_state, "last_cans", None)
                 can_tsumo = getattr(cans, "can_tsumo_agari", False) if cans else False
                 can_ron = getattr(cans, "can_ron_agari", False) if cans else False
-                if can_tsumo and self.last_tsumo_tile:
-                    return {
-                        "type": "hora",
-                        "actor": actor_id,
-                        "target": actor_id,
-                        "pai": self.last_tsumo_tile
-                    }
-                if can_ron and self.last_kawa:
-                    target, pai = self.last_kawa
-                    return {
-                        "type": "hora",
-                        "actor": actor_id,
-                        "target": target,
-                        "pai": pai
-                    }
+                if can_tsumo:
+                    pai = self.last_tsumo_tile
+                    if not pai:
+                        try:
+                            ls = getattr(game_state, "last_self_tsumo", None)
+                            pai = ls() if callable(ls) else ls
+                        except Exception:
+                            pai = None
+                    if pai:
+                        return {
+                            "type": "hora",
+                            "actor": actor_id,
+                            "target": actor_id,
+                            "pai": pai
+                        }
+                if can_ron:
+                    if self.last_kawa:
+                        target, pai = self.last_kawa
+                        return {
+                            "type": "hora",
+                            "actor": actor_id,
+                            "target": target,
+                            "pai": pai
+                        }
+                    try:
+                        lkt = getattr(game_state, "last_kawa_tile", None)
+                        pai = lkt() if callable(lkt) else lkt
+                    except Exception:
+                        pai = None
+                    target = getattr(cans, "target_actor", None) if cans else None
+                    if pai and target is not None and target != actor_id:
+                        return {
+                            "type": "hora",
+                            "actor": actor_id,
+                            "target": target,
+                            "pai": pai
+                        }
                 logging.warning(
                     "Hu requested but no valid hora source. can_tsumo=%s can_ron=%s last_tsumo=%r last_kawa=%r",
                     can_tsumo, can_ron, self.last_tsumo_tile, self.last_kawa
