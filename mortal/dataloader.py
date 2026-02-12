@@ -324,7 +324,7 @@ class FileDatasetsIter(IterableDataset):
                         player_ranks[next_kyoku_idx],
                         dq_bonus,
                         dq_best_suit,
-                        opponent_waits[i],
+                        np.array(opponent_waits[i], dtype=np.float32),
                     ]
                     # if self.oracle:
                     #     entry.insert(1, invisible_obs[i])
