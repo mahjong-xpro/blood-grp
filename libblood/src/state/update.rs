@@ -247,7 +247,9 @@ impl PlayerState {
 
                 // FIX: 庄家 14 张初始手牌中可能存在暗杠/加杠候选，
                 // 与 tsumo() 中 lines 320-364 相同的逻辑。
-                if self.kans_on_board < 4 {
+                // 血战到底无「四杠散了」规则，不使用 kans_on_board 做限制。
+                // 此处 tiles_left > 0 恒成立（定缺刚结束，tiles_left == 55），仅作安全守卫。
+                if self.tiles_left > 0 {
                     self.tehai
                         .iter()
                         .enumerate()
@@ -343,7 +345,9 @@ impl PlayerState {
         // 然后重新计算 ankan_candidates 和 kakan_candidates
         self.ankan_candidates.clear();
         self.kakan_candidates.clear();
-        if self.kans_on_board < 4 {
+        // 血战到底无「四杠散了」规则：不再用 kans_on_board < 4 限制杠操作。
+        // tiles_left > 0 已在上方 early-return 中保证，此处直接计算候选。
+        {
             self.tehai
                 .iter()
                 .enumerate()
@@ -531,10 +535,11 @@ impl PlayerState {
         let is_ding_que_tile = crate::ding_que::is_ding_que_tile(pai.as_usize(), self.ding_que);
 
         // 基础规则：定缺花色不能碰或明杠
+        // 血战到底无「四杠散了」规则：不再用 kans_on_board < 4 限制大明杠。
+        // tiles_left > 0 已由上方 early-return (line 530) 保证。
         if !is_ding_que_tile {
             self.last_cans.can_pon = self.tehai[pai.as_usize()] >= 2;
-            self.last_cans.can_daiminkan =
-                self.kans_on_board < 4 && self.tehai[pai.as_usize()] == 3;
+            self.last_cans.can_daiminkan = self.tehai[pai.as_usize()] == 3;
         } else {
             self.last_cans.can_pon = false;
             self.last_cans.can_daiminkan = false;
