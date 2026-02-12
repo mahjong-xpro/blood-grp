@@ -362,6 +362,9 @@ class HumanEngine:
             
         if atype == "dahai":
             pai = client_action.get("pai")
+            if not pai:
+                logging.warning("Invalid dahai action: missing pai: %r", client_action)
+                return {"type": "none"}
             tsumogiri = (pai == self.last_tsumo_tile)
             return {
                 "type": "dahai", 
@@ -396,11 +399,11 @@ class HumanEngine:
                         "target": target,
                         "pai": pai
                     }
-                # 回退：按 last_tsumo_tile 推断
-                if self.last_tsumo_tile:
-                    return {"type": "hora", "actor": actor_id, "target": actor_id, "pai": self.last_tsumo_tile}
-                target, pai = self.last_kawa if self.last_kawa else (0, "?")
-                return {"type": "hora", "actor": actor_id, "target": target, "pai": pai}
+                logging.warning(
+                    "Hu requested but no valid hora source. can_tsumo=%s can_ron=%s last_tsumo=%r last_kawa=%r",
+                    can_tsumo, can_ron, self.last_tsumo_tile, self.last_kawa
+                )
+                return {"type": "none"}
 
             if act_type == "pon":
                 if not self.last_kawa:
