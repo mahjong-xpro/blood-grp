@@ -222,6 +222,7 @@ def train():
             version = version,
             file_list = file_list,
             pts = pts,
+            oracle = True,
             file_batch_size = file_batch_size,
             reserve_ratio = reserve_ratio,
             player_names = player_names,
@@ -246,10 +247,11 @@ def train():
         remaining_player_ranks = []
         remaining_ding_que_bonus = []
         remaining_ding_que_best_suit = []
+        remaining_opponent_waits = []
         remaining_bs = 0
         pb = tqdm(total=save_every, desc='TRAIN', initial=steps % save_every)
 
-        def train_batch(obs, actions, masks, steps_to_done, kyoku_rewards, player_ranks, ding_que_bonus, ding_que_best_suit):
+        def train_batch(obs, actions, masks, steps_to_done, kyoku_rewards, player_ranks, ding_que_bonus, ding_que_best_suit, opponent_waits):
             nonlocal steps
             nonlocal idx
             nonlocal pb
@@ -262,6 +264,7 @@ def train():
             player_ranks = player_ranks.to(dtype=torch.int64, device=device)
             ding_que_bonus = ding_que_bonus.to(dtype=torch.float32, device=device)
             ding_que_best_suit = ding_que_best_suit.to(dtype=torch.int64, device=device)
+            opponent_waits = opponent_waits.to(dtype=torch.float32, device=device)
 
             # Skip batch if any (state, action) pair is invalid (action not allowed by mask).
             # This can happen when logs contain moves from a buggy version (e.g. discard before
@@ -489,7 +492,7 @@ def train():
                         sys.exit(0)
                 pb = tqdm(total=save_every, desc='TRAIN')
 
-        for obs, actions, masks, steps_to_done, kyoku_rewards, player_ranks, ding_que_bonus, ding_que_best_suit in data_loader:
+        for obs, actions, masks, steps_to_done, kyoku_rewards, player_ranks, ding_que_bonus, ding_que_best_suit, opponent_waits in data_loader:
             bs = obs.shape[0]
             if bs != batch_size:
                 remaining_obs.append(obs)
@@ -500,9 +503,10 @@ def train():
                 remaining_player_ranks.append(player_ranks)
                 remaining_ding_que_bonus.append(ding_que_bonus)
                 remaining_ding_que_best_suit.append(ding_que_best_suit)
+                remaining_opponent_waits.append(opponent_waits)
                 remaining_bs += bs
                 continue
-            train_batch(obs, actions, masks, steps_to_done, kyoku_rewards, player_ranks, ding_que_bonus, ding_que_best_suit)
+            train_batch(obs, actions, masks, steps_to_done, kyoku_rewards, player_ranks, ding_que_bonus, ding_que_best_suit, opponent_waits)
 
         remaining_batches = remaining_bs // batch_size
         if remaining_batches > 0:
@@ -514,6 +518,7 @@ def train():
             player_ranks = torch.cat(remaining_player_ranks, dim=0)
             ding_que_bonus = torch.cat(remaining_ding_que_bonus, dim=0)
             ding_que_best_suit = torch.cat(remaining_ding_que_best_suit, dim=0)
+            opponent_waits = torch.cat(remaining_opponent_waits, dim=0)
             start = 0
             end = batch_size
             while end <= remaining_bs:
@@ -526,6 +531,7 @@ def train():
                     player_ranks[start:end],
                     ding_que_bonus[start:end],
                     ding_que_best_suit[start:end],
+                    opponent_waits[start:end],
                 )
                 start = end
                 end += batch_size

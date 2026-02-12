@@ -436,37 +436,41 @@ impl PlayerState {
             return Ok(());
         }
 
-        if self.waits[pai.as_usize()] {
-            // Always check has_yaku() to ensure ding_que rule is checked
-            // Even for tiles_left == 0 case
+        // Ron check: 点炮时以 has_yaku 为准，不再依赖 waits[]，避免 waits 漏判导致无法胡牌
+        let tehai_sum: u8 = self.tehai.iter().sum();
+        let hand_total: u8 = tehai_sum
+            + 3 * self.pons.len() as u8
+            + 3 * self.minkans.len() as u8
+            + 3 * self.ankans.len() as u8;
+        let pai_idx = pai.as_usize();
+        let can_add_tile = hand_total == 13
+            && self.tehai[pai_idx] < 4
+            && self.tiles_seen[pai_idx] < 4;
+
+        self.last_cans.can_ron_agari = if self.temporary_furiten || !can_add_tile {
+            false
+        } else {
             let mut tehai_with_winning_tile = self.tehai;
-            tehai_with_winning_tile[pai.as_usize()] += 1;
+            tehai_with_winning_tile[pai_idx] += 1;
 
             let agari_calc = AgariCalculator {
                 tehai: &tehai_with_winning_tile,
-
                 pons: &self.pons,
                 minkans: &self.minkans,
                 ankans: &self.ankans,
                 winning_tile: pai.as_u8(),
                 is_ron: true,
                 ding_que: self.ding_que,
-                is_after_kan: false, // 荣和不是从岭上牌摸的
-                is_kan_discard: was_kan_before_discard, // 杠上炮：刚有人杠后打出的牌
-                is_chankan: false, // dahai()中的荣和不是抢杠
-
+                is_after_kan: false,
+                is_kan_discard: was_kan_before_discard,
+                is_chankan: false,
                 exclude_gen_tile: None,
                 is_haidi: self.tiles_left == 0,
                 is_tianhu: false,
                 is_dihu: false,
             };
-            let has_yaku = agari_calc.has_yaku();
-            self.last_cans.can_ron_agari = if self.temporary_furiten {
-                false
-            } else {
-                has_yaku
-            };
-        }
+            agari_calc.has_yaku()
+        };
 
         if self.tiles_left == 0 {
             return Ok(());
@@ -603,6 +607,10 @@ impl PlayerState {
 
                 // After a robbed kong, we are not at rinshan anymore from our perspective.
                 self.at_rinshan = false;
+
+                // FIX: Clear intermediate_kan because the kong was robbed and invalidated.
+                // Otherwise, the next discard will be incorrectly flagged as is_kan_discard.
+                self.intermediate_kan.clear();
 
                 // State changed, update caches to keep subsequent legality checks stable.
                 self.update_shanten();
@@ -762,40 +770,44 @@ impl PlayerState {
             self.witness_tile(pai)?;
             self.last_kawa_tile = Some(pai); // for getting winning tile in self.agari
 
-            // 槍槓 (抢杠)
-            // 当其他玩家加杠时，如果听的牌正好是加杠的牌，可以抢杠和牌
-            // 抢杠时，加杠的玩家的根不应该计算
-            if self.waits[pai.as_usize()] {
-                // 必须检查定缺规则：即使听的牌是加杠的牌，也要确保没有定缺花色牌
+            // 槍槓 (抢杠)：与点炮 Ron 一致，以 has_yaku 为准，不依赖 waits[]
+            // 抢杠时不检查 tiles_seen：加杠的牌必定可用（正在被加杠）
+            let hand_total: u8 = self.tehai.iter().sum::<u8>()
+                + 3 * self.pons.len() as u8
+                + 3 * self.minkans.len() as u8
+                + 3 * self.ankans.len() as u8;
+            let pai_idx = pai.as_usize();
+            let can_chankan = !self.temporary_furiten
+                && hand_total == 13
+                && self.tehai[pai_idx] < 4;
+
+            if can_chankan {
                 let mut tehai_with_winning_tile = self.tehai;
-                tehai_with_winning_tile[pai.as_usize()] += 1;
-                
+                tehai_with_winning_tile[pai_idx] += 1;
+
                 let agari_calc = AgariCalculator {
                     tehai: &tehai_with_winning_tile,
-
                     pons: &self.pons,
                     minkans: &self.minkans,
                     ankans: &self.ankans,
                     winning_tile: pai.as_u8(),
                     is_ron: true,
                     ding_que: self.ding_que,
-                    is_after_kan: false, // 抢杠不是从岭上牌摸的
-                    is_kan_discard: false, // 抢杠不是杠上炮
-                    is_chankan: true, // 这是抢杠
+                    is_after_kan: false,
+                    is_kan_discard: false,
+                    is_chankan: true,
                     exclude_gen_tile: None,
                     is_haidi: self.tiles_left == 0,
                     is_tianhu: false,
                     is_dihu: false,
                 };
-                
-                // 只有通过定缺规则检查才能抢杠和牌
+
                 if agari_calc.has_yaku() {
                     self.last_cans.can_ron_agari = true;
                     self.chankan_chance = Some(());
-                    self.chankan_kakan_actor = Some(actor); // 记录加杠的玩家，用于排除其根
-                    self.chankan_kakan_tile = Some(pai.as_u8()); // 记录加杠的牌，用于排除其根
+                    self.chankan_kakan_actor = Some(actor);
+                    self.chankan_kakan_tile = Some(pai.as_u8());
                 }
-            } else {
             }
 
             return Ok(());

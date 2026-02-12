@@ -27,17 +27,17 @@ test_every = 5000
 submit_every = 1000
 
 # ═══════════════════════════════════════════════════════
-# 阶段 2 配置: 策略成型 (Step 85k - 300k)
-# 降低探索，启用排名奖励，强化定缺监督
+# 阶段 6 配置: 纯粹贪婪 (Step 738k+)
+# 移除所有奖励塑形，追求分数最大化
 # ═══════════════════════════════════════════════════════
 
 [train_play.default]
 games = 6400
 log_dir = '/data/mortal/train_play'
 
-# 探索参数 - Phase 5: 精调收敛期 (Step 650k+)
-boltzmann_epsilon = 0.08  # Phase 5: 大幅降低探索 (0.25 -> 0.08)，让策略 exploit 已有知识
-boltzmann_temp = 0.15     # Phase 5: 低温度 (0.4 -> 0.15)，策略分布更尖锐
+# 探索参数 - Phase 6: 降低探索，让策略充分利用 (Exploit)
+boltzmann_epsilon = 0.05  # Phase 6: 降噪 (0.08 -> 0.05)
+boltzmann_temp = 0.15     # 保持低温度
 
 # 阶段转换指南:
 # ┌──────────────────────────────────────────────────────┐
@@ -47,6 +47,8 @@ boltzmann_temp = 0.15     # Phase 5: 低温度 (0.4 -> 0.15)，策略分布更�
 # │ 2. 收敛期  │  0.15   │ 0.2   │ Step 100k - 300k    │
 # │ 3. 精调期  │  0.05   │ 0.1   │ Step 300k - 470k    │
 # │ 3.5 激进期 │  0.25   │ 0.4   │ Step 470k+          │
+# │ 5. 精调收敛│  0.08   │ 0.15  │ Step 650k+          │
+# │ 6. 纯粹贪婪│  0.08   │ 0.15  │ Step 738k+          │
 # └──────────────────────────────────────────────────────┘
 
 top_p = 1.0
@@ -55,7 +57,7 @@ keep_data = false
 
 # 测试对局配置
 [test_play]
-games = 5000 # Phase 4: 增加样本量 (3000->5000) 以对抗方差，确保 Rank 变化是真实的
+games = 5000 
 log_dir = '/data/mortal/test_play'
 
 # 数据集配置
@@ -84,27 +86,19 @@ td_lambda_enabled = true # 启用 TD(λ) 训练 (替代纯 Monte Carlo)
 
 # 奖励塑形配置
 [reward_shaping]
-# Phase 5: 精调收敛 - 精简奖励信号
-rank_bonus_enabled = true
-# Phase 4: [0.6, 0.2, -0.3, -1.0] → Phase 5: 减半，防止过度冒险
-rank_bonuses = [0.3, 0.1, -0.1, -0.5]
+# Phase 6: 纯粹贪婪 - 移除所有人工干预
+rank_bonus_enabled = false   # 禁用排名奖励 (Rank Is An Illusion)
+# Phase 6: [0, 0, 0, 0]
+rank_bonuses = [0.0, 0.0, 0.0, 0.0]
 
 # 动作级奖励 (和牌/放铳)
-action_bonus_enabled = true
-agari_bonus = 0.15           # Phase 5: 大幅降低 (0.5 -> 0.15)，停止"鸣牌赏金猎人"行为
-houjuu_penalty = -0.3        # Phase 5: 适度保留 (-0.6 -> -0.3)，防御本能已内化
+action_bonus_enabled = false # 禁用动作奖励 (Agari Bonus / Houjuu Penalty)
+agari_bonus = 0.0            # 禁用
+houjuu_penalty = 0.0         # 禁用
 
 # 自动更新 baseline 的阈值 (阶梯式训练)
-# Phase 5: 重新激活自我追逐 (当 avg_pt > 3.1 时更新 baseline)
-baseline_update_threshold = 4
-
-# 阶段转换指南:
-# ┌──────────────────────────────────────────────────────┐
-# │ 阶段       │ rank_bonus │ 触发条件                  │
-# ├──────────────────────────────────────────────────────┤
-# │ 1. 探索期  │  false     │ Step 0 - 100k             │
-# │ 2. 收敛期  │  true      │ Step 100k+ (avg_pt > 2.8) │
-# └──────────────────────────────────────────────────────┘
+# Phase 6: 禁用自动更新 (因自博弈 Bug，需手动 cp mortal.pth baseline.pth)
+baseline_update_threshold = 4.0
 
 # ResNet 模型配置 - 增大模型容量
 [resnet]
@@ -127,7 +121,7 @@ ding_que_aux_scale = 0.02
 ding_que_ce_weight = 0.5  # 阶段 2+: 紧急回调 (避免过拟合定缺辅助)
 
 # 对手等待预测: 预测 3 个对手的听牌 (81 = 3×27)
-opp_wait_enabled = false  # 需要 libblood 重新编译后启用
+opp_wait_enabled = true   # Phase 6: 开启对手听牌预测 (Opponent Modeling)
 opp_wait_weight = 0.1     # BCE 损失权重
 
 # Batch Normalization 冻结配置
@@ -144,9 +138,9 @@ max_grad_norm = 1.0
 # 学习率调度器配置
 [optim.scheduler]
 peak = 5e-4   # 不变 (已被 offset 跳过 warmup)
-final = 5e-5  # Phase 5: 降低最终 LR (1e-4 -> 5e-5) 实现精调
+final = 2e-5  # Phase 6: 更低的最终 LR (5e-5 -> 2e-5) 实现超精细收敛
 warm_up_steps = 2000
-max_steps = 850000  # Phase 5: 更早进入 final plateau (1M -> 850k)
+max_steps = 1100000  # Phase 6: 延长训练 (850k -> 1.1M)
 
 # Baseline 模型配置
 [baseline.train]

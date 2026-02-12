@@ -187,6 +187,7 @@ class FileDatasetsIter(IterableDataset):
                 at_kyoku = game.take_at_kyoku()
                 dones = game.take_dones()
                 apply_gamma = game.take_apply_gamma()
+                opponent_waits = game.take_opponent_waits()
 
                 # per game
                 game_score = game.take_game_score()
@@ -323,9 +324,10 @@ class FileDatasetsIter(IterableDataset):
                         player_ranks[next_kyoku_idx],
                         dq_bonus,
                         dq_best_suit,
+                        opponent_waits[i],
                     ]
-                    if self.oracle:
-                        entry.insert(1, invisible_obs[i])
+                    # if self.oracle:
+                    #     entry.insert(1, invisible_obs[i])
                     self.buffer.append(entry)
 
 
