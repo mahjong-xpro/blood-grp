@@ -74,6 +74,7 @@ impl Tile {
 
     #[inline]
     #[must_use]
+    /// 返回同花色的下一张牌。9 没有后继牌，返回自身。
     pub const fn next(self) -> Self {
         if self.is_unknown() {
             return self;
@@ -81,26 +82,27 @@ impl Tile {
         let kind = self.0 / 9;
         let num = self.0 % 9;
 
-        if kind < 3 {
-            Self(kind * 9 + (num + 1) % 9)
+        if kind < 3 && num < 8 {
+            // FIX: 不再 wrap (9→1)。9m/9p/9s 没有后继牌，返回自身。
+            Self(kind * 9 + num + 1)
         } else {
-            // Unknown tile, return as is
             self
         }
     }
 
     #[inline]
     #[must_use]
+    /// 返回同花色的上一张牌。1 没有前驱牌，返回自身。
     pub const fn prev(self) -> Self {
         if self.is_unknown() {
             return self;
         }
         let kind = self.0 / 9;
         let num = self.0 % 9;
-        if kind < 3 {
-            Self(kind * 9 + (num + 9 - 1) % 9)
+        if kind < 3 && num > 0 {
+            // FIX: 不再 wrap (1→9)。1m/1p/1s 没有前驱牌，返回自身。
+            Self(kind * 9 + num - 1)
         } else {
-            // Unknown tile, return as is
             self
         }
     }
@@ -237,10 +239,28 @@ mod test {
 
     #[test]
     fn next_prev() {
+        // 中间牌 (2-8) 满足 round-trip: prev(next(x)) == x && next(prev(x)) == x
         MJAI_PAI_STRINGS.iter().take(27).for_each(|&s| {
             let tile: Tile = s.parse().unwrap();
-            assert_eq!(tile.prev().next(), tile);
-            assert_eq!(tile.next().prev(), tile);
+            let num = tile.as_u8() % 9;
+            if num > 0 && num < 8 {
+                // 中间牌: round-trip 成立
+                assert_eq!(tile.prev().next(), tile, "prev->next failed for {s}");
+                assert_eq!(tile.next().prev(), tile, "next->prev failed for {s}");
+            }
         });
+
+        // 边界牌: 1 没有前驱 → prev 返回自身；9 没有后继 → next 返回自身
+        for &suit_base in &[0u8, 9, 18] {
+            let tile_1 = Tile(suit_base);     // 1m / 1p / 1s
+            let tile_9 = Tile(suit_base + 8); // 9m / 9p / 9s
+            let tile_2 = Tile(suit_base + 1); // 2m / 2p / 2s
+            let tile_8 = Tile(suit_base + 7); // 8m / 8p / 8s
+
+            assert_eq!(tile_1.prev(), tile_1, "1 should have no prev");
+            assert_eq!(tile_9.next(), tile_9, "9 should have no next");
+            assert_eq!(tile_1.next(), tile_2, "1.next() should be 2");
+            assert_eq!(tile_9.prev(), tile_8, "9.prev() should be 8");
+        }
     }
 }

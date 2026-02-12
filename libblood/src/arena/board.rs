@@ -702,6 +702,15 @@ impl BoardState {
                          }
                      }
                  }
+
+                // FIX BUG A: 抢杠后加杠玩家的回合已结束。
+                // kakan handler 将 tsumo_actor 设为加杠玩家（用于岭上摸牌），
+                // 但抢杠拦截了岭上摸牌，应推进到加杠玩家的下家。
+                // step() 中的 skip-agari 循环（line 927-936）会跳过已和牌的玩家。
+                self.tsumo_actor = (single_target + 1) % 4;
+
+                // 抢杠撤销了加杠，kans 计数器也需要递减以保持一致。
+                self.kans = self.kans.saturating_sub(1);
             }
             
             // Kong Revenue Handling (Hujiaozhuanyi / GangShangPao multi-ron rule)

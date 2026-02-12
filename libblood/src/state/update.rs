@@ -679,7 +679,30 @@ impl PlayerState {
                 }
             }
         }
-        
+
+        // FIX BUG B/C/D: 抢杠后非受害者玩家的状态清理。
+        //
+        // kakan() 为 ALL 玩家更新了 intermediate_kan / kans_on_board / fuuro_overview。
+        // 上面的 victim 路径（target == self.player_id）已处理受害者的回退。
+        // 此处处理和牌者和旁观者：
+        //   - actor != target  → 这是荣和（不是自摸），排除杠上开花
+        //   - intermediate_kan 非空 → 有未消费的杠记录（chankan 前未经过 dahai 清除）
+        //   - target != self.player_id → 不是受害者（受害者已在上面处理）
+        if target != self.player_id && actor != target && !self.intermediate_kan.is_empty() {
+            let chankan_tile = self.intermediate_kan[0];
+            self.intermediate_kan.clear();
+            self.kans_on_board = self.kans_on_board.saturating_sub(1);
+
+            // 回退 fuuro_overview：kakan 在受害者的副露中添加了第 4 张牌
+            let victim_rel = self.rel(target);
+            for fuuro in &mut self.fuuro_overview[victim_rel] {
+                if fuuro.first().is_some_and(|t0| *t0 == chankan_tile) && fuuro.len() == 4 {
+                    fuuro.pop();
+                    break;
+                }
+            }
+        }
+
         if let Some(d) = deltas {
              // deltas is [i32; 4] absolute.
              // self.scores is [i32; 4], relative to self.player_id.

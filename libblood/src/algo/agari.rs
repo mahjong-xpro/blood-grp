@@ -742,20 +742,21 @@ mod test {
             );
         };
 
-        // Always positive
-        test_one("12345m 567s 11222z", "S", 4, true, true);
-        test_one("12345m 444567s 11z", "4s", 4, true, true);
+        // Always positive: ankan doesn't affect tenpai
+        // 血战到底无字牌：用孤立的数牌 (isolated kotsu/pair) 替代原日麻 z 字牌
+        test_one("12345m 567s 11p 999p", "9p", 4, true, true);
+        test_one("12345m 444567s 11p", "4s", 4, true, true);
         test_one("22m 11112356p 444s", "4s", 4, true, true);
 
-        // Always negative
-        test_one("123456m 4445s 111z", "4s", 4, true, false);
-        test_one("123456m 4445s 111z", "4s", 4, false, false);
+        // Always negative: ankan breaks tenpai (loses waiting tiles)
+        test_one("123456m 4445s 999p", "4s", 4, true, false);
+        test_one("123456m 4445s 999p", "4s", 4, false, false);
 
-        // Shape of tenpai changes
-        test_one("1113444p 222z", "1p", 3, true, false);
-        test_one("1113444p 222z", "1p", 3, false, true);
-        test_one("1113444p 222z", "4p", 3, true, false);
-        test_one("1113444p 222z", "S", 3, true, true);
+        // Shape of tenpai changes (strict vs non-strict)
+        test_one("1113444p 999s", "1p", 3, true, false);
+        test_one("1113444p 999s", "1p", 3, false, true);
+        test_one("1113444p 999s", "4p", 3, true, false);
+        test_one("1113444p 999s", "9s", 3, true, true);
 
         // Shape of agari changes
         test_one("23m 999p 33345666s", "3s", 4, true, false);
@@ -763,8 +764,7 @@ mod test {
         test_one("23m 999p 33345666s", "6s", 4, false, true);
         test_one("23m 999p 33345666s", "9p", 4, true, true);
 
-        // The 1m kan will make chuuren gone, but in this impl we don't take
-        // yaku into account.
+        // 血战到底无九莲宝灯，但此处仅检查听牌结构，不检查役种
         test_one("1113445678999m", "1m", 4, true, true);
         test_one("1113445678999m", "9m", 4, true, false);
     }
