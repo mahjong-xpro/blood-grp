@@ -350,13 +350,18 @@ impl BatchAgent for MortalBatchAgent {
                 // The engine wants agari, but the rule-based engine is against
                 // it. In rule-based agari guard mode, it will force to execute
                 // the best alternative option other than agari.
+                //
+                // FIX: 必须只在合法 mask 内且排除 agari(29) 的动作中选替代。
+                // 旧逻辑从所有 Q-values 中选最大值，可能选到非法动作。
                 let q_values = self.q_values[action_idx];
+                let masks = self.masks_recv[action_idx];
                 q_values
                     .iter()
                     .enumerate()
+                    .filter(|&(i, _)| i != 29 && masks[i])
                     .max_by(|(_, l), (_, r)| l.total_cmp(r))
-                    .unwrap()
-                    .0
+                    .map(|(i, _)| i)
+                    .unwrap_or(30) // fallback: pass（理论上 mask 中至少有 pass）
             } else {
                 orig_action
             };

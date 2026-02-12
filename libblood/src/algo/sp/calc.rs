@@ -50,6 +50,11 @@ pub struct SPCalculator<'a> {
     pub calc_shanten_down: bool,
 
     pub ding_que: Option<crate::mjai::Suit>,
+
+    /// 自摸时的实际付款人数（未和牌对手数）。
+    /// 血战到底中已和牌者不付自摸款，对局中可能为 1~3。
+    /// 默认 3（满员）。
+    pub n_active_payers: u8,
 }
 
 struct SPCalculatorState<'a, const MAX_TSUMO: usize> {
@@ -675,12 +680,14 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
         
         // Points = 1000 * 2^(fan-1), capped at 5 fan
         // 血战到底自摸规则：仅未和牌者付「和牌点数」(base_points)，和牌者得 付家数×和牌点数
-        // 此处按「自摸3家」计（3 家付），即最大自摸收益；对局中已和牌者不付（board.rs 按 players_agari 排除）
+        // FIX: 使用实际付款人数 n_active_payers 计算自摸收益，而非固定 ×3。
+        // 已有 1~2 人和牌时，付款人数 < 3，旧逻辑会高估 EV。
         let fan_capped = fan.min(5);
         let base_points = 1000 * (1 << (fan_capped.saturating_sub(1)));
+        let payers = self.sup.n_active_payers as i32;
         let scores = [
-            (base_points * 3) as f32, // 和牌者得 3×和牌点数（自摸3家时）
-            -base_points as f32,      // 每家付和牌点数（未和牌者）
+            (base_points * payers) as f32,  // 和牌者得 付家数×和牌点数
+            -base_points as f32,            // 每家付和牌点数（未和牌者）
             -base_points as f32,
             -base_points as f32,
         ];
@@ -715,6 +722,7 @@ mod test {
             calc_tegawari: true,
             calc_shanten_down: true,
             ding_que: None,
+            n_active_payers: 3,
         };
 
         let tehai = hand("45678m 34789p 3344m").unwrap();
@@ -772,6 +780,7 @@ mod test {
             calc_tegawari: true,
             calc_shanten_down: true,
             ding_que: None,
+            n_active_payers: 3,
         };
 
         let tehai = hand("45677m 456778p 248s").unwrap();
@@ -819,6 +828,7 @@ mod test {
             calc_tegawari: true,
             calc_shanten_down: true,
             ding_que: None,
+            n_active_payers: 3,
         };
         let tehai = hand("9999m 6677p 88s 335m 1m").unwrap();
         let tiles_seen = tehai;
@@ -862,6 +872,7 @@ mod test {
             calc_tegawari: true,
             calc_shanten_down: true,
             ding_que: None,
+            n_active_payers: 3,
         };
 
         // Test hand: 45677m 456778p 48s (tenpai, waiting for 7p or 9s)

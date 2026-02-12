@@ -530,6 +530,8 @@ impl PlayerState {
             tiles_seen,
             tiles_left: self.tiles_left,
         };
+        // FIX: 使用实际未和牌对手数计算自摸收益
+        let n_active_payers = (1..4).filter(|&i| !self.players_agari[i]).count() as u8;
         let sp_calc = SPCalculator {
             tehai_len_div3: self.tehai_len_div3,
             pons: &self.pons,
@@ -541,6 +543,7 @@ impl PlayerState {
             calc_tegawari: false,
             calc_shanten_down: false,
             ding_que: self.ding_que,
+            n_active_payers,
         };
 
         let max_ev_table = sp_calc.calc(init_state, can_discard, tsumos_left, cur_shanten)?;

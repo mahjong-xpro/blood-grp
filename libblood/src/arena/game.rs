@@ -88,7 +88,11 @@ impl Game {
                     let needs_reaction = if self.board.is_ding_que_phase() {
                         !self.board.ding_que_selected(player_id)
                     } else {
-                        state.last_cans().can_act()
+                        // FIX: 已和牌玩家不需要反应。
+                        // Hora 是 announce 事件，last_cans 不会被重置，can_act() 可能仍为 true。
+                        // 若不排除已和牌玩家，agent 可能返回非法动作（如 Dahai），
+                        // 而 board.rs 跳过已和牌玩家的 validate_reaction，导致状态腐蚀。
+                        state.last_cans().can_act() && !state.has_agari
                     };
 
                     if !needs_reaction {
@@ -172,7 +176,8 @@ impl Game {
             let needs_reaction = if self.board.is_ding_que_phase() {
                 !self.board.ding_que_selected(player_id)
             } else {
-                state.last_cans().can_act()
+                // FIX: 同 poll() 中的修复，已和牌玩家不需要提交反应。
+                state.last_cans().can_act() && !state.has_agari
             };
 
             if !needs_reaction {
