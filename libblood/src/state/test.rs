@@ -179,3 +179,46 @@ fn test_guoshou_jiafan_can_ron() {
     // 过手加番可胡
     assert!(ps.last_cans.can_ron_agari);
 }
+
+#[test]
+fn test_guoshou_jiafan_can_chankan() {
+    use crate::consts::INITIAL_SCORE;
+    use crate::hand::{hand, tile27_to_vec};
+    use crate::mjai::Event;
+    use crate::state::PlayerState;
+    use crate::t;
+
+    let mut ps = PlayerState::new(0);
+    let _unused = ps.update(&Event::StartKyoku {
+        kyoku: 1,
+        oya: 0,
+        scores: [INITIAL_SCORE; 4],
+        tehais: [
+            tile27_to_vec(&hand("11m 23m 123p 123s 789s").unwrap())
+                .try_into()
+                .unwrap(),
+            [t!(?); 13],
+            [t!(?); 13],
+            [t!(?); 13],
+        ],
+    });
+
+    // First ron chance on 4m (base fan), choose pass -> temporary furiten.
+    let _unused = ps.update(&Event::Dahai {
+        actor: 1,
+        pai: t!(4m),
+        tsumogiri: false,
+    });
+    assert!(ps.last_cans.can_ron_agari);
+    let _unused = ps.update(&Event::None);
+    assert!(ps.temporary_furiten);
+
+    // Later, opponent kakan on the same tile gives chankan (+1 fan), so should be allowed.
+    let _unused = ps.update(&Event::Kakan {
+        actor: 2,
+        pai: t!(4m),
+        consumed: [t!(4m), t!(4m), t!(4m)],
+        deltas: None,
+    });
+    assert!(ps.last_cans.can_ron_agari);
+}

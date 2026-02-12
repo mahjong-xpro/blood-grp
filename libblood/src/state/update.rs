@@ -912,8 +912,7 @@ impl PlayerState {
                 + 3 * self.minkans.len() as u8
                 + 3 * self.ankans.len() as u8;
             let pai_idx = pai.as_usize();
-            let can_chankan = !self.temporary_furiten
-                && hand_total == 13
+            let can_chankan = hand_total == 13
                 && self.tehai[pai_idx] < 4;
 
             if can_chankan {
