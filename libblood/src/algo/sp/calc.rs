@@ -132,7 +132,12 @@ fn build_tsumo_prob_table<const MAX_TSUMO: usize>(n_left_tiles: usize) -> [[f32;
     // tumo_prob_table_[i][j] = 有効牌の枚数が i + 1 枚の場合に j 巡目に有効牌が引ける確率
     for (i, row) in table.iter_mut().enumerate() {
         for (j, v) in row.iter_mut().enumerate() {
-            *v = (i + 1) as f32 / (n_left_tiles - j) as f32;
+            // FIX: 当 j >= n_left_tiles 时 usize 下溢；j == n_left_tiles 时除以零。
+            // 后期牌局 n_left_tiles 可能小于 MAX_TSUMO，超出部分概率设为 0。
+            if j < n_left_tiles {
+                *v = (i + 1) as f32 / (n_left_tiles - j) as f32;
+            }
+            // else: 保持 0.0（默认值）
         }
     }
     table
@@ -835,8 +840,8 @@ mod test {
             let c = &candidates[1];
             assert_eq!(c.tile, t!(1m));
             assert!(c.shanten_down);
-            assert_eq!(c.required_tiles.len(), 33); // literally all kinds of tiles
-            assert_eq!(c.num_required_tiles, 34 * 4 - tiles_seen.iter().sum::<u8>());
+            assert_eq!(c.required_tiles.len(), 27); // 血战到底: 27 tile kinds (man/pin/sou 1-9)
+            assert_eq!(c.num_required_tiles, 27 * 4 - tiles_seen.iter().sum::<u8>()); // 108 total tiles
         }
     }
 

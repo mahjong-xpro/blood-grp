@@ -458,30 +458,36 @@ impl Stat {
     #[inline]
     #[must_use]
     pub fn avg_point_per_agari(&self) -> f64 {
+        if self.agari == 0 { return 0.0; }
         (self.agari_point_ko + self.agari_point_oya) as f64 / self.agari as f64
     }
     #[getter]
     #[inline]
     #[must_use]
     pub fn avg_point_per_oya_agari(&self) -> f64 {
+        if self.agari_as_oya == 0 { return 0.0; }
         self.agari_point_oya as f64 / self.agari_as_oya as f64
     }
     #[getter]
     #[inline]
     #[must_use]
     pub fn avg_point_per_ko_agari(&self) -> f64 {
-        self.agari_point_ko as f64 / (self.agari - self.agari_as_oya) as f64
+        let ko_agari = self.agari - self.agari_as_oya;
+        if ko_agari == 0 { return 0.0; }
+        self.agari_point_ko as f64 / ko_agari as f64
     }
     #[getter]
     #[inline]
     #[must_use]
     pub fn avg_point_per_fuuro_agari(&self) -> f64 {
+        if self.fuuro_agari == 0 { return 0.0; }
         self.fuuro_agari_point as f64 / self.fuuro_agari as f64
     }
     #[getter]
     #[inline]
     #[must_use]
     pub fn avg_point_per_ryukyoku(&self) -> f64 {
+        if self.ryukyoku == 0 { return 0.0; }
         self.ryukyoku_point as f64 / self.ryukyoku as f64
     }
 
@@ -489,12 +495,14 @@ impl Stat {
     #[inline]
     #[must_use]
     pub fn avg_agari_jun(&self) -> f64 {
+        if self.agari == 0 { return 0.0; }
         self.agari_jun as f64 / self.agari as f64
     }
     #[getter]
     #[inline]
     #[must_use]
     pub fn avg_fuuro_agari_jun(&self) -> f64 {
+        if self.fuuro_agari == 0 { return 0.0; }
         self.fuuro_agari_jun as f64 / self.fuuro_agari as f64
     }
 
@@ -502,24 +510,29 @@ impl Stat {
     #[inline]
     #[must_use]
     pub fn avg_point_per_houjuu(&self) -> f64 {
+        if self.houjuu == 0 { return 0.0; }
         (self.houjuu_point_to_ko + self.houjuu_point_to_oya) as f64 / self.houjuu as f64
     }
     #[getter]
     #[inline]
     #[must_use]
     pub fn avg_point_per_houjuu_to_oya(&self) -> f64 {
+        if self.houjuu_to_oya == 0 { return 0.0; }
         self.houjuu_point_to_oya as f64 / self.houjuu_to_oya as f64
     }
     #[getter]
     #[inline]
     #[must_use]
     pub fn avg_point_per_houjuu_to_ko(&self) -> f64 {
-        self.houjuu_point_to_ko as f64 / (self.houjuu - self.houjuu_to_oya) as f64
+        let ko_houjuu = self.houjuu - self.houjuu_to_oya;
+        if ko_houjuu == 0 { return 0.0; }
+        self.houjuu_point_to_ko as f64 / ko_houjuu as f64
     }
     #[getter]
     #[inline]
     #[must_use]
     pub fn avg_houjuu_jun(&self) -> f64 {
+        if self.houjuu == 0 { return 0.0; }
         self.houjuu_jun as f64 / self.houjuu as f64
     }
 

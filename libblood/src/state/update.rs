@@ -30,11 +30,11 @@ impl PlayerState {
         event: &Event,
     ) -> Result<ActionCandidate> {
         if !event.is_in_game_announce() {
-            // Guo Shou Hu (Temporary Furiten) Detection
-            // If we could Ron previously, but didn't (and the new event is not our own Win),
-            // OR if we could Tsumo previously, but didn't (pass Tsumo implies Furiten until next turn),
-            // then we missed it. Set temporary_furiten.
-            if self.last_cans.can_ron_agari || self.last_cans.can_tsumo_agari {
+            // 过手胡（Temporary Furiten）检测
+            // 仅在放弃了 **荣和** 机会时触发：如果上一步能 ron 但未 ron，
+            // 则在下次自摸之前不能 ron 同一张牌。
+            // 放弃自摸（tsumo pass）不应触发过手胡——过手胡仅针对他人打出/加杠的牌。
+            if self.last_cans.can_ron_agari {
                 let passed = match event {
                     Event::Hora { actor, .. } => *actor != self.player_id,
                     _ => true,
@@ -243,6 +243,28 @@ impl PlayerState {
                         is_dihu: false,
                     };
                     self.last_cans.can_tsumo_agari = agari_calc.has_yaku();
+                }
+
+                // FIX: 庄家 14 张初始手牌中可能存在暗杠/加杠候选，
+                // 与 tsumo() 中 lines 320-364 相同的逻辑。
+                if self.kans_on_board < 4 {
+                    self.tehai
+                        .iter()
+                        .enumerate()
+                        .filter(|&(_, &count)| count > 0)
+                        .for_each(|(tid, &count)| {
+                            let tile = must_tile!(tid);
+                            if crate::ding_que::is_ding_que_tile(tile.as_usize(), self.ding_que) {
+                                return;
+                            }
+                            if count == 4 {
+                                self.last_cans.can_ankan = true;
+                                self.ankan_candidates.push(tile);
+                            } else if self.pons.contains(&(tid as u8)) {
+                                self.last_cans.can_kakan = true;
+                                self.kakan_candidates.push(tile);
+                            }
+                        });
                 }
             }
         }
