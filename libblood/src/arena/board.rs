@@ -42,6 +42,8 @@ pub struct BoardState {
     #[derivative(Default(value = "[false; 4]"))]
     players_agari: [bool; 4],
     agari_count: u8,
+    /// 和牌顺序，先和者在前。用于同分时排名。
+    agari_order: Vec<u8>,
     kyoku_deltas: [i32; 4],
 
     #[derivative(Default(value = "56"))]
@@ -197,10 +199,11 @@ impl BoardState {
     }
 
     #[inline]
-    pub const fn end(&self) -> KyokuResult {
+    pub fn end(&self) -> KyokuResult {
         KyokuResult {
             kyoku: self.board.kyoku,
             scores: self.board.scores,
+            agari_order: self.agari_order.clone(),
         }
     }
 
@@ -526,6 +529,7 @@ impl BoardState {
         if !self.players_agari[single_actor as usize] {
             self.players_agari[single_actor as usize] = true;
             self.agari_count += 1;
+            self.agari_order.push(single_actor);
             self.player_states[single_actor as usize].has_agari = true;
         }
 
@@ -735,6 +739,18 @@ impl BoardState {
                         deltas[single_target as usize] -= self.last_kan_revenue;
                         deltas[single_actor as usize] += self.last_kan_revenue;
                         self.last_kan_revenue = 0;
+
+                        // FIX: 杠上炮（单家荣和）后必须失效 gang_history 记录，
+                        // 否则退税（exhaustive_ryukyoku）会再次反转该笔交易，导致杠者重复扣款。
+                        // 与多家荣和路径保持一致。
+                        if let Some(rec) = self
+                            .gang_history
+                            .iter_mut()
+                            .rev()
+                            .find(|r| r.valid && r.actor == kan_actor)
+                        {
+                            rec.valid = false;
+                        }
                     }
                 }
             }

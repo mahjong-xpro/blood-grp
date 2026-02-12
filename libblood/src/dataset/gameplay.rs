@@ -398,12 +398,18 @@ impl Gameplay {
 
                 if ret.is_none() {
                     // It is now proven there is no ron from the POV.
-                    if (cans.can_pon || cans.can_daiminkan || cans.can_ron_agari)
-                            && !has_any_ron
-                    {
-                        // Can pon/daiminkan/ron, but actively denied
-                        // instead of being interrupted by other's ron.
-                        ret = Some(30); // Pass action (was 31, originally 45)
+                    // Determine if POV actively passed on a reaction opportunity:
+                    //
+                    // 1. !has_any_ron: No one ronned. POV had pon/daiminkan/ron options
+                    //    and chose none → active pass.
+                    // 2. has_any_ron && can_ron_agari: Others ronned, but POV ALSO could
+                    //    have ronned and actively declined → active pass (rare in blood battle).
+                    // 3. has_any_ron && !can_ron_agari: Others' ron preempts POV's pon/daiminkan.
+                    //    POV never got to decide → NOT an active pass, skip.
+                    if cans.can_pon || cans.can_daiminkan || cans.can_ron_agari {
+                        if !has_any_ron || cans.can_ron_agari {
+                            ret = Some(30); // Pass action
+                        }
                     }
                 }
 
@@ -573,11 +579,16 @@ impl Gameplay {
         self.at_turns.push(ctx.state.at_turn());
         self.shantens.push(ctx.state.shanten());
 
-        // Collect opponent waits for auxiliary learning
+        // Collect opponent waits for auxiliary learning.
+        // 仅 oracle 模式下 opponent_states 被实际更新（有完整手牌信息），
+        // waits() 才有意义。非 oracle 模式下 opponent_states 未更新，waits() 全为 false。
+        // 此处显式区分，避免误用全零数据作为辅助损失的训练标签。
         let mut opp_waits = [false; 81];
-        for (i, s) in ctx.opponent_states.iter().enumerate() {
-            for (t, &waiting) in s.waits().iter().enumerate() {
-                opp_waits[i * 27 + t] = waiting;
+        if ctx.invisibles.is_some() {
+            for (i, s) in ctx.opponent_states.iter().enumerate() {
+                for (t, &waiting) in s.waits().iter().enumerate() {
+                    opp_waits[i * 27 + t] = waiting;
+                }
             }
         }
         self.opponent_waits.push(opp_waits);

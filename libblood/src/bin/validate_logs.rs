@@ -159,22 +159,13 @@ fn process_path(path: &Path) -> Result<()> {
                 }
 
                 let _deltas = deltas.context("missing field `deltas`")?;
-                // let points = states[*actor as usize]
-                //     .agari_points(is_ron, &[])
-                //     .with_context(|| {
-                //         format!(
-                //             "failed to get agari points at line {line}\naction: {ev:?}\nstate:\n{}",
-                //             states[*actor as usize].brief_info()
-                //         )
-                //     })?;
-
-                // if is_ron {
-                //     ensure!(deltas[*actor as usize] >= points.ron);
-                // } else if states[*actor as usize].is_oya() {
-                //     ensure!(deltas[*actor as usize] >= points.tsumo_oya);
-                // } else {
-                //     ensure!(deltas[*actor as usize] >= points.tsumo_ko);
-                // }
+            }
+            Event::DingQue { actor, .. } => {
+                ensure!(
+                    cans[*actor as usize].can_ding_que,
+                    "fails can_ding_que at line {line}\naction: {ev:?}\nstate:\n{}",
+                    states[*actor as usize].brief_info(),
+                );
             }
             _ => (),
         }

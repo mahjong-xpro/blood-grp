@@ -192,7 +192,15 @@ impl Event {
                 consumed.iter_mut().for_each(swap_tile);
             }
             Self::Ankan { consumed, .. } => consumed.iter_mut().for_each(swap_tile),
-            Self::Hora { .. } => {
+            Self::Hora { .. } => {}
+            Self::DingQue { suit, .. } => {
+                // augment 交换 Man <-> Pin，Sou 不变。
+                // DingQue 的花色必须同步翻转，否则训练数据中定缺标签与手牌花色不匹配。
+                *suit = match *suit {
+                    Suit::Man => Suit::Pin,
+                    Suit::Pin => Suit::Man,
+                    Suit::Sou => Suit::Sou,
+                };
             }
             _ => (),
         }

@@ -40,6 +40,8 @@ struct Game {
     kyoku: u8,
     scores: [i32; 4],
     game_log: Vec<Vec<EventExt>>,
+    /// 和牌顺序（从最后一局继承），用于同分排名。
+    agari_order: Vec<u8>,
 
     kyoku_started: bool,
     ended: bool,
@@ -116,6 +118,8 @@ impl Game {
 
                 let kyoku_result = self.board.end();
                 self.scores = kyoku_result.scores;
+                // 保存最后一局的和牌顺序用于最终排名
+                self.agari_order = kyoku_result.agari_order;
 
                 let logs = self.board.take_log();
                 self.game_log.push(logs);
@@ -151,6 +155,7 @@ impl Game {
                 seed: self.seed,
                 game_log: mem::take(&mut self.game_log),
                 final_tehais: Some(final_tehais),
+                agari_order: mem::take(&mut self.agari_order),
             };
 
             for idx in &self.indexes {
