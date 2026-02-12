@@ -15,6 +15,7 @@ def train():
     from datetime import datetime
     from itertools import chain
     from torch import optim, nn
+    import torch.nn.functional as F
     try:
         from torch.amp import GradScaler
     except ImportError:
