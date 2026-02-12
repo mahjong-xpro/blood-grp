@@ -432,7 +432,7 @@ class HumanEngine:
                             kakan_candidates = []
                     except Exception:
                         kakan_candidates = []
-                    for p in (kakan_candidates if kakan_candidates else self.peng):
+                    for p in kakan_candidates:
                         if counts.get(p, 0) >= 1:
                             return {
                                 "type": "kakan",
@@ -440,19 +440,27 @@ class HumanEngine:
                                 "pai": p,
                                 "consumed": [p, p, p],
                             }
-                    logging.warning("Kan: can_kakan true but no valid candidate found.")
+                    logging.warning("Kan: can_kakan true but no valid kakan candidate found.")
                     return {"type": "none"}
                 if can_ankan:
                     from collections import Counter
                     counts = Counter(self.tehai)
-                    for t, c in counts.items():
-                        if c == 4:
+                    try:
+                        ankan_candidates = getattr(game_state, "ankan_candidates", None)
+                        if callable(ankan_candidates):
+                            ankan_candidates = ankan_candidates()
+                        else:
+                            ankan_candidates = []
+                    except Exception:
+                        ankan_candidates = []
+                    for t in ankan_candidates:
+                        if counts.get(t, 0) >= 4:
                             return {
                                 "type": "ankan",
                                 "actor": actor_id,
                                 "consumed": [t, t, t, t],
                             }
-                    logging.warning("Kan: can_ankan true but no quad in hand.")
+                    logging.warning("Kan: can_ankan true but no valid ankan candidate found.")
                     return {"type": "none"}
                 logging.warning("Kan requested but no can_daiminkan/can_kakan/can_ankan.")
                 return {"type": "none"}
