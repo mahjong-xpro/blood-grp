@@ -1,7 +1,7 @@
 use super::PlayerState;
 use super::action::ActionCandidate;
 use super::item::{KawaItem, Sutehai};
-use crate::algo::agari::AgariCalculator;
+use crate::algo::agari::{Agari, AgariCalculator};
 use crate::algo::shanten;
 use crate::mjai::Event;
 use crate::tile::Tile;
@@ -29,20 +29,23 @@ impl PlayerState {
         &mut self,
         event: &Event,
     ) -> Result<ActionCandidate> {
-        if !event.is_in_game_announce() {
-            // 过手胡（Temporary Furiten）检测
-            // 仅在放弃了 **荣和** 机会时触发：如果上一步能 ron 但未 ron，
-            // 则在下次自摸之前不能 ron 同一张牌。
-            // 放弃自摸（tsumo pass）不应触发过手胡——过手胡仅针对他人打出/加杠的牌。
-            if self.last_cans.can_ron_agari {
-                let passed = match event {
-                    Event::Hora { actor, .. } => *actor != self.player_id,
-                    _ => true,
-                };
-                if passed {
-                    self.temporary_furiten = true;
-                }
+        // 过手胡（Temporary Furiten）检测
+        // 仅在放弃了 **荣和** 机会时触发：如果上一步能 ron 但未 ron，
+        // 则在下次自摸之前不能 ron 同一张牌。
+        //
+        // NOTE:
+        // 这里不能放在 `!event.is_in_game_announce()` 分支内。
+        // 若他家先和（Event::Hora）而自己选择了不和，此事件是 announce，
+        // 仍应视为“过手胡”并置 temporary_furiten=true。
+        if self.last_cans.can_ron_agari {
+            let passed = !matches!(event, Event::Hora { actor, .. } if *actor == self.player_id);
+            if passed {
+                self.temporary_furiten = true;
+                self.furiten_passed_ron_fan = self.current_ron_fan;
             }
+        }
+
+        if !event.is_in_game_announce() {
 
             self.last_cans = ActionCandidate {
                 target_actor: event.actor().unwrap_or(self.player_id),
@@ -50,6 +53,7 @@ impl PlayerState {
             };
             self.ankan_candidates.clear();
             self.kakan_candidates.clear();
+            self.current_ron_fan = None;
 
             // 抢杠机会必须在事件流转时清除，否则后续荣和会被错误标记为抢杠
             self.chankan_chance = None;
@@ -122,6 +126,8 @@ impl PlayerState {
         self.tehai.fill(0);
         self.waits.fill(false);
         self.temporary_furiten = false;
+        self.furiten_passed_ron_fan = None;
+        self.current_ron_fan = None;
         self.tiles_seen.fill(0);
         self.keep_shanten_discards.fill(false);
         self.next_shanten_discards.fill(false);
@@ -293,6 +299,7 @@ impl PlayerState {
 
         self.forbidden_tiles.fill(false);
         self.temporary_furiten = false;
+        self.furiten_passed_ron_fan = None;
         self.at_turn += 1;
 
         self.last_self_tsumo = Some(pai);
@@ -524,8 +531,45 @@ impl PlayerState {
                 is_tianhu: false,
                 is_dihu: false,
             };
-            agari_calc.has_yaku()
+            if let Some(Agari::Fan(fan)) = agari_calc.agari() {
+                self.current_ron_fan = Some(fan);
+                true
+            } else {
+                false
+            }
         };
+
+        // Rule extension: 过手加番可胡
+        // If the player is in temporary furiten, ron is allowed only when
+        // current fan is strictly greater than the fan of the passed ron.
+        if self.temporary_furiten && can_add_tile {
+            self.last_cans.can_ron_agari = if let Some(Agari::Fan(fan)) = {
+                let mut tehai_with_winning_tile = self.tehai;
+                tehai_with_winning_tile[pai_idx] += 1;
+                let agari_calc = AgariCalculator {
+                    tehai: &tehai_with_winning_tile,
+                    pons: &self.pons,
+                    minkans: &self.minkans,
+                    ankans: &self.ankans,
+                    winning_tile: pai.as_u8(),
+                    is_ron: true,
+                    ding_que: self.ding_que,
+                    is_after_kan: false,
+                    is_kan_discard: was_kan_before_discard,
+                    is_chankan: false,
+                    exclude_gen_tile: None,
+                    is_haidi: self.tiles_left == 0,
+                    is_tianhu: false,
+                    is_dihu: false,
+                };
+                agari_calc.agari()
+            } {
+                self.current_ron_fan = Some(fan);
+                self.furiten_passed_ron_fan.is_some_and(|passed_fan| fan > passed_fan)
+            } else {
+                false
+            };
+        }
 
         if self.tiles_left == 0 {
             return Ok(());
@@ -581,6 +625,7 @@ impl PlayerState {
 
         self.forbidden_tiles.fill(false);
         self.temporary_furiten = false;
+        self.furiten_passed_ron_fan = None;
         self.last_cans.can_discard = true;
         self.tehai_len_div3 = self.tehai_len_div3.saturating_sub(1);
         // Marked explicitly as `None` to let `Agent` impls set
@@ -789,6 +834,7 @@ impl PlayerState {
 
         self.at_rinshan = true;
         self.temporary_furiten = false;
+        self.furiten_passed_ron_fan = None;
 
         self.tehai_len_div3 = self.tehai_len_div3.saturating_sub(1);
 
@@ -891,8 +937,13 @@ impl PlayerState {
                     is_dihu: false,
                 };
 
-                if agari_calc.has_yaku() {
-                    self.last_cans.can_ron_agari = true;
+                if let Some(Agari::Fan(fan)) = agari_calc.agari() {
+                    self.current_ron_fan = Some(fan);
+                    self.last_cans.can_ron_agari = if self.temporary_furiten {
+                        self.furiten_passed_ron_fan.is_some_and(|passed_fan| fan > passed_fan)
+                    } else {
+                        true
+                    };
                     self.chankan_chance = Some(());
                     self.chankan_kakan_actor = Some(actor);
                     self.chankan_kakan_tile = Some(pai.as_u8());
@@ -904,6 +955,7 @@ impl PlayerState {
 
         self.at_rinshan = true;
         self.temporary_furiten = false;
+        self.furiten_passed_ron_fan = None;
         // Mark this kakan as pending until we either draw from rinshan (success)
         // or get ronned immediately (chankan, handled in hora()).
         self.pending_kakan_tile = Some(pai.as_u8());
@@ -972,6 +1024,7 @@ impl PlayerState {
 
         self.at_rinshan = true;
         self.temporary_furiten = false;
+        self.furiten_passed_ron_fan = None;
         self.tehai_len_div3 = self.tehai_len_div3.saturating_sub(1);
         for t in consumed {
             self.move_tile(t, MoveType::FuuroConsume)?;

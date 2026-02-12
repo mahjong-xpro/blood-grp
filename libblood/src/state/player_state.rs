@@ -109,6 +109,13 @@ pub struct PlayerState {
     #[derivative(Default(value = "false"))]
     #[pyo3(get)]
     pub temporary_furiten: bool,
+    /// Fan of the last ron opportunity that was passed.
+    /// Rule extension: 过手加番可胡（while temporary_furiten is true, ron is only allowed
+    /// when current fan is strictly greater than this value).
+    pub(super) furiten_passed_ron_fan: Option<u8>,
+    /// Fan of the current ron opportunity (if any). This is populated together
+    /// with `last_cans.can_ron_agari`.
+    pub(super) current_ron_fan: Option<u8>,
 
     pub(super) at_rinshan: bool,
 
