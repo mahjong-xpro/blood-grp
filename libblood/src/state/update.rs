@@ -263,11 +263,11 @@ impl PlayerState {
         self.last_cans.can_discard = true;
         self.update_shanten_discards();
 
-        if self.waits[pai.as_usize()] {
-            // Even for is_menzen, tiles_left == 0, or at_rinshan cases
+        // Tsumo check: 自摸时以 has_yaku 为准，不再依赖 waits[]，避免 waits 漏判导致无法胡牌
+        // 摸牌后 self.tehai 已包含摸到的牌（14 张），直接检查是否成牌
+        {
             let agari_calc = AgariCalculator {
                 tehai: &self.tehai,
-
                 pons: &self.pons,
                 minkans: &self.minkans,
                 ankans: &self.ankans,
