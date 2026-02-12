@@ -164,8 +164,8 @@ impl Invisible {
             idx = encode_tile(idx, tile);
         }
         // Skip remaining yama slots to maintain fixed size
-        // Original used 69 max tiles
-        let max_yama_tiles: usize = 69;
+        // Original used 69 max tiles. For Bloody Battle (v2+), use 56.
+        let max_yama_tiles: usize = if version >= 2 { 56 } else { 69 };
         let encoded_tiles = self.yama.len().saturating_sub(yama_idx);
         let remaining_yama = max_yama_tiles.saturating_sub(encoded_tiles);
         idx += remaining_yama;

@@ -42,7 +42,7 @@ pub const fn oracle_obs_shape(version: u32) -> (usize, usize) {
     // Calculated dimensions based on encode_oracle_obs function in board.rs and invisible.rs
     match version {
         1 => (128, 27), // Calculated: 128 rows × 27 tile kinds
-        2 | 3 | 4 => (118, 27), // Optimized: 48 (opp) + 56 (yama) + 14 (pad) = 118
+        2 | 3 | 4 => (121, 27), // Optimized: 48 (opp) + 3 (wait) + 56 (yama) + 14 (pad) = 121
         _ => unreachable!(),
     }
 }
