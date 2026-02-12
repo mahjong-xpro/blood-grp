@@ -106,23 +106,30 @@ pub fn calc_normal(tiles: &[u8; 27], len_div3: u8) -> i8 {
 
 #[must_use]
 pub fn calc_chitoi(tiles: &[u8; 27]) -> i8 {
-    let mut pairs = 0;
-    let mut kinds = 0;
+    let mut pairs: u8 = 0;
+    let mut kinds: u8 = 0;
+    let mut quads: u8 = 0;
     tiles.iter().filter(|&&c| c > 0).for_each(|&c| {
         kinds += 1;
-        if c >= 2 {
+        // 龙七对（Long QiDui）：4张相同牌算2个对子
+        if c >= 4 {
+            pairs += 2;
+            quads += 1;
+        } else if c >= 2 {
             pairs += 1;
         }
     });
 
-    let redunct = 7_u8.saturating_sub(kinds) as i8;
-    7 - pairs + redunct - 1
+    // 龙七对允许 4 张相同牌算 2 个对子，因此最少只需 (7 - quads) 种牌，
+    // 而非标准七对的 7 种。例如：
+    //   1111m 2233p 445566s → 6 种, quads=1, needed=6, redunct=0 → 完成(-1)
+    //   1111m 2222p 334455s → 5 种, quads=2, needed=5, redunct=0 → 完成(-1)
+    let needed_kinds = 7_u8.saturating_sub(quads);
+    let redunct = needed_kinds.saturating_sub(kinds) as i8;
+    7 - (pairs as i8) + redunct - 1
 }
 
-#[must_use]
-pub fn calc_kokushi(_tiles: &[u8; 27]) -> i8 {
-    i8::MAX // Return max value to indicate impossible
-}
+// 血战到底无国士无双（无字牌），calc_kokushi 已移除
 
 #[must_use]
 pub fn calc_all(tiles: &[u8; 27], len_div3: u8, ding_que: Option<crate::mjai::Suit>) -> i8 {
@@ -150,12 +157,8 @@ pub fn calc_all(tiles: &[u8; 27], len_div3: u8, ding_que: Option<crate::mjai::Su
     };
 
     let mut shanten = calc_normal(&clean_tiles, clean_len_div3);
-    if shanten <= 0 || clean_len_div3 < 4 {
-        // Continue to check other yaku types or just return?
-        // Logic says default return.
-    }
     
-    // Add penalty
+    // Add penalty for ding_que tiles still in hand
     shanten = shanten.saturating_add(void_count as i8);
 
     // Chitoi check (add penalty too)

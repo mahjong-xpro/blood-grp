@@ -6,7 +6,7 @@
 //! Major differences compared to the C++ version:
 //! - Whenever shanten calculation is involved, all types of shanten will be
 //!   considered (using `shanten::calc_all`). In the original version, you can
-//!   only choose one of normal, chitoi and kokushi.
+//!   only choose one of normal and chitoi (血战到底无国士).
 //! - The actual number of tiles left is calculated and used, while the original
 //!   version uses a fixed value of 121.
 //! - `max_tsumo` is set to the actual value, instead of the hardcoded 17 or 18

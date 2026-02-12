@@ -51,6 +51,11 @@ impl PlayerState {
             self.ankan_candidates.clear();
             self.kakan_candidates.clear();
 
+            // 抢杠机会必须在事件流转时清除，否则后续荣和会被错误标记为抢杠
+            self.chankan_chance = None;
+            self.chankan_kakan_actor = None;
+            self.chankan_kakan_tile = None;
+
             // DingQue availability must persist until chosen, regardless of turn/actor.
             // This is critical because DingQue selection can happen after the dealer's initial tsumo.
             if self.ding_que.is_none() {

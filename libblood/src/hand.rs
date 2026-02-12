@@ -1,14 +1,15 @@
 //! Hand format conversions, usually only useful for testing and debugging.
 //!
-//! Note that all functions in this mod that take or produce strings are dealing
-//! with tenhou.net/2 format tile description (like 0m 123z) instead of mjai format.
+//! 血战到底麻将专用：仅支持万(m)、筒(p)、条(s) 三种花色，数字 1-9。
+//! 无字牌(z)，无赤宝牌(0)。
 
 use crate::tile::Tile;
 use crate::must_tile;
 
 use anyhow::{Result, bail, ensure};
 
-/// Spaces are allowed.
+/// Parse hand string (e.g. "123m 456p 789s") into tile count array.
+/// Spaces are allowed. Only digits 1-9 with suit suffixes m/p/s are valid.
 pub fn hand(s: &str) -> Result<[u8; 27]> {
     ensure!(s.is_ascii(), "hand {s} contains non-ascii content");
 
@@ -17,17 +18,17 @@ pub fn hand(s: &str) -> Result<[u8; 27]> {
 
     for b in s.as_bytes() {
         match b {
-            b'0'..=b'9' => stack.push((b - b'0') as usize),
+            b'1'..=b'9' => stack.push((b - b'0') as usize),
+            b'0' => bail!("血战到底无赤宝牌(aka-dora)，不支持 '0'，请使用 '5'"),
             b'm' | b'p' | b's' => {
                 for t in stack.drain(..) {
-                    let num = if t == 0 { 5 } else { t };
                     let kind = match b {
                         b'm' => 0,
                         b'p' => 1,
                         b's' => 2,
                         _ => unreachable!(),
                     };
-                    let idx = kind * 9 + num - 1;
+                    let idx = kind * 9 + t - 1;
                     if idx < 27 {
                         ret[idx] += 1;
                     } else {
@@ -35,12 +36,14 @@ pub fn hand(s: &str) -> Result<[u8; 27]> {
                     }
                 }
             }
-            b'z' => {
-                stack.clear();
-            }
+            b'z' => bail!("血战到底无字牌(honor tiles)，不支持 'z' 后缀"),
             b' ' | b'\t' | b'\n' => (),
             _ => bail!("unexpected byte {b}"),
         };
+    }
+
+    if !stack.is_empty() {
+        bail!("trailing digits without suit suffix: {:?}", stack);
     }
 
     Ok(ret)
@@ -139,7 +142,7 @@ mod test {
                 0, 0, 1, 1, 1, 1, 1, 1, 0, // p
                 0, 0, 0, 0, 0, 1, 1, 1, 0, // s
             ]),
-            "33067m 345678p 678s"
+            "33567m 345678p 678s"
         );
     }
 }

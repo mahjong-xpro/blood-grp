@@ -43,7 +43,6 @@ struct Game {
 
     kyoku_started: bool,
     ended: bool,
-    in_renchan: bool,
 }
 
 impl Game {
@@ -80,13 +79,9 @@ impl Game {
             Poll::InGame => {
                 let ctx = self.board.agent_context();
 
-                // 血战到底规则：有人能胡时，胡优先，仅向能胡的玩家 set_scene
-                let ron_takes_priority = !self.board.is_ding_que_phase()
-                    && ctx
-                        .player_states
-                        .iter()
-                        .any(|s| s.last_cans().can_ron_agari);
-
+                // 血战到底规则：胡牌优先于碰/杠，但优先级在 board.rs step() 中处理。
+                // 这里让所有能行动的玩家都获得 set_scene，确保如果荣和玩家放弃，
+                // 碰/杠玩家仍有机会行动。
                 for (player_id, state) in ctx.player_states.iter().enumerate() {
                     let needs_reaction = if self.board.is_ding_que_phase() {
                         !self.board.ding_que_selected(player_id)
@@ -95,11 +90,6 @@ impl Game {
                     };
 
                     if !needs_reaction {
-                        continue;
-                    }
-
-                    // 有人能胡时，只有能胡的玩家才 set_scene
-                    if ron_takes_priority && !state.last_cans().can_ron_agari {
                         continue;
                     }
 
@@ -118,7 +108,6 @@ impl Game {
             }
             Poll::End => {
                 self.kyoku_started = false;
-                self.in_renchan = false;
 
                 let ctx = self.board.agent_context();
                 for idx in &self.indexes {
@@ -137,33 +126,8 @@ impl Game {
                     return Ok(());
                 }
 
-                if !kyoku_result.can_renchan {
-                    self.kyoku += 1;
-                    return self.poll(agents);
-                }
-
-                // renchan owari conditions:
-                // 1. can renchan
-                // 2. is at all-last
-                // 3. oya has at least 30000
-                // 4. oya is the top
-                let oya = kyoku_result.kyoku as usize % 4;
-                if kyoku_result.kyoku >= self.length - 1 && self.scores[oya] >= 30000 {
-                    let top = kyoku_result
-                        .scores
-                        .iter()
-                        .enumerate()
-                        .min_by_key(|&(_, &s)| -s)
-                        .map(|(i, _)| i)
-                        .unwrap();
-                    if top == oya {
-                        self.ended = true;
-                        return Ok(());
-                    }
-                }
-
-                // renchan
-                self.in_renchan = true;
+                // 血战到底无连庄规则，直接进入下一局
+                self.kyoku += 1;
                 return self.poll(agents);
             }
         };
@@ -197,14 +161,8 @@ impl Game {
 
         let ctx = self.board.agent_context();
 
-        // 血战到底规则：有人能胡时，胡优先于碰/杠，其他人不能碰/杠
-        // 因此仅向能胡的玩家请求反应，能碰/杠但不能胡的玩家视为过
-        let ron_takes_priority = !self.board.is_ding_que_phase()
-            && ctx
-                .player_states
-                .iter()
-                .any(|s| s.last_cans().can_ron_agari);
-
+        // 血战到底规则：胡牌优先于碰/杠。优先级由 board.rs step() 在处理反应时强制执行。
+        // 这里让所有能行动的玩家都提交反应，如果荣和玩家放弃，碰/杠玩家仍可行动。
         for (player_id, state) in ctx.player_states.iter().enumerate() {
             let needs_reaction = if self.board.is_ding_que_phase() {
                 !self.board.ding_que_selected(player_id)
@@ -213,12 +171,6 @@ impl Game {
             };
 
             if !needs_reaction {
-                continue;
-            }
-
-            // 有人能胡时，只有能胡的玩家才请求反应；能碰/杠的玩家视为过
-            if ron_takes_priority && !state.last_cans().can_ron_agari {
-                self.last_reactions[player_id] = EventExt::default();
                 continue;
             }
 

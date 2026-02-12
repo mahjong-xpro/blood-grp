@@ -18,8 +18,7 @@ use sha3::{Digest, Sha3_256};
 use serde::{Serialize, Deserialize};
 use tinyvec::ArrayVec;
 
-///
-/// Game ends when 3 players have agari (和牌) or when tiles are exhausted (流局).
+/// 血战到底：3人和牌时游戏结束，牌墙耗尽时结算（查花猪、查大叫）。
 #[derive(Debug, Default)]
 pub struct Board {
     /// Counts from 0 (for recording only, no game flow impact)
@@ -201,7 +200,6 @@ impl BoardState {
     pub const fn end(&self) -> KyokuResult {
         KyokuResult {
             kyoku: self.board.kyoku,
-            can_renchan: false,
             scores: self.board.scores,
         }
     }

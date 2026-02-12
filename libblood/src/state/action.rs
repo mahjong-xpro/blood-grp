@@ -203,11 +203,21 @@ impl PlayerState {
     }
 
     fn ensure_tiles_in_hand(&self, tiles: &[Tile]) -> Result<()> {
+        // 正确验证数量：统计需要消耗的每种牌数量，再与手牌对比
+        let mut needed = [0u8; 27];
         for &tile in tiles {
-            ensure!(
-                self.tehai[tile.as_usize()] > 0,
-                "{tile} is not in hand",
-            );
+            needed[tile.as_usize()] += 1;
+        }
+        for (tid, &count) in needed.iter().enumerate() {
+            if count > 0 {
+                ensure!(
+                    self.tehai[tid] >= count,
+                    "not enough tiles in hand: need {} of tile id {}, but only have {}",
+                    count,
+                    tid,
+                    self.tehai[tid]
+                );
+            }
         }
         Ok(())
     }

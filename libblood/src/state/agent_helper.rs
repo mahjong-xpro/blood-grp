@@ -13,14 +13,11 @@ impl PlayerState {
     /// This includes:
     /// - This player's private hand (tehai)
     /// - All discarded tiles (from kawa_overview - all players)
-    /// - All melded tiles (from fuuro_overview - all players)
+    /// - All melded tiles (from fuuro_overview - all players, excluding the called tile
+    ///   which is already counted in kawa_overview of the discarding player)
     /// - All concealed kans (from ankan_overview - all players)
     /// 
     /// Note: This is incomplete because it doesn't include other players' private hands.
-    /// For accurate calculations, use `compute_global_tiles_seen` with all PlayerStates.
-    /// 
-    /// Also note: This function counts tiles from scratch, so it should not exceed 4 per tile type.
-    /// If it does, it indicates a bug in the game state (e.g., duplicate tiles in kawa_overview).
     fn compute_partial_global_tiles_seen(&self) -> [u8; 27] {
         let mut global_tiles_seen = [0u8; 27];
         
@@ -30,28 +27,25 @@ impl PlayerState {
         }
         
         // Count all discarded tiles (from kawa_overview - all players)
+        // Note: kawa_overview retains tiles even after they've been called by pon/daiminkan
         for kawa in self.kawa_overview.iter() {
             for &tile in kawa.iter() {
                 let tid = tile.as_usize();
-                global_tiles_seen[tid] += 1;
-                // 基础规则验证：每种 tile 最多只有 4 张
-                // 如果超过，说明游戏状态有误（可能是重复计算或数据损坏）
-                if global_tiles_seen[tid] > 4 {
-                    // 限制为 4，避免后续计算错误
-                    global_tiles_seen[tid] = 4;
-                }
+                global_tiles_seen[tid] = global_tiles_seen[tid].saturating_add(1).min(4);
             }
         }
         
-        // Count all melded tiles (from fuuro_overview - all players)
+        // Count melded tiles (from fuuro_overview - all players)
+        // 碰(pon)/大明杠(daiminkan)中，被叫的那张牌已在 kawa_overview 中计数过。
+        // fuuro_overview 包含完整的副露（碰 = [消耗1, 消耗2, 叫牌]，大明杠 = [消耗1, 消耗2, 消耗3, 叫牌]）。
+        // 由于碰/杠内所有牌都是同一种（同 tile_id），跳过任意一张即可避免与 kawa 重复计数。
+        // 加杠(kakan)会在碰的基础上 push 第4张（变为4张同种牌），同理跳过1张。
         for meld_group in self.fuuro_overview.iter() {
             for meld in meld_group.iter() {
-                for &tile in meld.iter() {
+                // 碰/杠中所有牌 tile_id 相同，skip(1) 跳过1张以抵消 kawa_overview 中的重复
+                for &tile in meld.iter().skip(1) {
                     let tid = tile.as_usize();
-                    global_tiles_seen[tid] += 1;
-                    if global_tiles_seen[tid] > 4 {
-                        global_tiles_seen[tid] = 4;
-                    }
+                    global_tiles_seen[tid] = global_tiles_seen[tid].saturating_add(1).min(4);
                 }
             }
         }
@@ -61,10 +55,7 @@ impl PlayerState {
             for &tile in ankan_group.iter() {
                 let tid = tile.as_usize();
                 // Ankan uses 4 tiles of the same type
-                global_tiles_seen[tid] += 4;
-                if global_tiles_seen[tid] > 4 {
-                    global_tiles_seen[tid] = 4;
-                }
+                global_tiles_seen[tid] = global_tiles_seen[tid].saturating_add(4).min(4);
             }
         }
         
@@ -260,8 +251,9 @@ impl PlayerState {
     /// 
     pub fn agari_points(&self, is_ron: bool, is_haidi: bool, is_tianhu: bool, is_dihu: bool, _ura_indicators: &[Tile]) -> Result<Point> {
         ensure!(
-            is_ron && self.last_cans.can_ron_agari || self.last_cans.can_tsumo_agari,
-            "cannot agari"
+            if is_ron { self.last_cans.can_ron_agari } else { self.last_cans.can_tsumo_agari },
+            "cannot agari: is_ron={}, can_ron={}, can_tsumo={}",
+            is_ron, self.last_cans.can_ron_agari, self.last_cans.can_tsumo_agari
         );
 
         let winning_tile = if is_ron {
@@ -322,8 +314,9 @@ impl PlayerState {
     /// This is used when calculating the payment amount for the kakan player in chankan
     pub fn agari_points_exclude_gen(&self, is_ron: bool, exclude_tile: u8, is_haidi: bool, _ura_indicators: &[Tile]) -> Result<Point> {
         ensure!(
-            is_ron && self.last_cans.can_ron_agari || self.last_cans.can_tsumo_agari,
-            "cannot agari"
+            if is_ron { self.last_cans.can_ron_agari } else { self.last_cans.can_tsumo_agari },
+            "cannot agari: is_ron={}, can_ron={}, can_tsumo={}",
+            is_ron, self.last_cans.can_ron_agari, self.last_cans.can_tsumo_agari
         );
 
         let winning_tile = if is_ron {
@@ -340,14 +333,17 @@ impl PlayerState {
             tehai[tid] += 1;
         }
         
-        // Validate tehai total (should be 14 tiles for agari)
+        // Validate tehai total: 14 - 3 × 副露数（碰/杠每组消耗3张手牌）
+        let fuuro_count = (self.pons.len() + self.minkans.len() + self.ankans.len()) as u8;
+        let expected_tehai_total = 14u8.saturating_sub(fuuro_count * 3);
         let tehai_total: u8 = tehai.iter().sum();
         ensure!(
-            tehai_total == 14,
-            "tehai total should be 14 for agari, but got {} (is_ron: {}, tehai_len_div3: {})",
+            tehai_total == expected_tehai_total,
+            "tehai total should be {} for agari (fuuro_count={}), but got {} (is_ron: {})",
+            expected_tehai_total,
+            fuuro_count,
             tehai_total,
-            is_ron,
-            self.tehai_len_div3
+            is_ron
         );
 
         let is_chankan = is_ron && self.chankan_chance.is_some();

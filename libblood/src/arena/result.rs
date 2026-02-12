@@ -7,7 +7,6 @@ use serde_json as json;
 #[derive(Debug, Clone)]
 pub struct KyokuResult {
     pub kyoku: u8,
-    pub can_renchan: bool,
     pub scores: [i32; 4],
 }
 

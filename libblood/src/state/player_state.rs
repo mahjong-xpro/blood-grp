@@ -225,9 +225,9 @@ impl PlayerState {
         format!(
             r#"player (abs): {}
 oya (rel): {}
-kyoku: {}-{}
+kyoku: {}
 turn: {}
-score (rel): {:?}
+score (rel): {}
 tehai: {}
 fuuro: {:?}
 ankan: {:?}
@@ -253,7 +253,6 @@ single player table (max EV):
             self.tehai_len_div3,
             self.shanten,
             self.real_time_shanten(),
-            format!("{:#?}", self.last_cans),
             self.last_cans,
             self.last_self_tsumo,
             self.last_kawa_tile,

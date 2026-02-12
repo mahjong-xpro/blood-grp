@@ -333,36 +333,39 @@ impl AgariCalculator<'_> {
             let mut div_fan: u8 = gen_count;
             
             // 3. 七对（QiDui）：+2番
-            if div.has_chitoi {
+            // 七对与碰碰胡、金钩钓互斥（结构不同），但可与清一色、带幺九、断幺九叠加
+            let is_chitoi = div.has_chitoi;
+            if is_chitoi {
                 div_fan += 2;
-                // 七对与碰碰胡、金钩钓互斥，跳过其他检查
-                max_fan = max_fan.max(div_fan);
-                continue;
             }
             
-            // 5. 金钩钓（JinGouDiao）：+2番 (4 fuuro + single wait/tanki)
-            let fuuro_count = self.pons.len() + self.minkans.len() + self.ankans.len();
-            
-            // 4. 碰碰胡（ToiToi）：+1番 (4 kotsu + 1 pair, no shuntsu)
-            // Division is computed on the full 14-tile hand (concealed + fuuro as triplets),
-            // so `div.kotsu_idxs.len()` already includes exposed pons/kans.
-            if div.shuntsu_idxs.is_empty() && div.kotsu_idxs.len() == 4 {
-                div_fan += 1;
-            }
+            if !is_chitoi {
+                // 以下番型仅适用于非七对的标准分解
 
-            if fuuro_count == 4 {
-                // Check if single wait (tanki): pair is the winning tile
-                let is_tanki = div.pair_idx < 14 && tile14[div.pair_idx as usize] == self.winning_tile;
-                if is_tanki {
-                    // Jin Gou Diao (Single Wait with 4 Melds).
-                    // In Bloody Battle, this stacks with ToiToi.
-                    // Base (1) + ToiToi (1) + JGD (1) = 3 Fan (4000).
-                    // (Previously was 2, resulted in 4 Fan / 8000).
+                // 5. 金钩钓（JinGouDiao）：+1番 (4 fuuro + single wait/tanki)
+                let fuuro_count = self.pons.len() + self.minkans.len() + self.ankans.len();
+                
+                // 4. 碰碰胡（ToiToi）：+1番 (4 kotsu + 1 pair, no shuntsu)
+                // Division is computed on the full 14-tile hand (concealed + fuuro as triplets),
+                // so `div.kotsu_idxs.len()` already includes exposed pons/kans.
+                if div.shuntsu_idxs.is_empty() && div.kotsu_idxs.len() == 4 {
                     div_fan += 1;
+                }
+
+                if fuuro_count == 4 {
+                    // Check if single wait (tanki): pair is the winning tile
+                    let is_tanki = div.pair_idx < 14 && tile14[div.pair_idx as usize] == self.winning_tile;
+                    if is_tanki {
+                        // Jin Gou Diao (Single Wait with 4 Melds).
+                        // In Bloody Battle, this stacks with ToiToi.
+                        // Base (1) + ToiToi (1) + JGD (1) = 3 Fan (4000).
+                        div_fan += 1;
+                    }
                 }
             }
             
             // 6. 清一色（QingYiSe）：+2番
+            // 可与七对叠加：七对+清一色 = 平胡1+七对2+清一色2 = 5番(封顶)
             // Check if all tiles (hand + fuuro) are same suit
             let mut suit_kind: Option<u8> = None;
             let mut is_qingyise = true;
@@ -405,147 +408,136 @@ impl AgariCalculator<'_> {
                 div_fan += 2;
             }
             
-            // 10. 一条龙（YiTiaoLong）：+1番（同一花色含有 123、456、789 三副顺子）
-            let mut suit_has_shuntsu_num: [[bool; 9]; 3] = [[false; 9]; 3];
-            for &shuntsu_idx in &div.shuntsu_idxs {
-                let tile_id = tile14[shuntsu_idx as usize];
-                if tile_id >= 27 {
-                    continue;
-                }
-                let kind = (tile_id / 9) as usize;
-                let num = tile_id % 9;
-                if kind < 3 {
-                    suit_has_shuntsu_num[kind][num as usize] = true;
-                }
-            }
-            let is_yitiaolong = (0..3).any(|kind| {
-                suit_has_shuntsu_num[kind][0] && suit_has_shuntsu_num[kind][3] && suit_has_shuntsu_num[kind][6]
-            });
-            if is_yitiaolong {
-                div_fan += 1;
-            }
-            
-            // 11. 夹心五（JiaXinWu）：+1番（和牌张为 5，且听牌为 4-6 夹 5，和 5 成顺 456）
-            let is_jiaxinwu = (self.winning_tile < 27 && self.winning_tile % 9 == 4)
-                && div.shuntsu_idxs.iter().any(|&shuntsu_idx| {
-                    let tile_id = tile14[shuntsu_idx as usize];
-                    tile_id < 27
-                        && tile_id % 9 == 3
-                        && tile_id / 9 == self.winning_tile / 9
-                });
-            if is_jiaxinwu {
-                div_fan += 1;
-            }
-            
-            // 7. 带幺九（DaiYaoJiu）：+3番
-            // Check if all groups (shuntsu, kotsu, pair) contain 1 or 9
-            let mut is_daiyaojiu = true;
-            
-            // Check shuntsu: must start with 1 or end with 9 (1-2-3 or 7-8-9)
-            for &shuntsu_idx in &div.shuntsu_idxs {
-                let tile_id = tile14[shuntsu_idx as usize];
-                if tile_id >= 27 {
-                    continue;
-                }
-                let num = tile_id % 9;
-                // Shuntsu must be 1-2-3 (num == 0) or 7-8-9 (num == 6)
-                if num != 0 && num != 6 {
-                    is_daiyaojiu = false;
-                    break;
-                }
-            }
-            
-            // Check kotsu: must be 1 or 9
-            if is_daiyaojiu {
-                for &kotsu_idx in &div.kotsu_idxs {
-                    let tile_id = tile14[kotsu_idx as usize];
-                    if tile_id >= 27 {
-                        continue;
-                    }
-                    let num = tile_id % 9;
-                    if num != 0 && num != 8 {
-                        is_daiyaojiu = false;
-                        break;
-                    }
-                }
-            }
-            
-            // Check pair: must be 1 or 9
-            if is_daiyaojiu {
-                let pair_tile = tile14[div.pair_idx as usize];
-                if pair_tile < 27 {
-                    let num = pair_tile % 9;
-                    if num != 0 && num != 8 {
-                        is_daiyaojiu = false;
-                    }
-                }
-            }
-            
-            // Check fuuro (pons, minkans, ankans): must be 1 or 9
-            if is_daiyaojiu {
-                for &tile_id in self.pons.iter().chain(self.minkans.iter()).chain(self.ankans.iter()) {
-                    if tile_id >= 27 {
-                        continue;
-                    }
-                    let num = tile_id % 9;
-                    if num != 0 && num != 8 {
-                        is_daiyaojiu = false;
-                        break;
-                    }
-                }
-            }
-            
-            if is_daiyaojiu {
-                div_fan += 3;
-            } else {
-                // 9. 断幺九（DuanYaoJiu）：+1番（所有组合不含1和9，仅2–8；与带幺九互斥）
-                let mut is_duanyaojiu = true;
+            // 以下番型需要顺子结构，与七对互斥（七对无顺子）
+            if !is_chitoi {
+                // 10. 一条龙（YiTiaoLong）：+1番（同一花色含有 123、456、789 三副顺子）
+                let mut suit_has_shuntsu_num: [[bool; 9]; 3] = [[false; 9]; 3];
                 for &shuntsu_idx in &div.shuntsu_idxs {
                     let tile_id = tile14[shuntsu_idx as usize];
                     if tile_id >= 27 {
                         continue;
                     }
+                    let kind = (tile_id / 9) as usize;
                     let num = tile_id % 9;
-                    // 顺子仅允许 234,345,456,567,678（首张 num 1..=5），不含 123(num0)、789(num6)
-                    if num == 0 || num == 6 {
-                        is_duanyaojiu = false;
-                        break;
+                    if kind < 3 {
+                        suit_has_shuntsu_num[kind][num as usize] = true;
                     }
                 }
-                if is_duanyaojiu {
+                let is_yitiaolong = (0..3).any(|kind| {
+                    suit_has_shuntsu_num[kind][0] && suit_has_shuntsu_num[kind][3] && suit_has_shuntsu_num[kind][6]
+                });
+                if is_yitiaolong {
+                    div_fan += 1;
+                }
+                
+                // 11. 夹心五（JiaXinWu）：+1番（和牌张为 5，且听牌为 4-6 夹 5，和 5 成顺 456）
+                let is_jiaxinwu = (self.winning_tile < 27 && self.winning_tile % 9 == 4)
+                    && div.shuntsu_idxs.iter().any(|&shuntsu_idx| {
+                        let tile_id = tile14[shuntsu_idx as usize];
+                        tile_id < 27
+                            && tile_id % 9 == 3
+                            && tile_id / 9 == self.winning_tile / 9
+                    });
+                if is_jiaxinwu {
+                    div_fan += 1;
+                }
+            }
+            
+            // 7. 带幺九（DaiYaoJiu）：+3番
+            // 可与七对叠加：七对+带幺九 = 平胡1+七对2+带幺九3 = 6番→封顶5番
+            let is_daiyaojiu = if is_chitoi {
+                // 七对：直接检查手牌中所有牌种是否都是 1 或 9
+                self.tehai.iter().enumerate().all(|(tid, &count)| {
+                    if count == 0 { return true; }
+                    let num = tid % 9;
+                    num == 0 || num == 8
+                })
+            } else {
+                let mut ok = true;
+                
+                // Check shuntsu: must start with 1 or end with 9 (1-2-3 or 7-8-9)
+                for &shuntsu_idx in &div.shuntsu_idxs {
+                    let tile_id = tile14[shuntsu_idx as usize];
+                    if tile_id >= 27 { continue; }
+                    let num = tile_id % 9;
+                    if num != 0 && num != 6 { ok = false; break; }
+                }
+                
+                // Check kotsu: must be 1 or 9
+                if ok {
                     for &kotsu_idx in &div.kotsu_idxs {
                         let tile_id = tile14[kotsu_idx as usize];
-                        if tile_id >= 27 {
-                            continue;
-                        }
+                        if tile_id >= 27 { continue; }
                         let num = tile_id % 9;
-                        if num == 0 || num == 8 {
-                            is_duanyaojiu = false;
-                            break;
-                        }
+                        if num != 0 && num != 8 { ok = false; break; }
                     }
                 }
-                if is_duanyaojiu {
+                
+                // Check pair: must be 1 or 9
+                if ok {
                     let pair_tile = tile14[div.pair_idx as usize];
                     if pair_tile < 27 {
                         let num = pair_tile % 9;
-                        if num == 0 || num == 8 {
-                            is_duanyaojiu = false;
-                        }
+                        if num != 0 && num != 8 { ok = false; }
                     }
                 }
-                if is_duanyaojiu {
+                
+                // Check fuuro (pons, minkans, ankans): must be 1 or 9
+                if ok {
                     for &tile_id in self.pons.iter().chain(self.minkans.iter()).chain(self.ankans.iter()) {
-                        if tile_id >= 27 {
-                            continue;
-                        }
+                        if tile_id >= 27 { continue; }
                         let num = tile_id % 9;
-                        if num == 0 || num == 8 {
-                            is_duanyaojiu = false;
-                            break;
-                        }
+                        if num != 0 && num != 8 { ok = false; break; }
                     }
                 }
+                ok
+            };
+            
+            if is_daiyaojiu {
+                div_fan += 3;
+            } else {
+                // 9. 断幺九（DuanYaoJiu）：+1番（所有组合不含1和9，仅2–8；与带幺九互斥）
+                // 可与七对叠加
+                let is_duanyaojiu = if is_chitoi {
+                    // 七对：直接检查手牌中所有牌种是否都是 2-8
+                    self.tehai.iter().enumerate().all(|(tid, &count)| {
+                        if count == 0 { return true; }
+                        let num = tid % 9;
+                        num >= 1 && num <= 7
+                    })
+                } else {
+                    let mut ok = true;
+                    for &shuntsu_idx in &div.shuntsu_idxs {
+                        let tile_id = tile14[shuntsu_idx as usize];
+                        if tile_id >= 27 { continue; }
+                        let num = tile_id % 9;
+                        // 顺子仅允许 234,345,456,567,678（首张 num 1..=5），不含 123(num0)、789(num6)
+                        if num == 0 || num == 6 { ok = false; break; }
+                    }
+                    if ok {
+                        for &kotsu_idx in &div.kotsu_idxs {
+                            let tile_id = tile14[kotsu_idx as usize];
+                            if tile_id >= 27 { continue; }
+                            let num = tile_id % 9;
+                            if num == 0 || num == 8 { ok = false; break; }
+                        }
+                    }
+                    if ok {
+                        let pair_tile = tile14[div.pair_idx as usize];
+                        if pair_tile < 27 {
+                            let num = pair_tile % 9;
+                            if num == 0 || num == 8 { ok = false; }
+                        }
+                    }
+                    if ok {
+                        for &tile_id in self.pons.iter().chain(self.minkans.iter()).chain(self.ankans.iter()) {
+                            if tile_id >= 27 { continue; }
+                            let num = tile_id % 9;
+                            if num == 0 || num == 8 { ok = false; break; }
+                        }
+                    }
+                    ok
+                };
                 if is_duanyaojiu {
                     div_fan += 1;
                 }
