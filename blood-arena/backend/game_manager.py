@@ -122,15 +122,19 @@ class HumanEngine:
                                 self.tehai.remove(t)
                     self.last_kawa = None
                 
-                elif etype == "kakan": # Added Kan
-                     if actor == self.player_id:
+                elif etype == "kakan":  # Added Kan (加杠)
+                    if actor == self.player_id:
                         pai = ev.get("pai")
                         if pai:
                             if pai in self.tehai:
                                 self.tehai.remove(pai)
                             if pai in self.peng:
                                 self.peng.remove(pai)
-                            
+                    else:
+                        # 抢杠时需 last_kawa 供 _translate_to_mjai 构造 hora
+                        pai = ev.get("pai")
+                        if pai:
+                            self.last_kawa = (actor, pai)
                 elif etype == "ankan": # Closed Kan
                      if actor == self.player_id:
                         consumed = ev.get("consumed", [])
