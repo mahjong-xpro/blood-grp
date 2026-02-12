@@ -594,6 +594,11 @@ impl PlayerState {
     fn hora(&mut self, actor: u8, target: u8, deltas: Option<[i32; 4]>) -> Result<()> {
         let actor_rel = self.rel(actor);
         self.players_agari[actor_rel] = true;
+        // 自身和牌时设置 has_agari，确保独立使用 PlayerState（日志回放、数据集生成）时
+        // 后续事件（tsumo/dahai/kakan）正确跳过已和牌的玩家
+        if actor_rel == 0 {
+            self.has_agari = true;
+        }
 
         // Chankan (抢杠) replay fix:
         // If we attempted kakan and then got ronned immediately on that kakan tile (target == self),
@@ -637,6 +642,9 @@ impl PlayerState {
                 // FIX: Clear intermediate_kan because the kong was robbed and invalidated.
                 // Otherwise, the next discard will be incorrectly flagged as is_kan_discard.
                 self.intermediate_kan.clear();
+
+                // FIX: 抢杠后杠被撤销，kans_on_board 必须递减，否则后续杠操作会被错误阻止
+                self.kans_on_board = self.kans_on_board.saturating_sub(1);
 
                 // State changed, update caches to keep subsequent legality checks stable.
                 self.update_shanten();
@@ -793,6 +801,11 @@ impl PlayerState {
         self.kans_on_board += 1;
 
         if actor_rel != 0 {
+            // 已和牌的玩家不再响应任何事件（与 tsumo/dahai 守卫一致）
+            if self.has_agari {
+                return Ok(());
+            }
+
             self.witness_tile(pai)?;
             self.last_kawa_tile = Some(pai); // for getting winning tile in self.agari
 

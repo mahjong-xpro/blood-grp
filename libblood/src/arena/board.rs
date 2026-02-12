@@ -1285,6 +1285,9 @@ impl BoardState {
                     .filter(|&(_, &c)| c)
                     .for_each(|(t, _)| arr.assign(idx, t, 1.));
                 idx += 1;
+
+                // 与 invisible.rs 保持一致的预留 channel（原 ding_que 或额外特征位）
+                idx += 1;
             });
 
         let mut encode_tile = |idx: usize, tile: Tile| -> usize {
