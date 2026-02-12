@@ -165,17 +165,33 @@ impl AgariCalculator<'_> {
 
     /// Check if the hand can agari (和牌)
     /// 
-    /// But must check Ding Que rule: cannot agari if hand still has ding_que suit tiles
+    /// Must check:
+    /// 1. Valid 14-tile agari structure (AGARI_TABLE)
+    /// 2. Division must respect exposed melds: pons/kans stay as kotsu (not split into pair+shuntsu)
+    /// 3. Ding Que rule: cannot agari if hand still has ding_que suit tiles
     #[inline]
     #[must_use]
     pub fn has_yaku(&self) -> bool {
         let Some(hand14) = self.hand14_for_division() else {
             return false;
         };
-        let (_, key) = get_tile14_and_key(&hand14);
-        let has_valid_structure = AGARI_TABLE.get(&key).is_some();
-        
-        if !has_valid_structure {
+        let (tile14, key) = get_tile14_and_key(&hand14);
+        let Some(divs) = AGARI_TABLE.get(&key) else {
+            return false;
+        };
+
+        // 副露约束：碰/杠的牌在和牌分解中必须作为刻子（kotsu），
+        // 不能被拆分为对子+顺子。否则会出现假阳性（如碰 1万 + 手牌 3万，
+        // 对手打 2万，table 找到 1万1万(对)+1万2万3万(顺) 的非法分解）。
+        let has_valid_division = if self.pons.is_empty() && self.minkans.is_empty() && self.ankans.is_empty() {
+            true // 无副露，任何分解都合法
+        } else {
+            divs.iter().any(|div| {
+                is_division_compatible_with_fuuro(div, &tile14, self.pons, self.minkans, self.ankans)
+            })
+        };
+
+        if !has_valid_division {
             return false;
         }
 
@@ -252,6 +268,14 @@ impl AgariCalculator<'_> {
                 return None;
             }
         };
+
+        // 副露约束：必须存在至少一个分解使得碰/杠保持为刻子
+        let has_fuuro = !self.pons.is_empty() || !self.minkans.is_empty() || !self.ankans.is_empty();
+        if has_fuuro && !divs.iter().any(|div| {
+            is_division_compatible_with_fuuro(div, &tile14, self.pons, self.minkans, self.ankans)
+        }) {
+            return None;
+        }
         
         // Find the best division for fan calculation
         let mut max_fan: u8 = 0;
@@ -301,6 +325,11 @@ impl AgariCalculator<'_> {
             }
         }
         for div in divs.iter() {
+            // 跳过与副露不兼容的分解（碰/杠必须保持为刻子）
+            if has_fuuro && !is_division_compatible_with_fuuro(div, &tile14, self.pons, self.minkans, self.ankans) {
+                continue;
+            }
+
             let mut div_fan: u8 = gen_count;
             
             // 3. 七对（QiDui）：+2番
@@ -558,6 +587,35 @@ impl AgariCalculator<'_> {
         
         Some(Agari::Fan(fan))
     }
+}
+
+/// 检查某个 AGARI_TABLE 分解是否与副露兼容。
+/// 副露（碰/明杠/暗杠）的牌在分解中必须作为刻子（kotsu），
+/// 不能被拆成对子 + 顺子的一部分。
+/// 七对（chitoi）与任何副露不兼容。
+fn is_division_compatible_with_fuuro(
+    div: &Div,
+    tile14: &[u8; 14],
+    pons: &[u8],
+    minkans: &[u8],
+    ankans: &[u8],
+) -> bool {
+    // 七对与副露不兼容
+    if div.has_chitoi {
+        return pons.is_empty() && minkans.is_empty() && ankans.is_empty();
+    }
+
+    // 每个副露的牌必须在此分解中作为刻子
+    for &meld_tile in pons.iter().chain(minkans.iter()).chain(ankans.iter()) {
+        let Some(idx) = tile14.iter().position(|&t| t == meld_tile) else {
+            return false; // 副露的牌不在 tile14 中（不应发生）
+        };
+        if !div.kotsu_idxs.contains(&(idx as u8)) {
+            return false; // 此分解把副露拆分了
+        }
+    }
+
+    true
 }
 
 pub fn ensure_init() {
@@ -1460,6 +1518,123 @@ mod additional_tests {
         };
         // PingHu(1) + MenQing(1) + Chankan(1) = 3 fan
         assert_eq!(calc_chankan.agari().unwrap(), Agari::Fan(3));
+    }
+
+    /// 验证副露分解约束：碰/杠的牌不能被拆分为对子+顺子。
+    ///
+    /// Bug 场景：碰 1万 + 手牌 3万,5万5万5万,2条2条2条,3条3条3条，对手打 2万。
+    /// AGARI_TABLE 会找到"1万1万(对) + 1万2万3万(顺)"的非法分解，
+    /// 但碰的 1万 必须保持为刻子，所以实际上不能胡。
+    #[test]
+    fn test_fuuro_division_constraint_false_positive() {
+        // 构造场景：碰 1万(tile_id=0)，手牌 3万 5万5万5万 2条2条2条 3条3条3条 + 赢牌 2万
+        // 手牌(tehai)不含碰的牌，只含暗牌部分 + 赢牌
+        let mut tehai = [0u8; 27];
+        tehai[2] = 1;   // 3万 x1
+        tehai[4] = 3;   // 5万 x3
+        tehai[19] = 3;  // 2条 x3 (index: 18+1=19)
+        tehai[20] = 3;  // 3条 x3 (index: 18+2=20)
+        tehai[1] = 1;   // 2万 x1 (赢牌已加入)
+        // 总计: 1+3+3+3+1 = 11 张暗牌(含赢牌)
+
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            pons: &[0],    // 碰 1万 (tile_id=0)
+            minkans: &[],
+            ankans: &[],
+            winning_tile: 1, // 2万
+            is_ron: true,
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
+        };
+
+        // 关键断言：这手牌不能胡 2万！
+        // 碰的 1万 必须保持为刻子。剩余 2万+3万 无法组成面子。
+        assert!(!calc.has_yaku(),
+            "BUG: has_yaku() 返回 true，但碰 1万 后 2万+3万 无法组成面子，不应能胡");
+        assert!(calc.agari().is_none(),
+            "BUG: agari() 返回 Some，但碰 1万 后 2万+3万 无法组成面子，不应能胡");
+    }
+
+    /// 对照测试：同样牌型但没有副露时确实可以胡（门清手）。
+    /// 这证明 AGARI_TABLE 确实包含这个牌型的分解，只是副露约束应阻止它。
+    #[test]
+    fn test_fuuro_division_constraint_menqing_can_agari() {
+        // 门清手：1万1万1万 2万 3万 5万5万5万 2条2条2条 3条3条3条（14 张）
+        let mut tehai = [0u8; 27];
+        tehai[0] = 3;   // 1万 x3
+        tehai[1] = 1;   // 2万 x1
+        tehai[2] = 1;   // 3万 x1
+        tehai[4] = 3;   // 5万 x3
+        tehai[19] = 3;  // 2条 x3
+        tehai[20] = 3;  // 3条 x3
+
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            pons: &[],      // 无副露
+            minkans: &[],
+            ankans: &[],
+            winning_tile: 1, // 2万
+            is_ron: true,
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
+        };
+
+        // 门清手可以自由分解为：1万1万(对)+1万2万3万(顺)+5万5万5万+2条2条2条+3条3条3条
+        assert!(calc.has_yaku(),
+            "门清手应该能胡：1万1万(对)+1万2万3万(顺)+5万5万5万+2条2条2条+3条3条3条");
+        assert!(calc.agari().is_some(),
+            "门清手 agari() 应返回 Some");
+    }
+
+    /// 对照测试：碰 1万 + 手牌可以正常胡（不需要拆分碰）。
+    #[test]
+    fn test_fuuro_division_constraint_valid_ron_with_pon() {
+        // 碰 1万，手牌：2万2万 5万5万5万 2条2条2条 3条3条3条 + 赢牌 2万
+        // 合法分解：碰1万(刻)+2万2万2万(刻)+5万5万5万(刻)+2条2条2条(刻)+3条3条(对)
+        // 或：碰1万(刻)+2万2万(对)+5万5万5万(刻)+2条2条2条(刻)+3条3条3条(刻)
+        let mut tehai = [0u8; 27];
+        tehai[1] = 3;   // 2万 x3 (2 in hand + 1 winning tile)
+        tehai[4] = 3;   // 5万 x3
+        tehai[19] = 3;  // 2条 x3
+        tehai[20] = 2;  // 3条 x2 (对子)
+        // 总计: 3+3+3+2 = 11 张暗牌(含赢牌)
+
+        let calc = AgariCalculator {
+            tehai: &tehai,
+            pons: &[0],    // 碰 1万
+            minkans: &[],
+            ankans: &[],
+            winning_tile: 1, // 2万
+            is_ron: true,
+            ding_que: None,
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: false,
+            exclude_gen_tile: None,
+            is_haidi: false,
+            is_tianhu: false,
+            is_dihu: false,
+        };
+
+        // 合法：碰1万(刻) + 2万2万2万(刻) + 5万5万5万(刻) + 2条2条2条(刻) + 3条3条(对)
+        // 碰保持为刻子，不需要拆分
+        assert!(calc.has_yaku(),
+            "碰1万+2万刻+5万刻+2条刻+3条对 应该能胡");
+        assert!(calc.agari().is_some(),
+            "agari() 应返回 Some");
     }
 }
 

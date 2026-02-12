@@ -443,9 +443,11 @@ impl PlayerState {
             + 3 * self.minkans.len() as u8
             + 3 * self.ankans.len() as u8;
         let pai_idx = pai.as_usize();
+        // 注意：不检查 tiles_seen < 4，因为 witness_tile 已在上方执行（tiles_seen 已含本次弃牌）。
+        // 当对手打出某牌的第 4 张时，witness 后 tiles_seen=4，但该牌仍可用于荣和。
+        // tehai < 4 足以防止手牌溢出，hand14_for_division 内部也有 > 4 检查。
         let can_add_tile = hand_total == 13
-            && self.tehai[pai_idx] < 4
-            && self.tiles_seen[pai_idx] < 4;
+            && self.tehai[pai_idx] < 4;
 
         self.last_cans.can_ron_agari = if self.temporary_furiten || !can_add_tile {
             false
@@ -556,9 +558,6 @@ impl PlayerState {
 
         // NOTES: this is 3n+2
         // The shanten can change after pon, for example 122334789 pon 2.
-        self.update_shanten();
-        self.update_shanten_discards();
-
         self.update_shanten();
         self.update_shanten_discards();
 
