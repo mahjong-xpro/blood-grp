@@ -217,6 +217,28 @@ impl PlayerState {
                 self.update_ding_que_forbidden_tiles();
                 self.update_shanten();
                 self.update_shanten_discards();
+
+                // 天胡检查：定缺完成后，如果庄家初始手牌（14张）已成和牌型，
+                // 应当允许宣告自摸和牌（天胡）。
+                if let Some(winning_tile) = self.last_self_tsumo {
+                    let agari_calc = AgariCalculator {
+                        tehai: &self.tehai,
+                        pons: &self.pons,
+                        minkans: &self.minkans,
+                        ankans: &self.ankans,
+                        winning_tile: winning_tile.as_u8(),
+                        is_ron: false,
+                        ding_que: self.ding_que,
+                        is_after_kan: false,
+                        is_kan_discard: false,
+                        is_chankan: false,
+                        exclude_gen_tile: None,
+                        is_haidi: false,
+                        is_tianhu: false, // board.rs 会在 handle_hora 时根据 tiles_left 判断天胡
+                        is_dihu: false,
+                    };
+                    self.last_cans.can_tsumo_agari = agari_calc.has_yaku();
+                }
             }
         }
         Ok(())

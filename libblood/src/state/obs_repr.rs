@@ -194,12 +194,18 @@ impl<'a> ObsEncoderContext<'a> {
         }
         self.idx += 1;
 
-        // Ding que tiles remaining (encoded with RBF)
+        // Ding que tiles remaining
+        // v2|3: rescale + rbf(3) = 1+2=3 dims; v4: rescale only = 1 dim
         let ding_que_remaining = state.count_ding_que_tiles();
-        IntegerEncoder::new(ding_que_remaining as usize, 13)
-            .rescale(true)
-            .rbf_intervals(3)
-            .encode(&mut self);
+        match self.version {
+            2 | 3 => IntegerEncoder::new(ding_que_remaining as usize, 13)
+                .rescale(true)
+                .rbf_intervals(3)
+                .encode(&mut self),
+            _ => IntegerEncoder::new(ding_que_remaining as usize, 13)
+                .rescale(true)
+                .encode(&mut self),
+        }
 
         // Other players' ding que suits (3 dimensions per player × 3 players = 9 dimensions)
         for i in 0..3 {

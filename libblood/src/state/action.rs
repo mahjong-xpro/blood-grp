@@ -113,6 +113,14 @@ impl PlayerState {
                 // - 只要手牌中还有缺门花色的牌，就必须优先打出缺门花色的牌
                 // - 如果手牌中没有缺门花色的牌，则不再对出牌花色做额外限制（由其它规则决定）
                 let tile_id = pai.as_usize();
+
+                // 碰后禁打规则：碰了某张牌后，本轮不能立即打出同种牌
+                // forbidden_tiles 由 update.rs 的 pon() 设置
+                ensure!(
+                    !self.forbidden_tiles[tile_id],
+                    "cannot discard forbidden tile {pai:?} (e.g. same tile just pon'd)"
+                );
+
                 ensure!(
                     crate::ding_que::discard_allowed(tile_id, &self.tehai, self.ding_que),
                     "ding_que discard rule violated: {pai:?} (ding_que: {:?})",

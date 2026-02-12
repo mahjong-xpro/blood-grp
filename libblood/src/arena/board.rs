@@ -314,16 +314,17 @@ impl BoardState {
         }
 
         if !huazhu_actors.is_empty() {
-            // Count eligible targets (Non-Huazhu AND Non-Agari)
+            // 花猪罚分目标：所有非花猪玩家（包括已和牌者）
+            // 四川麻将规则：花猪赔给每家非花猪，已和牌者也应收取花猪罚分
             let non_huazhu_targets: Vec<usize> = (0..4)
-                .filter(|&i| !huazhu_actors.contains(&i) && !self.players_agari[i])
+                .filter(|&i| !huazhu_actors.contains(&i))
                 .collect();
             let target_count = non_huazhu_targets.len();
 
             if target_count > 0 {
                 // 花猪罚分：花猪向每个非花猪支付极刑（封顶分）
                 // 四川麻将规则：查花猪赔给非花猪每家满分（通常是极刑，这里定为16000）
-                // Pay 16000 to EACH non-huazhu player.
+                // Pay 16000 to EACH non-huazhu player (including agari players).
                 let penalty_per_target = 16000;
                 
                 let mut huazhu_deltas = [0; 4];
@@ -333,20 +334,10 @@ impl BoardState {
                     huazhu_deltas[huazhu] = -(penalty_per_target * target_count as i32);
                 }
                 
-                // Each Non-Huazhu receives penalty_per_target * huazhu_count
-                // Each eligible target receives penalty_per_target * huazhu_count
+                // Each Non-Huazhu (including agari) receives penalty_per_target * huazhu_count
                 for &target in &non_huazhu_targets {
                      huazhu_deltas[target] += penalty_per_target as i32 * huazhu_actors.len() as i32;
                 }
-
-                
-                // Wait, if I filter Agari players out of reception, I must also ensure
-                // Huazhu calculation didn't assume they exist.
-                // `huazhu_actors` iteration was correct.
-                // But `non_huazhu_count` above used `4 - len`. This counted Agari players.
-                // We should recount `non_huazhu_alive_count`.
-                
-                // Let's refine the logic inside the loop manually.
                 
                 vec_add_assign(&mut final_deltas, &huazhu_deltas);
             } else {

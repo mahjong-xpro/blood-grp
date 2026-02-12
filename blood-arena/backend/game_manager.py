@@ -142,6 +142,14 @@ class HumanEngine:
                             if t in self.tehai:
                                 self.tehai.remove(t)
 
+                elif etype == "hora":
+                    # 和牌事件：清理 shadow state，防止后续 disp_tehai 计算错误
+                    if actor == self.player_id:
+                        # 自己和牌：清理 tsumo tile（已用于和牌）
+                        self.last_tsumo_tile = None
+                    # 清理 last_kawa（该弃牌已被和牌消耗）
+                    self.last_kawa = None
+
             # 使用 shadow state 作为手牌权威来源，避免前端 replay 推导 bug
             # tehai 与 tsumoTile 分离：tehais 不含刚摸的牌，my_tsumo 单独表示（显示 13+1=14，非 14+1=15）
             disp_tehai = list(self.tehai)
