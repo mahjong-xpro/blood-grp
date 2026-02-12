@@ -586,6 +586,10 @@ impl Gameplay {
         let mut opp_waits = [false; 81];
         if ctx.invisibles.is_some() {
             for (i, s) in ctx.opponent_states.iter().enumerate() {
+                // 已和牌的对手不再处于听牌状态，跳过其 waits 避免辅助损失训练在错误标签上
+                if ctx.state.players_agari()[i + 1] {
+                    continue;
+                }
                 for (t, &waiting) in s.waits().iter().enumerate() {
                     opp_waits[i * 27 + t] = waiting;
                 }

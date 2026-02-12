@@ -295,6 +295,14 @@ impl PlayerState {
         )
     }
 
+    /// 返回各玩家（相对座位）的和牌状态。
+    /// `[0]` 是自己，`[1..4]` 是对手（下家、对家、上家）。
+    #[inline]
+    #[must_use]
+    pub fn players_agari(&self) -> &[bool; 4] {
+        &self.players_agari
+    }
+
     /// Count remaining ding_que suit tiles in hand
     #[must_use]
     pub fn count_ding_que_tiles(&self) -> u8 {

@@ -107,7 +107,15 @@ impl PlayerState {
 
             Event::Kakan { actor, pai, deltas, .. } => self.kakan(actor, pai, deltas)?,
             Event::Ankan { actor, consumed, deltas } => self.ankan(actor, consumed, deltas)?,
-            Event::Hora { actor, target, deltas, .. } => self.hora(actor, target, deltas)?,
+            Event::Hora { actor, target, deltas, .. } => {
+                self.hora(actor, target, deltas)?;
+                // Hora 是 announce 事件，不会走上面的 `!is_in_game_announce()` 分支，
+                // 因此 last_cans 不会被自动重置。
+                // 必须在此显式清除：前一事件（Dahai/Kakan）的反应窗口已在 Hora 后关闭，
+                // 保留 stale 的 can_ron_agari 会导致数据集回放产生虚假训练样本
+                // （例如给已和牌的玩家多标一条 Pass）。
+                self.last_cans = ActionCandidate::default();
+            }
             Event::Ryukyoku { deltas, .. } => self.ryukyoku(deltas)?,
 
             _ => (),
