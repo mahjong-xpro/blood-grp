@@ -639,17 +639,25 @@ impl<'a> ObsEncoderContext<'a> {
                         panic!("{msg}");
                     }
                 }
-                // Use the minimal tsumo agari point as the max EV.
+                // 计算当前和牌收益作为 max EV。
                 // Note: In Bloody Battle Mahjong, there is no uradora (里宝牌)
                 //
-                // FIX: 使用实际未和牌对手数计算自摸总收益，而非固定 ×3。
-                // 当已有 1~2 人和牌时，付款人数 < 3，旧逻辑会高估 EV。
+                // is_ron = !can_tsumo_agari：
+                //   自摸时 is_ron=false → 加自摸番 → 总收益 = tsumo_ko × 实际付款人数
+                //   荣和时 is_ron=true  → 不加自摸番 → 总收益 = ron（单人支付）
+                let is_ron = !cans.can_tsumo_agari;
                 let active_payers = (1..4).filter(|&i| !state.players_agari[i]).count() as f32;
-                let min_tsumo_agari = state
-                    .agari_points(cans.can_ron_agari, false, false, false, &[])
-                    .map(|p| p.tsumo_ko as f32 * active_payers)
+                let agari_ev = state
+                    .agari_points(is_ron, false, false, false, &[])
+                    .map(|p| {
+                        if is_ron {
+                            p.ron as f32 // 荣和：放铳者单人支付
+                        } else {
+                            p.tsumo_ko as f32 * active_payers // 自摸：各未和牌者分摊
+                        }
+                    })
                     .unwrap_or_default();
-                self.encode_ev(min_tsumo_agari);
+                self.encode_ev(agari_ev);
 
                 // Skip everything else.
                 self.idx += 2 * 27 + 2 + 3 * MAX_NUM_TURNS;

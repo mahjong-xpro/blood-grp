@@ -109,12 +109,13 @@ impl PlayerState {
             Event::Ankan { actor, consumed, deltas } => self.ankan(actor, consumed, deltas)?,
             Event::Hora { actor, target, deltas, .. } => {
                 self.hora(actor, target, deltas)?;
-                // Hora 是 announce 事件，不会走上面的 `!is_in_game_announce()` 分支，
-                // 因此 last_cans 不会被自动重置。
-                // 必须在此显式清除：前一事件（Dahai/Kakan）的反应窗口已在 Hora 后关闭，
-                // 保留 stale 的 can_ron_agari 会导致数据集回放产生虚假训练样本
-                // （例如给已和牌的玩家多标一条 Pass）。
-                self.last_cans = ActionCandidate::default();
+                // NOTE: 不在此处清除 last_cans。
+                // Hora 是 announce 事件，可能连续出现（多家荣和）。
+                // 如果在首个 Hora 广播时清除所有玩家的 last_cans，
+                // 后续玩家调用 agari_points() 时会因 can_ron=false 而失败。
+                //
+                // 数据集回放中可能因 stale last_cans 产生虚假训练样本的问题，
+                // 由 gameplay.rs 的 Hora 窗口跳过逻辑处理（而非在状态机层面清除）。
             }
             Event::Ryukyoku { deltas, .. } => self.ryukyoku(deltas)?,
 
@@ -1247,6 +1248,15 @@ impl PlayerState {
                 for i in 0..27 {
                     if i < ding_que_start || i >= ding_que_end {
                         self.forbidden_tiles[i] = true;
+                    }
+                }
+            } else {
+                // 防御性清除：缺门牌已打完，撤销定缺规则对非缺门花色的禁牌。
+                // 当前所有调用者在调用前已 fill(false)，此分支实际为 no-op；
+                // 保留作为安全网，防止未来新增调用路径遗漏清除。
+                for i in 0..27 {
+                    if i < ding_que_start || i >= ding_que_end {
+                        self.forbidden_tiles[i] = false;
                     }
                 }
             }

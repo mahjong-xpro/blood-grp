@@ -316,6 +316,16 @@ impl Gameplay {
         }
 
         let cans = ctx.state.update(cur)?;
+
+        // Hora 事件窗口不产生训练样本。
+        // Hora 是 announce 事件，last_cans 不会被重置，因此 can_act() 可能仍为 true
+        // （前一事件 Dahai/Kakan 的反应窗口留下的 stale 状态）。
+        // 实际的决策点已在前一个窗口（Dahai/Kakan 窗口）被正确捕获，
+        // 此处继续处理只会产生重复或虚假的训练样本。
+        if matches!(cur, Event::Hora { .. }) {
+            return Ok(());
+        }
+
         if !cans.can_act() {
             return Ok(());
         }

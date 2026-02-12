@@ -144,6 +144,11 @@ impl PlayerState {
             } => {
                 ensure!(target != actor, "pon from itself");
                 ensure!(
+                    target == cans.target_actor,
+                    "pon target {target} does not match the actual discarder {}",
+                    cans.target_actor,
+                );
+                ensure!(
                     matches!(self.last_kawa_tile, Some(tile) if tile == pai),
                     "pon target is not the last kawa tile",
                 );
@@ -159,6 +164,11 @@ impl PlayerState {
                 ..
             } => {
                 ensure!(target != actor, "daiminkan from itself");
+                ensure!(
+                    target == cans.target_actor,
+                    "daiminkan target {target} does not match the actual discarder {}",
+                    cans.target_actor,
+                );
                 ensure!(
                     matches!(self.last_kawa_tile, Some(tile) if tile == pai),
                     "daiminkan target is not the last kawa tile",
@@ -186,6 +196,11 @@ impl PlayerState {
                     ensure!(cans.can_tsumo_agari, "cannot tsumo agari");
                 } else {
                     ensure!(cans.can_ron_agari, "cannot ron agari");
+                    ensure!(
+                        target == cans.target_actor,
+                        "ron target {target} does not match the actual discarder/kakan actor {}",
+                        cans.target_actor,
+                    );
                 }
             }
 
