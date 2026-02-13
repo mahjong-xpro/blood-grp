@@ -100,7 +100,7 @@ Rounds as dealer {}
 4th (rate)       {} ({:.6})
 Tobi(rate)       {} ({:.6})
 Avg rank         {:.6}
-Total rank pt    {}
+Total rank pt    {:.1}
 Avg rank pt      {:.6}
 Total Δscore     {}
 Avg game Δscore  {:.6}
@@ -148,8 +148,8 @@ Deal-in to dealer/all deal-ins {:.6}"#,
             self.tobi,
             self.tobi_rate(),
             self.avg_rank(),
-            self.total_pt([90, 45, 0, -135]),
-            self.avg_pt([90, 45, 0, -135]),
+            self.total_pt([90., 45., 0., -135.]),
+            self.avg_pt([90., 45., 0., -135.]),
             self.point,
             self.avg_point_per_game(),
             self.avg_point_per_round(),
@@ -396,19 +396,22 @@ impl Stat {
 
     #[inline]
     #[must_use]
-    pub const fn total_pt(&self, pts: [i64; 4]) -> i64 {
-        self.rank_1 * pts[0] + self.rank_2 * pts[1] + self.rank_3 * pts[2] + self.rank_4 * pts[3]
+    pub fn total_pt(&self, pts: [f64; 4]) -> f64 {
+        self.rank_1 as f64 * pts[0]
+            + self.rank_2 as f64 * pts[1]
+            + self.rank_3 as f64 * pts[2]
+            + self.rank_4 as f64 * pts[3]
     }
     #[inline]
     #[must_use]
-    pub fn avg_pt(&self, pts: [i64; 4]) -> f64 {
-        self.total_pt(pts) as f64 / self.game as f64
+    pub fn avg_pt(&self, pts: [f64; 4]) -> f64 {
+        self.total_pt(pts) / self.game as f64
     }
     #[getter]
     #[inline]
     #[must_use]
     pub fn avg_rank(&self) -> f64 {
-        self.avg_pt([1, 2, 3, 4])
+        self.avg_pt([1., 2., 3., 4.])
     }
     #[getter]
     #[inline]
