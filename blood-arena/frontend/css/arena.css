@@ -403,21 +403,48 @@ body {
     gap: 0;
 }
 
+/* 左右家手牌：横置容器 */
 .zone-left .hand .tile,
 .zone-right .hand .tile {
     width: var(--tile-h-sm);
     height: var(--tile-w-sm);
-    background: #222;
-    border: 1px solid #444;
     border-radius: 2px;
 }
 
+/* 对家手牌 */
 .zone-top .hand .tile {
     width: var(--tile-w-sm);
     height: var(--tile-h-sm);
+    border-radius: 2px;
+}
+
+/* AI 手牌背牌：深色背景 */
+.zone-left .hand .tile.back,
+.zone-right .hand .tile.back,
+.zone-top .hand .tile.back {
     background: #222;
     border: 1px solid #444;
-    border-radius: 2px;
+}
+
+/* AI 手牌图片旋转（与河牌/副露一致） */
+.zone-top .hand .tile img {
+    transform: rotate(180deg);
+}
+
+.zone-left .hand .tile img {
+    width: var(--tile-w-sm);
+    height: var(--tile-h-sm);
+    max-width: none;
+    max-height: none;
+    transform: rotate(90deg);
+}
+
+.zone-right .hand .tile img {
+    width: var(--tile-w-sm);
+    height: var(--tile-h-sm);
+    max-width: none;
+    max-height: none;
+    transform: rotate(-90deg);
 }
 
 /* Meld Area (Fuuro) - default: melds stack vertically */
