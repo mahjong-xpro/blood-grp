@@ -52,6 +52,9 @@ def train():
     enable_compile = config['control']['enable_compile']
 
     pts = config['env']['pts']
+    avg_pt_pts = [int(p) for p in pts]
+    if len(avg_pt_pts) != 4:
+        raise ValueError(f"env.pts must contain exactly 4 values, got {pts}")
     gamma = config['env']['gamma']
     file_batch_size = config['dataset']['file_batch_size']
     reserve_ratio = config['dataset']['reserve_ratio']
@@ -423,9 +426,9 @@ def train():
                     mortal.train()
                     dqn.train()
 
-                    # FIX: 使用 config 中的 pts 而非硬编码 [6,4,2,0]
-                    # config['env']['pts'] 示例: [4.0, 2.0, 1.0, 0.0]
-                    avg_pt = stat.avg_pt(pts)
+                    # FIX: 使用 config 中的 pts，且显式转换为 i64 兼容 Rust 绑定签名
+                    # stat.avg_pt 的签名是 avg_pt([i64; 4])，不能直接传 float 列表。
+                    avg_pt = stat.avg_pt(avg_pt_pts)
                     better = avg_pt >= best_perf['avg_pt'] and stat.avg_rank <= best_perf['avg_rank']
                     if better:
                         past_best = best_perf.copy()

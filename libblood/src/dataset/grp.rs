@@ -362,13 +362,26 @@ impl GameScore {
         }
 
         // Reverse pass to find final scores (existing logic)
+        // FIX: 同时收集和牌顺序，用于同分时按先和牌者排名靠前
+        let mut agari_order_rev: Vec<u8> = Vec::new();
         for ev in events.iter().rev() {
             match *ev {
                 // Bloody Battle scoring events can happen outside Hora/Ryukyoku.
                 // In particular, kan events carry "instant payment" deltas, which must be
                 // included to reconstruct the true final scores (and thus correct rewards).
-                Event::Hora { deltas, .. }
-                | Event::Ryukyoku { deltas, .. }
+                Event::Hora { actor, deltas, .. } => {
+                    if rank_by_player_opt.is_none() {
+                        let ds = deltas.context(
+                            "invalid log: field `deltas` is required for scoring events",
+                        )?;
+                        vec_add_assign(&mut final_deltas, &ds);
+                        // 反向遍历，所以后和的先被收集
+                        if !agari_order_rev.contains(&actor) {
+                            agari_order_rev.push(actor);
+                        }
+                    }
+                }
+                Event::Ryukyoku { deltas, .. }
                 | Event::Daiminkan { deltas, .. }
                 | Event::Kakan { deltas, .. }
                 | Event::Ankan { deltas, .. } => {
@@ -384,7 +397,14 @@ impl GameScore {
                         final_scores = scores;
                         vec_add_assign(&mut final_scores, &final_deltas);
 
-                        let rk = Rankings::new(final_scores);
+                        // 反转得到正确的和牌顺序（先和牌者在前）
+                        agari_order_rev.reverse();
+                        let agari_order = if agari_order_rev.is_empty() {
+                            None
+                        } else {
+                            Some(agari_order_rev.as_slice())
+                        };
+                        let rk = Rankings::new_with_agari_order(final_scores, agari_order);
 
                         // assume the sum of scores to be TOTAL_SCORE (zero-sum: 4×INITIAL_SCORE)
                         let sum: i32 = final_scores.iter().sum();
