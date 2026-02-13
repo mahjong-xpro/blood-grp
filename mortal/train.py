@@ -310,7 +310,9 @@ def train():
                 # Opponent wait prediction BCE loss
                 opp_wait_enabled = config.get('aux', {}).get('opp_wait_enabled', False)
                 opp_wait_weight = config.get('aux', {}).get('opp_wait_weight', 0.1)
-                if opp_wait_enabled and 'opponent_waits' in locals():
+                # FIX: 移除多余的 'opponent_waits' in locals() 检查。
+                # opponent_waits 是 train_batch() 的参数，始终存在于 locals() 中。
+                if opp_wait_enabled:
                     opp_wait_loss = F.binary_cross_entropy_with_logits(
                         opp_wait_logits, opponent_waits.float()
                     )

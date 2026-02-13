@@ -79,8 +79,10 @@ def main():
             })
             logging.info('logs have been submitted')
         gc.collect()
-        torch.cuda.empty_cache()
-        torch.cuda.synchronize()
+        # FIX: 仅在 CUDA 可用时调用 CUDA 清理函数，避免 CPU 环境下崩溃。
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
 
 if __name__ == '__main__':
     try:

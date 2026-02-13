@@ -86,7 +86,9 @@ class MortalEngine:
                 latent = mu
             q_out = self.dqn(latent, masks)
         elif self.version in (2, 3, 4):
-            phi = self.brain(obs)
+            # FIX: oracle 模式下必须传入 invisible_obs，否则 Brain.forward() 会 assert 失败。
+            # 非 oracle 模式 invisible_obs 为 None，Brain.forward() 会忽略它。
+            phi = self.brain(obs, invisible_obs)
             q_out = self.dqn(phi, masks)
 
         if self.boltzmann_epsilon > 0:

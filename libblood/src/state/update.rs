@@ -41,7 +41,13 @@ impl PlayerState {
             let passed = !matches!(event, Event::Hora { actor, .. } if *actor == self.player_id);
             if passed {
                 self.temporary_furiten = true;
-                self.furiten_passed_ron_fan = self.current_ron_fan;
+                // FIX: 多次放弃荣和时，取历史最大番数而非直接覆盖。
+                // 旧逻辑：放弃 3 番 → 放弃 1 番 → furiten_passed_ron_fan = 1，
+                // 此时 2 番荣和会通过 (2 > 1)，但应被阻止 (2 < 3)。
+                self.furiten_passed_ron_fan = match (self.furiten_passed_ron_fan, self.current_ron_fan) {
+                    (Some(prev), Some(cur)) => Some(prev.max(cur)),
+                    (prev, cur) => prev.or(cur),
+                };
             }
         }
 

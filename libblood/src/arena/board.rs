@@ -1081,7 +1081,12 @@ impl BoardState {
 
             }
 
-            Event::Pon { .. } => {
+            Event::Pon { actor, .. } => {
+                // FIX: 碰牌后必须设置 tsumo_actor 为碰牌者，与大明杠/加杠/暗杠保持一致。
+                // 虽然正常流程中碰牌者下一步一定打牌（Dahai 会重新设 tsumo_actor），
+                // 但如果不设置，在碰与打牌之间 tsumo_actor 指向错误玩家，
+                // 可能在未来新增代码路径中引发逻辑错误。
+                self.tsumo_actor = actor;
                 self.broadcast(&ev.event);
                 self.add_log(ev.clone());
                 

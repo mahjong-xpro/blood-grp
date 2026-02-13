@@ -23,21 +23,21 @@ opt_step_every = 1
 
 # 保存和测试频率
 save_every = 1000
-test_every = 5000
+test_every = 3000      # Phase 7C: 更频繁监控 (5000 -> 3000)
 submit_every = 1000
 
 # ═══════════════════════════════════════════════════════
-# 阶段 6 配置: 纯粹贪婪 (Step 738k+)
-# 移除所有奖励塑形，追求分数最大化
+# Phase 7C 配置: 极轻量护栏 (Step 875k+)
+# 最小剂量奖励塑形 + LR 重启，保留大牌追求天花板
 # ═══════════════════════════════════════════════════════
 
 [train_play.default]
 games = 6400
 log_dir = '/data/mortal/train_play'
 
-# 探索参数 - Phase 6: 降低探索，让策略充分利用 (Exploit)
-boltzmann_epsilon = 0.05  # Phase 6: 降噪 (0.08 -> 0.05)
-boltzmann_temp = 0.15     # 保持低温度
+# 探索参数 - Phase 7C: 微增探索，帮助脱离 Phase 6 局部最优
+boltzmann_epsilon = 0.08  # Phase 7C: 0.05 -> 0.08 (微增探索)
+boltzmann_temp = 0.18     # Phase 7C: 0.15 -> 0.18 (略微平滑策略分布)
 
 # 阶段转换指南:
 # ┌──────────────────────────────────────────────────────┐
@@ -48,7 +48,8 @@ boltzmann_temp = 0.15     # 保持低温度
 # │ 3. 精调期  │  0.05   │ 0.1   │ Step 300k - 470k    │
 # │ 3.5 激进期 │  0.25   │ 0.4   │ Step 470k+          │
 # │ 5. 精调收敛│  0.08   │ 0.15  │ Step 650k+          │
-# │ 6. 纯粹贪婪│  0.08   │ 0.15  │ Step 738k+          │
+# │ 6. 纯粹贪婪│  0.05   │ 0.15  │ Step 738k - 875k    │
+# │ 7C 极轻护栏│  0.08   │ 0.18  │ Step 875k+          │
 # └──────────────────────────────────────────────────────┘
 
 top_p = 1.0
@@ -86,18 +87,19 @@ td_lambda_enabled = true # 启用 TD(λ) 训练 (替代纯 Monte Carlo)
 
 # 奖励塑形配置
 [reward_shaping]
-# Phase 6: 纯粹贪婪 - 移除所有人工干预
-rank_bonus_enabled = false   # 禁用排名奖励 (Rank Is An Illusion)
-# Phase 6: [0, 0, 0, 0]
-rank_bonuses = [0.0, 0.0, 0.0, 0.0]
+# Phase 7C: 极轻量护栏 — 仅防止策略崩溃，不主导学习方向
+# 设计原则: 对 3番以上手牌偏差 < 4%，保留 Phase 6 大牌追求天花板
+rank_bonus_enabled = true
+rank_bonuses = [0.0, 0.0, 0.0, -0.15]  # 只惩罚 4th (解决 29.2% 问题)，不奖励 1st
 
-# 动作级奖励 (和牌/放铳)
-action_bonus_enabled = false # 禁用动作奖励 (Agari Bonus / Houjuu Penalty)
-agari_bonus = 0.0            # 禁用
-houjuu_penalty = 0.0         # 禁用
+# 动作级奖励 (极小剂量)
+action_bonus_enabled = true
+agari_bonus = 0.05           # 极小: 1番荣和 0.10→0.15 (+50%), 3番自摸 1.20→1.25 (+4%)
+houjuu_penalty = -0.05       # 极小: 仅提醒"放铳是坏事"，不强制防守
 
 # 自动更新 baseline 的阈值 (阶梯式训练)
-# Phase 6: 禁用自动更新 (因自博弈 Bug，需手动 cp mortal.pth baseline.pth)
+# 禁用自动更新 (已知 Bug: 自博弈 client 不会 reload)
+# 手动操作: cp mortal.pth baseline.pth + 重启 client
 baseline_update_threshold = 4.0
 
 # ResNet 模型配置 - 增大模型容量
@@ -135,12 +137,13 @@ betas = [0.9, 0.999]
 weight_decay = 0.1
 max_grad_norm = 1.0
 
-# 学习率调度器配置
+# 学习率调度器配置 — Phase 7C: LR 重启 (Cosine Restart)
 [optim.scheduler]
-peak = 5e-4   # 不变 (已被 offset 跳过 warmup)
-final = 2e-5  # Phase 6: 更低的最终 LR (5e-5 -> 2e-5) 实现超精细收敛
-warm_up_steps = 2000
-max_steps = 1100000  # Phase 6: 延长训练 (850k -> 1.1M)
+peak = 2e-4       # Phase 7C: 重启 LR (当前 6.8e-5 → warmup 到 2e-4)
+                   # 低于初始 5e-4 (模型已成熟), 高于当前 (需要学习新策略)
+final = 1e-5      # Phase 7C: 更低终点，实现超精细收敛
+warm_up_steps = 5000   # Phase 7C: 5k 步 warmup，避免 LR 跳变引起灾变
+max_steps = 1350000    # Phase 7C: 延长到 1.35M (从 875k 再跑 475k 步)
 
 # Baseline 模型配置
 [baseline.train]

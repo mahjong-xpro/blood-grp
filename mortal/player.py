@@ -212,6 +212,9 @@ class TrainPlayer:
         if path.isdir(self.log_dir) and not self.keep_data:
             shutil.rmtree(self.log_dir)
 
+        # FIX: keep_data=True 时记录已有文件，避免重复提交旧日志。
+        existing_files = set(os.listdir(self.log_dir)) if path.isdir(self.log_dir) else set()
+
         env = OneVsThree(
             disable_progress_bar = False,
             log_dir = self.log_dir,
@@ -228,7 +231,12 @@ class TrainPlayer:
             self.repeat_counter = 0
 
         rankings = np.array(rankings)
-        file_list = list(map(lambda p: path.join(self.log_dir, p), os.listdir(self.log_dir)))
+        # FIX: 仅返回本次新增的日志文件，排除旧文件和子目录。
+        all_entries = os.listdir(self.log_dir) if path.isdir(self.log_dir) else []
+        file_list = [
+            path.join(self.log_dir, p) for p in all_entries
+            if p not in existing_files and path.isfile(path.join(self.log_dir, p))
+        ]
 
         torch.backends.cudnn.benchmark = config['control']['enable_cudnn_benchmark']
         return rankings, file_list
