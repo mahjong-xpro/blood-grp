@@ -98,7 +98,8 @@
                 <!-- River (Closer to Center) -->
                 <div class="river-area">
                     <div class="tile-group river">
-                        <div class="tile" v-for="(t, i) in discards(2)" :key="i">
+                        <div class="tile" v-for="(t, i) in discards(2)" :key="i"
+                            :class="{ 'last-discard': isLastDiscard(2, i) }">
                             <img :src="tileSrc(t)">
                         </div>
                     </div>
@@ -144,7 +145,8 @@
 
                 <div class="river-area">
                     <div class="tile-group river">
-                        <div class="tile" v-for="(t, i) in discards(3)" :key="i">
+                        <div class="tile" v-for="(t, i) in discards(3)" :key="i"
+                            :class="{ 'last-discard': isLastDiscard(3, i) }">
                             <img :src="tileSrc(t)">
                         </div>
                     </div>
@@ -190,7 +192,8 @@
 
                 <div class="river-area">
                     <div class="tile-group river">
-                        <div class="tile" v-for="(t, i) in discards(1)" :key="i">
+                        <div class="tile" v-for="(t, i) in discards(1)" :key="i"
+                            :class="{ 'last-discard': isLastDiscard(1, i) }">
                             <img :src="tileSrc(t)">
                         </div>
                     </div>
@@ -202,7 +205,8 @@
                 <!-- River (Top / Center side) -->
                 <div class="river-area">
                     <div class="tile-group river">
-                        <div class="tile" v-for="(t, i) in discards(0)" :key="i">
+                        <div class="tile" v-for="(t, i) in discards(0)" :key="i"
+                            :class="{ 'last-discard': isLastDiscard(0, i) }">
                             <img :src="tileSrc(t)">
                         </div>
                     </div>
@@ -274,6 +278,58 @@
                 </div>
             </div>
         </div>
+
+        <!-- Game Result Overlay (单局结束) -->
+        <div class="overlay-panel result-overlay" v-if="state.phase === 'between_games' || (state.phase === 'result' && state.matchOver)">
+            <div class="panel-content result-panel">
+                <h3 class="result-title" v-if="state.matchOver">8 局对战结束</h3>
+                <h3 class="result-title" v-else>第 {{ state.gameNumber }} 局结束</h3>
+
+                <!-- Hora Summary -->
+                <div class="hora-summary" v-if="state.horaRecords.length > 0">
+                    <div class="hora-record" v-for="(hr, hi) in state.horaRecords" :key="hi">
+                        <span class="hora-winner">{{ seatName(hr.actor) }}</span>
+                        <span class="hora-method" :class="hr.method">{{ hr.method === 'tsumo' ? '自摸' : '荣和' }}</span>
+                        <span class="hora-target" v-if="hr.method === 'ron'">（点炮：{{ seatName(hr.target) }}）</span>
+                        <span class="hora-points" v-if="hr.points != null">{{ hr.points > 0 ? '+' : '' }}{{ hr.points }}</span>
+                    </div>
+                </div>
+                <div class="hora-summary" v-else>
+                    <div class="hora-record no-hora">无人和牌</div>
+                </div>
+
+                <!-- Score Table -->
+                <table class="result-scores">
+                    <thead>
+                        <tr><th>玩家</th><th>本局得分</th><th>累计输赢</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="offset in [0,1,2,3]" :key="offset" :class="{ 'is-me': offset === 0 }">
+                            <td>{{ offset === 0 ? '我' : ['下家','对家','上家'][offset-1] }}</td>
+                            <td :class="gameDeltaClass(offset)">{{ gameDeltaLabel(offset) }}</td>
+                            <td :class="matchDeltaClass(offset)">{{ matchDeltaLabel(offset) }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <!-- Continue Button -->
+                <button class="btn btn-primary result-continue" v-if="!state.matchOver" @click="continueMatch">
+                    继续下一局 ({{ state.gameNumber }}/8)
+                </button>
+                <button class="btn btn-primary result-continue" v-else @click="startGame">
+                    再来一场
+                </button>
+            </div>
+        </div>
+
+        <!-- Hora Announce Toast -->
+        <transition name="fade">
+            <div class="hora-toast" v-if="state.horaToast">
+                <div class="hora-toast-inner" :class="state.horaToast.method">
+                    <span class="hora-toast-text">{{ state.horaToast.text }}</span>
+                </div>
+            </div>
+        </transition>
 
     </div>
     <script type="module" src="/js/arena.js"></script>

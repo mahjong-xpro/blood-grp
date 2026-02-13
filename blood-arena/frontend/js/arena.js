@@ -38,7 +38,7 @@ const app = createApp({
         const state = reactive({
             connected: false,
             gaming: false,
-            phase: 'idle', // idle, dingque, playing, result
+            phase: 'idle', // idle, dingque, playing, between_games, result
             gameEnded: false,
 
             myPlayerId: 0,
@@ -71,6 +71,21 @@ const app = createApp({
             // 是否在牌局结束时显示 AI 实际牌面（需要后端 game_over 带 tehais）
             showAiHands: true,
             finalTehais: null, // 牌局结束时四家手牌 [p0[], p1[], p2[], p3[]]
+
+            // Last discard tracking（河牌高亮最新弃牌）
+            lastDiscardPlayer: -1,
+            lastDiscardIdx: -1,
+
+            // Hora records for result overlay（本局和牌记录）
+            horaRecords: [],
+            // 本局各家得失分（game_over 时计算）
+            gameDeltas: [0, 0, 0, 0],
+
+            // Hora toast（和牌提示浮层）
+            horaToast: null,
+
+            // 单局结束时是否等待用户确认继续
+            waitingContinue: false,
         });
 
         const ui = reactive({ selectedIdx: -1 });
@@ -139,6 +154,8 @@ const app = createApp({
                 if (msg.scores && msg.scores.length === 4) {
                     state.scores = [...msg.scores];
                 }
+                // 计算本局各家得失分（本局 scores 相对初始分 60000）
+                state.gameDeltas = state.scores.map(s => s - 60000);
                 if (msg.match_deltas && msg.match_deltas.length === 4) {
                     state.matchDeltas = [...msg.match_deltas];
                 }
@@ -148,23 +165,40 @@ const app = createApp({
                 } else {
                     state.finalTehais = null;
                 }
+                state.canDiscard = false;
+                state.validActions = [];
+                state.lastDiscardPlayer = -1;
+                state.lastDiscardIdx = -1;
+                state.waitingContinue = true;
                 if (msg.is_match_over) {
                     state.matchOver = true;
                     state.gameEnded = true;
                     state.phase = 'result';
                     state.gaming = false;
                 } else {
-                    state.phase = 'between_games'; // 单局结束，等待下一局
+                    state.phase = 'between_games'; // 单局结束，显示结算界面等待用户确认
                 }
-                state.canDiscard = false;
-                state.validActions = [];
             } else if (msg != null) {
                 console.warn('Unknown message type:', msg.type ?? '(no type)');
             }
         }
 
+        // 缓存的 action_request，在 between_games 结束后重放
+        let pendingActionRequest = null;
+
         function handleActionRequest(actions) {
             console.log("Action Request:", actions);
+
+            // 结算界面正在显示时，暂存 action_request，等用户点"继续"后重放
+            if (state.phase === 'between_games' || state.phase === 'result') {
+                pendingActionRequest = actions;
+                return;
+            }
+
+            applyActionRequest(actions);
+        }
+
+        function applyActionRequest(actions) {
             state.gaming = true; // we are in a game when backend asks for an action
             state.validActions = [];
             state.canDiscard = false;
@@ -269,6 +303,11 @@ const app = createApp({
                         state.lastReplayedEventCount = 0;
                         state.finalTehais = null;
                         state.currentActor = -1; // BUG-F: 显式重置，等待 tsumo 设为正确值
+                        state.horaRecords = [];
+                        state.horaToast = null;
+                        state.lastDiscardPlayer = -1;
+                        state.lastDiscardIdx = -1;
+                        state.waitingContinue = false;
                         state.scores = (ev.scores && ev.scores.length === 4) ? [...ev.scores] : [60000, 60000, 60000, 60000];
                         if (!hasAuthoritativeHand) {
                             state.tehai = (ev.tehais ? ev.tehais[state.myPlayerId] : []) || [];
@@ -310,10 +349,14 @@ const app = createApp({
                         }
                         state.currentActor = nextActor;
                         if (!state.discards[actor]) state.discards[actor] = [];
-                        const expectedDiscardCount = events.slice(0, i + 1).filter(e => e.type === 'dahai' && e.actor === actor).length;
-                        if (state.discards[actor].length < expectedDiscardCount) {
+                        // 增量追加：只有当本事件是"新增的"（i >= startIdx）时才追加弃牌，
+                        // 之前已 replay 过的事件在 state.discards 中已有对应条目。
+                        if (i >= startIdx) {
                             state.discards[actor].push(ev.pai);
                         }
+                        // Track last discard for highlight
+                        state.lastDiscardPlayer = actor;
+                        state.lastDiscardIdx = state.discards[actor].length - 1;
                         if (!hasAuthoritativeHand && actor === state.myPlayerId) {
                             if (state.tsumoTile === ev.pai) {
                                 state.tsumoTile = null;
@@ -345,6 +388,11 @@ const app = createApp({
                     case 'daiminkan':
                     case 'kakan':
                         state.currentActor = ev.actor;
+                        // 碰/杠消耗河牌，清除高亮
+                        if (ev.type !== 'ankan') {
+                            state.lastDiscardPlayer = -1;
+                            state.lastDiscardIdx = -1;
+                        }
                         if (ev.deltas && ev.deltas.length === 4) {
                             for (let j = 0; j < 4; j++) state.scores[j] = (state.scores[j] || 0) + ev.deltas[j];
                         }
@@ -392,13 +440,33 @@ const app = createApp({
                         }
                         break;
                     case 'agari':
-                    case 'hora':
+                    case 'hora': {
                         state.agari[ev.actor] = true;
                         if (ev.deltas && ev.deltas.length === 4) {
                             for (let j = 0; j < 4; j++) state.scores[j] = (state.scores[j] || 0) + ev.deltas[j];
                         }
-                        playActionSound((ev.target === undefined || ev.actor === ev.target) ? 'tsumo.m4a' : 'ron.m4a');
+                        const isTsumo = (ev.target === undefined || ev.actor === ev.target);
+                        playActionSound(isTsumo ? 'tsumo.m4a' : 'ron.m4a');
+                        // 清除 last discard highlight（被和牌消耗）
+                        state.lastDiscardPlayer = -1;
+                        state.lastDiscardIdx = -1;
+                        // 记录和牌信息用于结算界面
+                        const points = ev.deltas ? ev.deltas[ev.actor] : null;
+                        state.horaRecords.push({
+                            actor: ev.actor,
+                            target: ev.target,
+                            method: isTsumo ? 'tsumo' : 'ron',
+                            points,
+                        });
+                        // 显示 hora toast
+                        const winnerName = ev.actor === state.myPlayerId ? '我' : seatName(ev.actor);
+                        const toastText = isTsumo
+                            ? `${winnerName} 自摸${points != null ? ' +' + points : ''}`
+                            : `${winnerName} 荣和${points != null ? ' +' + points : ''}`;
+                        state.horaToast = { text: toastText, method: isTsumo ? 'tsumo' : 'ron' };
+                        setTimeout(() => { state.horaToast = null; }, 3000);
                         break;
+                    }
                     case 'ryukyoku':
                         if (ev.deltas && ev.deltas.length === 4) {
                             for (let j = 0; j < 4; j++) state.scores[j] = (state.scores[j] || 0) + ev.deltas[j];
@@ -423,6 +491,13 @@ const app = createApp({
             state.gameEnded = false;
             state.phase = 'idle';
             state.lastReplayedEventCount = 0;
+            state.horaRecords = [];
+            state.horaToast = null;
+            state.gameDeltas = [0, 0, 0, 0];
+            state.lastDiscardPlayer = -1;
+            state.lastDiscardIdx = -1;
+            state.waitingContinue = false;
+            pendingActionRequest = null;
             send({ type: 'start_game' });
         }
 
@@ -517,6 +592,56 @@ const app = createApp({
             return map[suit] || suit;
         }
 
+        /** 座位名称（绝对 player id → 相对名称） */
+        function seatName(pid) {
+            if (pid === state.myPlayerId) return '我';
+            const offset = (pid - state.myPlayerId + 4) % 4;
+            return ['我', '下家', '对家', '上家'][offset];
+        }
+
+        /** 河牌是否为最新弃牌 */
+        function isLastDiscard(offset, idx) {
+            const pid = (state.myPlayerId + offset) % 4;
+            return state.lastDiscardPlayer === pid && state.lastDiscardIdx === idx;
+        }
+
+        /** 单局结束后继续下一局 */
+        function continueMatch() {
+            state.waitingContinue = false;
+            state.phase = 'playing';
+            // 重放结算期间缓存的 action_request（通常是下一局的 ding_que）
+            if (pendingActionRequest) {
+                const pending = pendingActionRequest;
+                pendingActionRequest = null;
+                applyActionRequest(pending);
+            }
+        }
+
+        /** 本局得失分文案 */
+        function gameDeltaLabel(offset) {
+            const id = (state.myPlayerId + offset) % 4;
+            const d = state.gameDeltas[id];
+            if (d == null) return '';
+            return (d >= 0 ? '+' : '') + d;
+        }
+
+        /** 正负 CSS class */
+        function gameDeltaClass(offset) {
+            const id = (state.myPlayerId + offset) % 4;
+            const d = state.gameDeltas[id];
+            if (d > 0) return 'delta-positive';
+            if (d < 0) return 'delta-negative';
+            return '';
+        }
+
+        function matchDeltaClass(offset) {
+            const id = (state.myPlayerId + offset) % 4;
+            const d = state.matchDeltas[id];
+            if (d > 0) return 'delta-positive';
+            if (d < 0) return 'delta-negative';
+            return '';
+        }
+
         // --- Helpers ---
         function player(offset) {
             const id = (state.myPlayerId + offset) % 4;
@@ -569,6 +694,7 @@ const app = createApp({
             startGame, doDingQue, onTileClick, doAction,
             tileSrc, player, hand, discards, actionLabel, dingqueLabel,
             getFuuro, canDiscardTile, handTiles, currentGameDisplay, matchDeltaLabel,
+            seatName, isLastDiscard, continueMatch, gameDeltaLabel, gameDeltaClass, matchDeltaClass,
             getHandTileCount(p) {
                 const fuuro = state.fuuro[p] || [];
                 const meldTiles = fuuro.reduce((sum, m) => sum + (m.tiles ? m.tiles.length : 3), 0);

@@ -18,6 +18,11 @@ except ImportError:
 INITIAL_SCORE = 60000
 MATCH_GAMES = 8  # 一场对局共 8 局
 
+# 哨兵对象：放入 action_queue 使阻塞的 get() 立即返回（用于断线 / 关闭）
+_POISON = object()
+# 等待人类操作的超时秒数（防止浏览器关闭后线程永远阻塞）
+_ACTION_TIMEOUT = 600  # 10 分钟
+
 
 class _ChampionWithHumanObserver:
     """包装 AI 引擎：libblood 在 AI 回合调用 set_scene 时会尝试 update_state；
@@ -326,10 +331,21 @@ class HumanEngine:
 
         logging.info(f"Waiting for human action. Legal: {[a['type'] for a in legal_actions]}")
 
-        # 6. Wait for Valid Action
+        # 6. Wait for Valid Action（带超时 + 哨兵检测，防止线程永久阻塞）
         while True:
-            action_data = self.action_queue.get()
-            atype = action_data.get("type")
+            try:
+                action_data = self.action_queue.get(timeout=_ACTION_TIMEOUT)
+            except queue.Empty:
+                # 超时：浏览器可能已关闭，返回 pass/none 让游戏继续
+                logging.warning("Human action timed out after %ds — auto-passing", _ACTION_TIMEOUT)
+                return [json.dumps({"type": "none"})]
+
+            # 哨兵：GameManager 主动要求中止（disconnect / 新游戏）
+            if action_data is _POISON:
+                logging.info("Received poison pill — aborting react_batch")
+                raise RuntimeError("Game aborted by poison pill")
+
+            atype = action_data.get("type") if isinstance(action_data, dict) else None
             
             # Validation: match atype against legal_actions
             is_valid = False
@@ -534,7 +550,18 @@ class GameManager:
         self.active_connections: List[WebSocket] = []
         self.shared_state = {} # Stores 'latest' message
         self.thread = None
-        self.running = False
+        self._running = threading.Event()  # 线程安全的运行标志
+
+    @property
+    def running(self) -> bool:
+        return self._running.is_set()
+
+    @running.setter
+    def running(self, value: bool):
+        if value:
+            self._running.set()
+        else:
+            self._running.clear()
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -551,6 +578,10 @@ class GameManager:
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
             logging.info(f"Client disconnected. Total: {len(self.active_connections)}")
+        # 所有客户端断线后向 action_queue 投毒，解除游戏线程的阻塞
+        if not self.active_connections and self.running:
+            logging.info("All clients disconnected — sending poison pill to unblock game thread")
+            self.action_queue.put(_POISON)
 
     async def broadcast(self, message: dict):
         self.shared_state['latest'] = message
@@ -565,7 +596,11 @@ class GameManager:
 
     def start_game_thread(self, ai_model_path: str):
         if self.running:
-            return
+            # 已有游戏在运行：投毒中止旧线程，等待它结束
+            logging.info("Aborting previous game thread before starting new one")
+            self.action_queue.put(_POISON)
+            if self.thread and self.thread.is_alive():
+                self.thread.join(timeout=5)
         # Clear stale actions from any previous session so new game doesn't consume them
         try:
             while True:
@@ -573,7 +608,7 @@ class GameManager:
         except queue.Empty:
             pass
         self.running = True
-        self.thread = threading.Thread(target=self._run_libblood, args=(ai_model_path,))
+        self.thread = threading.Thread(target=self._run_libblood, args=(ai_model_path,), daemon=True)
         self.thread.start()
         logging.info("Game thread started")
 

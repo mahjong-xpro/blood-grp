@@ -3,7 +3,7 @@ use super::result::GameResult;
 use crate::agent::BatchAgent;
 use crate::consts::INITIAL_SCORE;
 use crate::hand::tehai_to_strings;
-use crate::mjai::EventExt;
+use crate::mjai::{Event, EventExt};
 use std::time::Duration;
 use std::{array, mem};
 
@@ -170,29 +170,80 @@ impl Game {
 
         let ctx = self.board.agent_context();
 
-        // 血战到底规则：胡牌优先于碰/杠。优先级由 board.rs step() 在处理反应时强制执行。
-        // 这里让所有能行动的玩家都提交反应，如果荣和玩家放弃，碰/杠玩家仍可行动。
-        for (player_id, state) in ctx.player_states.iter().enumerate() {
-            let needs_reaction = if self.board.is_ding_que_phase() {
-                !self.board.ding_que_selected(player_id)
-            } else {
-                // FIX: 同 poll() 中的修复，已和牌玩家不需要提交反应。
-                state.last_cans().can_act() && !state.has_agari
-            };
+        if self.board.is_ding_que_phase() {
+            // 定缺阶段：所有未选缺的玩家都需提交反应
+            for (player_id, _state) in ctx.player_states.iter().enumerate() {
+                if self.board.ding_que_selected(player_id) {
+                    continue;
+                }
+                let invisible_state = self.invisible_state_cache[player_id].take();
+                let idx = self.indexes[player_id];
+                self.last_reactions[player_id] = agents[idx.agent_idx].get_reaction(
+                    idx.player_id_idx,
+                    ctx.log,
+                    &ctx.player_states[player_id],
+                    invisible_state,
+                )?;
+            }
+        } else {
+            // FIX: 两阶段反应收集——先收荣和（最高优先级），再收碰/杠。
+            //
+            // 在单阶段顺序收集中（player 0→1→2→3），人类（player 0）先被阻塞
+            // 等待输入。即使 AI（player 2）可以荣和，人类也会看到碰按钮。
+            // 当人类碰后，AI 荣和覆盖碰，导致用户困惑：「对方明明荣和了，为什么
+            // 我还能碰？」
+            //
+            // 两阶段方案：
+            // Phase 1: 收集所有可荣和玩家的反应（AI 即时返回，人类如可荣和也阻塞）
+            // Phase 2: 若已有人荣和 → 跳过只能碰/杠的玩家（设为 None）
+            //          若无人荣和 → 正常询问碰/杠玩家
 
-            if !needs_reaction {
-                continue;
+            // Phase 1: 收集可荣和玩家的反应
+            let mut ron_declared = false;
+            for (player_id, state) in ctx.player_states.iter().enumerate() {
+                if !state.last_cans().can_act() || state.has_agari {
+                    continue;
+                }
+                if !state.last_cans().can_ron_agari {
+                    continue; // Phase 2 处理
+                }
+
+                let invisible_state = self.invisible_state_cache[player_id].take();
+                let idx = self.indexes[player_id];
+                self.last_reactions[player_id] = agents[idx.agent_idx].get_reaction(
+                    idx.player_id_idx,
+                    ctx.log,
+                    state,
+                    invisible_state,
+                )?;
+                if matches!(self.last_reactions[player_id].event, Event::Hora { .. }) {
+                    ron_declared = true;
+                }
             }
 
-            let invisible_state = self.invisible_state_cache[player_id].take();
+            // Phase 2: 收集非荣和玩家的反应
+            for (player_id, state) in ctx.player_states.iter().enumerate() {
+                if !state.last_cans().can_act() || state.has_agari {
+                    continue;
+                }
+                if state.last_cans().can_ron_agari {
+                    continue; // 已在 Phase 1 处理
+                }
 
-            let idx = self.indexes[player_id];
-            self.last_reactions[player_id] = agents[idx.agent_idx].get_reaction(
-                idx.player_id_idx,
-                ctx.log,
-                state,
-                invisible_state,
-            )?;
+                if ron_declared {
+                    // 已有人荣和，此玩家的碰/杠必被覆盖 → 自动设为 None（pass）
+                    self.last_reactions[player_id] = EventExt::no_meta(Event::None);
+                } else {
+                    let invisible_state = self.invisible_state_cache[player_id].take();
+                    let idx = self.indexes[player_id];
+                    self.last_reactions[player_id] = agents[idx.agent_idx].get_reaction(
+                        idx.player_id_idx,
+                        ctx.log,
+                        state,
+                        invisible_state,
+                    )?;
+                }
+            }
         }
 
         Ok(None)

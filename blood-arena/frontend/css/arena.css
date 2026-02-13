@@ -731,3 +731,176 @@ body {
     width: 24px;
     height: 32px;
 }
+
+/* ========== Last Discard Highlight 最新弃牌高亮 ========== */
+.tile.last-discard {
+    box-shadow: 0 0 0 2px var(--highlight-color), 0 0 8px rgba(255, 215, 0, 0.6);
+    z-index: 10;
+    animation: last-discard-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes last-discard-pulse {
+    0%, 100% { box-shadow: 0 0 0 2px var(--highlight-color), 0 0 8px rgba(255, 215, 0, 0.4); }
+    50% { box-shadow: 0 0 0 3px var(--highlight-color), 0 0 14px rgba(255, 215, 0, 0.7); }
+}
+
+/* ========== Game Result Overlay 结算界面 ========== */
+.result-overlay {
+    backdrop-filter: blur(4px);
+}
+
+.result-panel {
+    min-width: 380px;
+    max-width: 480px;
+}
+
+.result-title {
+    margin: 0 0 16px;
+    font-size: 20px;
+    color: var(--highlight-color);
+    text-align: center;
+}
+
+/* Hora Summary */
+.hora-summary {
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.hora-record {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.hora-record.no-hora {
+    color: var(--text-secondary);
+    justify-content: center;
+}
+
+.hora-winner {
+    font-weight: bold;
+    color: var(--text-primary);
+    min-width: 36px;
+}
+
+.hora-method {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.hora-method.tsumo {
+    background: #388e3c;
+    color: #fff;
+}
+
+.hora-method.ron {
+    background: #d32f2f;
+    color: #fff;
+}
+
+.hora-target {
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.hora-points {
+    margin-left: auto;
+    font-weight: bold;
+    font-size: 15px;
+    color: var(--highlight-color);
+}
+
+/* Score Table */
+.result-scores {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+    font-size: 14px;
+}
+
+.result-scores th {
+    padding: 6px 10px;
+    text-align: left;
+    color: var(--text-secondary);
+    border-bottom: 1px solid #444;
+    font-weight: normal;
+    font-size: 12px;
+}
+
+.result-scores td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #333;
+}
+
+.result-scores tr.is-me td {
+    color: var(--highlight-color);
+    font-weight: bold;
+}
+
+.delta-positive {
+    color: #4caf50 !important;
+}
+
+.delta-negative {
+    color: #f44336 !important;
+}
+
+.result-continue {
+    width: 100%;
+    padding: 10px;
+    font-size: 16px;
+    margin-top: 4px;
+}
+
+/* ========== Hora Toast 和牌提示 ========== */
+.hora-toast {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 500;
+    pointer-events: none;
+}
+
+.hora-toast-inner {
+    padding: 16px 32px;
+    border-radius: 12px;
+    font-size: 24px;
+    font-weight: 900;
+    letter-spacing: 2px;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    animation: hora-toast-in 0.4s ease-out;
+}
+
+.hora-toast-inner.tsumo {
+    background: linear-gradient(135deg, #1b5e20, #388e3c);
+    color: #fff;
+    border: 2px solid #66bb6a;
+    box-shadow: 0 0 30px rgba(76, 175, 80, 0.5);
+}
+
+.hora-toast-inner.ron {
+    background: linear-gradient(135deg, #b71c1c, #d32f2f);
+    color: #fff;
+    border: 2px solid #ef5350;
+    box-shadow: 0 0 30px rgba(244, 67, 54, 0.5);
+}
+
+@keyframes hora-toast-in {
+    from { opacity: 0; transform: scale(0.6); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+/* Vue transition for toast fade-out */
+.fade-enter-active { transition: opacity 0.3s; }
+.fade-leave-active { transition: opacity 0.8s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
