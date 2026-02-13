@@ -425,8 +425,7 @@ def train():
 
                     # FIX: 使用 config 中的 pts 而非硬编码 [6,4,2,0]
                     # config['env']['pts'] 示例: [4.0, 2.0, 1.0, 0.0]
-                    # stat.avg_pt requires integers, but config may load them as floats.
-                    avg_pt = stat.avg_pt([int(p) for p in pts])
+                    avg_pt = stat.avg_pt(pts)
                     better = avg_pt >= best_perf['avg_pt'] and stat.avg_rank <= best_perf['avg_rank']
                     if better:
                         past_best = best_perf.copy()
