@@ -285,10 +285,10 @@ body {
 /*
  * 四家河牌统一布局：flex-wrap 网格 + 2px gap，尺寸一致。
  * 仅朝向（图片旋转）和排列方向随座位而变：
- *   - 自家（下）：正向横排
- *   - 对家（上）：180° 横排（反向）
- *   - 上家（左）：90°  横排（横置牌）
- *   - 下家（右）：-90° 横排（横置牌，反向）
+ *   - 自家（下）：正向横排（左→右），行向上扩展
+ *   - 对家（上）：180° 横排（右→左），行向下扩展
+ *   - 上家（左）：90°  竖排（上→下），列向右扩展（→中心）
+ *   - 下家（右）：-90° 竖排（上→下），列向左扩展（→中心）
  */
 .river-area {
     display: flex;
@@ -326,7 +326,7 @@ body {
     transform: rotate(180deg);
 }
 
-/* --- 上家（左）/ 下家（右）：横置牌，横排网格 --- */
+/* --- 上家（左）/ 下家（右）：横置牌，竖向排列 --- */
 /* 牌容器宽高互换（横置），与副露牌保持一致 */
 .zone-left .river .tile,
 .zone-right .river .tile {
@@ -334,10 +334,11 @@ body {
     height: var(--tile-w-sm);
 }
 
-/* 上家：正向横排，5 横置牌/行 */
+/* 上家：竖向排列（上→下），列向右扩展（→中心），6 牌/列 */
 .zone-left .tile-group.river {
-    flex-direction: row;
-    max-width: calc(5 * (var(--tile-h-sm) + 2px));
+    flex-direction: column;
+    flex-wrap: wrap;
+    max-height: calc(6 * (var(--tile-w-sm) + 2px));
 }
 
 /* 上家：图片旋转 90° */
@@ -349,10 +350,11 @@ body {
     transform: rotate(90deg);
 }
 
-/* 下家：反向横排（从右向左 = 下家视角从左向右），5 横置牌/行 */
+/* 下家：竖向排列（上→下），列向左扩展（→中心），6 牌/列 */
 .zone-right .tile-group.river {
-    flex-direction: row-reverse;
-    max-width: calc(5 * (var(--tile-h-sm) + 2px));
+    flex-direction: column;
+    flex-wrap: wrap-reverse;
+    max-height: calc(6 * (var(--tile-w-sm) + 2px));
 }
 
 /* 下家：图片旋转 -90° */
