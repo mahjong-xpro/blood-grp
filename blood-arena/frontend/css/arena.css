@@ -287,8 +287,8 @@ body {
  * 仅朝向（图片旋转）和排列方向随座位而变：
  *   - 自家（下）：正向横排（左→右），行向上扩展
  *   - 对家（上）：180° 横排（右→左），行向下扩展
- *   - 上家（左）：90°  竖排（下→上＝自身左→右），列向右扩展（→中心）
- *   - 下家（右）：-90° 竖排（上→下），列向左扩展（→中心）
+ *   - 上家（左，面朝右）：90°  竖排（上→下＝自身左→右），列向右扩展（→中心）
+ *   - 下家（右，面朝左）：-90° 竖排（下→上＝自身左→右），列向左扩展（→中心）
  */
 .river-area {
     display: flex;
@@ -334,9 +334,9 @@ body {
     height: var(--tile-w-sm);
 }
 
-/* 上家（面朝右）：从自身左→右 = 屏幕下→上，列向右扩展（→中心），6 牌/列 */
+/* 上家（面朝右）：自身左→右 = 屏幕上→下，列向右扩展（→中心），6 牌/列 */
 .zone-left .tile-group.river {
-    flex-direction: column-reverse;
+    flex-direction: column;
     flex-wrap: wrap;
     max-height: calc(6 * (var(--tile-w-sm) + 2px));
 }
@@ -350,9 +350,9 @@ body {
     transform: rotate(90deg);
 }
 
-/* 下家：竖向排列（上→下），列向左扩展（→中心），6 牌/列 */
+/* 下家（面朝左）：自身左→右 = 屏幕下→上，列向左扩展（→中心），6 牌/列 */
 .zone-right .tile-group.river {
-    flex-direction: column;
+    flex-direction: column-reverse;
     flex-wrap: wrap-reverse;
     max-height: calc(6 * (var(--tile-w-sm) + 2px));
 }
