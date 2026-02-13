@@ -212,6 +212,12 @@
                 </div>
             </div>
 
+            <!-- 碰/杠/胡/过：浮动操作层，不挤压手牌 -->
+            <div class="action-bar-inline" v-if="(state.validActions.length > 0 && state.validActionsShown) || state.validActions.some(a => a.type === 'hu')">
+                <button v-for="act in state.validActions" :key="act.type" class="btn-action" :class="act.type"
+                    @click.stop="doAction(act)">{{ actionLabel(act.type) }}</button>
+            </div>
+
             <!-- 0: Bottom (Me) -->
             <div class="player-zone zone-bottom" :class="{ 'my-turn': isMyTurn }">
                 <!-- River (Top / Center side) -->
@@ -222,14 +228,6 @@
                             <img :src="tileSrc(t)">
                         </div>
                     </div>
-                </div>
-
-                <!-- 碰/杠/胡/过：河牌与手牌之间，反应对手出牌时自然视线流 -->
-                <!-- FIX: 移除硬编码的"过"按钮。"pass"已由后端通过 validActions 传入，
-                     v-for 循环会正确渲染。之前硬编码导致出现两个"过"按钮。 -->
-                <div class="action-bar-inline" v-if="(state.validActions.length > 0 && state.validActionsShown) || state.validActions.some(a => a.type === 'hu')">
-                    <button v-for="act in state.validActions" :key="act.type" class="btn-action" :class="act.type"
-                        @click.stop="doAction(act)">{{ actionLabel(act.type) }}</button>
                 </div>
 
                 <!-- Hand Container (Meld + Hand) -->

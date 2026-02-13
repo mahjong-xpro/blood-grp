@@ -242,8 +242,9 @@ body {
     grid-column: 2;
     grid-row: 3;
     flex-direction: column;
-    justify-content: flex-start;
+    justify-content: flex-end;     /* 手牌贴底优先 */
     padding-top: 8px;
+    overflow: hidden;
 }
 
 /* Hand Container - 手牌+副露 */
@@ -252,6 +253,9 @@ body {
     align-items: center;
     gap: 5px;
     z-index: 50;
+    flex-shrink: 0;            /* 不被河牌挤压 */
+    min-width: 0;              /* 允许子元素 flex 收缩 */
+    max-width: 100%;
 }
 
 .zone-left .hand-container,
@@ -274,11 +278,22 @@ body {
 .hand-area {
     margin: 0;
     padding: 0;
+    min-width: 0;              /* 允许 flex 收缩 */
+    flex-shrink: 1;
+    overflow: hidden;          /* 裁切极端溢出 */
 }
 
 .tile-group {
     display: flex;
     gap: 2px;
+}
+
+/* 自家手牌：副露多时允许牌缩小，不溢出 */
+.zone-bottom .tile-group.hand {
+    flex-wrap: nowrap;
+}
+.zone-bottom .hand-area {
+    overflow: visible;         /* 自家手牌允许 hover 弹起 */
 }
 
 /* ========== River 河牌 ========== */
@@ -294,6 +309,21 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    overflow: hidden;          /* 河牌过多时裁切，不挤压手牌 */
+}
+
+/* 自家/对家河牌：限制最大高度（约3行河牌） */
+.zone-bottom .river-area,
+.zone-top .river-area {
+    max-height: calc(3 * (var(--tile-h-sm) + 2px) + 4px);
+    flex-shrink: 1;            /* 允许河牌区收缩 */
+}
+
+/* 左右家河牌：限制最大宽度（约3列河牌） */
+.zone-left .river-area,
+.zone-right .river-area {
+    max-width: calc(3 * (var(--tile-h-sm) + 2px) + 4px);
+    flex-shrink: 1;
 }
 
 /* 基础：统一 flex-wrap 网格 */
@@ -500,7 +530,9 @@ body {
 /* My Hand (Bottom) */
 .zone-bottom .hand .tile {
     width: var(--tile-w);
+    min-width: 28px;           /* 最小宽度，防止缩得太小 */
     height: var(--tile-h);
+    flex-shrink: 1;            /* 允许收缩 */
     cursor: pointer;
     transition: transform 0.1s;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
@@ -727,13 +759,23 @@ body {
     z-index: 150;
 }
 
-/* 碰/杠/胡：河牌与手牌之间，居中 */
+/* 碰/杠/胡/过：浮动操作层，不挤压手牌 */
 .action-bar-inline {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 210px;          /* 浮动在手牌上方（相对 game-board） */
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 12px;
-    padding: 8px 0;
+    padding: 10px 20px;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(4px);
+    border-radius: 40px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    z-index: 160;
+    pointer-events: auto;
 }
 
 .btn-action {
