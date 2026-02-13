@@ -172,32 +172,41 @@ impl AgariCalculator<'_> {
     #[inline]
     #[must_use]
     pub fn has_yaku(&self) -> bool {
+        // DingQue rule (花猪): cannot agari if DingQue suit tiles remain in full hand (tehai + fuuro).
+        if !crate::ding_que::can_agari_with_fuuro(self.tehai, self.pons, self.minkans, self.ankans, self.ding_que) {
+            return false;
+        }
+
         let Some(hand14) = self.hand14_for_division() else {
             return false;
         };
         let (tile14, key) = get_tile14_and_key(&hand14);
-        let Some(divs) = AGARI_TABLE.get(&key) else {
+        let divs_opt = AGARI_TABLE.get(&key);
+
+        // FIX: 龙七对回退——AGARI_TABLE 不包含龙七对，
+        // 但龙七对是血战到底的合法和牌型。
+        let is_chitoi = is_valid_chitoi_hand(&hand14);
+        let has_fuuro = !self.pons.is_empty() || !self.minkans.is_empty() || !self.ankans.is_empty();
+
+        // 龙七对不可能有副露
+        if is_chitoi && !has_fuuro {
+            return true;
+        }
+
+        // AGARI_TABLE 标准路径
+        let Some(divs) = divs_opt else {
             return false;
         };
 
         // 副露约束：碰/杠的牌在和牌分解中必须作为刻子（kotsu），
         // 不能被拆分为对子+顺子。否则会出现假阳性（如碰 1万 + 手牌 3万，
         // 对手打 2万，table 找到 1万1万(对)+1万2万3万(顺) 的非法分解）。
-        let has_valid_division = if self.pons.is_empty() && self.minkans.is_empty() && self.ankans.is_empty() {
-            true // 无副露，任何分解都合法
-        } else {
-            divs.iter().any(|div| {
+        if has_fuuro {
+            if !divs.iter().any(|div| {
                 is_division_compatible_with_fuuro(div, &tile14, self.pons, self.minkans, self.ankans)
-            })
-        };
-
-        if !has_valid_division {
-            return false;
-        }
-
-        // DingQue rule (花猪): cannot agari if DingQue suit tiles remain in full hand (tehai + fuuro).
-        if !crate::ding_que::can_agari_with_fuuro(self.tehai, self.pons, self.minkans, self.ankans, self.ding_que) {
-            return false;
+            }) {
+                return false;
+            }
         }
         
         true
@@ -259,22 +268,33 @@ impl AgariCalculator<'_> {
         let hand14 = self.hand14_for_division()?;
         let tile14_len: usize = hand14.iter().filter(|&&c| c > 0).count();
         let (tile14, key) = get_tile14_and_key(&hand14);
-        let divs = match AGARI_TABLE.get(&key) {
-            Some(d) => d,
-            None => {
-                // If the hand structure is invalid (not in AGARI_TABLE), return None
-                // This is expected behavior: some hand structures with 14 tiles cannot agari
-                // (e.g., invalid tile combinations that don't form valid melds/pairs)
-                return None;
-            }
-        };
+        let divs_opt = AGARI_TABLE.get(&key);
+
+        // FIX: 龙七对回退——AGARI_TABLE 源自日麻，日麻七对子要求 7 个不同牌种各 2 张，
+        // 不包含 4 张相同牌算 2 对的龙七对模式。当表查找失败时，检查龙七对。
+        // 同时处理表有标准分解但缺少龙七对分解的情况（取两者最高番数）。
+        let is_chitoi_hand = is_valid_chitoi_hand(&hand14);
+
+        let has_fuuro = !self.pons.is_empty() || !self.minkans.is_empty() || !self.ankans.is_empty();
+
+        // 如果表中无此牌型，且也不是七对子，则确实不能和牌
+        if divs_opt.is_none() && !is_chitoi_hand {
+            return None;
+        }
 
         // 副露约束：必须存在至少一个分解使得碰/杠保持为刻子
-        let has_fuuro = !self.pons.is_empty() || !self.minkans.is_empty() || !self.ankans.is_empty();
-        if has_fuuro && !divs.iter().any(|div| {
-            is_division_compatible_with_fuuro(div, &tile14, self.pons, self.minkans, self.ankans)
-        }) {
-            return None;
+        // （七对不可能有副露，所以 has_fuuro && is_chitoi_hand 不会同时为真）
+        if has_fuuro {
+            if let Some(divs) = divs_opt {
+                if !divs.iter().any(|div| {
+                    is_division_compatible_with_fuuro(div, &tile14, self.pons, self.minkans, self.ankans)
+                }) {
+                    return None;
+                }
+            } else {
+                // 有副露但表中无分解且不是七对 → 不能和牌
+                return None;
+            }
         }
         
         // Find the best division for fan calculation
@@ -324,7 +344,8 @@ impl AgariCalculator<'_> {
                 gen_count = gen_count.saturating_add(1);
             }
         }
-        for div in divs.iter() {
+        // AGARI_TABLE 标准分解循环（表中有此牌型时执行）
+        for div in divs_opt.iter().flat_map(|d| d.iter()) {
             // 跳过与副露不兼容的分解（碰/杠必须保持为刻子）
             if has_fuuro && !is_division_compatible_with_fuuro(div, &tile14, self.pons, self.minkans, self.ankans) {
                 continue;
@@ -545,6 +566,52 @@ impl AgariCalculator<'_> {
             
             max_fan = max_fan.max(div_fan);
         }
+
+        // FIX: 龙七对独立计算——当手牌是有效七对子（包括 4 张相同牌算 2 对的龙七对），
+        // 但 AGARI_TABLE 中没有对应的 has_chitoi 分解时，在此独立计算七对番数。
+        // 这确保龙七对模式不会因为不在日麻预计算表中而被遗漏。
+        if is_chitoi_hand && !has_fuuro {
+            let mut chitoi_fan: u8 = 2; // 七对 +2番
+            chitoi_fan += gen_count; // 四归一/根
+
+            // 清一色 +2番
+            let mut chitoi_suit: Option<u8> = None;
+            let mut chitoi_qingyise = true;
+            for (tid, &count) in hand14.iter().enumerate() {
+                if count == 0 { continue; }
+                let kind = (tid / 9) as u8;
+                if let Some(prev) = chitoi_suit {
+                    if prev != kind { chitoi_qingyise = false; break; }
+                } else {
+                    chitoi_suit = Some(kind);
+                }
+            }
+            if chitoi_qingyise && chitoi_suit.is_some() {
+                chitoi_fan += 2;
+            }
+
+            // 带幺九 +3番（所有牌种都是 1 或 9）
+            let chitoi_daiyaojiu = self.tehai.iter().enumerate().all(|(tid, &count)| {
+                if count == 0 { return true; }
+                let num = tid % 9;
+                num == 0 || num == 8
+            });
+            if chitoi_daiyaojiu {
+                chitoi_fan += 3;
+            } else {
+                // 断幺九 +1番（所有牌种都是 2-8）
+                let chitoi_duanyaojiu = self.tehai.iter().enumerate().all(|(tid, &count)| {
+                    if count == 0 { return true; }
+                    let num = tid % 9;
+                    num >= 1 && num <= 7
+                });
+                if chitoi_duanyaojiu {
+                    chitoi_fan += 1;
+                }
+            }
+
+            max_fan = max_fan.max(chitoi_fan);
+        }
         
         fan = fan.saturating_add(max_fan);
         
@@ -608,6 +675,23 @@ fn is_division_compatible_with_fuuro(
     }
 
     true
+}
+
+/// 检查 14 张手牌是否构成有效的七对子（包括龙七对：4 张相同牌算 2 对）。
+///
+/// 规则：每种牌只能出现 0、2、4 张。2 张 = 1 对，4 张 = 2 对（龙七对）。
+/// 总对数必须恰好为 7。
+fn is_valid_chitoi_hand(tiles: &[u8; 27]) -> bool {
+    let mut pairs: u8 = 0;
+    for &count in tiles {
+        match count {
+            0 => {}
+            2 => pairs += 1,
+            4 => pairs += 2,
+            _ => return false, // 1 张或 3 张不构成七对子
+        }
+    }
+    pairs == 7
 }
 
 pub fn ensure_init() {
@@ -696,10 +780,14 @@ pub fn check_ankan_in_tenpai(tehai: &[u8; 27], len_div3: u8, tile: Tile, strict:
             tehai_after[tile_id] = 0;
             tehai_after[wait] += 1;
             let (_, key) = get_tile14_and_key(&tehai_after);
-            let Some(divs_after) = AGARI_TABLE.get(&key) else {
+            // FIX: 龙七对不在 AGARI_TABLE 中，但暗杠后手牌可能变为龙七对结构。
+            // 对暗杠后的手牌同样检查七对子回退。
+            let divs_after_opt = AGARI_TABLE.get(&key);
+            let is_chitoi_after = is_valid_chitoi_hand(&tehai_after);
+            if divs_after_opt.is_none() && !is_chitoi_after {
                 // The wait tile set will get smaller after kan.
                 return false;
-            };
+            }
 
             if strict {
                 // Compare if the number of hand divisions are equal before and
@@ -709,11 +797,21 @@ pub fn check_ankan_in_tenpai(tehai: &[u8; 27], len_div3: u8, tile: Tile, strict:
                 let mut tehai_before = tehai_before_tsumo;
                 tehai_before[wait] += 1;
                 let (_, key) = get_tile14_and_key(&tehai_before);
-                let divs_before = AGARI_TABLE
-                    .get(&key)
-                    .expect("invalid tenpai detected when testing ankan");
+                let divs_before_opt = AGARI_TABLE.get(&key);
+                let is_chitoi_before = is_valid_chitoi_hand(&tehai_before);
 
-                if divs_after.len() != divs_before.len() {
+                if divs_before_opt.is_none() && !is_chitoi_before {
+                    // 暗杠前的听牌手不在表中（理论上不应发生，除非是龙七对）
+                    return false;
+                }
+
+                // 比较分解数量：龙七对只有 1 种分解
+                let count_after = divs_after_opt.map_or(0, |d| d.len())
+                    + if is_chitoi_after { 1 } else { 0 };
+                let count_before = divs_before_opt.map_or(0, |d| d.len())
+                    + if is_chitoi_before { 1 } else { 0 };
+
+                if count_after != count_before {
                     return false;
                 }
             }

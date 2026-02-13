@@ -281,6 +281,18 @@ class HumanEngine:
         try:
             cans = player_state.last_cans
             legal_actions = self._get_legal_actions(cans)
+            # 诊断日志：当可碰/可杠但不可胡时，记录详细状态帮助排查
+            if (cans.can_pon or cans.can_daiminkan) and not cans.can_agari:
+                try:
+                    logging.info(
+                        f"[RON-DIAG] can_pon={cans.can_pon} can_daiminkan={cans.can_daiminkan} "
+                        f"can_ron_agari={cans.can_ron_agari} can_tsumo_agari={cans.can_tsumo_agari} "
+                        f"temporary_furiten={player_state.temporary_furiten} "
+                        f"shanten={player_state.shanten} "
+                        f"ding_que={player_state.ding_que}"
+                    )
+                except Exception:
+                    pass  # 诊断日志不应阻断游戏
         except Exception as e:
             logging.error(f"Failed to get ActionCandidate: {e}")
             return [json.dumps({"type": "none"})]
