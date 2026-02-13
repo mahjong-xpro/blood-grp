@@ -104,8 +104,21 @@ impl BatchAgent for MjaiLogBatchAgent {
             state: state.clone(),
             events_json: events_json.clone(),
         };
-        self.game_states.push(game_state);
-        self.reactions_idxs[index] = self.game_states.len() - 1;
+
+        // FIX: 如果上一轮 set_scene 已调用但 get_reaction 被跳过（例如两阶段
+        // 反应收集中荣和优先导致碰/杠玩家的 get_reaction 被省略），game_states
+        // 中会残留该玩家的陈旧条目。此处检测到同一 index 的陈旧条目时直接替换，
+        // 而非追加，防止 game_states 膨胀导致 reactions 索引越界。
+        let prev_idx = self.reactions_idxs[index];
+        if prev_idx < self.game_states.len()
+            && self.game_states[prev_idx].game_index == index
+        {
+            // 替换陈旧条目，保持 reactions_idxs[index] 不变
+            self.game_states[prev_idx] = game_state;
+        } else {
+            self.reactions_idxs[index] = self.game_states.len();
+            self.game_states.push(game_state);
+        }
 
         // Try to call update_state if available for real-time streaming
         // We ignore errors to stay compatible with engines that don't satisfy this.
