@@ -282,43 +282,87 @@ body {
 }
 
 /* ========== River 河牌 ========== */
+/*
+ * 四家河牌统一布局：flex-wrap 网格 + 2px gap，尺寸一致。
+ * 仅朝向（图片旋转）和排列方向随座位而变：
+ *   - 自家（下）：正向横排
+ *   - 对家（上）：180° 横排（反向）
+ *   - 上家（左）：90°  横排（横置牌）
+ *   - 下家（右）：-90° 横排（横置牌，反向）
+ */
 .river-area {
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
+/* 基础：统一 flex-wrap 网格 */
 .tile-group.river {
     display: flex;
+    flex-wrap: wrap;
     gap: 2px;
 }
 
+/* 基础河牌尺寸 */
 .river .tile {
     width: var(--tile-w-sm);
     height: var(--tile-h-sm);
     opacity: 0.9;
 }
 
-/* 河牌方向：ME/对家横向，左右竖向 */
-.zone-bottom .tile-group.river { flex-direction: row; }
-.zone-top .tile-group.river { flex-direction: row-reverse; }
-.zone-left .tile-group.river,
+/* --- 自家（下）：正向横排，6 牌/行 --- */
+.zone-bottom .tile-group.river {
+    flex-direction: row;
+    max-width: calc(6 * (var(--tile-w-sm) + 2px));
+}
+
+/* --- 对家（上）：反向横排，牌面 180°，6 牌/行 --- */
+.zone-top .tile-group.river {
+    flex-direction: row-reverse;
+    max-width: calc(6 * (var(--tile-w-sm) + 2px));
+}
+
+.zone-top .river .tile img {
+    transform: rotate(180deg);
+}
+
+/* --- 上家（左）/ 下家（右）：横置牌，横排网格 --- */
+/* 牌容器宽高互换（横置），与副露牌保持一致 */
+.zone-left .river .tile,
+.zone-right .river .tile {
+    width: var(--tile-h-sm);
+    height: var(--tile-w-sm);
+}
+
+/* 上家：正向横排，5 横置牌/行 */
+.zone-left .tile-group.river {
+    flex-direction: row;
+    max-width: calc(5 * (var(--tile-h-sm) + 2px));
+}
+
+/* 上家：图片旋转 90° */
+.zone-left .river .tile img {
+    width: var(--tile-w-sm);
+    height: var(--tile-h-sm);
+    max-width: none;
+    max-height: none;
+    transform: rotate(90deg);
+}
+
+/* 下家：反向横排（从右向左 = 下家视角从左向右），5 横置牌/行 */
 .zone-right .tile-group.river {
-    flex-direction: column-reverse;
-    gap: 0;
-    row-gap: 0;
+    flex-direction: row-reverse;
+    max-width: calc(5 * (var(--tile-h-sm) + 2px));
 }
 
-/* 左右河牌：margin-bottom 负值拉近牌距，牌大小不变。:not(:last-child) 使第一、二张与其它间距一致 */
-.zone-left .river .tile:not(:last-child),
-.zone-right .river .tile:not(:last-child) {
-    margin-bottom: -8px;
+/* 下家：图片旋转 -90° */
+.zone-right .river .tile img {
+    width: var(--tile-w-sm);
+    height: var(--tile-h-sm);
+    max-width: none;
+    max-height: none;
+    transform: rotate(-90deg);
 }
-
-/* 河牌旋转：牌面朝向中心 */
-.zone-top .river .tile { transform: rotate(180deg); }
-.zone-left .river .tile { transform: rotate(90deg); }
-.zone-right .river .tile { transform: rotate(-90deg); }
 
 /* Side Players Hand (Vertical/Compact) - 仅影响手牌，不影响河牌 */
 .zone-left .tile-group.hand,
