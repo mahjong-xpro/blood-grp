@@ -1053,13 +1053,13 @@ mod test {
         // 自摸 + 平胡 + 门清 + 四归一(1根) = 1 + 1 + 1 + 1 = 4番
         assert_eq!(agari, Agari::Fan(4));
         
-        // Test 10: 金钩钓 (JinGouDiao) - 2番 (4 fuuro + tanki wait，有副露故无门清)
-        // This requires 4 fuuro, so we need to set pons/minkans/ankans
+        // Test 10: 金钩钓 (JinGouDiao) - 4番 (4 fuuro + tanki wait，有副露故无门清)
+        // 使用混合花色的碰，避免意外触发清一色
         let tehai = hand("11m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
 
-            pons: &[tu8!(2m), tu8!(3m), tu8!(4m), tu8!(5m)], // 4 pons
+            pons: &[tu8!(2m), tu8!(3p), tu8!(4s), tu8!(5m)], // 4 pons（混合花色）
             minkans: &[],
             ankans: &[],
             winning_tile: tu8!(1m), // tanki wait
@@ -1074,7 +1074,7 @@ mod test {
             is_dihu: false,
         };
         let agari = calc.agari().unwrap();
-        // 自摸 + 平胡 + 金钩钓 = 1 + 1 + 2 = 4番（有副露故无门清）
+        // 自摸 + 平胡 + 碰碰胡 + 金钩钓 = 1 + 1 + 1 + 1 = 4番（有副露故无门清，混合花色无清一色）
         assert_eq!(agari, Agari::Fan(4));
         
         // Test 12: Fan cap at 5
@@ -1224,12 +1224,12 @@ mod test {
         assert_eq!(agari, Agari::Fan(5));
         
         // Test 18: 金钩钓 - 4副露 + 单钓 = 4番（有副露故无门清）
-        // 金钩钓（2番）+ 自摸（1番）+ 平胡（1番）= 4番
+        // 自摸 + 平胡 + 碰碰胡 + 金钩钓 = 1 + 1 + 1 + 1 = 4番（混合花色无清一色）
         let tehai = hand("11m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
 
-            pons: &[tu8!(2m), tu8!(3m), tu8!(4m), tu8!(5m)], // 4个碰
+            pons: &[tu8!(2m), tu8!(3p), tu8!(4s), tu8!(5m)], // 4个碰（混合花色）
             minkans: &[],
             ankans: &[],
             winning_tile: tu8!(1m), // 单钓1m

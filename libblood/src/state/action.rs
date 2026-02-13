@@ -71,6 +71,13 @@ impl ActionCandidate {
 impl PlayerState {
     /// Check if `action` is a valid reaction to the current state.
     pub fn validate_reaction(&self, action: &Event) -> Result<()> {
+        // 防御性检查：已和牌的玩家不应再做任何动作
+        ensure!(
+            !self.has_agari,
+            "player {} has already won and cannot act",
+            self.player_id,
+        );
+
         let cans = self.last_cans;
 
         match action {
@@ -153,6 +160,12 @@ impl PlayerState {
                     "pon target is not the last kawa tile",
                 );
                 ensure!(cans.can_pon, "cannot pon");
+                // consumed 必须全部与 pai 同种（碰的 2 张必须和被碰的牌相同）
+                ensure!(
+                    consumed.iter().all(|&t| t == pai),
+                    "pon consumed tiles {:?} do not match pai {pai}",
+                    consumed,
+                );
                 self.ensure_tiles_in_hand(&consumed)?;
             }
 
@@ -174,6 +187,12 @@ impl PlayerState {
                     "daiminkan target is not the last kawa tile",
                 );
                 ensure!(cans.can_daiminkan, "cannot daiminkan");
+                // consumed 必须全部与 pai 同种（大明杠的 3 张必须和被杠的牌相同）
+                ensure!(
+                    consumed.iter().all(|&t| t == pai),
+                    "daiminkan consumed tiles {:?} do not match pai {pai}",
+                    consumed,
+                );
                 self.ensure_tiles_in_hand(&consumed)?;
             }
             Event::Kakan { pai, .. } => {
@@ -188,6 +207,12 @@ impl PlayerState {
                 ensure!(cans.can_ankan, "cannot ankan");
                 let tile = consumed[0];
                 ensure!(self.ankan_candidates.contains(&tile), "cannot ankan {tile}");
+                // consumed 4 张必须全部相同（暗杠）
+                ensure!(
+                    consumed.iter().all(|&t| t == tile),
+                    "ankan consumed tiles {:?} are not all the same",
+                    consumed,
+                );
                 self.ensure_tiles_in_hand(&consumed)?;
             }
 
@@ -209,8 +234,8 @@ impl PlayerState {
                 ensure!(cans.can_ding_que, "cannot ding_que");
             }
 
-            Event::None => return Ok(()),
-
+            // Event::None 已在上方第一个 match 处理并 early return，此处不可达。
+            // 保留通配符以捕获未预期的事件类型。
             _ => bail!("unexpected action {action:?}"),
         };
 

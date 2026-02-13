@@ -508,14 +508,15 @@ impl PlayerState {
                 self.last_cans,
             );
         }
-        let tsumos_left = if can_discard {
-            self.tiles_left / 4
-        } else {
-            let target = self.rel(self.last_cans.target_actor) as u8;
-            // Let's just ignore chankan here.
-            let tiles_left_at_next_tsumo = self.tiles_left.saturating_sub(4 - target);
-            tiles_left_at_next_tsumo / 4
-        };
+        // FIX: 血战到底中已和牌玩家不再摸牌，活跃摸牌者 = 自己 + 未和牌对手。
+        // 之前始终 / 4 估算每人剩余摸牌次数，当 1-2 人已和牌时严重低估，
+        // 导致 SP 计算认为获胜概率过低，AI 过于保守。
+        let n_active_payers = (1..4).filter(|&i| !self.players_agari[i]).count() as u8;
+        let active_players = (n_active_payers + 1).max(1); // self + active opponents
+
+        // 近似值：tiles_left / active_players，误差 ≤1 次摸牌。
+        // can_discard 和 reaction 两种情况下结果相同，无需区分。
+        let tsumos_left = self.tiles_left / active_players;
         ensure!(tsumos_left >= 1, "need at least one more tsumo");
 
         let tehai = self.tehai;
@@ -530,8 +531,6 @@ impl PlayerState {
             tiles_seen,
             tiles_left: self.tiles_left,
         };
-        // FIX: 使用实际未和牌对手数计算自摸收益
-        let n_active_payers = (1..4).filter(|&i| !self.players_agari[i]).count() as u8;
         let sp_calc = SPCalculator {
             tehai_len_div3: self.tehai_len_div3,
             pons: &self.pons,

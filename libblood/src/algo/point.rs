@@ -43,12 +43,15 @@ impl Point {
         }
     }
 
-    /// Calculate total points for tsumo
-    /// 
+    /// Calculate total points for tsumo (with specified number of payers).
+    ///
+    /// 血战到底中自摸时，只有尚未和牌的对手支付。
+    /// `n_payers`: 实际支付人数（1-3）。游戏开始时为 3，
+    /// 每有一个玩家和牌就减 1。
     #[inline]
     #[must_use]
-    pub const fn tsumo_total(self, _is_oya: bool) -> i32 {
-        self.tsumo_ko * 3
+    pub const fn tsumo_total(self, n_payers: u32) -> i32 {
+        self.tsumo_ko * n_payers as i32
     }
 }
 
@@ -70,8 +73,9 @@ mod test {
         let point = Point::calc_from_fan(3);
         assert_eq!(point.ron, point.tsumo_ko);
         
-        // Test tsumo_total
-        assert_eq!(point.tsumo_total(false), 4000 * 3); // 3 players pay
-        assert_eq!(point.tsumo_total(true), 4000 * 3);  // Same for oya
+        // Test tsumo_total with different payer counts
+        assert_eq!(point.tsumo_total(3), 4000 * 3); // 3 players pay (game start)
+        assert_eq!(point.tsumo_total(2), 4000 * 2); // 2 players pay (1 player won)
+        assert_eq!(point.tsumo_total(1), 4000 * 1); // 1 player pays (2 players won)
     }
 }

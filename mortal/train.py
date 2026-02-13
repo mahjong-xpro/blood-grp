@@ -496,6 +496,11 @@ def train():
                         shutil.copy(state_file, baseline_file)
                         logging.info(f'Baseline updated: avg_pt={avg_pt:.4} >= threshold={auto_update_threshold}')
                         writer.add_scalar('baseline/update_step', steps, steps)
+                        # FIX: 自动更新 baseline 文件后，必须刷新内存中的 baseline engine。
+                        # 之前只写文件不重新加载，导致离线模式的阶梯式训练完全失效
+                        # （所有后续自对弈仍使用旧 baseline 权重）。
+                        if train_player is not None:
+                            train_player.reload_baseline(baseline_file)
                     
                     if online:
                         # BUG: This is a bug with unknown reason. When training

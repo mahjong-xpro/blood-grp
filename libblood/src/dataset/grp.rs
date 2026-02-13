@@ -61,7 +61,10 @@ pub(crate) fn count_sequences_in_suit(counts: &[u8; 9]) -> u8 {
 /// Count how many tile kinds (0..27) improve the hand when added by one (reduce shanten).
 /// Used as a bonus: more improvement kinds = better shape after removing the suit.
 fn count_improvement_kinds(tehai_without: &[u8; 27], remaining_count: u8, shanten: i8) -> u8 {
-    let new_len_div3 = (remaining_count + 1) / 3;
+    // FIX: 使用与 base shanten 相同的 len_div3（= remaining_count / 3）。
+    // 之前用 (remaining_count + 1) / 3，当 remaining_count % 3 == 2 时目标组数多 1，
+    // 导致加牌后的向听被高估，进而系统性低估受入种类。
+    let new_len_div3 = remaining_count / 3;
     let mut count: u8 = 0;
     for tid in 0..27 {
         if tehai_without[tid] >= 4 {

@@ -1234,17 +1234,23 @@ impl BoardState {
 
                 idx += 3;
 
-                let n = state.shanten() as usize;
+                // FIX: shanten 可能因定缺惩罚超过 6（最大可达 ~9），
+                // 但 one-hot 编码只分配了 7 个通道（v2+）或 6 个（v1）。
+                // 不裁剪会写入后续通道（shanten_rescale / waits），污染 oracle 观察。
+                // 与 obs_repr.rs 保持一致：.min(6) 裁剪。
+                let raw_shanten = state.shanten().max(0) as usize;
                 match version {
                     1 => {
+                        let n = raw_shanten.min(5);
                         arr.fill_rows(idx, n, 1.);
                         idx += 6;
                     }
                     2 | 3 | 4 => {
+                        let n = raw_shanten.min(6);
                         arr.fill(idx + n, 1.);
                         idx += 7;
 
-                        let v = n as f32 / 6.;
+                        let v = raw_shanten as f32 / 6.;
                         arr.fill(idx, v);
                         idx += 1;
                     }

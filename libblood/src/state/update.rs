@@ -148,8 +148,6 @@ impl PlayerState {
         self.next_shanten_discards.fill(false);
         self.forbidden_tiles.fill(false);
         self.players_agari.fill(false);
-        self.discarded_tiles.fill(false);
-
         self.oya = self.rel(oya) as u8;
         self.kyoku = kyoku - 1;
 
@@ -160,6 +158,9 @@ impl PlayerState {
         self.other_ding_que.fill(None);
         self.has_agari = false;
 
+        self.last_self_tsumo = None;
+        self.last_kawa_tile = None;
+
         self.ankan_candidates.clear();
         self.kakan_candidates.clear();
         self.chankan_chance = None;
@@ -167,7 +168,7 @@ impl PlayerState {
         self.chankan_kakan_tile = None;
         self.pending_kakan_tile = None;
         self.last_discard_was_after_kan = false;
-        self.intermediate_kan.clear(); // 新局开始时清空 intermediate_kan
+        self.intermediate_kan.clear();
         
         // 新局开始时清空所有副露相关的状态
         self.pons.clear();
@@ -398,8 +399,8 @@ impl PlayerState {
                         self.last_cans.can_kakan = true;
                         let kakan_len = self.kakan_candidates.len();
                         assert!(
-                            kakan_len < 3,
-                            "kakan_candidates capacity overflow: player {} has {} kakan candidates, attempting to add one more. Maximum is 3. This indicates invalid game log data or a bug in game logic. kyoku: {}, at_turn: {}, tiles_left: {}",
+                            kakan_len < 4,
+                            "kakan_candidates capacity overflow: player {} has {} kakan candidates, attempting to add one more. Maximum is 4. kyoku: {}, at_turn: {}, tiles_left: {}",
                             self.player_id,
                             kakan_len,
                             self.kyoku,
@@ -494,8 +495,6 @@ impl PlayerState {
         if actor_rel == 0 {
             self.forbidden_tiles.fill(false);
             self.at_rinshan = false;
-            self.discarded_tiles[pai.as_usize()] = true;
-
             if self.next_shanten_discards[pai.as_usize()] {
                 self.shanten -= 1;
             } else if !self.keep_shanten_discards[pai.as_usize()] {
@@ -1166,15 +1165,16 @@ impl PlayerState {
     /// allow `-1` and it will be written as `0` in order for
     /// `_shanten_discards` to be calculated properly.
     pub(crate) fn update_shanten(&mut self) {
-        // Check ding_que rule first: if holding DingQue suit tiles, cannot agari/tenpai.
-        // Set shanten to 8 (infinity/invalid). Normal max shanten is 6.
-        if crate::ding_que::has_ding_que_tiles(&self.tehai, self.ding_que) {
-            self.shanten = 8;
-            return;
-        }
-
-        // Use dynamic calculation instead of fragile state variable
-        // This fixes the bug where Kan (Gang) operations caused tehai_len_div3 to desync
+        // calc_all 已正确处理定缺：将定缺牌置零后计算结构向听，再加上 void_count 惩罚。
+        // 例如：结构向听 1 + 定缺牌 2 张 = 向听 3。
+        //
+        // 之前此处硬编码 shanten = 8（当有定缺牌时），但 update_shanten_discards()
+        // 使用 calc_all 计算 shanten_after（返回 2-6），导致几乎所有牌都被标记为
+        // next_shanten_discard（因为 2 < 8），然后 dahai() 的 shanten -= 1 使
+        // shanten 从 8 逐步漂移到 7→6→5...，严重偏离真实值。
+        //
+        // 移除硬编码后，shanten 与 shanten_after 使用同一公式（calc_all），
+        // 增量路径（shanten -= 1）和全量路径保持一致。
         let current_len_div3 = (self.tehai.iter().sum::<u8>() / 3) as u8;
         self.shanten = shanten::calc_all(&self.tehai, current_len_div3, self.ding_que).max(0);
         

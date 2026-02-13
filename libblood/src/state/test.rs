@@ -38,7 +38,9 @@ fn test_stage2_completion_verification() {
     // Test 3: Verify oya doesn't affect scoring
     use crate::algo::point::Point;
     let point_3fan = Point::calc_from_fan(3);
-    assert_eq!(point_3fan.tsumo_total(false), point_3fan.tsumo_total(true), "Oya should not affect tsumo_total");
+    // 血战到底无庄家优势：3 人付费和 1 人付费结果都是 tsumo_ko * n
+    assert_eq!(point_3fan.tsumo_total(3), 4000 * 3, "tsumo_total with 3 payers");
+    assert_eq!(point_3fan.tsumo_total(2), 4000 * 2, "tsumo_total with 2 payers");
     
     // Test 4: Verify 3-player agari end condition logic
     // This is tested in board.rs, but we verify the logic here

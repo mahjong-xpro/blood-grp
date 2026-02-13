@@ -197,6 +197,42 @@ class TrainPlayer:
         self.repeats = cfg['repeats']
         self.repeat_counter = 0
 
+        # 保存 baseline 配置，供 reload_baseline 使用
+        self._baseline_cfg = config['baseline']['train']
+
+    def reload_baseline(self, baseline_file=None):
+        """重新加载 baseline 模型权重（阶梯式训练：自动更新后需要刷新内存中的 baseline）。"""
+        cfg = self._baseline_cfg
+        if baseline_file is None:
+            baseline_file = cfg['state_file']
+        if not path.exists(baseline_file):
+            logging.warning(f'reload_baseline: file not found: {baseline_file}')
+            return
+        device = torch.device(cfg['device'])
+        state = torch.load(baseline_file, weights_only=True, map_location=torch.device('cpu'))
+        model_cfg = state['config']
+        version = model_cfg['control'].get('version', 1)
+        conv_channels = model_cfg['resnet']['conv_channels']
+        num_blocks = model_cfg['resnet']['num_blocks']
+        stable_mortal = Brain(version=version, conv_channels=conv_channels, num_blocks=num_blocks).eval()
+        stable_dqn = DQN(version=version).eval()
+        stable_mortal.load_state_dict(state['mortal'])
+        stable_dqn.load_state_dict(state['current_dqn'])
+        if cfg['enable_compile']:
+            stable_mortal.compile()
+            stable_dqn.compile()
+        self.baseline_engine = MortalEngine(
+            stable_mortal,
+            stable_dqn,
+            is_oracle = False,
+            version = version,
+            device = device,
+            enable_amp = True,
+            enable_rule_based_agari_guard = True,
+            name = 'baseline',
+        )
+        logging.info(f'Baseline engine reloaded from {baseline_file}')
+
     def train_play(self, mortal, dqn, device):
         torch.backends.cudnn.benchmark = False
         engine_chal = MortalEngine(

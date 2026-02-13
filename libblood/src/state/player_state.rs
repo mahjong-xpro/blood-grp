@@ -49,9 +49,8 @@ pub struct PlayerState {
     #[pyo3(get)]
     pub forbidden_tiles: [bool; 27],
 
-    /// Used for checking forbidden wins (similar to furiten in Japanese Mahjong).
-    #[derivative(Default(value = "[false; 27]"))]
-    pub(super) discarded_tiles: [bool; 27],
+    // discarded_tiles 已移除：血战到底无永久振听规则，
+    // 临时过手状态由 furiten_passed_ron_fan 追踪。
 
     /// Counts from 0 unlike mjai.
     pub(super) kyoku: u8,
@@ -79,9 +78,9 @@ pub struct PlayerState {
     pub(super) last_kawa_tile: Option<Tile>,
     pub(super) last_cans: ActionCandidate,
 
-    /// Use TinyVec to handle cases where there might be more than 3 candidates
     pub(super) ankan_candidates: ArrayVec<[Tile; 3]>,
-    pub(super) kakan_candidates: ArrayVec<[Tile; 3]>,
+    /// 加杠候选：最多 4 个（4 个碰 + 手牌各有 1 张匹配时）
+    pub(super) kakan_candidates: ArrayVec<[Tile; 4]>,
     pub(super) chankan_chance: Option<()>,
     /// Track which player performed kakan when chankan occurs (for excluding gen)
     /// This is set when chankan_chance is Some(())
