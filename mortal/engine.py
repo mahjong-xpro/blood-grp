@@ -91,6 +91,11 @@ class MortalEngine:
             phi = self.brain(obs, invisible_obs)
             q_out = self.dqn(phi, masks)
 
+        # AMP (enable_amp=True) 下 DQN 输出为 float16（范围 ±65504）。
+        # 除以 boltzmann_temp（如 0.18 ≈ ×5.56）后，|Q| > 11780 的合法位置
+        # 会溢出为 ±inf，导致 Categorical 崩溃。提升到 float32 消除溢出。
+        q_out = q_out.float()
+
         if self.boltzmann_epsilon > 0:
             if self.boltzmann_temp <= 0:
                 raise ValueError(f"boltzmann_temp must be > 0, got {self.boltzmann_temp}")
