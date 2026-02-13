@@ -91,6 +91,10 @@
                                 </div>
                             </template>
                             <div class="tile back" v-else v-for="n in getHandTileCount(2)" :key="n"></div>
+                            <!-- 和牌张 -->
+                            <div class="tile hora-win-tile" v-if="getHoraWinTile(2)">
+                                <img :src="tileSrc(getHoraWinTile(2))">
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -139,6 +143,10 @@
                                 </div>
                             </template>
                             <div class="tile back" v-else v-for="n in getHandTileCount(3)" :key="n"></div>
+                            <!-- 和牌张 -->
+                            <div class="tile hora-win-tile" v-if="getHoraWinTile(3)">
+                                <img :src="tileSrc(getHoraWinTile(3))">
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -186,6 +194,10 @@
                                 </div>
                             </template>
                             <div class="tile back" v-else v-for="n in getHandTileCount(1)" :key="n"></div>
+                            <!-- 和牌张 -->
+                            <div class="tile hora-win-tile" v-if="getHoraWinTile(1)">
+                                <img :src="tileSrc(getHoraWinTile(1))">
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -245,6 +257,10 @@
                                 :class="{ selected: ui.selectedIdx === 'tsumo', 'tile-forbidden': state.canDiscard && !canDiscardTile(state.tsumoTile) }"
                                 @click.stop="onTileClick(state.tsumoTile, 'tsumo')">
                                 <img :src="tileSrc(state.tsumoTile)">
+                            </div>
+                            <!-- 和牌张 -->
+                            <div class="tile hora-win-tile" v-if="getHoraWinTile(0)">
+                                <img :src="tileSrc(getHoraWinTile(0))">
                             </div>
                         </div>
                     </div>

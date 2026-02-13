@@ -84,6 +84,9 @@ const app = createApp({
             // Hora toast（和牌提示浮层）
             horaToast: null,
 
+            // 各家胡牌时的和牌张（荣和=放铳牌，自摸=摸到的牌），用于手牌旁显示
+            horaWinTiles: [null, null, null, null],
+
             // 单局结束时是否等待用户确认继续
             waitingContinue: false,
         });
@@ -305,6 +308,7 @@ const app = createApp({
                         state.currentActor = -1; // BUG-F: 显式重置，等待 tsumo 设为正确值
                         state.horaRecords = [];
                         state.horaToast = null;
+                        state.horaWinTiles = [null, null, null, null];
                         state.lastDiscardPlayer = -1;
                         state.lastDiscardIdx = -1;
                         state.waitingContinue = false;
@@ -450,6 +454,29 @@ const app = createApp({
                         // 清除 last discard highlight（被和牌消耗）
                         state.lastDiscardPlayer = -1;
                         state.lastDiscardIdx = -1;
+
+                        // 确定和牌张：从前序事件中回溯查找
+                        let horaPai = null;
+                        if (isTsumo) {
+                            // 自摸：找该玩家最近的 tsumo 事件
+                            for (let j = i - 1; j >= 0; j--) {
+                                if (events[j].type === 'tsumo' && events[j].actor === ev.actor) {
+                                    horaPai = events[j].pai;
+                                    break;
+                                }
+                            }
+                        } else {
+                            // 荣和：找 target 最近的 dahai 或 kakan 事件
+                            for (let j = i - 1; j >= 0; j--) {
+                                const et = events[j].type;
+                                if ((et === 'dahai' || et === 'kakan') && events[j].actor === ev.target) {
+                                    horaPai = events[j].pai;
+                                    break;
+                                }
+                            }
+                        }
+                        state.horaWinTiles[ev.actor] = horaPai;
+
                         // 记录和牌信息用于结算界面
                         const points = ev.deltas ? ev.deltas[ev.actor] : null;
                         state.horaRecords.push({
@@ -457,6 +484,7 @@ const app = createApp({
                             target: ev.target,
                             method: isTsumo ? 'tsumo' : 'ron',
                             points,
+                            pai: horaPai,
                         });
                         // 显示 hora toast
                         const winnerName = ev.actor === state.myPlayerId ? '我' : seatName(ev.actor);
@@ -493,6 +521,7 @@ const app = createApp({
             state.lastReplayedEventCount = 0;
             state.horaRecords = [];
             state.horaToast = null;
+            state.horaWinTiles = [null, null, null, null];
             state.gameDeltas = [0, 0, 0, 0];
             state.lastDiscardPlayer = -1;
             state.lastDiscardIdx = -1;
@@ -599,6 +628,12 @@ const app = createApp({
             return ['我', '下家', '对家', '上家'][offset];
         }
 
+        /** 获取某家的和牌张（用于手牌旁显示），无则返回 null */
+        function getHoraWinTile(offset) {
+            const pid = (state.myPlayerId + offset) % 4;
+            return state.horaWinTiles[pid] || null;
+        }
+
         /** 河牌是否为最新弃牌 */
         function isLastDiscard(offset, idx) {
             const pid = (state.myPlayerId + offset) % 4;
@@ -694,7 +729,7 @@ const app = createApp({
             startGame, doDingQue, onTileClick, doAction,
             tileSrc, player, hand, discards, actionLabel, dingqueLabel,
             getFuuro, canDiscardTile, handTiles, currentGameDisplay, matchDeltaLabel,
-            seatName, isLastDiscard, continueMatch, gameDeltaLabel, gameDeltaClass, matchDeltaClass,
+            seatName, isLastDiscard, getHoraWinTile, continueMatch, gameDeltaLabel, gameDeltaClass, matchDeltaClass,
             getHandTileCount(p) {
                 const fuuro = state.fuuro[p] || [];
                 const meldTiles = fuuro.reduce((sum, m) => sum + (m.tiles ? m.tiles.length : 3), 0);

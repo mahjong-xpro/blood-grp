@@ -523,6 +523,30 @@ body {
     margin-left: 15px;
 }
 
+/* 和牌张：手牌右侧，红色边框高亮，与手牌间隔分开 */
+.hora-win-tile {
+    margin-left: 15px;
+    box-shadow: 0 0 0 2px #d32f2f, 0 0 10px rgba(211, 47, 47, 0.6);
+    animation: hora-tile-glow 2s ease-in-out infinite;
+}
+
+/* 左右家和牌张：竖排时改为上方间隔 */
+.zone-left .hand .hora-win-tile,
+.zone-right .hand .hora-win-tile {
+    margin-left: 0;
+    margin-top: 10px;
+}
+
+/* 对家和牌张：反向排列中仍保持间距 */
+.zone-top .hand .hora-win-tile {
+    margin-left: 15px;
+}
+
+@keyframes hora-tile-glow {
+    0%, 100% { box-shadow: 0 0 0 2px #d32f2f, 0 0 8px rgba(211, 47, 47, 0.5); }
+    50% { box-shadow: 0 0 0 3px #f44336, 0 0 14px rgba(244, 67, 54, 0.8); }
+}
+
 /* Tiles */
 .tile {
     background: #e8e8e8;
