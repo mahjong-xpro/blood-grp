@@ -103,7 +103,7 @@
                 <div class="river-area">
                     <div class="tile-group river">
                         <div class="tile" v-for="(t, i) in discards(2)" :key="i"
-                            :class="{ 'last-discard': isLastDiscard(2, i) }">
+                            :class="{ 'last-discard': isLastDiscard(2, i), 'claimed-tile': isClaimed(2, i) }">
                             <img :src="tileSrc(t)">
                         </div>
                     </div>
@@ -154,7 +154,7 @@
                 <div class="river-area">
                     <div class="tile-group river">
                         <div class="tile" v-for="(t, i) in discards(3)" :key="i"
-                            :class="{ 'last-discard': isLastDiscard(3, i) }">
+                            :class="{ 'last-discard': isLastDiscard(3, i), 'claimed-tile': isClaimed(3, i) }">
                             <img :src="tileSrc(t)">
                         </div>
                     </div>
@@ -205,7 +205,7 @@
                 <div class="river-area">
                     <div class="tile-group river">
                         <div class="tile" v-for="(t, i) in discards(1)" :key="i"
-                            :class="{ 'last-discard': isLastDiscard(1, i) }">
+                            :class="{ 'last-discard': isLastDiscard(1, i), 'claimed-tile': isClaimed(1, i) }">
                             <img :src="tileSrc(t)">
                         </div>
                     </div>
@@ -218,7 +218,7 @@
                 <div class="river-area">
                     <div class="tile-group river">
                         <div class="tile" v-for="(t, i) in discards(0)" :key="i"
-                            :class="{ 'last-discard': isLastDiscard(0, i) }">
+                            :class="{ 'last-discard': isLastDiscard(0, i), 'claimed-tile': isClaimed(0, i) }">
                             <img :src="tileSrc(t)">
                         </div>
                     </div>

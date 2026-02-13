@@ -76,6 +76,9 @@ const app = createApp({
             lastDiscardPlayer: -1,
             lastDiscardIdx: -1,
 
+            // 被碰/杠/荣和取走的河牌索引 [Set-like arrays per player]
+            claimedDiscards: [[], [], [], []],
+
             // Hora records for result overlay（本局和牌记录）
             horaRecords: [],
             // 本局各家得失分（game_over 时计算）
@@ -320,6 +323,7 @@ const app = createApp({
                         }
                         state.optimisticDahai = null;
                         state.discards = [[], [], [], []];
+                        state.claimedDiscards = [[], [], [], []];
                         state.agari = [false, false, false, false];
                         state.dingque = [null, null, null, null];
                         state.fuuro = [[], [], [], []];
@@ -392,8 +396,19 @@ const app = createApp({
                     case 'daiminkan':
                     case 'kakan':
                         state.currentActor = ev.actor;
-                        // 碰/杠消耗河牌，清除高亮
-                        if (ev.type !== 'ankan') {
+                        // 碰/明杠消耗河牌：标记被取走 + 清除高亮
+                        if (ev.type === 'pon' || ev.type === 'daiminkan') {
+                            const target = ev.target != null ? ev.target : state.lastDiscardPlayer;
+                            if (target >= 0 && state.discards[target] && state.discards[target].length > 0) {
+                                const claimedIdx = state.discards[target].length - 1;
+                                if (!state.claimedDiscards[target].includes(claimedIdx)) {
+                                    state.claimedDiscards[target].push(claimedIdx);
+                                }
+                            }
+                            state.lastDiscardPlayer = -1;
+                            state.lastDiscardIdx = -1;
+                        } else if (ev.type !== 'ankan') {
+                            // kakan/kan 等不消耗河牌，仅清除高亮
                             state.lastDiscardPlayer = -1;
                             state.lastDiscardIdx = -1;
                         }
@@ -451,7 +466,17 @@ const app = createApp({
                         }
                         const isTsumo = (ev.target === undefined || ev.actor === ev.target);
                         playActionSound(isTsumo ? 'tsumo.m4a' : 'ron.m4a');
-                        // 清除 last discard highlight（被和牌消耗）
+                        // 荣和：标记被吃掉的河牌
+                        if (!isTsumo && ev.target != null) {
+                            const t = ev.target;
+                            if (state.discards[t] && state.discards[t].length > 0) {
+                                const ci = state.discards[t].length - 1;
+                                if (!state.claimedDiscards[t].includes(ci)) {
+                                    state.claimedDiscards[t].push(ci);
+                                }
+                            }
+                        }
+                        // 清除 last discard highlight
                         state.lastDiscardPlayer = -1;
                         state.lastDiscardIdx = -1;
 
@@ -525,6 +550,7 @@ const app = createApp({
             state.gameDeltas = [0, 0, 0, 0];
             state.lastDiscardPlayer = -1;
             state.lastDiscardIdx = -1;
+            state.claimedDiscards = [[], [], [], []];
             state.waitingContinue = false;
             pendingActionRequest = null;
             send({ type: 'start_game' });
@@ -640,6 +666,12 @@ const app = createApp({
             return state.lastDiscardPlayer === pid && state.lastDiscardIdx === idx;
         }
 
+        /** 河牌是否已被碰/杠/荣和取走 */
+        function isClaimed(offset, idx) {
+            const pid = (state.myPlayerId + offset) % 4;
+            return state.claimedDiscards[pid] && state.claimedDiscards[pid].includes(idx);
+        }
+
         /** 单局结束后继续下一局 */
         function continueMatch() {
             state.waitingContinue = false;
@@ -729,7 +761,7 @@ const app = createApp({
             startGame, doDingQue, onTileClick, doAction,
             tileSrc, player, hand, discards, actionLabel, dingqueLabel,
             getFuuro, canDiscardTile, handTiles, currentGameDisplay, matchDeltaLabel,
-            seatName, isLastDiscard, getHoraWinTile, continueMatch, gameDeltaLabel, gameDeltaClass, matchDeltaClass,
+            seatName, isLastDiscard, isClaimed, getHoraWinTile, continueMatch, gameDeltaLabel, gameDeltaClass, matchDeltaClass,
             getHandTileCount(p) {
                 const fuuro = state.fuuro[p] || [];
                 const meldTiles = fuuro.reduce((sum, m) => sum + (m.tiles ? m.tiles.length : 3), 0);

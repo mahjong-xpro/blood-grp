@@ -814,6 +814,24 @@ body {
     50% { box-shadow: 0 0 0 3px var(--highlight-color), 0 0 14px rgba(255, 215, 0, 0.7); }
 }
 
+/* ========== Claimed Tile 被碰/杠/荣和取走的河牌 ========== */
+.tile.claimed-tile {
+    opacity: 0.35;
+    filter: grayscale(0.6) brightness(0.8);
+    position: relative;
+}
+.tile.claimed-tile::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: rgba(255, 80, 80, 0.7);
+    transform: translateY(-50%);
+    pointer-events: none;
+}
+
 /* ========== Game Result Overlay 结算界面 ========== */
 .result-overlay {
     backdrop-filter: blur(4px);
