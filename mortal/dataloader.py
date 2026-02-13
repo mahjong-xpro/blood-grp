@@ -80,8 +80,11 @@ def compute_td_lambda_returns(
             if apply_gamma[i]:
                 running_return = step_reward + gamma * lambda_ * running_return
             else:
-                # 不应用折扣时, 保持当前回报 (用于 DingQue 等特殊步骤)
-                running_return = step_reward + lambda_ * running_return
+                # FIX: 非推进步骤（定缺、碰、和、pass、杠选择等）不应折扣。
+                # 与 MC 模式一致：非推进步骤的 steps_to_done 不递增，
+                # 因此它们应获得与下一个推进步骤相同的回报值。
+                # 之前错误地乘以 λ，导致每个非推进步骤额外衰减约 5%。
+                pass  # running_return 保持不变
         
         td_returns[i] = running_return
     

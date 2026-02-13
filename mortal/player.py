@@ -76,6 +76,8 @@ class TestPlayer:
 
     def test_play(self, seed_count, mortal, dqn, device):
         torch.backends.cudnn.benchmark = False
+        # FIX: 与 baseline 保持一致，启用 rule_based_agari_guard，
+        # 否则 challenger 缺少和牌安全网而 baseline 有，评估不公平。
         engine_chal = MortalEngine(
             mortal,
             dqn,
@@ -83,6 +85,7 @@ class TestPlayer:
             version = self.chal_version,
             device = device,
             enable_amp = True,
+            enable_rule_based_agari_guard = True,
             name = 'mortal',
         )
 

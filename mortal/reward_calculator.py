@@ -43,7 +43,9 @@ class RewardCalculator:
         if not self.rank_bonus_enabled:
             return 0.0
         # 计算排名 (0=1st, 3=4th)
-        ranks = (-np.array(final_scores)).argsort().argsort()
+        # FIX: 使用 stable 排序，与 dataloader.py 中 player_ranks 的计算方式一致。
+        # 默认 quicksort 不稳定，同分时排名可能与辅助任务目标不一致。
+        ranks = (-np.array(final_scores)).argsort(kind='stable').argsort(kind='stable')
         player_rank = ranks[player_id]
         return self.rank_bonuses[player_rank]
     

@@ -145,6 +145,7 @@ def train():
         'cql_loss': 0,
         'next_rank_loss': 0,
         'ding_que_ce_loss': 0,
+        'opp_wait_loss': 0,
         'ding_que_match': 0,
         'ding_que_total': 0,
     }
@@ -348,6 +349,7 @@ def train():
                     stats['cql_loss'] += cql_loss
                 stats['next_rank_loss'] += next_rank_loss
                 stats['ding_que_ce_loss'] += ding_que_ce_loss
+                stats['opp_wait_loss'] += opp_wait_loss
                 all_q[idx] = q
                 all_q_target[idx] = q_target
 
@@ -361,7 +363,10 @@ def train():
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad(set_to_none=True)
-            scheduler.step()
+                # FIX: scheduler.step() 移入 optimizer step 内部。
+                # 之前放在外层，导致 opt_step_every > 1 时 LR 调度比优化器快 N 倍，
+                # 且 GradScaler 跳过 NaN 梯度时 LR 也会错误推进。
+                scheduler.step()
             pb.update(1)
 
             if online and steps % submit_every == 0:
@@ -380,6 +385,7 @@ def train():
                     writer.add_scalar('loss/cql_loss', stats['cql_loss'] / save_every, steps)
                 writer.add_scalar('loss/next_rank_loss', stats['next_rank_loss'] / save_every, steps)
                 writer.add_scalar('loss/ding_que_ce_loss', stats['ding_que_ce_loss'] / save_every, steps)
+                writer.add_scalar('loss/opp_wait_loss', stats['opp_wait_loss'] / save_every, steps)
                 # 定缺与启发式一致率：定缺步中策略所选花色与启发式最佳花色一致的比例
                 dq_total = stats['ding_que_total']
                 if dq_total > 0:
@@ -428,7 +434,11 @@ def train():
                     dqn.train()
 
                     avg_pt = stat.avg_pt(pts)
-                    better = avg_pt >= best_perf['avg_pt'] and stat.avg_rank <= best_perf['avg_rank']
+                    # FIX: 原 AND 条件要求 avg_pt 和 avg_rank 同时改善（Pareto improvement），
+                    # 实际中两个指标存在评估噪声，同时改善极难触发，导致 best 模型长期不更新。
+                    # 改为以 avg_rank 为主指标（越低越好），avg_pt 为辅助参考。
+                    better = stat.avg_rank < best_perf['avg_rank'] or \
+                             (stat.avg_rank == best_perf['avg_rank'] and avg_pt > best_perf['avg_pt'])
                     if better:
                         past_best = best_perf.copy()
                         best_perf['avg_pt'] = avg_pt

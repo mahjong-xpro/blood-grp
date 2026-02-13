@@ -387,51 +387,46 @@ impl BoardState {
              let state = &self.player_states[i];
              if state.shanten() == 0 && state.ding_que.is_some() {
                  // Is Tenpai. Calculate Max Point.
-                 // Heuristic: Check all waiting tiles. Assume Tsumo. Calculate Points. Take Max.
+                 // FIX: 查大叫计算理论最大手牌价值，不受牌可用性影响。
+                 // state.waits() 会过滤 tiles_seen >= 4 的牌（实际游戏中不可能摸到），
+                 // 但查大叫是理论罚款，应遍历所有结构上能和的牌。
+                 // 例如：听 1m，但 4 张 1m 全部已见，state.waits()[0] = false，
+                 // 导致 max_points = 0，该听牌玩家被低估或漏算。
                  let mut max_points = 0;
-                 // state.waits is [bool; 27]
-                 for (tid, &is_wait) in state.waits().iter().enumerate() {
-                     if is_wait {
-                         // Mock tsumo event for calculation
-                         // Clone state is expensive? No, AgariCalculator takes references.
-                         // But we need to add winning tile to tehai temporarily?
-                         // AgariCalculator expects `tehai` to include winning tile? 
-                         // Yes: "Must include the winning tile"
+                 let tehai_sum: u8 = state.tehai.iter().sum();
+                 let len_div3_after_draw = ((tehai_sum.saturating_add(1)) / 3) as u8;
+                 for tid in 0..27 {
+                     if state.tehai[tid] >= 4 {
+                         continue; // 手牌已有 4 张，无法再加
+                     }
+                     let mut temp_tehai = state.tehai;
+                     temp_tehai[tid] += 1;
+                     // 结构上是否能和（不检查 tiles_seen）
+                     if crate::algo::shanten::calc_all(&temp_tehai, len_div3_after_draw, state.ding_que) != -1 {
+                         continue;
+                     }
                          
-                         let mut temp_tehai = state.tehai;
-                         temp_tehai[tid] += 1;
+                     let agari_calc = crate::algo::agari::AgariCalculator {
+                         tehai: &temp_tehai,
+                         pons: &state.pons,
+                         minkans: &state.minkans,
+                         ankans: &state.ankans,
+                         winning_tile: tid as u8,
+                         is_ron: true,
+                         ding_que: state.ding_que,
+                         is_after_kan: false,
+                         is_kan_discard: false,
+                         is_chankan: false,
+                         exclude_gen_tile: None,
+                         is_haidi: false,
+                         is_tianhu: false,
+                         is_dihu: false,
+                     };
                          
-                         let agari_calc = crate::algo::agari::AgariCalculator {
-                             tehai: &temp_tehai,
-
-                             pons: &state.pons,
-                             minkans: &state.minkans,
-                             ankans: &state.ankans,
-                             winning_tile: tid as u8,
-                             is_ron: true, // Treat as Ron to get "Hand Value" without "Menzen Tsumo" fan.
-                             // Cha Da Jiao pays based on the hand's shape value (Agari points).
-                             // If we set is_ron: false, agari.rs adds +1 Fan for "Tsumo", which is incorrect for a theoretical check.
-                             // Sichuan scoring is consistent (Ron = Tsumo_Ko).
-                             // So just calc Point.
-                             ding_que: state.ding_que,
-                             is_after_kan: false, // Assuming normal win
-                             is_kan_discard: false,
-                             is_chankan: false,
-                             exclude_gen_tile: None,
-
-                             is_haidi: false, // Do not give Haidi bonus for Cha Da Jiao theoretical hand
-                             // But usually Cha Da Jiao doesn't include Haidi unless strictly specified.
-                             // Let's be conservative: No Haidi bonus for "Theoretical" hand unless they WON on Haidi.
-                             // Here they did NOT win. So No Haidi.
-                             is_tianhu: false,
-                             is_dihu: false,
-                         };
-                         
-                         if let Some(agari) = agari_calc.agari() {
-                             let p = agari.point(false).ron; // Use ron value (base points)
-                             if p > max_points {
-                                 max_points = p;
-                             }
+                     if let Some(agari) = agari_calc.agari() {
+                         let p = agari.point(false).ron;
+                         if p > max_points {
+                             max_points = p;
                          }
                      }
                  }
@@ -608,109 +603,57 @@ impl BoardState {
             if is_chankan {
                  if let Some(kan_actor) = self.last_kan_actor {
                      if kan_actor == single_target && self.last_kan_revenue > 0 {
-                         // Recalculate who paid to refund them
-                         let refund_per_person = 1000;
-                         let mut total_refund = 0;
-                         for i in 0..4 {
-                             // Refund only those who actually paid at the time of kakan:
-                             // everyone except the kan actor and those already agari before this turn.
-                             if i != single_target as usize && !players_agari_before[i] {
-                                 deltas[i] += refund_per_person;
-                                 total_refund += refund_per_person;
-                             }
-                         }
-                         deltas[single_target as usize] -= total_refund;
-                         
-                         // Clear revenue so subsequent winners (Multi-Ron) don't double refund
-                         self.last_kan_revenue = 0;
-                         
-                         // Invalidate the robbed kong's gang record instead of popping,
-                         // so state remains replayable/deterministic.
+                         // FIX: 使用 gang_history 记录精确退款，而非硬编码 1000。
+                         // 这与杠上炮多荣退款路径保持一致，避免金额不同步的风险。
                          if let Some(rec) = self
                              .gang_history
                              .iter_mut()
                              .rev()
                              .find(|r| r.valid && r.actor == kan_actor)
                          {
-                             rec.valid = false;
-                         }
-
-                         // CRITICAL FIX: Revert the Kakan state in PlayerState
-                         // The victim (kan_actor) technically never successfully Kong-ed because it was robbed.
-                         // They should have a Pon (3 tiles) and lost the 4th tile to the winner.
-                         // Currently they have a MinKan (4 tiles) which creates a "Ghost Tile" and invalid Root/Gen scoring.
-                         {
-                             // We need to know which tile was kakan'd. 
-                             // We can get it from the winner's state (chankan_kakan_tile) or derive it.
-                             // Since we are inside the 'is_chankan' block and 'single_actor' is the winner:
-                             let winner_state = &self.player_states[single_actor as usize];
-                             // Use the actor recorded in the winner's state to ensure we target the correct victim.
-                             // Fallback to kan_actor (from action) if not found (though it should be).
-                             let target_actor = winner_state.chankan_kakan_actor.unwrap_or(kan_actor);
-                             if let Some(tile) = winner_state.chankan_kakan_tile {
-                                 let victim_state = &mut self.player_states[target_actor as usize];
-                                 
-                                 // Check if this tile exists in minkans (it should)
-                                 // Note: minkans stores u8 tile IDs.
-                                 let mut found_idx = None;
-                                 for (i, &t) in victim_state.minkans.iter().enumerate() {
-                                     if t == tile {
-                                         found_idx = Some(i);
-                                         break;
-                                     }
-                                 }
-                                 
-                                 if let Some(idx) = found_idx {
-                                     // Revert MinKan -> Pon
-                                     victim_state.minkans.remove(idx);
-                                     // Convert the meld back to a pon (3 tiles).
-                                     // Strong rule: if the state is inconsistent, crash early instead of
-                                     // trying to continue with corrupted meld state.
-                                     assert!(
-                                         !victim_state.pons.contains(&tile),
-                                         "ChanKan State Fix: duplicate pon tile {} for player {} (already in pons). This indicates invalid state/log.",
-                                         tile,
-                                         kan_actor
-                                     );
-                                     assert!(
-                                         victim_state.pons.len() < 4,
-                                         "ChanKan State Fix: pons capacity overflow (len=4) when reverting robbed kong for player {}. This indicates invalid state/log.",
-                                         kan_actor
-                                     );
-                                     victim_state.pons.push(tile);
-                                     
-                                     // State changed, update caches.
-                                     // After a robbed kong, the victim does NOT get the rinshan draw,
-                                     // so they remain at 3n+1; update waits, not discard tables.
-                                    victim_state.update_shanten();
-                                    victim_state.update_waits();
-                                    
-                                     // 抢杠时每发生一次打一条；大批量对局（如 6400 局）会累积很多条，故用 debug 降噪
-                                    log::debug!("ChanKan State Fix: Reverted Player {}'s MinKan of tile {} to Pon", target_actor, tile);
-                                 } else {
-                                     // Kakan event might have been preempted by Ron, so state is still Pon.
-                                     // Check if it is indeed a Pon.
-                                     if victim_state.pons.contains(&tile) {
-                                         log::debug!("ChanKan State Fix: Player {} state is already Pon for tile {} (Kakan preempted by Ron). No revert needed.", target_actor, tile);
-                                     } else {
-                                         log::warn!("ChanKan State Fix: Failed to find MinKan OR Pon for tile {} in Player {}'s state. Consistency might be broken.", tile, target_actor);
-                                     }
-                                 }
-                             } else {
-                                  log::warn!("ChanKan State Fix: Winner {} context missing chankan_kakan_tile", single_actor);
+                             for i in 0..4 {
+                                 deltas[i] -= rec.deltas[i];
                              }
+                             rec.valid = false;
+                         } else {
+                             log::warn!(
+                                 "Chankan refund: missing gang record for actor {}, revenue {}. Falling back to manual refund.",
+                                 kan_actor,
+                                 self.last_kan_revenue
+                             );
+                             // Fallback: 手动计算退款（兼容旧日志）
+                             let refund_per_person = 1000;
+                             let mut total_refund = 0;
+                             for i in 0..4 {
+                                 if i != single_target as usize && !players_agari_before[i] {
+                                     deltas[i] += refund_per_person;
+                                     total_refund += refund_per_person;
+                                 }
+                             }
+                             deltas[single_target as usize] -= total_refund;
                          }
+                         
+                         // Clear revenue so subsequent winners (Multi-Ron) don't double refund
+                         self.last_kan_revenue = 0;
+                         // FIX: 清除 last_kan_actor，避免后续代码路径误判状态
+                         self.last_kan_actor = None;
+
+                         // 职责划分：PlayerState 级别的抢杠回退（minkans→pons、fuuro_overview、
+                         // intermediate_kan、kans_on_board 等）统一由 update.rs::hora() 在
+                         // broadcast(&hora) 时处理。board.rs 只负责棋盘级状态：
+                         //   - gang_history 失效（上方已完成）
+                         //   - last_kan_actor/last_kan_revenue 清除（上方已完成）
+                         //   - kans 计数器递减（下方）
+                         //   - tsumo_actor 推进（下方）
+                         // 这避免了 board.rs 和 update.rs 对同一状态做重叠修改。
+
+                         // FIX: 以下两行移入内层 guard，确保多荣抢杠时只执行一次。
+                         // 之前放在外层 if is_chankan 中，导致 N 个荣和者各执行一次，
+                         // kans 被多次递减，可能导致天胡/地胡误判。
+                         self.tsumo_actor = (single_target + 1) % 4;
+                         self.kans = self.kans.saturating_sub(1);
                      }
                  }
-
-                // FIX BUG A: 抢杠后加杠玩家的回合已结束。
-                // kakan handler 将 tsumo_actor 设为加杠玩家（用于岭上摸牌），
-                // 但抢杠拦截了岭上摸牌，应推进到加杠玩家的下家。
-                // step() 中的 skip-agari 循环（line 927-936）会跳过已和牌的玩家。
-                self.tsumo_actor = (single_target + 1) % 4;
-
-                // 抢杠撤销了加杠，kans 计数器也需要递减以保持一致。
-                self.kans = self.kans.saturating_sub(1);
             }
             
             // Kong Revenue Handling (Hujiaozhuanyi / GangShangPao multi-ron rule)

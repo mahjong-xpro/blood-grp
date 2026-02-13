@@ -687,12 +687,13 @@ impl PlayerState {
             self.has_agari = true;
         }
 
-        // Chankan (抢杠) replay fix:
-        // If we attempted kakan and then got ronned immediately on that kakan tile (target == self),
-        // the kong should be cancelled and our meld must revert from (min)kan back to pon.
+        // Chankan (抢杠) PlayerState 回退：
+        // 加杠后被抢杠（target == self），杠被撤销，副露必须从 minkan 恢复为 pon。
         //
-        // The arena engine currently does a similar state correction; we must mirror it here so that
-        // logs are replayable and downstream dataset generation stays consistent.
+        // 职责划分：board.rs 只负责棋盘级状态（gang_history、last_kan_actor、kans 计数器），
+        // 所有 PlayerState 级回退（minkans→pons、fuuro_overview、intermediate_kan、
+        // kans_on_board、shanten、waits）由此处统一处理。
+        // 这保证了 arena 对局和 log replay/dataset 生成共用同一套回退逻辑。
         if target == self.player_id && actor != self.player_id {
             if let Some(tile) = self.pending_kakan_tile.take() {
                 // Revert minkans -> pons for this tile (do not change tehai: the 4th tile is robbed).
@@ -766,6 +767,16 @@ impl PlayerState {
                     break;
                 }
             }
+        }
+
+        // FIX: 自摸和牌（含杠上开花）后清除 intermediate_kan。
+        // 正常流程：杠→岭上摸→打牌（dahai 清除 intermediate_kan）。
+        // 杠上开花：杠→岭上摸→自摸和（没有打牌！intermediate_kan 残留）。
+        // 残留的 intermediate_kan 会导致下一个玩家的打牌被错误标记为
+        // is_kan_discard（杠上炮），产生虚假 +1 番。
+        // 注意：杠上开花本身的番数由 is_after_kan (at_rinshan) 判定，不依赖 intermediate_kan。
+        if actor == target && !self.intermediate_kan.is_empty() {
+            self.intermediate_kan.clear();
         }
 
         if let Some(d) = deltas {
