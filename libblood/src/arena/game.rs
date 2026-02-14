@@ -1,6 +1,7 @@
 use super::board::{Board, BoardState, Poll};
 use super::result::GameResult;
 use crate::agent::BatchAgent;
+use crate::algo::agari::FanConfig;
 use crate::consts::INITIAL_SCORE;
 use crate::hand::tehai_to_strings;
 use crate::mjai::{Event, EventExt};
@@ -15,6 +16,9 @@ pub struct BatchGame {
     pub length: u8,
     pub init_scores: [i32; 4],
     pub disable_progress_bar: bool,
+    /// When true, each game gets a random FanConfig derived from its seed.
+    /// When false (default), all games use FanConfig::default() (all enabled).
+    pub randomize_fan_config: bool,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -30,6 +34,7 @@ struct Game {
     length: u8,
     seed: (u64, u64),
     indexes: [Index; 4],
+    fan_config: FanConfig,
 
     oracle_obs_versions: [Option<u32>; 4],
     invisible_state_cache: [Option<Array2<f32>>; 4],
@@ -71,7 +76,7 @@ impl Game {
                 ..Default::default()
             };
             next_board.init_from_seed(self.seed);
-            self.board = next_board.into_state();
+            self.board = next_board.into_state_with_fan_config(self.fan_config);
             self.kyoku_started = true;
         }
 
@@ -257,6 +262,7 @@ impl BatchGame {
             length: 1,
             init_scores: [INITIAL_SCORE; 4],
             disable_progress_bar,
+            randomize_fan_config: false,
         }
     }
 
@@ -275,6 +281,7 @@ impl BatchGame {
             seeds.len(),
         );
 
+        let randomize = self.randomize_fan_config;
         let mut games = indexes
             .iter()
             .zip(seeds)
@@ -286,12 +293,21 @@ impl BatchGame {
                     oracle_obs_versions[i] = agents[idx.agent_idx].oracle_obs_version();
                 }
 
+                // Phase 2 multi-rule training: derive FanConfig from game seed
+                // for reproducibility. XOR with a salt to decorrelate from tile shuffle.
+                let fan_config = if randomize {
+                    FanConfig::random_from_seed(seed.0 ^ seed.1 ^ 0xFA4C_04F1_6000_0000)
+                } else {
+                    FanConfig::default()
+                };
+
                 let game = Box::new(Game {
                     length: self.length,
                     seed,
                     indexes: *idxs,
                     scores: self.init_scores,
                     oracle_obs_versions,
+                    fan_config,
                     ..Default::default()
                 });
                 Ok((game_idx, game))

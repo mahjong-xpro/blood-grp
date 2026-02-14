@@ -108,6 +108,13 @@ houjuu_penalty = -0.05       # 极小: 仅提醒"放铳是坏事"，不强制防
 # 手动操作: cp mortal.pth baseline.pth + 重启 client
 baseline_update_threshold = 4.0
 
+# 规则配置 — Phase 2: 多规则训练
+[rules]
+# 训练时是否随机化 FanConfig (每局独立随机开关各番种)
+# true = 多规则训练 (模型学习条件化策略)
+# false = 仅标准规则 (所有番种启用)
+randomize_fan_config = false
+
 # ResNet 模型配置 - 增大模型容量
 [resnet]
 conv_channels = 256  # 从 192 增加，更强的表示能力

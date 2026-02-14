@@ -1,5 +1,6 @@
 use super::action::ActionCandidate;
 use super::item::KawaItem;
+use crate::algo::agari::FanConfig;
 use crate::algo::sp::Candidate;
 use crate::hand::tiles_to_string;
 use crate::must_tile;
@@ -137,6 +138,10 @@ pub struct PlayerState {
 
     /// Used in single-player features to get the shanten for 3n+2.
     pub(super) has_next_shanten_discard: bool,
+
+    /// Configurable fan rules for this game session.
+    /// Set once at game start; all AgariCalculator calls use this config.
+    pub fan_config: FanConfig,
 }
 
 #[pymethods]
@@ -150,6 +155,18 @@ impl PlayerState {
             player_id,
             ..Default::default()
         }
+    }
+
+    /// Get the current fan configuration.
+    #[getter]
+    pub fn get_fan_config(&self) -> FanConfig {
+        self.fan_config
+    }
+
+    /// Set the fan configuration (should be called before game start).
+    #[setter]
+    pub fn set_fan_config(&mut self, config: FanConfig) {
+        self.fan_config = config;
     }
 
     /// Returns an `ActionCandidate`.

@@ -2,7 +2,7 @@ import json
 import traceback
 import torch
 import numpy as np
-from torch.distributions import Normal, Categorical
+from torch.distributions import Categorical
 from typing import *
 
 class MortalEngine:
@@ -11,9 +11,7 @@ class MortalEngine:
         brain,
         dqn,
         is_oracle,
-        version,
         device = None,
-        stochastic_latent = False,
         enable_amp = False,
         enable_quick_eval = True,
         enable_rule_based_agari_guard = False,
@@ -22,6 +20,9 @@ class MortalEngine:
         boltzmann_temp = 1,
         top_p = 1,
         agari_explore_eps = 0,
+        # Deprecated kwargs kept for checkpoint compatibility
+        version = None,
+        stochastic_latent = None,
     ):
         self.engine_type = 'mortal'
         self.device = device or torch.device('cpu')
@@ -29,8 +30,6 @@ class MortalEngine:
         self.brain = brain.to(self.device).eval()
         self.dqn = dqn.to(self.device).eval()
         self.is_oracle = is_oracle
-        self.version = version
-        self.stochastic_latent = stochastic_latent
 
         self.enable_amp = enable_amp
         self.enable_quick_eval = enable_quick_eval
@@ -80,15 +79,7 @@ class MortalEngine:
             bad = (valid_counts == 0).nonzero(as_tuple=False).flatten().tolist()
             raise ValueError(f"invalid action mask: no valid actions for batch indices {bad}")
 
-        if self.version == 1:
-            mu, logsig = self.brain(obs, invisible_obs)
-            if self.stochastic_latent:
-                latent = Normal(mu, logsig.exp() + 1e-6).sample()
-            else:
-                latent = mu
-            phi = latent
-        elif self.version in (2, 3, 4):
-            phi = self.brain(obs, invisible_obs)
+        phi = self.brain(obs, invisible_obs)
 
         # 推理引擎已关闭 AMP (enable_amp=False)，Brain 在 float32 下运行，
         # 不再有 float16 溢出问题。以下为安全网：如果未来误开 AMP 或权重腐败，

@@ -80,6 +80,11 @@ pub struct BoardState {
     ding_que_selected: [bool; 4],
 
     log: Vec<EventExt>,
+
+    /// Configurable fan rules for this game session.
+    /// Stored here for reference; also propagated to each `PlayerState`.
+    #[allow(dead_code)]
+    pub fan_config: crate::algo::agari::FanConfig,
 }
 
 pub struct AgentContext<'a> {
@@ -129,14 +134,25 @@ impl Board {
         assert_eq!(self.yama.len(), 56);
     }
 
+    #[allow(dead_code)]
     pub fn into_state(self) -> BoardState {
+        self.into_state_with_fan_config(crate::algo::agari::FanConfig::default())
+    }
+
+    pub fn into_state_with_fan_config(self, fan_config: crate::algo::agari::FanConfig) -> BoardState {
         let oya = self.kyoku % 4;
+
+        let mut player_states: [PlayerState; 4] = array::from_fn(|i| PlayerState::new(i as u8));
+        for ps in &mut player_states {
+            ps.fan_config = fan_config;
+        }
 
         BoardState {
             board: self,
             oya,
-            player_states: array::from_fn(|i| PlayerState::new(i as u8)),
+            player_states,
             agari_count: 0,
+            fan_config,
             ..Default::default()
         }
     }
@@ -411,6 +427,7 @@ impl BoardState {
                          is_haidi: false,
                          is_tianhu: false,
                          is_dihu: false,
+                         fan_config: state.fan_config,
                      };
                          
                      if let Some(agari) = agari_calc.agari() {

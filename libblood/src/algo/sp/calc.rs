@@ -2,7 +2,7 @@ use super::candidate::RawCandidate;
 use super::state::{InitState, State};
 use super::tile::{DiscardTile, DrawTile};
 use super::{Candidate, CandidateColumn, MAX_TSUMOS_LEFT};
-use crate::algo::agari::{Agari, AgariCalculator};
+use crate::algo::agari::{Agari, AgariCalculator, FanConfig};
 use crate::tile::Tile;
 use crate::t;
 use std::rc::Rc;
@@ -55,6 +55,9 @@ pub struct SPCalculator<'a> {
     /// 血战到底中已和牌者不付自摸款，对局中可能为 1~3。
     /// 默认 3（满员）。
     pub n_active_payers: u8,
+
+    /// Configurable fan rules for agari scoring.
+    pub fan_config: FanConfig,
 }
 
 struct SPCalculatorState<'a, const MAX_TSUMO: usize> {
@@ -672,6 +675,7 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: self.sup.fan_config,
         };
 
         let fan = match calc.agari()? {
@@ -723,6 +727,7 @@ mod test {
             calc_shanten_down: true,
             ding_que: None,
             n_active_payers: 3,
+            fan_config: FanConfig::default(),
         };
 
         let tehai = hand("45678m 34789p 3344m").unwrap();
@@ -781,6 +786,7 @@ mod test {
             calc_shanten_down: true,
             ding_que: None,
             n_active_payers: 3,
+            fan_config: FanConfig::default(),
         };
 
         let tehai = hand("45677m 456778p 248s").unwrap();
@@ -829,6 +835,7 @@ mod test {
             calc_shanten_down: true,
             ding_que: None,
             n_active_payers: 3,
+            fan_config: FanConfig::default(),
         };
         let tehai = hand("9999m 6677p 88s 335m 1m").unwrap();
         let tiles_seen = tehai;
@@ -873,6 +880,7 @@ mod test {
             calc_shanten_down: true,
             ding_que: None,
             n_active_payers: 3,
+            fan_config: FanConfig::default(),
         };
 
         // Test hand: 45677m 456778p 48s (tenpai, waiting for 7p or 9s)

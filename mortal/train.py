@@ -157,6 +157,13 @@ def train():
         nonlocal steps
         nonlocal idx
 
+        # BUG-01 fix: flag to signal epoch restart after test_play.
+        # test_play 运行 Rust arena (pyo3 + rayon) 后，DataLoader worker 进程
+        # 可能因 GIL 竞争或共享内存管道损坏而无法恢复迭代。
+        # 设置此标志后 train_batch() 提前 return → 外层 for 循环 break
+        # → train_epoch() 返回 → while True 重新调用 train_epoch() 创建全新 DataLoader。
+        _need_restart = False
+
         player_names = []
         if online:
             player_names = ['trainee']
@@ -247,7 +254,7 @@ def train():
         remaining_actions = []
         remaining_masks = []
         remaining_steps_to_done = []
-        remaining_kyoku_rewards = []
+        remaining_returns = []
         remaining_player_ranks = []
         remaining_ding_que_bonus = []
         remaining_ding_que_best_suit = []
@@ -255,16 +262,17 @@ def train():
         remaining_bs = 0
         pb = tqdm(total=save_every, desc='TRAIN', initial=steps % save_every)
 
-        def train_batch(obs, actions, masks, steps_to_done, kyoku_rewards, player_ranks, ding_que_bonus, ding_que_best_suit, opponent_waits):
+        def train_batch(obs, actions, masks, steps_to_done, returns, player_ranks, ding_que_bonus, ding_que_best_suit, opponent_waits):
             nonlocal steps
             nonlocal idx
             nonlocal pb
+            nonlocal _need_restart
 
             obs = obs.to(dtype=torch.float32, device=device)
             actions = actions.to(dtype=torch.int64, device=device)
             masks = masks.to(dtype=torch.bool, device=device)
             steps_to_done = steps_to_done.to(dtype=torch.int64, device=device)
-            kyoku_rewards = kyoku_rewards.to(dtype=torch.float64, device=device)
+            returns = returns.to(dtype=torch.float64, device=device)
             player_ranks = player_ranks.to(dtype=torch.int64, device=device)
             ding_que_bonus = ding_que_bonus.to(dtype=torch.float32, device=device)
             ding_que_best_suit = ding_que_best_suit.to(dtype=torch.int64, device=device)
@@ -284,16 +292,14 @@ def train():
                 logging.error(msg)
                 raise RuntimeError(msg)
 
-            # Kyoku return (discounted) + per-step Ding Que auxiliary bonus (only non-zero at DingQue steps)
-            # TD(λ) 模式: kyoku_rewards 已经包含折扣后的 TD 回报, 不需要再乘 gamma^n
-            # MC 模式: 需要乘 gamma^n 进行折扣
+            # returns 的含义取决于训练模式（由 dataloader 预计算）:
+            #   TD(λ) 模式: 已折扣的 TD(λ) 回报，直接使用
+            #   MC 模式:    原始 kyoku delta points，需乘 gamma^n 折扣
             td_lambda_enabled = config.get('env', {}).get('td_lambda_enabled', False)
             if td_lambda_enabled:
-                # TD(λ) 回报已在 dataloader 中预计算, 包含了折扣
-                q_target = kyoku_rewards + ding_que_bonus
+                q_target = returns + ding_que_bonus
             else:
-                # 原始 MC 回报需要折扣
-                q_target = gamma ** steps_to_done * kyoku_rewards + ding_que_bonus
+                q_target = gamma ** steps_to_done * returns + ding_que_bonus
             q_target = q_target.to(torch.float32)
 
             with torch.autocast(device.type, enabled=enable_amp):
@@ -501,30 +507,43 @@ def train():
                         # （所有后续自对弈仍使用旧 baseline 权重）。
                         if train_player is not None:
                             train_player.reload_baseline(baseline_file)
+                        # FIX BUG-01: 进程不再重启，test_player 的 baseline 也需手动刷新，
+                        # 确保下次 test_play 使用最新 baseline 模型。
+                        test_player.reload_baseline(baseline_file)
                     
                     if online:
-                        # BUG: This is a bug with unknown reason. When training
-                        # in online mode, the process will get stuck here. This
-                        # is the reason why `main` spawns a sub process to train
-                        # in online mode instead of going for training directly.
-                        sys.exit(0)
+                        # FIX BUG-01: 原 workaround 用 sys.exit(0) 杀进程再由父进程重启。
+                        # 根因：test_play 运行 Rust arena (pyo3 + rayon) 后，DataLoader
+                        # worker 进程可能因 GIL 竞争或共享内存管道损坏而无法恢复迭代。
+                        # 修复：设置标志 → 外层 for 循环 break → train_epoch() 返回
+                        # → while True 循环重新调用 train_epoch() 创建全新 DataLoader。
+                        logging.info('Online: recycling DataLoader after test_play')
+                        _need_restart = True
+                        return
                 pb = tqdm(total=save_every, desc='TRAIN')
 
-        for obs, actions, masks, steps_to_done, kyoku_rewards, player_ranks, ding_que_bonus, ding_que_best_suit, opponent_waits in data_loader:
+        for obs, actions, masks, steps_to_done, returns, player_ranks, ding_que_bonus, ding_que_best_suit, opponent_waits in data_loader:
             bs = obs.shape[0]
             if bs != batch_size:
                 remaining_obs.append(obs)
                 remaining_actions.append(actions)
                 remaining_masks.append(masks)
                 remaining_steps_to_done.append(steps_to_done)
-                remaining_kyoku_rewards.append(kyoku_rewards)
+                remaining_returns.append(returns)
                 remaining_player_ranks.append(player_ranks)
                 remaining_ding_que_bonus.append(ding_que_bonus)
                 remaining_ding_que_best_suit.append(ding_que_best_suit)
                 remaining_opponent_waits.append(opponent_waits)
                 remaining_bs += bs
                 continue
-            train_batch(obs, actions, masks, steps_to_done, kyoku_rewards, player_ranks, ding_que_bonus, ding_que_best_suit, opponent_waits)
+            train_batch(obs, actions, masks, steps_to_done, returns, player_ranks, ding_que_bonus, ding_que_best_suit, opponent_waits)
+            if _need_restart:
+                break
+
+        # BUG-01 fix: skip remaining batches and submit, let train_epoch() return
+        # so that while True loop recreates everything with a fresh DataLoader.
+        if _need_restart:
+            return
 
         remaining_batches = remaining_bs // batch_size
         if remaining_batches > 0:
@@ -532,7 +551,7 @@ def train():
             actions = torch.cat(remaining_actions, dim=0)
             masks = torch.cat(remaining_masks, dim=0)
             steps_to_done = torch.cat(remaining_steps_to_done, dim=0)
-            kyoku_rewards = torch.cat(remaining_kyoku_rewards, dim=0)
+            returns = torch.cat(remaining_returns, dim=0)
             player_ranks = torch.cat(remaining_player_ranks, dim=0)
             ding_que_bonus = torch.cat(remaining_ding_que_bonus, dim=0)
             ding_que_best_suit = torch.cat(remaining_ding_que_best_suit, dim=0)
@@ -545,14 +564,18 @@ def train():
                     actions[start:end],
                     masks[start:end],
                     steps_to_done[start:end],
-                    kyoku_rewards[start:end],
+                    returns[start:end],
                     player_ranks[start:end],
                     ding_que_bonus[start:end],
                     ding_que_best_suit[start:end],
                     opponent_waits[start:end],
                 )
+                if _need_restart:
+                    break
                 start = end
                 end += batch_size
+        if _need_restart:
+            return
         pb.close()
 
         if online:
@@ -620,6 +643,9 @@ def main():
         # Already set, ignore
         pass
 
+    # Online 模式通过子进程运行 train()。
+    # BUG-01 已修复（不再需要 sys.exit(0) + 重启循环），但保留子进程包装
+    # 作为崩溃恢复安全网：如果 train() 异常退出，父进程以相同错误码退出。
     # do not set this env manually
     is_sub_proc_key = 'MORTAL_IS_SUB_PROC'
     online = config['control']['online']

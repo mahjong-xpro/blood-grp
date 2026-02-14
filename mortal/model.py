@@ -1,10 +1,7 @@
 import torch
 from torch import nn, Tensor
-from torch.nn import functional as F
-from torch.nn.utils.rnn import pack_padded_sequence, pad_sequence
 from typing import *
 from functools import partial
-from itertools import permutations
 from libblood.consts import obs_shape, oracle_obs_shape, ACTION_SPACE
 
 TILE_KINDS = 27
@@ -108,34 +105,16 @@ class ResNet(nn.Module):
         return self.net(x)
 
 class Brain(nn.Module):
-    def __init__(self, *, conv_channels, num_blocks, is_oracle=False, version=1):
+    def __init__(self, *, conv_channels, num_blocks, is_oracle=False, version=4):
         super().__init__()
         self.is_oracle = is_oracle
-        self.version = version
 
         in_channels = obs_shape(version)[0]
         if is_oracle:
             in_channels += oracle_obs_shape(version)[0]
 
-        norm_builder = partial(nn.BatchNorm1d, conv_channels, momentum=0.01)
+        norm_builder = partial(nn.BatchNorm1d, conv_channels, momentum=0.01, eps=1e-3)
         actv_builder = partial(nn.Mish, inplace=True)
-        pre_actv = True
-
-        if version == 1:
-            actv_builder = partial(nn.ReLU, inplace=True)
-            pre_actv = False
-            self.latent_net = nn.Sequential(
-                nn.Linear(1024, 512),
-                nn.ReLU(inplace=True),
-            )
-            self.mu_head = nn.Linear(512, 512)
-            self.logsig_head = nn.Linear(512, 512)
-        elif version == 2:
-            pass
-        elif version in (3, 4):
-            norm_builder = partial(nn.BatchNorm1d, conv_channels, momentum=0.01, eps=1e-3)
-        else:
-            raise ValueError(f'Unexpected version {self.version}')
 
         self.encoder = ResNet(
             in_channels = in_channels,
@@ -143,28 +122,19 @@ class Brain(nn.Module):
             num_blocks = num_blocks,
             norm_builder = norm_builder,
             actv_builder = actv_builder,
-            pre_actv = pre_actv,
+            pre_actv = True,
         )
         self.actv = actv_builder()
 
         # always use EMA or CMA when True
         self._freeze_bn = False
 
-    def forward(self, obs: Tensor, invisible_obs: Optional[Tensor] = None) -> Union[Tuple[Tensor, Tensor], Tensor]:
+    def forward(self, obs: Tensor, invisible_obs: Optional[Tensor] = None) -> Tensor:
         if self.is_oracle:
             assert invisible_obs is not None
             obs = torch.cat((obs, invisible_obs), dim=1)
         phi = self.encoder(obs)
-
-        if self.version == 1:
-            latent_out = self.latent_net(phi)
-            mu = self.mu_head(latent_out)
-            logsig = self.logsig_head(latent_out)
-            return mu, logsig
-        elif self.version in (2, 3, 4):
-            return self.actv(phi)
-        else:
-            raise ValueError(f'Unexpected version {self.version}')
+        return self.actv(phi)
 
     def train(self, mode=True):
         super().train(mode)
@@ -195,34 +165,13 @@ class AuxNet(nn.Module):
         return self.net(x).split(self.dims, dim=-1)
 
 class DQN(nn.Module):
-    def __init__(self, *, version=1):
+    def __init__(self, *, version=4):
         super().__init__()
-        self.version = version
-        if version == 1:
-            self.v_head = nn.Linear(512, 1)
-            self.a_head = nn.Linear(512, ACTION_SPACE)
-        elif version in (2, 3):
-            hidden_size = 512 if version == 2 else 256
-            self.v_head = nn.Sequential(
-                nn.Linear(1024, hidden_size),
-                nn.Mish(inplace=True),
-                nn.Linear(hidden_size, 1),
-            )
-            self.a_head = nn.Sequential(
-                nn.Linear(1024, hidden_size),
-                nn.Mish(inplace=True),
-                nn.Linear(hidden_size, ACTION_SPACE),
-            )
-        elif version == 4:
-            self.net = nn.Linear(1024, 1 + ACTION_SPACE)
-            nn.init.constant_(self.net.bias, 0)
+        self.net = nn.Linear(1024, 1 + ACTION_SPACE)
+        nn.init.constant_(self.net.bias, 0)
 
     def forward(self, phi, mask):
-        if self.version == 4:
-            v, a = self.net(phi).split((1, ACTION_SPACE), dim=-1)
-        else:
-            v = self.v_head(phi)
-            a = self.a_head(phi)
+        v, a = self.net(phi).split((1, ACTION_SPACE), dim=-1)
 
         a_sum = a.masked_fill(~mask, 0.).sum(-1, keepdim=True)
         mask_sum = mask.sum(-1, keepdim=True)

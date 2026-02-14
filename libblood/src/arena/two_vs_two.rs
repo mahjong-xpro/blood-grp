@@ -19,16 +19,19 @@ use rayon::prelude::*;
 pub struct TwoVsTwo {
     pub disable_progress_bar: bool,
     pub log_dir: Option<String>,
+    /// Phase 2: randomize FanConfig per game for multi-rule training.
+    pub randomize_fan_config: bool,
 }
 
 #[pymethods]
 impl TwoVsTwo {
     #[new]
-    #[pyo3(signature = (*, disable_progress_bar=false, log_dir=None))]
-    const fn new(disable_progress_bar: bool, log_dir: Option<String>) -> Self {
+    #[pyo3(signature = (*, disable_progress_bar=false, log_dir=None, randomize_fan_config=false))]
+    const fn new(disable_progress_bar: bool, log_dir: Option<String>, randomize_fan_config: bool) -> Self {
         Self {
             disable_progress_bar,
             log_dir,
+            randomize_fan_config,
         }
     }
 
@@ -162,7 +165,8 @@ impl TwoVsTwo {
             new_challenger_agent(&challenger_player_ids)?,
             new_champion_agent(&champion_player_ids)?,
         ];
-        let batch_game = BatchGame::standard_game(self.disable_progress_bar);
+        let mut batch_game = BatchGame::standard_game(self.disable_progress_bar);
+        batch_game.randomize_fan_config = self.randomize_fan_config;
 
         let mut challenger_idx = 0;
         let mut champion_idx = 0;
@@ -257,7 +261,8 @@ impl TwoVsTwo {
             new_challenger_agent(&challenger_player_ids)?,
             new_champion_agent(&champion_player_ids)?,
         ];
-        let batch_game = BatchGame::standard_game(self.disable_progress_bar);
+        let mut batch_game = BatchGame::standard_game(self.disable_progress_bar);
+        batch_game.randomize_fan_config = self.randomize_fan_config;
 
         let indexes = if split == 0 {
             [[

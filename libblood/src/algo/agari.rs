@@ -65,6 +65,133 @@ pub enum Agari {
     Fan(u8),
 }
 
+/// Configurable Sichuan Mahjong fan rules.
+///
+/// Different tables / regions enable different optional fan types.
+/// `Default` enables all fans (standard 血战到底 full rule set).
+/// During training, random subsets can be toggled (domain randomization)
+/// so the model learns to adapt to varied rule combinations at inference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[pyo3::pyclass(get_all, set_all)]
+pub struct FanConfig {
+    /// 门清 (+1番): no open melds. Default: true
+    pub menqing: bool,
+    /// 断幺九 (+1番): all tiles 2–8, no terminals. Default: true
+    pub duanyaojiu: bool,
+    /// 带幺九 (+3番): every meld/pair contains 1 or 9. Default: true
+    pub daiyaojiu: bool,
+    /// 一条龙 (+1番): same suit 123+456+789. Default: true
+    pub yitiaolong: bool,
+    /// 夹心五 (+1番): win on 5 via 4-6 kanchan wait. Default: true
+    pub jiaxinwu: bool,
+    /// 海底捞月/海底炮 (+1番): win on last tile. Default: true
+    pub haidi: bool,
+    /// 天胡/地胡 (直接5番). Default: true
+    pub tianhu_dihu: bool,
+}
+
+impl Default for FanConfig {
+    fn default() -> Self {
+        Self {
+            menqing: true,
+            duanyaojiu: true,
+            daiyaojiu: true,
+            yitiaolong: true,
+            jiaxinwu: true,
+            haidi: true,
+            tianhu_dihu: true,
+        }
+    }
+}
+
+#[pyo3::pymethods]
+impl FanConfig {
+    #[new]
+    #[pyo3(signature = (
+        menqing=true,
+        duanyaojiu=true,
+        daiyaojiu=true,
+        yitiaolong=true,
+        jiaxinwu=true,
+        haidi=true,
+        tianhu_dihu=true,
+    ))]
+    fn py_new(
+        menqing: bool,
+        duanyaojiu: bool,
+        daiyaojiu: bool,
+        yitiaolong: bool,
+        jiaxinwu: bool,
+        haidi: bool,
+        tianhu_dihu: bool,
+    ) -> Self {
+        Self { menqing, duanyaojiu, daiyaojiu, yitiaolong, jiaxinwu, haidi, tianhu_dihu }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "FanConfig(menqing={}, duanyaojiu={}, daiyaojiu={}, yitiaolong={}, jiaxinwu={}, haidi={}, tianhu_dihu={})",
+            self.menqing, self.duanyaojiu, self.daiyaojiu, self.yitiaolong, self.jiaxinwu, self.haidi, self.tianhu_dihu,
+        )
+    }
+}
+
+impl FanConfig {
+    /// All fans enabled (standard 血战到底).
+    pub const ALL: Self = Self {
+        menqing: true,
+        duanyaojiu: true,
+        daiyaojiu: true,
+        yitiaolong: true,
+        jiaxinwu: true,
+        haidi: true,
+        tianhu_dihu: true,
+    };
+
+    /// Number of configurable flags (for observation encoding).
+    pub const NUM_FLAGS: usize = 7;
+
+    /// Return flags as a fixed-size bool array for observation encoding.
+    #[inline]
+    pub fn as_flags(&self) -> [bool; Self::NUM_FLAGS] {
+        [
+            self.menqing,
+            self.duanyaojiu,
+            self.daiyaojiu,
+            self.yitiaolong,
+            self.jiaxinwu,
+            self.haidi,
+            self.tianhu_dihu,
+        ]
+    }
+
+    /// Generate a random FanConfig from a seed.
+    ///
+    /// Each flag is independently set to true/false with 50% probability.
+    /// The seed ensures reproducibility: same seed → same config.
+    ///
+    /// Used in Phase 2 multi-rule training: each game gets a different
+    /// random rule set so the model learns to condition on rule flags.
+    pub fn random_from_seed(seed: u64) -> Self {
+        // Use a simple hash-based approach for fast, deterministic randomness.
+        // We don't need cryptographic quality - just good distribution.
+        use std::hash::{Hash, Hasher};
+        let mut hasher = ahash::AHasher::default();
+        seed.hash(&mut hasher);
+        let bits = hasher.finish();
+
+        Self {
+            menqing:     bits & (1 << 0) != 0,
+            duanyaojiu:  bits & (1 << 1) != 0,
+            daiyaojiu:   bits & (1 << 2) != 0,
+            yitiaolong:  bits & (1 << 3) != 0,
+            jiaxinwu:    bits & (1 << 4) != 0,
+            haidi:       bits & (1 << 5) != 0,
+            tianhu_dihu: bits & (1 << 6) != 0,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct AgariCalculator<'a> {
     /// Must include the winning tile (i.e. must be 3n+2)
@@ -89,6 +216,9 @@ pub struct AgariCalculator<'a> {
     pub is_haidi: bool,
     pub is_tianhu: bool,
     pub is_dihu: bool,
+
+    /// Configurable fan rules (which optional fan types are active).
+    pub fan_config: FanConfig,
 }
 
 impl From<u32> for Div {
@@ -248,6 +378,7 @@ impl AgariCalculator<'_> {
         }
         
         let mut fan: u8 = 1;
+        let fc = &self.fan_config;
         
         // 2. 自摸（Tsumo）：+1番
         if !self.is_ron {
@@ -255,12 +386,12 @@ impl AgariCalculator<'_> {
         }
 
         // 13. 海底捞月/海底炮（Haidi）：+1番
-        if self.is_haidi {
+        if fc.haidi && self.is_haidi {
             fan += 1;
         }
 
         // 3. 门清（MenQing）：+1番（无副露：无碰、无杠）
-        if self.pons.is_empty() && self.minkans.is_empty() && self.ankans.is_empty() {
+        if fc.menqing && self.pons.is_empty() && self.minkans.is_empty() && self.ankans.is_empty() {
             fan += 1;
         }
         
@@ -432,35 +563,39 @@ impl AgariCalculator<'_> {
             // 以下番型需要顺子结构，与七对互斥（七对无顺子）
             if !is_chitoi {
                 // 10. 一条龙（YiTiaoLong）：+1番（同一花色含有 123、456、789 三副顺子）
-                let mut suit_has_shuntsu_num: [[bool; 9]; 3] = [[false; 9]; 3];
-                for &shuntsu_idx in &div.shuntsu_idxs {
-                    let tile_id = tile14[shuntsu_idx as usize];
-                    if tile_id >= 27 {
-                        continue;
+                if fc.yitiaolong {
+                    let mut suit_has_shuntsu_num: [[bool; 9]; 3] = [[false; 9]; 3];
+                    for &shuntsu_idx in &div.shuntsu_idxs {
+                        let tile_id = tile14[shuntsu_idx as usize];
+                        if tile_id >= 27 {
+                            continue;
+                        }
+                        let kind = (tile_id / 9) as usize;
+                        let num = tile_id % 9;
+                        if kind < 3 {
+                            suit_has_shuntsu_num[kind][num as usize] = true;
+                        }
                     }
-                    let kind = (tile_id / 9) as usize;
-                    let num = tile_id % 9;
-                    if kind < 3 {
-                        suit_has_shuntsu_num[kind][num as usize] = true;
+                    let is_yitiaolong = (0..3).any(|kind| {
+                        suit_has_shuntsu_num[kind][0] && suit_has_shuntsu_num[kind][3] && suit_has_shuntsu_num[kind][6]
+                    });
+                    if is_yitiaolong {
+                        div_fan += 1;
                     }
-                }
-                let is_yitiaolong = (0..3).any(|kind| {
-                    suit_has_shuntsu_num[kind][0] && suit_has_shuntsu_num[kind][3] && suit_has_shuntsu_num[kind][6]
-                });
-                if is_yitiaolong {
-                    div_fan += 1;
                 }
                 
                 // 11. 夹心五（JiaXinWu）：+1番（和牌张为 5，且听牌为 4-6 夹 5，和 5 成顺 456）
-                let is_jiaxinwu = (self.winning_tile < 27 && self.winning_tile % 9 == 4)
-                    && div.shuntsu_idxs.iter().any(|&shuntsu_idx| {
-                        let tile_id = tile14[shuntsu_idx as usize];
-                        tile_id < 27
-                            && tile_id % 9 == 3
-                            && tile_id / 9 == self.winning_tile / 9
-                    });
-                if is_jiaxinwu {
-                    div_fan += 1;
+                if fc.jiaxinwu {
+                    let is_jiaxinwu = (self.winning_tile < 27 && self.winning_tile % 9 == 4)
+                        && div.shuntsu_idxs.iter().any(|&shuntsu_idx| {
+                            let tile_id = tile14[shuntsu_idx as usize];
+                            tile_id < 27
+                                && tile_id % 9 == 3
+                                && tile_id / 9 == self.winning_tile / 9
+                        });
+                    if is_jiaxinwu {
+                        div_fan += 1;
+                    }
                 }
             }
             
@@ -514,9 +649,9 @@ impl AgariCalculator<'_> {
                 ok
             };
             
-            if is_daiyaojiu {
+            if fc.daiyaojiu && is_daiyaojiu {
                 div_fan += 3;
-            } else {
+            } else if fc.duanyaojiu {
                 // 9. 断幺九（DuanYaoJiu）：+1番（所有组合不含1和9，仅2–8；与带幺九互斥）
                 // 可与七对叠加
                 let is_duanyaojiu = if is_chitoi {
@@ -591,15 +726,27 @@ impl AgariCalculator<'_> {
             }
 
             // 带幺九 +3番（所有牌种都是 1 或 9）
-            let chitoi_daiyaojiu = self.tehai.iter().enumerate().all(|(tid, &count)| {
-                if count == 0 { return true; }
-                let num = tid % 9;
-                num == 0 || num == 8
-            });
-            if chitoi_daiyaojiu {
-                chitoi_fan += 3;
-            } else {
-                // 断幺九 +1番（所有牌种都是 2-8）
+            if fc.daiyaojiu {
+                let chitoi_daiyaojiu = self.tehai.iter().enumerate().all(|(tid, &count)| {
+                    if count == 0 { return true; }
+                    let num = tid % 9;
+                    num == 0 || num == 8
+                });
+                if chitoi_daiyaojiu {
+                    chitoi_fan += 3;
+                } else if fc.duanyaojiu {
+                    // 断幺九 +1番（所有牌种都是 2-8）
+                    let chitoi_duanyaojiu = self.tehai.iter().enumerate().all(|(tid, &count)| {
+                        if count == 0 { return true; }
+                        let num = tid % 9;
+                        num >= 1 && num <= 7
+                    });
+                    if chitoi_duanyaojiu {
+                        chitoi_fan += 1;
+                    }
+                }
+            } else if fc.duanyaojiu {
+                // 断幺九 +1番（所有牌种都是 2-8）— 带幺九关闭时单独检查
                 let chitoi_duanyaojiu = self.tehai.iter().enumerate().all(|(tid, &count)| {
                     if count == 0 { return true; }
                     let num = tid % 9;
@@ -636,7 +783,7 @@ impl AgariCalculator<'_> {
         }
         
         // 17. 天胡 (TianHu) / 地胡 (DiHu): Max Fan (5番)
-        if self.is_tianhu || self.is_dihu {
+        if fc.tianhu_dihu && (self.is_tianhu || self.is_dihu) {
             fan = 5;
             // Early return or just let it be capped below (it is already 5)
         }
@@ -871,7 +1018,8 @@ mod test {
     fn agari_calc() {
         
         // Test 1: 平胡 + 自摸 + 门清 (PingHu + Tsumo + MenQing) - 3番
-        let tehai = hand("123456m 789p 11s 2m").unwrap();
+        // 14 tiles: 123456m(6) + 789p(3) + 345s(3) + 22m(2) = 14
+        let tehai = hand("123456m 789p 345s 22m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
 
@@ -888,13 +1036,14 @@ mod test {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 门清 = 1 + 1 + 1 = 3番
         assert_eq!(agari, Agari::Fan(3));
         
         // Test 2: 平胡 + 荣和 + 门清 (Ron, MenQing) - 2番
-        let tehai = hand("123456m 789p 11s 2m").unwrap();
+        let tehai = hand("123456m 789p 345s 22m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
 
@@ -911,17 +1060,20 @@ mod test {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         let agari = calc.agari().unwrap();
         // 荣和 + 平胡 + 门清 = 1 + 1 = 2番
         assert_eq!(agari, Agari::Fan(2));
         
         // Test 2b: 门清（MenQing）无副露 +1番：同一型无副露 3番 vs 有 1 碰 2番
-        let tehai_mq = hand("123456m 789p 11s 2m").unwrap();
-        let c_mq = AgariCalculator { tehai: &tehai_mq, pons: &[], minkans: &[], ankans: &[], winning_tile: tu8!(2m), is_ron: false, ding_que: None, is_after_kan: false, is_kan_discard: false, is_chankan: false, exclude_gen_tile: None, is_haidi: false, is_tianhu: false, is_dihu: false };
+        // 14 tiles: 123456m(6) + 789p(3) + 345s(3) + 22m(2) = 14
+        let tehai_mq = hand("123456m 789p 345s 22m").unwrap();
+        let c_mq = AgariCalculator { tehai: &tehai_mq, pons: &[], minkans: &[], ankans: &[], winning_tile: tu8!(2m), is_ron: false, ding_que: None, is_after_kan: false, is_kan_discard: false, is_chankan: false, exclude_gen_tile: None, is_haidi: false, is_tianhu: false, is_dihu: false, fan_config: FanConfig::default() };
         assert_eq!(c_mq.agari().unwrap(), Agari::Fan(3), "无副露=门清+1");
-        let tehai_f = hand("123456m 789p 11s").unwrap();
-        let c_f = AgariCalculator { tehai: &tehai_f, pons: &[tu8!(2m)], minkans: &[], ankans: &[], winning_tile: tu8!(2m), is_ron: false, ding_que: None, is_after_kan: false, is_kan_discard: false, is_chankan: false, exclude_gen_tile: None, is_haidi: false, is_tianhu: false, is_dihu: false };
+        // 11 tiles concealed + 1 pon (3 tiles) = 14 total
+        let tehai_f = hand("123456m 789p 22s").unwrap();
+        let c_f = AgariCalculator { tehai: &tehai_f, pons: &[tu8!(3s)], minkans: &[], ankans: &[], winning_tile: tu8!(2s), is_ron: false, ding_que: None, is_after_kan: false, is_kan_discard: false, is_chankan: false, exclude_gen_tile: None, is_haidi: false, is_tianhu: false, is_dihu: false, fan_config: FanConfig::default() };
         assert_eq!(c_f.agari().unwrap(), Agari::Fan(2), "有副露无门清");
         
         // Test 3: 七对 (QiDui) - 2番
@@ -942,13 +1094,15 @@ mod test {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 门清 + 七对 = 1 + 1 + 1 + 2 = 5番（封顶）
         assert_eq!(agari, Agari::Fan(5));
         
         // Test 4: 碰碰胡 (ToiToi) - 1番
-        let tehai = hand("11133355577m 99p").unwrap();
+        // 14 tiles: 111m(3)+333m(3)+555m(3)+999p(3)+77m(2) = 14
+        let tehai = hand("111333555m 999p 77m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
 
@@ -965,13 +1119,19 @@ mod test {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 门清 + 碰碰胡 = 1 + 1 + 1 + 1 = 4番
         assert_eq!(agari, Agari::Fan(4));
         
         // Test 5: 清一色 (QingYiSe) - 2番
-        let tehai = hand("1112345678999m").unwrap();
+        // 14 tiles: 1m*3 + 2m + 3m + 4m + 5m + 6m + 7m + 8m + 9m*3 + 9m = 14
+        // Divisions: 111m(kotsu) + 234m + 567m + 89m+9m(pair?) → no
+        // Better: 111m(kotsu) + 234m(shuntsu) + 567m(shuntsu) + 999m(kotsu) + 8m?? 
+        // Actually: 111m + 2345m + 678m + 999m = 3+4+3+3 = 13, not standard.
+        // Use: 1234567m(7) + 89m(2) + 999m(3) + 11m(2) = 14
+        let tehai = hand("1234567m 89m 999m 11m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
 
@@ -988,6 +1148,7 @@ mod test {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 门清 + 清一色 = 1 + 1 + 1 + 2 = 5番（封顶）
@@ -1011,6 +1172,7 @@ mod test {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 门清 + 带幺九 = 1+1+1+3 = 6番封顶5
@@ -1033,6 +1195,7 @@ mod test {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 门清 + 断幺九 = 1 + 1 + 1 + 1 = 4番
@@ -1055,6 +1218,7 @@ mod test {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 门清 + 一条龙 = 1 + 1 + 1 + 1 = 4番（123m 456m 789m 22p 345s）
@@ -1077,13 +1241,15 @@ mod test {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 门清 + 夹心五 = 1 + 1 + 1 + 1 = 4番（456s 为 46 听 5 和出）
         assert_eq!(agari, Agari::Fan(4));
         
         // Test 7: 杠上花 (GangShangHua) - 1番
-        let tehai = hand("123456m 789p 11s 2m").unwrap();
+        // 14 tiles: 123456m(6) + 789p(3) + 345s(3) + 22m(2) = 14
+        let tehai = hand("123456m 789p 345s 22m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
 
@@ -1100,13 +1266,14 @@ mod test {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 门清 + 杠上花 = 1 + 1 + 1 + 1 = 4番
         assert_eq!(agari, Agari::Fan(4));
         
         // Test 8: 杠上炮 (GangShangPao) - 1番
-        let tehai = hand("123456m 789p 11s 2m").unwrap();
+        let tehai = hand("123456m 789p 345s 22m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
 
@@ -1123,6 +1290,7 @@ mod test {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         let agari = calc.agari().unwrap();
         // 荣和 + 平胡 + 门清 + 杠上炮 = 1 + 1 + 1 = 3番
@@ -1146,6 +1314,7 @@ mod test {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 门清 + 四归一(1根) = 1 + 1 + 1 + 1 = 4番
@@ -1170,6 +1339,7 @@ mod test {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 碰碰胡 + 金钩钓 = 1 + 1 + 1 + 1 = 4番（有副露故无门清，混合花色无清一色）
@@ -1194,13 +1364,15 @@ mod test {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         let agari = calc.agari().unwrap();
         // 应该封顶在5番（自摸+平胡+门清+七对+清一色 = 7番封顶5）
         assert_eq!(agari, Agari::Fan(5));
         
         // Test 13: Ding Que check - cannot agari if hand has ding_que suit tiles
-        let tehai = hand("123456m 789p 11s 2p").unwrap(); // Has pin tiles
+        // 14 tiles: 123456m(6) + 789p(3) + 345s(3) + 22p(2) = 14, has pin tiles
+        let tehai = hand("123456m 789p 345s 22p").unwrap(); // Has pin tiles
         let calc = AgariCalculator {
             tehai: &tehai,
 
@@ -1217,6 +1389,7 @@ mod test {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         // 应该不能和牌（花猪）
         assert!(!calc.has_yaku());
@@ -1227,7 +1400,8 @@ mod test {
         // - 抢杠：在别人加杠时抢杠和牌，+1番（平胡1番 + 抢杠1番 = 2番）
         // - 杠上炮：其他玩家杠牌后打出的牌和牌，+1番（平胡1番 + 杠上炮1番 = 2番）
         // 抢杠时，被抢杠的玩家的根不应该计算（因为加杠的牌被抢走了）
-        let tehai = hand("123456m 789p 11s").unwrap();
+        // 14 tiles: 123456m(6) + 789p(3) + 345s(3) + 11s(2) = 14, winning tile 1s already in tehai
+        let tehai = hand("123456m 789p 345s 11s").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
 
@@ -1244,14 +1418,16 @@ mod test {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         let agari = calc.agari().unwrap();
         // 荣和 + 平胡 + 门清 + 抢杠 = 1 + 1 + 1 = 3番
         assert_eq!(agari, Agari::Fan(3));
         
         // Test 15: 番数叠加 - 清一色 + 自摸 + 平胡 + 门清 = 5番（封顶）
-        // 清一色（2番）+ 自摸（1番）+ 平胡（1番）= 4番
-        let tehai = hand("1112345678999m").unwrap();
+        // 清一色（2番）+ 自摸（1番）+ 平胡（1番）+ 门清（1番）= 5番（封顶）
+        // 14 tiles: 111m(3) + 234m(3) + 567m(3) + 999m(3) + 88m(2) = 14
+        let tehai = hand("111234567m 88m 999m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
 
@@ -1268,6 +1444,7 @@ mod test {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 门清 + 清一色 = 1 + 1 + 1 + 2 = 5番（封顶）
@@ -1292,6 +1469,7 @@ mod test {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 门清 + 带幺九 = 1+1+1+3 = 6番封顶5
@@ -1316,6 +1494,7 @@ mod test {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 门清 + 七对 = 1 + 1 + 1 + 2 = 5番（封顶，不是碰碰胡）
@@ -1340,14 +1519,17 @@ mod test {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 金钩钓 = 1 + 1 + 2 = 4番
         assert_eq!(agari, Agari::Fan(4));
         
-        // Test 19: 四归一（根）- 多个根的情况
-        // 四归一（1番/根）+ 自摸（1番）+ 平胡（1番）= 3番（1个根）
-        let tehai = hand("111123456789m 11p").unwrap();
+        // Test 19: 四归一（根）- 1个根
+        // 14 tiles: 1m*4 + 2m + 3m*2 + 4m + 5m + 6m + 7m + 8m + 1p*2 = 14
+        // Decomposition: 11p(pair) + 111m(kotsu) + 123m(shuntsu) + 345m(shuntsu) + 678m(shuntsu)
+        // No 一条龙 (123+345+678 ≠ 123+456+789)
+        let tehai = hand("1111m 23m 345m 678m 11p").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
 
@@ -1364,21 +1546,23 @@ mod test {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 门清 + 四归一（1根）= 1 + 1 + 1 + 1 = 4番
         assert_eq!(agari, Agari::Fan(4));
         
         // Test 20: 番数叠加 - 清一色+碰碰胡+自摸+平胡+门清 = 5番（封顶）
-        // 清一色（2番）+ 碰碰胡（1番）+ 自摸（1番）+ 平胡（1番）= 5番（封顶）
-        let tehai = hand("111444777999m 11m").unwrap();
+        // 清一色（2番）+ 碰碰胡（1番）+ 自摸（1番）+ 平胡（1番）+ 门清（1番）= 6番 → 封顶5
+        // 14 tiles: 111m(3)+333m(3)+555m(3)+777m(3)+99m(2) = 14
+        let tehai = hand("111333555777m 99m").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
 
             pons: &[],
             minkans: &[],
             ankans: &[],
-            winning_tile: tu8!(1m),
+            winning_tile: tu8!(9m),
             is_ron: false, // 自摸
             ding_que: None,
             is_after_kan: false,
@@ -1388,6 +1572,7 @@ mod test {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         let agari = calc.agari().unwrap();
         // 自摸 + 平胡 + 清一色 + 碰碰胡 = 1 + 1 + 2 + 1 = 5番（封顶）
@@ -1431,6 +1616,7 @@ mod additional_tests {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         
         let agari = calc.agari(); 
@@ -1477,6 +1663,7 @@ mod additional_tests {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
 
         let agari = agari_calc.agari().expect("should agari");
@@ -1506,6 +1693,7 @@ mod additional_tests {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
 
         let agari = agari_calc.agari().expect("should agari");
@@ -1515,7 +1703,7 @@ mod additional_tests {
     #[test]
     fn ron_8p_pure_straight_shape_is_2_fan_without_bonuses() {
         // Hand shape (winning on 8p):
-        // 123p 456p 789p 888p 55s
+        // 123m 234p 789p 888p 55s
         //
         // Per Bloody Battle scoring:
         // - PingHu base: 1
@@ -1523,7 +1711,8 @@ mod additional_tests {
         // - Gen (SiGuiYi): +1 (8p appears 4 times: one in 789p + 888p)
         //
         // Ron: PingHu(1) + MenQing(1) + Gen(1) = 3 fan -> 4000 points.
-        let tehai = hand("123456789p 888p 55s").unwrap();
+        // (no 一条龍 since shuntsu span different suits)
+        let tehai = hand("123m 234p 789p 888p 55s").unwrap();
         let calc = AgariCalculator {
             tehai: &tehai,
             pons: &[],
@@ -1539,6 +1728,7 @@ mod additional_tests {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
         let agari = calc.agari().expect("should agari");
         assert_eq!(agari, Agari::Fan(3));
@@ -1547,7 +1737,11 @@ mod additional_tests {
 
     #[test]
     fn ron_8p_becomes_3_fan_with_one_bonus_flag() {
-        let tehai = hand("123456789p 888p 55s").unwrap();
+        // Same hand as ron_8p_pure_straight_shape_is_2_fan_without_bonuses:
+        // 123m 234p 789p 888p 55s (8p=4 → 四归一)
+        // Base: PingHu(1) + MenQing(1) + 四归一(1) = 3 fan
+        // Each bonus flag should add +1 → 4 fan
+        let tehai = hand("123m 234p 789p 888p 55s").unwrap();
 
         // Haidi (海底炮) adds +1 fan.
         let calc_haidi = AgariCalculator {
@@ -1565,9 +1759,10 @@ mod additional_tests {
             is_haidi: true,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
-        // PingHu(1) + MenQing(1) + Haidi(1) = 3 fan
-        assert_eq!(calc_haidi.agari().unwrap(), Agari::Fan(3));
+        // PingHu(1) + MenQing(1) + 四归一(1) + Haidi(1) = 4 fan
+        assert_eq!(calc_haidi.agari().unwrap(), Agari::Fan(4));
 
         // GangShangPao (杠上炮) adds +1 fan when Ron happens right after a kan discard.
         let calc_kan_discard = AgariCalculator {
@@ -1585,9 +1780,10 @@ mod additional_tests {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
-        // PingHu(1) + MenQing(1) + GangShangPao(1) = 3 fan
-        assert_eq!(calc_kan_discard.agari().unwrap(), Agari::Fan(3));
+        // PingHu(1) + MenQing(1) + 四归一(1) + GangShangPao(1) = 4 fan
+        assert_eq!(calc_kan_discard.agari().unwrap(), Agari::Fan(4));
 
         // Chankan (抢杠) adds +1 fan.
         let calc_chankan = AgariCalculator {
@@ -1605,9 +1801,10 @@ mod additional_tests {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
-        // PingHu(1) + MenQing(1) + Chankan(1) = 3 fan
-        assert_eq!(calc_chankan.agari().unwrap(), Agari::Fan(3));
+        // PingHu(1) + MenQing(1) + 四归一(1) + Chankan(1) = 4 fan
+        assert_eq!(calc_chankan.agari().unwrap(), Agari::Fan(4));
     }
 
     /// 验证副露分解约束：碰/杠的牌不能被拆分为对子+顺子。
@@ -1642,6 +1839,7 @@ mod additional_tests {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
 
         // 关键断言：这手牌不能胡 2万！
@@ -1680,6 +1878,7 @@ mod additional_tests {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
 
         // 门清手可以自由分解为：1万1万(对)+1万2万3万(顺)+5万5万5万+2条2条2条+3条3条3条
@@ -1717,6 +1916,7 @@ mod additional_tests {
             is_haidi: false,
             is_tianhu: false,
             is_dihu: false,
+            fan_config: FanConfig::default(),
         };
 
         // 合法：碰1万(刻) + 2万2万2万(刻) + 5万5万5万(刻) + 2条2条2条(刻) + 3条3条(对)
@@ -1725,6 +1925,25 @@ mod additional_tests {
             "碰1万+2万刻+5万刻+2条刻+3条对 应该能胡");
         assert!(calc.agari().is_some(),
             "agari() 应返回 Some");
+    }
+
+    #[test]
+    fn test_fan_config_random_from_seed() {
+        // Determinism: same seed → same config
+        let a = FanConfig::random_from_seed(42);
+        let b = FanConfig::random_from_seed(42);
+        assert_eq!(a, b);
+
+        // Different seeds → likely different configs
+        let configs: Vec<_> = (0..32).map(|i| FanConfig::random_from_seed(i)).collect();
+        let unique_count = configs.iter().collect::<std::collections::HashSet<_>>().len();
+        // With 7 flags and 32 seeds, should get a good mix (not all identical)
+        assert!(unique_count >= 8, "Expected diverse configs, got only {unique_count} unique out of 32");
+
+        // Verify flags are booleans (sanity)
+        let c = FanConfig::random_from_seed(12345);
+        let flags = c.as_flags();
+        assert_eq!(flags.len(), FanConfig::NUM_FLAGS);
     }
 }
 

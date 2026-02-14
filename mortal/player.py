@@ -46,6 +46,7 @@ class TestPlayer:
                 )
                 self.chal_version = config['control']['version']
                 self.log_dir = path.abspath(config['test_play']['log_dir'])
+                self._baseline_cfg = baseline_cfg
                 return
 
         state = torch.load(baseline_file, weights_only=True, map_location=torch.device('cpu'))
@@ -74,6 +75,42 @@ class TestPlayer:
         self.chal_version = config['control']['version']
         self.log_dir = path.abspath(config['test_play']['log_dir'])
 
+        # 保存 baseline 配置，供 reload_baseline 使用
+        self._baseline_cfg = config['baseline']['test']
+
+    def reload_baseline(self, baseline_file=None):
+        """重新加载 baseline 模型权重（BUG-01 fix: 进程不再重启，需手动刷新 baseline）。"""
+        cfg = self._baseline_cfg
+        if baseline_file is None:
+            baseline_file = cfg['state_file']
+        if not path.exists(baseline_file):
+            logging.warning(f'TestPlayer.reload_baseline: file not found: {baseline_file}')
+            return
+        device = torch.device(cfg['device'])
+        state = torch.load(baseline_file, weights_only=True, map_location=torch.device('cpu'))
+        model_cfg = state['config']
+        version = model_cfg['control'].get('version', 1)
+        conv_channels = model_cfg['resnet']['conv_channels']
+        num_blocks = model_cfg['resnet']['num_blocks']
+        stable_mortal = Brain(version=version, conv_channels=conv_channels, num_blocks=num_blocks).eval()
+        stable_dqn = DQN(version=version).eval()
+        stable_mortal.load_state_dict(state['mortal'])
+        stable_dqn.load_state_dict(state['current_dqn'])
+        if cfg['enable_compile']:
+            stable_mortal.compile()
+            stable_dqn.compile()
+        self.baseline_engine = MortalEngine(
+            stable_mortal,
+            stable_dqn,
+            is_oracle=False,
+            version=version,
+            device=device,
+            enable_amp=False,
+            enable_rule_based_agari_guard=True,
+            name='baseline',
+        )
+        logging.info(f'TestPlayer baseline reloaded from {baseline_file}')
+
     def test_play(self, seed_count, mortal, dqn, device):
         torch.backends.cudnn.benchmark = False
         # FIX: 与 baseline 保持一致，启用 rule_based_agari_guard，
@@ -92,9 +129,11 @@ class TestPlayer:
         if path.isdir(self.log_dir):
             shutil.rmtree(self.log_dir)
 
+        # Test play always uses default rules (no randomization) for fair evaluation
         env = OneVsThree(
             disable_progress_bar = False,
             log_dir = self.log_dir,
+            randomize_fan_config = False,
         )
         env.py_vs_py(
             challenger = engine_chal,
@@ -257,9 +296,12 @@ class TrainPlayer:
         # FIX: keep_data=True 时记录已有文件，避免重复提交旧日志。
         existing_files = set(os.listdir(self.log_dir)) if path.isdir(self.log_dir) else set()
 
+        # Phase 2: multi-rule training — randomize FanConfig per game if configured
+        randomize_rules = config.get('rules', {}).get('randomize_fan_config', False)
         env = OneVsThree(
             disable_progress_bar = False,
             log_dir = self.log_dir,
+            randomize_fan_config = randomize_rules,
         )
         rankings = env.py_vs_py(
             challenger = engine_chal,

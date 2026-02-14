@@ -263,6 +263,7 @@ impl PlayerState {
                         is_haidi: false,
                         is_tianhu: false, // board.rs 会在 handle_hora 时根据 tiles_left 判断天胡
                         is_dihu: false,
+                        fan_config: self.fan_config,
                     };
                     self.last_cans.can_tsumo_agari = agari_calc.has_yaku();
                 }
@@ -360,6 +361,7 @@ impl PlayerState {
                 is_haidi: self.tiles_left == 0,
                 is_tianhu: false,
                 is_dihu: false,
+                fan_config: self.fan_config,
             };
             self.last_cans.can_tsumo_agari = agari_calc.has_yaku();
         }
@@ -567,6 +569,7 @@ impl PlayerState {
                 is_haidi: self.tiles_left == 0,
                 is_tianhu: false,
                 is_dihu: false,
+                fan_config: self.fan_config,
             };
             if let Some(Agari::Fan(fan)) = agari_calc.agari() {
                 self.current_ron_fan = Some(fan);
@@ -598,6 +601,7 @@ impl PlayerState {
                     is_haidi: self.tiles_left == 0,
                     is_tianhu: false,
                     is_dihu: false,
+                    fan_config: self.fan_config,
                 };
                 agari_calc.agari()
             } {
@@ -982,6 +986,7 @@ impl PlayerState {
                     is_haidi: self.tiles_left == 0,
                     is_tianhu: false,
                     is_dihu: false,
+                    fan_config: self.fan_config,
                 };
 
                 if let Some(Agari::Fan(fan)) = agari_calc.agari() {

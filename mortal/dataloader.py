@@ -312,18 +312,18 @@ class FileDatasetsIter(IterableDataset):
                     else:
                         dq_best_suit = -1
                     
-                    # 使用 TD(λ) 回报或原始 MC 回报
+                    # returns: TD(λ) 模式下为已折扣回报，MC 模式下为 kyoku 原始奖励
                     if td_returns is not None:
-                        reward_value = td_returns[i]
+                        step_return = td_returns[i]
                     else:
-                        reward_value = kyoku_rewards[at_kyoku[i]]
+                        step_return = kyoku_rewards[at_kyoku[i]]
                     
                     entry = [
                         obs[i],
                         actions[i],
                         masks[i],
                         steps_to_done[i],
-                        reward_value,
+                        step_return,
                         player_ranks[next_kyoku_idx],
                         dq_bonus,
                         dq_best_suit,

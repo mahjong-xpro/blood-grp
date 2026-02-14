@@ -220,6 +220,7 @@ impl PlayerState {
                         is_haidi: false,
                         is_tianhu: false,
                         is_dihu: false,
+                        fan_config: self.fan_config,
                     };
                     ret[discard] = agari_calc.has_yaku();
                 }
@@ -311,6 +312,7 @@ impl PlayerState {
             is_haidi,
             is_tianhu,
             is_dihu,
+            fan_config: self.fan_config,
         };
         let agari = agari_calc
             .agari()
@@ -373,6 +375,7 @@ impl PlayerState {
             is_haidi,
             is_tianhu: false, // Chankan cannot be TianHu
             is_dihu: false, // Chankan cannot be DiHu (DiHu is on first discard, Chankan is on Kan)
+            fan_config: self.fan_config,
         };
         let agari = agari_calc
             .agari()
@@ -554,6 +557,7 @@ impl PlayerState {
             calc_shanten_down: false,
             ding_que: self.ding_que,
             n_active_payers,
+            fan_config: self.fan_config,
         };
 
         let max_ev_table = sp_calc.calc(init_state, can_discard, tsumos_left, cur_shanten)?;

@@ -2,7 +2,8 @@ use crate::py_helper::add_submodule;
 
 use pyo3::prelude::*;
 
-pub const MAX_VERSION: u32 = 4;
+/// Only version 4 is supported. v1-v3 have been removed (legacy from Japanese Mahjong migration).
+pub const VERSION: u32 = 4;
 
 /// Initial score per player (血战到底零和：4×INITIAL_SCORE = TOTAL_SCORE).
 /// 60000 起步可避免飞人时出现负分。
@@ -18,36 +19,27 @@ pub const ACTION_SPACE: usize = 27 // discard (27 tile kinds)
                               + 3; // ding que (Man, Pin, Sou)
 // = 34
 
-
 #[pyfunction]
 #[inline]
 pub const fn obs_shape(version: u32) -> (usize, usize) {
-    // Calculated dimensions based on encode_obs function in obs_repr.rs
-    // Ding que encoding added:
-    //   v1: +26 (3+1+13+9)
-    //   v2|3: +16 (3+1+3+9)
-    //   v4: +14 (3+1+1+9)
-    //
-    // NOTE: v1-v3 的声明值可能大于 encode_obs 实际使用的通道数（多余部分为零填充）。
-    // 这是从日麻迁移到血战到底时部分特征被移除但 shape 未缩减的历史遗留。
-    // 不修改 shape 以保持与已训练模型的向后兼容性。
     match version {
-        1 => (964, 27), // 938 + 26 = 964 (ding que: 3+1+13+9)
-        2 => (960, 27), // 944 + 16 = 960 (ding que: 3+1+3+9)
-        3 => (952, 27), // 936 + 16 = 952 (ding que: 3+1+3+9)
-        4 => (461, 27), // Optimized: 479 - 18 (padding removed) = 461.
-        _ => panic!("Unsupported version"),
+        // 381 = 精简血战到底特征编码 + 可配置番型标志
+        // 删除冗余: suit_count, score_deltas, active_players, genbutsu, fully_visible,
+        //   kawa first-6 (×4 players), SP dead code
+        // 压缩: fuuro 4→2 ch/meld, kyoku 4→1, shanten 7→5, SP turns 17→14
+        // 新增: wall_remaining, menzen, self_fuuro, at_turn, acceptance, opp_fuuro(×3)
+        // 新增: fan_config flags ×7 (menqing, duanyaojiu, daiyaojiu, yitiaolong, jiaxinwu, haidi, tianhu_dihu)
+        4 => (381, 27),
+        _ => panic!("Unsupported version: only v4 is supported"),
     }
 }
 
 #[pyfunction]
 #[inline]
 pub const fn oracle_obs_shape(version: u32) -> (usize, usize) {
-    // Calculated dimensions based on encode_oracle_obs function in board.rs and invisible.rs
     match version {
-        1 => (128, 27), // Calculated: 128 rows × 27 tile kinds
-        2 | 3 | 4 => (121, 27), // Optimized: 48 (opp) + 3 (wait) + 56 (yama) + 14 (pad) = 121
-        _ => unreachable!(),
+        4 => (121, 27),
+        _ => panic!("Unsupported version: only v4 is supported"),
     }
 }
 
@@ -59,9 +51,10 @@ pub(crate) fn register_module(
     let m = PyModule::new(py, "consts")?;
     m.add_function(wrap_pyfunction!(obs_shape, &m)?)?;
     m.add_function(wrap_pyfunction!(oracle_obs_shape, &m)?)?;
-    m.add("MAX_VERSION", MAX_VERSION)?;
+    m.add("VERSION", VERSION)?;
     m.add("ACTION_SPACE", ACTION_SPACE)?;
     m.add("INITIAL_SCORE", INITIAL_SCORE)?;
     m.add("TOTAL_SCORE", TOTAL_SCORE)?;
+    m.add_class::<crate::algo::agari::FanConfig>()?;
     add_submodule(py, prefix, super_mod, &m)
 }
