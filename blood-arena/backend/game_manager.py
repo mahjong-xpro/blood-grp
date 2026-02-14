@@ -212,6 +212,17 @@ class HumanEngine:
     # ... (react_batch remains mostly same, just calling new _translate_to_mjai) ...
     # Wait, need to preserve react_batch structure but allow it to use the new translate.
 
+    @staticmethod
+    def _auto_select_ding_que(player_state):
+        """超时自动定缺：选手牌中张数最少的花色。"""
+        tehai = list(player_state.tehai)
+        man = sum(tehai[0:9])
+        pin = sum(tehai[9:18])
+        sou = sum(tehai[18:27])
+        counts = [("man", man), ("pin", pin), ("sou", sou)]
+        counts.sort(key=lambda x: x[1])
+        return counts[0][0]
+
     def _get_legal_actions(self, cans) -> List[Dict[str, Any]]:
         """ Convert Rust ActionCandidate to list of allowed client actions. """
         actions = []
@@ -336,8 +347,13 @@ class HumanEngine:
             try:
                 action_data = self.action_queue.get(timeout=_ACTION_TIMEOUT)
             except queue.Empty:
-                # 超时：浏览器可能已关闭，返回 pass/none 让游戏继续
+                # 超时：浏览器可能已关闭，自动选择动作让游戏继续
                 logging.warning("Human action timed out after %ds — auto-passing", _ACTION_TIMEOUT)
+                # 定缺阶段不能 pass：必须选择一个花色，自动选手牌最少的
+                if any(a.get("type") == "ding_que" for a in legal_actions):
+                    suit = self._auto_select_ding_que(player_state)
+                    logging.info("Auto-selecting ding_que suit: %s", suit)
+                    return [json.dumps({"type": "ding_que", "actor": self.player_id, "suit": suit})]
                 return [json.dumps({"type": "none"})]
 
             # 哨兵：GameManager 主动要求中止（disconnect / 新游戏）
