@@ -19,9 +19,9 @@ class MortalEngine:
         boltzmann_epsilon = 0,
         boltzmann_temp = 1,
         top_p = 1,
+        version = None,
         # Deprecated kwargs kept for checkpoint compatibility
         agari_explore_eps = None,  # TRAIN-02: removed, kept for compat
-        version = None,
         stochastic_latent = None,
     ):
         self.engine_type = 'mortal'
@@ -30,6 +30,7 @@ class MortalEngine:
         self.brain = brain.to(self.device).eval()
         self.dqn = dqn.to(self.device).eval()
         self.is_oracle = is_oracle
+        self.version = version if version is not None else 4
 
         self.enable_amp = enable_amp
         self.enable_quick_eval = enable_quick_eval
