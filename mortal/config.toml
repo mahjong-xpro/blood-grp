@@ -14,7 +14,7 @@ tensorboard_dir = '/data/mortal/logs'
 # 计算设备配置 (4090 x 8)
 device = 'cuda:0'
 enable_cudnn_benchmark = true
-enable_amp = true
+enable_amp = false
 enable_compile = false
 
 # 训练参数 - 4090 单卡 24GB 可用 4096
@@ -38,6 +38,12 @@ log_dir = '/data/mortal/train_play'
 # 探索参数 - Phase 7C: 微增探索，帮助脱离 Phase 6 局部最优
 boltzmann_epsilon = 0.08  # Phase 7C: 0.05 -> 0.08 (微增探索)
 boltzmann_temp = 0.18     # Phase 7C: 0.15 -> 0.18 (略微平滑策略分布)
+
+# Agari 探索增强: 在 Ron 决策点 (mask[29] AND mask[30]) 以此概率探索 Ron
+# 解决探索死锁: 模型 Q 函数偏移后不选 Ron → 无 Ron 样本 → 无法纠正 → 恶性循环
+# 设为 0.25 = 25% 的 Ron 机会会被探索，足以产生训练信号
+# 非强制: 标记为 non-greedy，Q 函数修正后自然收敛，此机制逐渐失效
+agari_explore_eps = 0.25
 
 # 阶段转换指南:
 # ┌──────────────────────────────────────────────────────┐
@@ -186,7 +192,7 @@ name = 'mortal'
 state_file = '/data/mortal/challenger.pth'
 stochastic_latent = false
 enable_compile = false
-enable_amp = true
+enable_amp = false
 enable_rule_based_agari_guard = true
 
 [1v3.champion]
@@ -195,7 +201,7 @@ name = 'baseline'
 state_file = '/data/mortal/baseline.pth'
 stochastic_latent = false
 enable_compile = false
-enable_amp = true
+enable_amp = false
 enable_rule_based_agari_guard = true
 
 [1v3.akochan]
