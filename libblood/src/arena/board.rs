@@ -1187,6 +1187,13 @@ impl BoardState {
                     });
                 idx += 4;
 
+                // 对手定缺花色 one-hot（3 通道：Man/Pin/Sou）。
+                // 定缺已选择时写入对应通道；未选择时全零。
+                // oracle 观察可直接看到对手手牌，但显式编码定缺省去模型推理开销，
+                // 且与 obs_repr.rs 中自己 ding_que 的编码方式对齐。
+                if let Some(suit) = state.ding_que {
+                    arr.fill(idx + crate::ding_que::suit_id(suit), 1.);
+                }
                 idx += 3;
 
                 // FIX: shanten 可能因定缺惩罚超过 6（最大可达 ~9），
@@ -1222,7 +1229,11 @@ impl BoardState {
                     .for_each(|(t, _)| arr.assign(idx, t, 1.));
                 idx += 1;
 
-                // 与 invisible.rs 保持一致的预留 channel（原 ding_que 或额外特征位）
+                // 定缺完成状态（1 通道）：对手是否已清除所有定缺花色牌。
+                // 用于 value 预估：完成定缺的对手能和牌，对本家威胁更大。
+                if state.check_ding_que_complete() {
+                    arr.fill(idx, 1.);
+                }
                 idx += 1;
             });
 
@@ -1237,7 +1248,9 @@ impl BoardState {
             idx = encode_tile(idx, tile);
         }
         // Skip remaining yama slots (no aka encoding, so only 1 dimension per tile)
-        let max_yama_tiles = 56;
+        // FIX: v1 使用 69 (继承自日麻 136 张)，v2+ 使用 56 (血战 108 张)。
+        // 与 invisible.rs 保持一致，否则 v1 时 assert_eq!(idx, shape.0) 会 panic。
+        let max_yama_tiles: usize = if version >= 2 { 56 } else { 69 };
         idx += (max_yama_tiles - self.tiles_left as usize) * 1;
 
         idx += 4 * 1;

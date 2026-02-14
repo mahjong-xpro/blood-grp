@@ -124,8 +124,10 @@ impl<'a> ObsEncoderContext<'a> {
     fn encode_obs(mut self) -> (Array2<f32>, Array1<bool>) {
         let state = self.state;
         let cans = state.last_cans;
-        if state.tiles_left == 56 && state.tehai.iter().sum::<u8>() == 0 {
-             log::error!("Ding Que Phase (Turn 0) but Tehai is EMPTY! Player: {}. This causes deterministic AI failure (All inputs zero -> Output constant bias).", state.player_id);
+        // FIX: 原来用 tiles_left==56 判断定缺阶段，但庄家初始摸牌后 tiles_left==55。
+        // 改用 can_ding_que 作为权威判断。
+        if cans.can_ding_que && state.tehai.iter().sum::<u8>() == 0 {
+             log::error!("Ding Que Phase but Tehai is EMPTY! Player: {}. This causes deterministic AI failure (All inputs zero -> Output constant bias).", state.player_id);
         }
         state
             .tehai
@@ -204,9 +206,15 @@ impl<'a> ObsEncoderContext<'a> {
         }
 
         // Other players' ding que suits (3 dimensions per player × 3 players = 9 dimensions)
+        // FIX: 定缺阶段（can_ding_que=true）时必须置零。
+        // 训练时 DingQue 事件按顺序广播，后序玩家能"看到"先序玩家的选择；
+        // 推理时所有 agent 同时提交，other_ding_que 恒为 None。
+        // 若不置零会产生 train/inference 分布偏移。
         for i in 0..3 {
-            if let Some(suit) = state.other_ding_que[i] {
-                self.arr.fill(self.idx + crate::ding_que::suit_id(suit), 1.);
+            if !cans.can_ding_que {
+                if let Some(suit) = state.other_ding_que[i] {
+                    self.arr.fill(self.idx + crate::ding_que::suit_id(suit), 1.);
+                }
             }
             self.idx += 3;
         }

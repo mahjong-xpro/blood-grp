@@ -123,6 +123,13 @@ impl Invisible {
                 .for_each(|(tile_id, &count)| arr.assign_rows(idx, tile_id, count as usize, 1.));
             idx += 4;
 
+            // 对手定缺花色 one-hot（3 通道：Man/Pin/Sou）。
+            // 定缺已选择时写入对应通道；未选择时全零。
+            // oracle 观察可直接看到对手手牌，但显式编码定缺省去模型推理开销，
+            // 且与 obs_repr.rs 中自己 ding_que 的编码方式对齐。
+            if let Some(suit) = state.ding_que {
+                arr.fill(idx + crate::ding_que::suit_id(suit), 1.);
+            }
             idx += 3;
 
             // FIX: shanten 可能因定缺惩罚超过 6，但 one-hot 只有 7 通道（v2+）/6（v1）。
@@ -157,6 +164,11 @@ impl Invisible {
                 .for_each(|(t, _)| arr.assign(idx, t, 1.));
             idx += 1;
 
+            // 定缺完成状态（1 通道）：对手是否已清除所有定缺花色牌。
+            // 用于 value 预估：完成定缺的对手能和牌，对本家威胁更大。
+            if state.check_ding_que_complete() {
+                arr.fill(idx, 1.);
+            }
             idx += 1;
         }
 
