@@ -205,7 +205,9 @@ class FileDatasetsIter(IterableDataset):
                     invisible_obs = game.take_invisible_obs()
                 actions = game.take_actions()
                 masks = game.take_masks()
-                at_kyoku = game.take_at_kyoku()
+                at_kyoku_raw = game.take_at_kyoku()
+                # PyO3 returns Vec<u8> as Python bytes; convert to list of ints
+                at_kyoku = list(at_kyoku_raw) if isinstance(at_kyoku_raw, bytes) else at_kyoku_raw
                 dones = game.take_dones()
                 apply_gamma = game.take_apply_gamma()
                 opponent_waits = game.take_opponent_waits()
