@@ -140,7 +140,9 @@ impl Invisible {
                     arr.fill(idx + n, 1.);
                     idx += 7;
 
-                    let v = raw_shanten as f32 / 6.;
+                    // 定缺惩罚可使 raw_shanten > 6；需先 clamp 再归一化，
+                    // 否则 v > 1.0 会打破特征归一化假设。
+                    let v = raw_shanten.min(6) as f32 / 6.;
                     arr.fill(idx, v);
                     idx += 1;
                 }

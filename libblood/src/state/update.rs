@@ -413,9 +413,8 @@ impl PlayerState {
         }
 
         // Check Ding Que constraints and update forbidden_tiles
-        if self.player_id == actor {
-            self.update_ding_que_forbidden_tiles();
-        }
+        // (non-self actors already returned at line 308, so this is always self)
+        self.update_ding_que_forbidden_tiles();
 
         Ok(())
     }
@@ -495,8 +494,20 @@ impl PlayerState {
         if actor_rel == 0 {
             self.forbidden_tiles.fill(false);
             self.at_rinshan = false;
+
+            // 定缺修正：打出定缺牌时，clean tile count 变化（N→N+1），
+            // clean_len_div3 可能跳档，导致结构向听 + void 双降，总改善量可达 2，
+            // 而 `shanten -= 1` 仅减 1，会引起向听漂移，且随后的增量路径在
+            // 错误基线上累积，误差越来越大。此处改为 update_shanten() 全量重算。
+            //
+            // 非定缺牌（void == 0 或打的是非定缺牌）时，clean tile count 不变，
+            // clean_len_div3 不变，标准增量 `-= 1` 仍然正确。
             if self.next_shanten_discards[pai.as_usize()] {
-                self.shanten -= 1;
+                if crate::ding_que::is_ding_que_tile(pai.as_usize(), self.ding_que) {
+                    self.update_shanten();
+                } else {
+                    self.shanten -= 1;
+                }
             } else if !self.keep_shanten_discards[pai.as_usize()] {
                 self.update_shanten();
             }
@@ -1000,8 +1011,17 @@ impl PlayerState {
         // The shanten number and the shape of tenpai (if any) may
         // be changed after an kakan, because the kan'd tile may
         // come from the existing hand.
+        //
+        // 定缺修正：加杠牌必是非缺门（tsumo 阶段已过滤），但当手中仍有缺门牌
+        // （void > 0）且 clean tile count 从 C → C-1 跨越 3 的整数倍时，
+        // clean_len_div3 跳档，结构向听可能改善 2 档。此时 `-= 1` 不够。
+        // 用 `ding_que_forced_range` 判断是否仍有缺门牌；若有，走全量重算。
         if self.next_shanten_discards[pai.as_usize()] {
-            self.shanten -= 1;
+            if crate::ding_que::ding_que_forced_range(&self.tehai, self.ding_que).is_some() {
+                self.update_shanten();
+            } else {
+                self.shanten -= 1;
+            }
         } else if !self.keep_shanten_discards[pai.as_usize()] {
             self.update_shanten();
         }
@@ -1178,7 +1198,9 @@ impl PlayerState {
         let current_len_div3 = (self.tehai.iter().sum::<u8>() / 3) as u8;
         self.shanten = shanten::calc_all(&self.tehai, current_len_div3, self.ding_que).max(0);
         
-        debug_assert!(matches!(self.shanten, 0..=8));
+        // 定缺惩罚 = structural_shanten + void_count。极端情况下
+        // （如手中大量缺门牌）shanten 可达 ~15，放宽上限。
+        debug_assert!(matches!(self.shanten, 0..=20));
     }
 
     /// Must be called at 3n+2.

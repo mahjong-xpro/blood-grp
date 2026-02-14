@@ -122,20 +122,29 @@ impl PlayerState {
             return ret;
         }
 
-        if let Some(last_self_tsumo) = self.last_self_tsumo {
-            if self.waits[last_self_tsumo.as_usize()] {
-                // already agari and any discard will result in forbidden win
+        // shanten == 0 特有的快速路径：
+        // - 自摸后：手牌已是听牌 (3n+2)，摸到的牌若在 waits 中则已和牌，
+        //   否则摸切（打回摸到的牌）一定能恢复听牌。
+        // - 碰后：直接检查是否已成牌。
+        //
+        // shanten == 1 时此快速路径不适用：摸切不一定能改善向听，
+        // 需要走下面的完整计算（next_shanten_discards 逐牌验证）。
+        if self.shanten == 0 {
+            if let Some(last_self_tsumo) = self.last_self_tsumo {
+                if self.waits[last_self_tsumo.as_usize()] {
+                    // already agari and any discard will result in forbidden win
+                    return ret;
+                }
+                // All valid waits can agari
+                ret[last_self_tsumo.as_usize()] = true;
                 return ret;
-            }
-            // All valid waits can agari
-            ret[last_self_tsumo.as_usize()] = true;
-            return ret;
-        } else {
-            // `tehai_len_div3` can desync after kan/pon flows; derive it from tehai shape instead.
-            let len_div3 = (self.tehai.iter().sum::<u8>() / 3) as u8;
-            if shanten::calc_all(&self.tehai, len_div3, self.ding_que) == -1 {
-            // Ditto but for discard after pon (Bloody Battle Mahjong has no chi)
-            return ret;
+            } else {
+                // `tehai_len_div3` can desync after kan/pon flows; derive it from tehai shape instead.
+                let len_div3 = (self.tehai.iter().sum::<u8>() / 3) as u8;
+                if shanten::calc_all(&self.tehai, len_div3, self.ding_que) == -1 {
+                    // Ditto but for discard after pon (Bloody Battle Mahjong has no chi)
+                    return ret;
+                }
             }
         }
 

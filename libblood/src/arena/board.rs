@@ -348,22 +348,6 @@ impl BoardState {
         }
 
         // Step 2: 查大叫 (Check Tenpai - exclude huazhu players)
-        // 排除花猪玩家后，未听牌玩家向听牌玩家赔付
-        // 改进：只检查选择了定缺的玩家（基础规则：只有选择了定缺的玩家才参与查大叫）
-        let _tenpai_actors: ArrayVec<[_; 4]> = self
-            .player_states
-            .iter()
-            .enumerate()
-            .filter(|&(i, s)| {
-                // 排除花猪玩家
-                !huazhu_actors.contains(&i)
-                // 改进：只检查选择了定缺的玩家
-                && s.ding_que.is_some()
-                && s.shanten() == 0
-            })
-            .map(|(i, _)| i)
-            .collect();
-
         // Calculate Cha Da Jiao (No-Ten Penalty)
         // Standard Sichuan Rule:
         // No-Ten players pay Tenpai players based on the Tenpai player's max possible hand value.
@@ -1225,7 +1209,9 @@ impl BoardState {
                         arr.fill(idx + n, 1.);
                         idx += 7;
 
-                        let v = raw_shanten as f32 / 6.;
+                        // 定缺惩罚可使 raw_shanten > 6；需先 clamp 再归一化，
+                        // 否则 v > 1.0 会打破特征归一化假设。
+                        let v = raw_shanten.min(6) as f32 / 6.;
                         arr.fill(idx, v);
                         idx += 1;
                     }
