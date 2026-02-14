@@ -119,7 +119,8 @@ cd mortal && python -c "from config import config; print('OK:', config['control'
 | `avg_rank` | ~2.50 (随机) | < 2.35 | TensorBoard |
 | `avg_pt` | ~1.75 (随机) | > 2.0 | TensorBoard |
 | `dqn_loss` | 高波动 | 稳步下降 | TensorBoard |
-| `ding_que_match` | ~33% (随机) | > 70% | 日志 |
+| `ding_que/dqn_match_rate` | ~33% (随机) | > 70% | TensorBoard |
+| `ding_que/aux_match_rate` | ~33% (随机) | > 90% | TensorBoard |
 | 和牌率 | ~10% | > 18% | test_play 日志 |
 | 放铳率 | ~25% | < 20% | test_play 日志 |
 
@@ -140,7 +141,7 @@ python train.py
 
 - **Step ~5k**: dqn_loss 开始下降 → 正常
 - **Step ~20k**: avg_rank 降到 ~2.45 → 模型开始学习
-- **Step ~50k**: 定缺准确率 > 60% → 定缺辅助生效
+- **Step ~50k**: `ding_que/dqn_match_rate` > 60% → DQN 定缺辅助生效
 - **Step ~100k**: avg_rank < 2.35, avg_pt > 2.0 → **进入 Phase 2**
 
 ⚠️ **异常信号**: dqn_loss 持续上升或 avg_rank 不降 → 检查 self-play 是否正常产出数据
@@ -176,7 +177,7 @@ ding_que_ce_weight = 2.0
 |------|------|------|
 | `avg_rank` | < 2.35 | < 2.20 |
 | `avg_pt` | > 2.0 | > 2.3 |
-| `ding_que_match` | > 70% | > 85% |
+| `ding_que/dqn_match_rate` | > 70% | > 85% |
 | 和牌率 | > 18% | > 22% |
 | 放铳率 | < 20% | < 16% |
 
@@ -229,7 +230,7 @@ max_steps = 1000000
 |------|------|------|
 | `avg_rank` | < 2.20 | < 2.10 |
 | `avg_pt` | > 2.3 | > 2.5 |
-| `ding_que_match` | > 85% | > 90% |
+| `ding_que/dqn_match_rate` | > 85% | > 90% |
 | 自摸率 | | > 12% |
 | 平均和牌番数 | | > 1.8 |
 
@@ -369,7 +370,10 @@ tensorboard --logdir /data/mortal/logs --bind_all
 - `avg_pt`: 应持续上升（理论最优 4.0）
 - `next_rank_loss`: 辅助损失，应下降
 - `opp_wait_loss`: 对手听牌预测损失
-- `ding_que_ce_loss`: 定缺分类损失
+- `ding_que_ce_loss`: AuxNet 定缺分类损失（应快速下降）
+- `ding_que_dqn_ce_loss`: DQN 定缺弱 CE 损失（应逐步下降）
+- `ding_que/aux_match_rate`: AuxNet 定缺分类准确率（应快速上升至 >90%）
+- `ding_que/dqn_match_rate`: DQN 实际定缺决策准确率（应逐步上升至 >70%）
 - `lr`: 学习率曲线，验证 scheduler 行为
 
 ### 7.2 常见故障
@@ -381,7 +385,8 @@ tensorboard --logdir /data/mortal/logs --bind_all
 | avg_rank 突然跳升 | baseline 与模型差距过大 | 更新 baseline: `cp mortal.pth baseline.pth` |
 | DataLoader 僵死 | BUG-01 (PyO3/rayon) | 自动重启机制已内置; 若持续则手动重启 train.py |
 | 内存溢出 (OOM) | batch_size 过大 | 降低 batch_size: 4096→2048→1024 |
-| ding_que 准确率卡在 ~33% | 监督信号不足 | 提高 ding_que_ce_weight 至 2-3 |
+| `dqn_match_rate` 卡在 ~33% | DQN 定缺信号不足 | 提高 `ding_que_dqn_ce_weight` 至 0.2-0.5 |
+| `aux_match_rate` 卡在 ~33% | AuxNet 监督信号不足 | 提高 `ding_que_ce_weight` 至 2-3 |
 | 和牌率低 | 探索不足 / 奖励信号弱 | 提高 epsilon/temp; 增大 agari_bonus |
 | 训练速度慢 | CPU 瓶颈 | 增加 client 数; 提高 num_workers |
 
@@ -412,11 +417,11 @@ L_dqn = MSE(Q(s,a), r + γ·max_a' Q(s',a'))
 
 ```
 L_total = L_dqn
-        + next_rank_weight × CE(rank_pred, rank_label)        [0.25]
-        + opp_wait_weight  × BCE(wait_pred, wait_label)        [0.1]
-        + ding_que_ce_weight × CE(dq_pred, dq_label)           [1.0]
-        + ding_que_aux_scale × CE(dq_aux_pred, dq_aux_label)   [0.02]
-        + min_q_weight × CQL_penalty                            [0.0, 关闭]
+        + next_rank_weight × CE(rank_pred, rank_label)              [0.25]
+        + opp_wait_weight  × BCE(wait_pred, wait_label)              [0.1]
+        + ding_que_ce_weight × CE(auxnet_dq_logits, dq_label)       [1.0, AuxNet 主分类头]
+        + ding_que_dqn_ce_weight × CE(dqn_q[31:34], dq_label)       [0.1, DQN 弱 CE]
+        + min_q_weight × CQL_penalty                                  [0.0, 关闭]
 ```
 
 ### 8.3 奖励构成

@@ -43,6 +43,7 @@ def train():
     min_q_weight = config['cql']['min_q_weight']
     next_rank_weight = config['aux']['next_rank_weight']
     ding_que_ce_weight = config['aux'].get('ding_que_ce_weight', 0.0)
+    ding_que_dqn_ce_weight = config['aux'].get('ding_que_dqn_ce_weight', 0.0)
     assert save_every % opt_step_every == 0
     assert test_every % save_every == 0
 
@@ -156,7 +157,9 @@ def train():
         'next_rank_loss': 0,
         'ding_que_ce_loss': 0,
         'opp_wait_loss': 0,
-        'ding_que_match': 0,
+        'ding_que_dqn_ce_loss': 0,
+        'ding_que_aux_match': 0,
+        'ding_que_dqn_match': 0,
         'ding_que_total': 0,
     }
     all_q = torch.zeros((save_every, batch_size), device=device, dtype=torch.float32)
@@ -338,19 +341,31 @@ def train():
                 else:
                     opp_wait_loss = torch.tensor(0.0, device=device, dtype=torch.float32)
 
-                # MODEL-03 fix: 定缺 CE 现在作用于 AuxNet 独立分类头的 logits，
-                # 不再直接作用于 DQN 的 Q 值，避免 CE 与 Bellman 目标的梯度冲突。
+                # MODEL-03 fix: 定缺 CE 主要作用于 AuxNet 独立分类头的 logits，
+                # 避免 CE 与 Bellman 目标的梯度冲突。
+                # 同时对 DQN 的定缺 Q 值施加弱 CE，给予方向信号。
                 sel = ding_que_best_suit >= 0
                 if sel.any() and ding_que_ce_weight > 0:
                     ding_que_ce_loss = ce(ding_que_logits[sel], ding_que_best_suit[sel])
                 else:
                     ding_que_ce_loss = torch.tensor(0.0, device=device, dtype=torch.float32)
 
-                # 定缺与启发式一致率: action 31=Man, 32=Pin, 33=Sou 对应 0,1,2
+                # DQN 定缺弱 CE: 对 DQN 在 action 31/32/33 的 Q 值施加轻量级 CE，
+                # 让 DQN 直接获得定缺方向信号，而非仅依赖微弱的 ding_que_bonus (±0.02)。
+                if sel.any() and ding_que_dqn_ce_weight > 0:
+                    dqn_dq_logits = q_out[sel][:, 31:34]  # DQN 在万/筒/条定缺动作上的 Q 值
+                    ding_que_dqn_ce_loss = ce(dqn_dq_logits, ding_que_best_suit[sel])
+                else:
+                    ding_que_dqn_ce_loss = torch.tensor(0.0, device=device, dtype=torch.float32)
+
+                # 定缺匹配率: 分别跟踪 AuxNet 和 DQN 的准确率
                 if sel.any():
-                    policy_suit = actions[sel] - 31
-                    match_count = (policy_suit == ding_que_best_suit[sel]).sum().item()
-                    stats['ding_que_match'] += match_count
+                    # AuxNet 分类准确率 (跟踪 CE loss 效果)
+                    aux_pred = ding_que_logits[sel].argmax(-1)
+                    stats['ding_que_aux_match'] += (aux_pred == ding_que_best_suit[sel]).sum().item()
+                    # DQN 实际决策准确率 (跟踪 gameplay 效果)
+                    dqn_suit = actions[sel] - 31
+                    stats['ding_que_dqn_match'] += (dqn_suit == ding_que_best_suit[sel]).sum().item()
                     stats['ding_que_total'] += sel.sum().item()
 
                 loss = sum((
@@ -358,6 +373,7 @@ def train():
                     cql_loss * min_q_weight,
                     next_rank_loss * next_rank_weight,
                     ding_que_ce_loss * ding_que_ce_weight,
+                    ding_que_dqn_ce_loss * ding_que_dqn_ce_weight,
                     opp_wait_loss * opp_wait_weight,
                 ))
             scaler.scale(loss / opt_step_every).backward()
@@ -368,6 +384,7 @@ def train():
                     stats['cql_loss'] += cql_loss
                 stats['next_rank_loss'] += next_rank_loss
                 stats['ding_que_ce_loss'] += ding_que_ce_loss
+                stats['ding_que_dqn_ce_loss'] += ding_que_dqn_ce_loss
                 stats['opp_wait_loss'] += opp_wait_loss
                 all_q[idx] = q
                 all_q_target[idx] = q_target
@@ -404,11 +421,13 @@ def train():
                     writer.add_scalar('loss/cql_loss', stats['cql_loss'] / save_every, steps)
                 writer.add_scalar('loss/next_rank_loss', stats['next_rank_loss'] / save_every, steps)
                 writer.add_scalar('loss/ding_que_ce_loss', stats['ding_que_ce_loss'] / save_every, steps)
+                writer.add_scalar('loss/ding_que_dqn_ce_loss', stats['ding_que_dqn_ce_loss'] / save_every, steps)
                 writer.add_scalar('loss/opp_wait_loss', stats['opp_wait_loss'] / save_every, steps)
-                # 定缺与启发式一致率：定缺步中策略所选花色与启发式最佳花色一致的比例
+                # 定缺匹配率: aux = AuxNet 分类头准确率, dqn = DQN 实际动作准确率
                 dq_total = stats['ding_que_total']
                 if dq_total > 0:
-                    writer.add_scalar('ding_que/match_rate', stats['ding_que_match'] / dq_total, steps)
+                    writer.add_scalar('ding_que/aux_match_rate', stats['ding_que_aux_match'] / dq_total, steps)
+                    writer.add_scalar('ding_que/dqn_match_rate', stats['ding_que_dqn_match'] / dq_total, steps)
                 writer.add_scalar('hparam/lr', scheduler.get_last_lr()[0], steps)
                 writer.add_histogram('q_predicted', all_q_1d, steps)
                 writer.add_histogram('q_target', all_q_target_1d, steps)
