@@ -135,12 +135,8 @@ pub fn calc_chitoi(tiles: &[u8; 27]) -> i8 {
 pub fn calc_all(tiles: &[u8; 27], len_div3: u8, ding_que: Option<crate::mjai::Suit>) -> i8 {
     let (clean_tiles, void_count) = if let Some(suit) = ding_que {
         let mut t = *tiles;
-        let range = match suit {
-            crate::mjai::Suit::Man => 0..9,
-            crate::mjai::Suit::Pin => 9..18,
-            crate::mjai::Suit::Sou => 18..27,
-        };
-        let count = range.map(|i| {
+        let (start, end) = crate::ding_que::suit_range(suit);
+        let count = (start..end).map(|i| {
             let c = t[i];
             t[i] = 0;
             c

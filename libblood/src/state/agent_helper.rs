@@ -76,40 +76,29 @@ impl PlayerState {
 
         let mut ret = [false; 27];
 
-        if let Some(ding_que_suit) = self.ding_que {
-            let (ding_que_start, ding_que_end) = crate::ding_que::suit_range(ding_que_suit);
-            
-            // Check if hand still has any ding_que suit tiles
-            let has_ding_que_tiles = crate::ding_que::has_suit_tiles(&self.tehai, ding_que_suit);
-            
-            if has_ding_que_tiles {
-                // Must discard ding_que suit tiles first - only allow ding_que suit tiles
-                for i in ding_que_start..ding_que_end {
-                    if self.tehai[i] > 0 && !self.forbidden_tiles[i] {
-                        ret[i] = true;
-                    }
+        if let Some((start, end)) = crate::ding_que::ding_que_forced_range(&self.tehai, self.ding_que) {
+            // Must discard ding_que suit tiles first - only allow ding_que suit tiles
+            for i in start..end {
+                if self.tehai[i] > 0 && !self.forbidden_tiles[i] {
+                    ret[i] = true;
                 }
-                // 如果所有定缺花色牌都被标记为forbidden_tiles，那么允许丢弃所有非forbidden_tiles的牌
-                // 这是为了避免游戏卡死（虽然这种情况理论上不应该发生）
-                if ret.iter().all(|&x| !x) {
-                    // 所有定缺花色牌都被标记为forbidden_tiles，允许丢弃所有非forbidden_tiles的牌
-                    for (i, count) in self.tehai.iter().copied().enumerate() {
-                        if count == 0 {
-                            continue;
-                        }
+            }
+            // 安全网：如果所有定缺花色牌都被 forbidden_tiles 阻止（理论上不应发生），
+            // 回退到允许丢弃任何非 forbidden 的牌，避免游戏死锁。
+            if ret.iter().all(|&x| !x) {
+                for (i, &count) in self.tehai.iter().enumerate() {
+                    if count > 0 {
                         ret[i] = !self.forbidden_tiles[i];
                     }
                 }
-                return ret;
             }
+            return ret;
         }
 
-        for (i, count) in self.tehai.iter().copied().enumerate() {
-            if count == 0 {
-                continue;
+        for (i, &count) in self.tehai.iter().enumerate() {
+            if count > 0 {
+                ret[i] = !self.forbidden_tiles[i];
             }
-
-            ret[i] = !self.forbidden_tiles[i];
         }
 
         ret

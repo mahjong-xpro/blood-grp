@@ -1253,31 +1253,19 @@ impl PlayerState {
     /// Update forbidden_tiles based on Ding Que rule.
     /// If the player has tiles of the Ding Que suit, they MUST discard them first.
     /// In this case, all cards of other suits become forbidden.
+    /// 定缺出牌约束：手牌中仍有缺门花色时，非缺门牌标记为 forbidden。
+    ///
+    /// **仅做 additive 标记（置 true），绝不清除其它 restriction（如碰后禁打）。**
+    /// 调用者在适当时机已执行 `forbidden_tiles.fill(false)` 并可能设置碰后禁打，
+    /// 本函数只在此基础上叠加定缺约束。
     fn update_ding_que_forbidden_tiles(&mut self) {
-        if let Some(ding_que_suit) = self.ding_que {
-            let (ding_que_start, ding_que_end) = crate::ding_que::suit_range(ding_que_suit);
-            
-            // Check if hand still has any ding_que suit tiles
-            let has_ding_que_tiles = crate::ding_que::has_suit_tiles(&self.tehai, ding_que_suit);
-                
-            if has_ding_que_tiles {
-                // Determine which tiles are forbidden (all non-DingQue tiles)
-                for i in 0..27 {
-                    if i < ding_que_start || i >= ding_que_end {
-                        self.forbidden_tiles[i] = true;
-                    }
-                }
-            } else {
-                // 防御性清除：缺门牌已打完，撤销定缺规则对非缺门花色的禁牌。
-                // 当前所有调用者在调用前已 fill(false)，此分支实际为 no-op；
-                // 保留作为安全网，防止未来新增调用路径遗漏清除。
-                for i in 0..27 {
-                    if i < ding_que_start || i >= ding_que_end {
-                        self.forbidden_tiles[i] = false;
-                    }
-                }
-            }
+        if let Some((start, end)) = crate::ding_que::ding_que_forced_range(&self.tehai, self.ding_que) {
+            self.forbidden_tiles[..start].fill(true);
+            self.forbidden_tiles[end..].fill(true);
         }
+        // 缺门牌已清空时不做任何操作：
+        // - 之前的 fill(false) 已清除上一轮的定缺 forbidden 标记
+        // - 碰后禁打等其它 restriction 必须保留，不可在此处清除
     }
 }
 

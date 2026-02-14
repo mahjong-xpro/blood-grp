@@ -37,12 +37,6 @@ pub fn has_suit_tiles(tehai: &[u8; TILE_KIND_COUNT], suit: Suit) -> bool {
     (start..end).any(|i| tehai[i] > 0)
 }
 
-#[inline]
-#[must_use]
-pub fn has_ding_que_tiles(tehai: &[u8; TILE_KIND_COUNT], ding_que: Option<Suit>) -> bool {
-    ding_que.is_some_and(|s| has_suit_tiles(tehai, s))
-}
-
 /// 整手（手牌 + 副露）是否仍含定缺花色。用于和牌/花猪判定。
 #[inline]
 #[must_use]
@@ -87,32 +81,24 @@ pub fn is_ding_que_tile(tile_id: usize, ding_que: Option<Suit>) -> bool {
     ding_que.is_some_and(|s| tile_suit_id(tile_id) == suit_id(s))
 }
 
+/// When the ding_que discard constraint is active (hand still holds ding_que suit tiles),
+/// returns `Some((start, end))` — the inclusive-exclusive tile-id range of the ding_que suit
+/// that the player is forced to discard from.
+/// Returns `None` when unconstrained (no ding_que chosen, or all ding_que tiles already cleared).
+#[inline]
+#[must_use]
+pub fn ding_que_forced_range(tehai: &[u8; TILE_KIND_COUNT], ding_que: Option<Suit>) -> Option<(usize, usize)> {
+    ding_que.and_then(|s| has_suit_tiles(tehai, s).then(|| suit_range(s)))
+}
+
 /// DingQue discard rule (四川血战到底):
 /// - If the hand currently contains any tiles of the chosen DingQue suit, the player MUST discard a tile of that suit.
 /// - Otherwise (no DingQue-suit tiles in hand), there is no additional discard restriction from DingQue.
 #[inline]
 #[must_use]
 pub fn discard_allowed(tile_id: usize, tehai: &[u8; TILE_KIND_COUNT], ding_que: Option<Suit>) -> bool {
-    let Some(suit) = ding_que else {
-        // If DingQue hasn't been chosen, the game flow should not allow discarding at all.
-        // Keep this permissive here; caller should gate with can_discard.
-        return true;
-    };
-
-    if has_suit_tiles(tehai, suit) {
-        tile_suit_id(tile_id) == suit_id(suit)
-    } else {
-        true
-    }
-}
-
-/// DingQue win rule (花猪): cannot agari if any DingQue-suit tile remains in hand (tehai only).
-/// Prefer [can_agari_with_fuuro] when fuuro is available.
-#[inline]
-#[must_use]
-#[allow(dead_code)]
-pub fn can_agari(tehai: &[u8; TILE_KIND_COUNT], ding_que: Option<Suit>) -> bool {
-    !has_ding_que_tiles(tehai, ding_que)
+    ding_que_forced_range(tehai, ding_que)
+        .map_or(true, |(start, end)| tile_id >= start && tile_id < end)
 }
 
 #[cfg(test)]

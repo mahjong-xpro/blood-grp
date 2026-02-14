@@ -180,11 +180,7 @@ impl<'a> ObsEncoderContext<'a> {
 
         // Ding que suit (3 dimensions: one-hot for Man/Pin/Sou)
         if let Some(suit) = state.ding_que {
-            match suit {
-                crate::mjai::Suit::Man => self.arr.fill(self.idx, 1.),
-                crate::mjai::Suit::Pin => self.arr.fill(self.idx + 1, 1.),
-                crate::mjai::Suit::Sou => self.arr.fill(self.idx + 2, 1.),
-            }
+            self.arr.fill(self.idx + crate::ding_que::suit_id(suit), 1.);
         }
         self.idx += 3;
 
@@ -210,11 +206,7 @@ impl<'a> ObsEncoderContext<'a> {
         // Other players' ding que suits (3 dimensions per player × 3 players = 9 dimensions)
         for i in 0..3 {
             if let Some(suit) = state.other_ding_que[i] {
-                match suit {
-                    crate::mjai::Suit::Man => self.arr.fill(self.idx, 1.),
-                    crate::mjai::Suit::Pin => self.arr.fill(self.idx + 1, 1.),
-                    crate::mjai::Suit::Sou => self.arr.fill(self.idx + 2, 1.),
-                }
+                self.arr.fill(self.idx + crate::ding_que::suit_id(suit), 1.);
             }
             self.idx += 3;
         }

@@ -30,16 +30,11 @@ impl Agent for Tsumogiri {
         let ev = if cans.can_ding_que {
             // 定缺阶段：选择手牌张数最少的花色
             let tehai = state.tehai();
-            let man_count: u8 = tehai[0..9].iter().sum();
-            let pin_count: u8 = tehai[9..18].iter().sum();
-            let sou_count: u8 = tehai[18..27].iter().sum();
-            let suit = if man_count <= pin_count && man_count <= sou_count {
-                Suit::Man
-            } else if pin_count <= sou_count {
-                Suit::Pin
-            } else {
-                Suit::Sou
-            };
+            let suits = [Suit::Man, Suit::Pin, Suit::Sou];
+            let suit = *suits.iter().min_by_key(|&&s| {
+                let (start, end) = crate::ding_que::suit_range(s);
+                tehai[start..end].iter().sum::<u8>()
+            }).unwrap();
             Event::DingQue {
                 actor: self.0,
                 suit,

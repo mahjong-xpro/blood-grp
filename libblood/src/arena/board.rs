@@ -287,11 +287,7 @@ impl BoardState {
             .enumerate()
             .filter(|&(_, s)| {
                 // 改进：只有选择了定缺但还有定缺花色牌的玩家才是花猪
-                if let Some(_) = s.ding_que {
-                    !s.check_ding_que_complete() // 选择了定缺但还有定缺花色牌
-                } else {
-                    false // 没有选择定缺，不是花猪
-                }
+                s.ding_que.is_some() && !s.check_ding_que_complete()
             })
             .map(|(i, _)| i)
             .collect();
@@ -815,7 +811,7 @@ impl BoardState {
              let is_multi_ron = specific_hora_events.len() > 1;
 
              // Handle all Hora events
-             for (actor, ev) in specific_hora_events {
+             for &(actor, ev) in &specific_hora_events {
                  if let Event::Hora { target, .. } = ev.event {
                      self.handle_hora(actor as u8, target, reactions, is_multi_ron)?;
                  }
@@ -826,66 +822,45 @@ impl BoardState {
                  return Ok(Poll::End);
              }
 
-             // Continue game: find next actor
-             // If multiple people ron, the next turn goes to the player right after the discarding player
-             // (unless that player won, then skip them)
-             // But wait, in standard rules, if Ron occurs, the next turn logic is tricky with Multi-Ron.
-             // Usually, the player 'closest' to the discarder (in turn order) who declared Ron 'intercepts' the turn?
-             // Actually in Bloody Battle, the game continues. The discarder loses the turn.
-             // The next player is normally the one after the discarder.
-             // The `handle_hora` logic skips the winner in turn rotation anyway.
-             // So we just need to ensure `tsumo_actor` is set correctly.
-             
-             // Current logic in existing single-Hora handler:
-             // let mut next_actor = (self.tsumo_actor + 1) % 4;
-             // But valid `tsumo_actor` here might be stale if it was a Ron from `Dahai`.
-             // In `Dahai` handler, `tsumo_actor` is updated to `next_actor`.
-             // But wait, `step` is called AFTER reactions are collected.
-             // If invalid `Dahai` happened previously, `tsumo_actor` is already pointing to next person?
-             // No, `poll` calls `step`. `step` processes the best reaction.
-             // If the best reaction is Hora, it overrides whatever `Dahai` might have implied about next turn.
-             
-             // Let's look at `Dahai` handler:
-             // It updates `tsumo_actor` immediately: `self.tsumo_actor = next_actor;`
-             // Then it returns `Ok(Poll::InGame)`.
-             // THEN `poll` calls `step` again with reactions to that Dahai? 
-             // Wait, `poll` loop:
-             // 1. `step(&reactions)` -> returns event that JUST happened (e.g. Dahai).
-             // 2. But `reactions` passed to `step` are the reactions TO the previous state?
-             // No, standard MJAI loop:
-             // Agent returns reaction to event.
-             // Server processes reaction.
-             
-             // Let's re-read `poll` and `step` loop.
-             // `poll` takes `reactions`.
-             // `step` uses `reactions` to decide what happens next.
-             // If `Dahai` just happened, `step` was called with `Dahai` event from active player.
-             // It broadcasts `Dahai`, updates `tsumo_actor` to next.
-             // Then returns `InGame`.
-             // Agent gets `Dahai` event. Returns reactions (Ron/Pon/None).
-             // `poll` is called again with these new reactions.
-             // `step` is called with these reactions.
-             // Un-agari players return reactions.
-             // If Hora is present, we handle it.
-             
-             // So `tsumo_actor` currently points to the player AFTER the discarder (because Dahai handler updated it).
-             // If Ron happens, does `tsumo_actor` change?
-             // In Bloody Battle, after Ron(s), the next person to draw is the one after the discarder (who just played).
-             // Which is exactly where `tsumo_actor` is currently pointing (updated by Dahai).
-             // We just need to make sure that if THAT person won (Ron), they are skipped.
-             
-             // So we iterate to find valid next actor starting from current `tsumo_actor` (which is already discarder + 1)
-             
-             let mut next_actor = self.tsumo_actor;
-             let mut attempts = 0;
-             while self.players_agari[next_actor as usize] {
-                 next_actor = (next_actor + 1) % 4;
-                 attempts += 1;
-                 if attempts >= 4 {
-                     return Ok(Poll::End); 
-                 }
-             }
-             self.tsumo_actor = next_actor;
+             // 血战到底规则：和牌后轮到和牌者的下家摸牌继续
+            // - 荣和（Ron）：从和牌者的下家开始找下一位未和牌玩家
+            // - 自摸（Tsumo）：tsumo_actor 就是自摸者本人，跳过后即为其下家，逻辑一致
+            // - 多家荣和：取离放铳者最远的和牌者（按轮转顺序），从其下家开始
+
+            // 获取放铳者（target），判断是荣和还是自摸
+            let (target, is_ron) = match specific_hora_events[0].1.event {
+                Event::Hora { actor, target, .. } => (target, actor != target),
+                _ => unreachable!(),
+            };
+
+            let start_from = if is_ron {
+                // 荣和：找到离放铳者最远的和牌者（按轮转顺序），从其下家开始
+                let mut furthest_winner = target; // fallback
+                let mut max_distance = 0u8;
+                for &(actor_idx, _) in &specific_hora_events {
+                    let actor = actor_idx as u8;
+                    let distance = (actor + 4 - target) % 4;
+                    if distance > max_distance {
+                        max_distance = distance;
+                        furthest_winner = actor;
+                    }
+                }
+                (furthest_winner + 1) % 4
+            } else {
+                // 自摸：tsumo_actor 就是自摸者，已在 agari 列表中，会被跳过
+                self.tsumo_actor
+            };
+
+            let mut next_actor = start_from;
+            let mut attempts = 0;
+            while self.players_agari[next_actor as usize] {
+                next_actor = (next_actor + 1) % 4;
+                attempts += 1;
+                if attempts >= 4 {
+                    return Ok(Poll::End);
+                }
+            }
+            self.tsumo_actor = next_actor;
              
              return Ok(Poll::InGame);
         }

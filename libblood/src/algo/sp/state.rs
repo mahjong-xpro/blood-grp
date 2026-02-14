@@ -225,17 +225,9 @@ impl State {
         let mut ding_que_filter = false;
         let mut ding_que_range = 0..0;
 
-        if let Some(dq) = ding_que {
-            let (start, end) = match dq {
-                crate::mjai::Suit::Man => (0, 9),
-                crate::mjai::Suit::Pin => (9, 18),
-                crate::mjai::Suit::Sou => (18, 27),
-            };
-            // Check if we have any ding que tiles
-            if (start..end).any(|i| tehai[i] > 0) {
-                ding_que_filter = true;
-                ding_que_range = start..end;
-            }
+        if let Some((start, end)) = crate::ding_que::ding_que_forced_range(&self.tehai, ding_que) {
+            ding_que_filter = true;
+            ding_que_range = start..end;
         }
 
         for tid in 0..27 {

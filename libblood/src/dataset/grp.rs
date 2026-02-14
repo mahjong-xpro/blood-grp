@@ -90,11 +90,8 @@ fn count_improvement_kinds(tehai_without: &[u8; 27], remaining_count: u8, shante
 /// 5. ToiToi potential bonus (if remaining hand has 4+ pairs/triplets)
 /// 6. Improvement-kinds bonus (进张种类数: more tile kinds that reduce shanten = better shape)
 pub(crate) fn calc_ding_que_cost(tehai: &[u8; 27], suit: Suit) -> f32 {
-    let suit_range = match suit {
-        Suit::Man => 0..9,
-        Suit::Pin => 9..18,
-        Suit::Sou => 18..27,
-    };
+    let (start, end) = crate::ding_que::suit_range(suit);
+    let suit_range = start..end;
 
     // Count tiles to be removed, 刻子 (triplets), and 对子 (pairs, count==2 only; 刻子 already counted)
     let mut removed_count: u8 = 0;
@@ -192,11 +189,7 @@ fn evaluate_ding_que_quality(tehai: &[u8; 27], chosen_suit: Suit) -> f32 {
     let suits = [Suit::Man, Suit::Pin, Suit::Sou];
     let costs: Vec<f32> = suits.iter().map(|&s| calc_ding_que_cost(tehai, s)).collect();
 
-    let chosen_idx = match chosen_suit {
-        Suit::Man => 0,
-        Suit::Pin => 1,
-        Suit::Sou => 2,
-    };
+    let chosen_idx = crate::ding_que::suit_id(chosen_suit);
 
     let chosen_cost = costs[chosen_idx];
     let min_cost = costs.iter().cloned().fold(f32::INFINITY, f32::min);
