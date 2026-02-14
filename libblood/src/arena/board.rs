@@ -671,11 +671,13 @@ impl BoardState {
                             );
                         }
                         self.last_kan_revenue = 0;
+                        self.last_kan_actor = None;
                     } else {
                         // Transfer: subtract from discarder, add to winner.
                         deltas[single_target as usize] -= self.last_kan_revenue;
                         deltas[single_actor as usize] += self.last_kan_revenue;
                         self.last_kan_revenue = 0;
+                        self.last_kan_actor = None;
 
                         // FIX: 杠上炮（单家荣和）后必须失效 gang_history 记录，
                         // 否则退税（exhaustive_ryukyoku）会再次反转该笔交易，导致杠者重复扣款。
