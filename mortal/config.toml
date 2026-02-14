@@ -1,6 +1,6 @@
 # 🚀 Fresh Start Training Configuration
 # 新服务器 4090×8 优化配置
-# 阶段 2: 策略成型期 (Step 85k+)
+# 阶段 1: 初期探索期 (Step 0 - 100k)
 
 [control]
 version = 4
@@ -17,33 +17,27 @@ enable_cudnn_benchmark = true
 enable_amp = false
 enable_compile = false
 
-# 训练参数 - 4090 单卡 24GB, float32 (AMP 已关闭)
-batch_size = 2048
+# 训练参数 - 4090 单卡 24GB 可用 4096
+batch_size = 4096
 opt_step_every = 1
 
 # 保存和测试频率
 save_every = 1000
-test_every = 3000      # Phase 7C: 更频繁监控 (5000 -> 3000)
+test_every = 5000
 submit_every = 1000
 
 # ═══════════════════════════════════════════════════════
-# Phase 7C 配置: 极轻量护栏 (Step 875k+)
-# 最小剂量奖励塑形 + LR 重启，保留大牌追求天花板
+# 阶段 1 配置: 初期探索 (Step 0 - 100k)
+# 高探索率，快速学习率，纯分数差奖励
 # ═══════════════════════════════════════════════════════
 
 [train_play.default]
 games = 6400
 log_dir = '/data/mortal/train_play'
 
-# 探索参数 - Phase 7C: 微增探索，帮助脱离 Phase 6 局部最优
-boltzmann_epsilon = 0.08  # Phase 7C: 0.05 -> 0.08 (微增探索)
-boltzmann_temp = 0.18     # Phase 7C: 0.15 -> 0.18 (略微平滑策略分布)
-
-# Agari 探索增强: 在 Ron 决策点 (mask[29] AND mask[30]) 以此概率探索 Ron
-# 解决探索死锁: 模型 Q 函数偏移后不选 Ron → 无 Ron 样本 → 无法纠正 → 恶性循环
-# 设为 0.25 = 25% 的 Ron 机会会被探索，足以产生训练信号
-# 非强制: 标记为 non-greedy，Q 函数修正后自然收敛，此机制逐渐失效
-agari_explore_eps = 0.25
+# 探索参数 - 初期高探索
+boltzmann_epsilon = 0.3  # 阶段 1: 高探索
+boltzmann_temp = 0.3     # 阶段 1: 高温度
 
 # 阶段转换指南:
 # ┌──────────────────────────────────────────────────────┐
@@ -51,11 +45,7 @@ agari_explore_eps = 0.25
 # ├──────────────────────────────────────────────────────┤
 # │ 1. 探索期  │  0.3    │ 0.3   │ Step 0 - 100k       │
 # │ 2. 收敛期  │  0.15   │ 0.2   │ Step 100k - 300k    │
-# │ 3. 精调期  │  0.05   │ 0.1   │ Step 300k - 470k    │
-# │ 3.5 激进期 │  0.25   │ 0.4   │ Step 470k+          │
-# │ 5. 精调收敛│  0.08   │ 0.15  │ Step 650k+          │
-# │ 6. 纯粹贪婪│  0.05   │ 0.15  │ Step 738k - 875k    │
-# │ 7C 极轻护栏│  0.08   │ 0.18  │ Step 875k+          │
+# │ 3. 精调期  │  0.05   │ 0.1   │ Step 300k+          │
 # └──────────────────────────────────────────────────────┘
 
 top_p = 1.0
@@ -63,8 +53,9 @@ repeats = 1
 keep_data = false
 
 # 测试对局配置
+# TRAIN-03 fix: 3000→10000 (实际 2500 局，avg_rank 标准差 ~0.02-0.035)
 [test_play]
-games = 5000 
+games = 10000
 log_dir = '/data/mortal/test_play'
 
 # 数据集配置
@@ -88,37 +79,47 @@ gamma = 0.99  # 阶段 1: 高 gamma，学习长期规划 (后期降到 0.98)
 pts = [4.0, 2.0, 1.0, 0.0]
 
 # TD(λ) 配置
-td_lambda = 0.95         # λ 参数: 0=TD(0), 1=MC, 0.95=推荐值
-td_lambda_enabled = true # 启用 TD(λ) 训练 (替代纯 Monte Carlo)
+# BUG-06 fix: 当前无 V(s') bootstrap, λ<1 会使有效折扣从 γ 退化为 γ×λ.
+# 必须设 λ=1.0 使 TD(λ) ≡ MC. 待引入 target network 提供 V(s') 后可降回 0.95.
+td_lambda = 1.0
+td_lambda_enabled = true # 启用 TD(λ) 回报计算路径 (λ=1.0 时等价于 MC)
 
 # 奖励塑形配置
 [reward_shaping]
-# Phase 7C: 极轻量护栏 — 仅防止策略崩溃，不主导学习方向
-# 设计原则: 对 3番以上手牌偏差 < 4%，保留 Phase 6 大牌追求天花板
-rank_bonus_enabled = true
-rank_bonuses = [0.0, 0.0, 0.0, -0.15]  # 只惩罚 4th (解决 29.2% 问题)，不奖励 1st
+# 阶段 1: 关闭排名奖励，纯靠分数差学习基础能力
+rank_bonus_enabled = false
+rank_bonuses = [0.3, 0.1, -0.1, -0.3]
 
-# 动作级奖励 (极小剂量)
-action_bonus_enabled = true
-agari_bonus = 0.05           # 极小: 1番荣和 0.10→0.15 (+50%), 3番自摸 1.20→1.25 (+4%)
-houjuu_penalty = -0.05       # 极小: 仅提醒"放铳是坏事"，不强制防守
+# 动作级奖励 (和牌/放铳)
+action_bonus_enabled = true  # Phase 1 即启用，提供和牌/放铳即时信号
+agari_bonus = 0.1            # 和牌奖励
+houjuu_penalty = -0.1        # 放铳惩罚
 
 # 自动更新 baseline 的阈值 (阶梯式训练)
-# 禁用自动更新 (已知 Bug: 自博弈 client 不会 reload)
-# 手动操作: cp mortal.pth baseline.pth + 重启 client
-baseline_update_threshold = 4.0
+# 当 avg_pt 超过此值时，自动用当前模型替换 baseline
+baseline_update_threshold = 3.2
 
-# 规则配置 — Phase 2: 多规则训练
+# 阶段转换指南:
+# ┌──────────────────────────────────────────────────────┐
+# │ 阶段       │ rank_bonus │ 触发条件                  │
+# ├──────────────────────────────────────────────────────┤
+# │ 1. 探索期  │  false     │ Step 0 - 100k             │
+# │ 2. 收敛期  │  true      │ Step 100k+ (avg_pt > 2.8) │
+# └──────────────────────────────────────────────────────┘
+
+# 规则配置
 [rules]
 # 训练时是否随机化 FanConfig (每局独立随机开关各番种)
 # true = 多规则训练 (模型学习条件化策略)
-# false = 仅标准规则 (所有番种启用)
+# false = 仅标准规则 (所有番种启用) — 从零训练建议先关闭
 randomize_fan_config = false
 
-# ResNet 模型配置 - 增大模型容量
+# ResNet 模型配置
+# MODEL-05 fix: SuitAwareConv1d 将有效宽度从 27 缩至 9 (单花色)，
+# 4 层 conv 即覆盖全花色，更深层仅做 channel mixing。
 [resnet]
-conv_channels = 256  # 从 192 增加，更强的表示能力
-num_blocks = 50      # 从 40 增加，更深的网络
+conv_channels = 192
+num_blocks = 30
 
 # CQL 配置 - online 模式下不生效，但保留配置
 [cql]
@@ -132,11 +133,11 @@ next_rank_weight = 0.25
 ding_que_aux_enabled = true
 ding_que_aux_scale = 0.02
 
-# 定缺 CE 监督 - 阶段 2 增强监督
-ding_que_ce_weight = 0.5  # 阶段 2+: 紧急回调 (避免过拟合定缺辅助)
+# 定缺 CE 监督 - 初期适度
+ding_que_ce_weight = 1  # 阶段 1: 适度监督 (后期提高到 2-3)
 
 # 对手等待预测: 预测 3 个对手的听牌 (81 = 3×27)
-opp_wait_enabled = true   # Phase 6: 开启对手听牌预测 (Opponent Modeling)
+opp_wait_enabled = true   # 开启对手听牌预测辅助任务
 opp_wait_weight = 0.1     # BCE 损失权重
 
 # Batch Normalization 冻结配置
@@ -147,16 +148,16 @@ mortal = false
 [optim]
 eps = 1e-8
 betas = [0.9, 0.999]
-weight_decay = 0.1
+# TRAIN-01 fix: 0.1 对 30 层 192ch ResNet 过度正则化，降为 0.01。
+weight_decay = 0.01
 max_grad_norm = 1.0
 
-# 学习率调度器配置 — Phase 7C: LR 重启 (Cosine Restart)
+# 学习率调度器配置
 [optim.scheduler]
-peak = 2e-4       # Phase 7C: 重启 LR (当前 6.8e-5 → warmup 到 2e-4)
-                   # 低于初始 5e-4 (模型已成熟), 高于当前 (需要学习新策略)
-final = 1e-5      # Phase 7C: 更低终点，实现超精细收敛
-warm_up_steps = 5000   # Phase 7C: 5k 步 warmup，避免 LR 跳变引起灾变
-max_steps = 1350000    # Phase 7C: 延长到 1.35M (从 875k 再跑 475k 步)
+peak = 5e-4   # 阶段 1: 高学习率加速初期学习
+final = 1e-4  # 最终稳定在 1e-4
+warm_up_steps = 2000
+max_steps = 1000000
 
 # Baseline 模型配置
 [baseline.train]

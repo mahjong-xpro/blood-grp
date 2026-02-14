@@ -74,7 +74,7 @@ pub enum Agari {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[pyo3::pyclass(get_all, set_all)]
 pub struct FanConfig {
-    /// 门清 (+1番): no open melds. Default: true
+    /// 门清 (+1番): no open melds (pon/minkan). Ankan does NOT break menqing. Default: true
     pub menqing: bool,
     /// 断幺九 (+1番): all tiles 2–8, no terminals. Default: true
     pub duanyaojiu: bool,
@@ -353,7 +353,7 @@ impl AgariCalculator<'_> {
     /// 
     /// 1. 平胡（PingHu）：+1番（基础，必须）
     /// 2. 自摸（Tsumo）：+1番（if !is_ron）
-    /// 3. 门清（MenQing）：+1番（无副露：无碰、无杠）
+    /// 3. 门清（MenQing）：+1番（无明副露：无碰、无明杠；暗杠不破门清）
     /// 4. 七对（QiDui）：+2番
     /// 5. 碰碰胡（ToiToi）：+1番
     /// 6. 金钩钓（JinGouDiao）：+1番
@@ -372,49 +372,30 @@ impl AgariCalculator<'_> {
     ///     - 杠上炮：杠牌后打出的牌和牌，+1番（平胡1番 + 杠上炮1番 = 2番）
     #[must_use]
     pub fn agari(&self) -> Option<Agari> {
-        // DingQue rule (花猪): cannot agari if DingQue suit tiles remain in full hand (tehai + fuuro).
+        // DingQue rule (花猪): cannot agari if DingQue suit tiles remain in full hand.
         if !crate::ding_que::can_agari_with_fuuro(self.tehai, self.pons, self.minkans, self.ankans, self.ding_que) {
             return None;
         }
-        
-        let mut fan: u8 = 1;
+
         let fc = &self.fan_config;
-        
-        // 2. 自摸（Tsumo）：+1番
-        if !self.is_ron {
-            fan += 1;
-        }
 
-        // 13. 海底捞月/海底炮（Haidi）：+1番
-        if fc.haidi && self.is_haidi {
-            fan += 1;
-        }
+        // ── 基础番 + 状态番（与分解无关） ──
+        let mut fan: u8 = 1; // 1. 平胡
+        if !self.is_ron { fan += 1; } // 2. 自摸
+        if fc.haidi && self.is_haidi { fan += 1; } // 13. 海底
+        if fc.menqing && self.pons.is_empty() && self.minkans.is_empty() { fan += 1; } // 3. 门清
 
-        // 3. 门清（MenQing）：+1番（无副露：无碰、无杠）
-        if fc.menqing && self.pons.is_empty() && self.minkans.is_empty() && self.ankans.is_empty() {
-            fan += 1;
-        }
-        
-        // Check hand structure (must be a valid 14-tile multiset for AGARI_TABLE)
+        // ── 手牌结构验证 ──
         let hand14 = self.hand14_for_division()?;
         let tile14_len: usize = hand14.iter().filter(|&&c| c > 0).count();
         let (tile14, key) = get_tile14_and_key(&hand14);
         let divs_opt = AGARI_TABLE.get(&key);
-
-        // FIX: 龙七对回退——AGARI_TABLE 源自日麻，日麻七对子要求 7 个不同牌种各 2 张，
-        // 不包含 4 张相同牌算 2 对的龙七对模式。当表查找失败时，检查龙七对。
-        // 同时处理表有标准分解但缺少龙七对分解的情况（取两者最高番数）。
         let is_chitoi_hand = is_valid_chitoi_hand(&hand14);
-
         let has_fuuro = !self.pons.is_empty() || !self.minkans.is_empty() || !self.ankans.is_empty();
 
-        // 如果表中无此牌型，且也不是七对子，则确实不能和牌
         if divs_opt.is_none() && !is_chitoi_hand {
             return None;
         }
-
-        // 副露约束：必须存在至少一个分解使得碰/杠保持为刻子
-        // （七对不可能有副露，所以 has_fuuro && is_chitoi_hand 不会同时为真）
         if has_fuuro {
             if let Some(divs) = divs_opt {
                 if !divs.iter().any(|div| {
@@ -423,376 +404,252 @@ impl AgariCalculator<'_> {
                     return None;
                 }
             } else {
-                // 有副露但表中无分解且不是七对 → 不能和牌
                 return None;
             }
         }
-        
-        // Find the best division for fan calculation
+
+        // ── 四归一/根 (与分解无关，预先计算) ──
+        let gen_count = calc_gen_count(self.tehai, self.pons, self.minkans, self.ankans, self.exclude_gen_tile);
+
+        // ── AGARI_TABLE 标准分解循环 ──
         let mut max_fan: u8 = 0;
-        
-        // 8. 四归一（SiGuiYi / 根）：+1番/根
-        //
-        // Bloody Battle rule (per rules.md): a "gen" is counted whenever a tile kind appears
-        // exactly 4 times in total, across:
-        // - concealed hand (`self.tehai`)
-        // - exposed pons (3 tiles each)
-        // - exposed/closed kans (4 tiles each)
-        //
-        // Note: If `exclude_gen_tile` is set (for chankan), that tile kind is not counted as gen
-        // even if its total would be 4.
-        let mut total_counts: [u8; 27] = *self.tehai;
-        for &tile_id in self.pons.iter() {
-            let idx = tile_id as usize;
-            if idx < 27 {
-                total_counts[idx] = total_counts[idx].saturating_add(3);
-            }
-        }
-        for &tile_id in self.minkans.iter() {
-            let idx = tile_id as usize;
-            if idx < 27 {
-                total_counts[idx] = total_counts[idx].saturating_add(4);
-            }
-        }
-        for &tile_id in self.ankans.iter() {
-            let idx = tile_id as usize;
-            if idx < 27 {
-                total_counts[idx] = total_counts[idx].saturating_add(4);
-            }
-        }
-
-        debug_assert!(
-            total_counts.iter().all(|&c| c <= 4),
-            "invalid tile totals (>4) in gen counting"
-        );
-
-        let mut gen_count: u8 = 0;
-        for (tile_id, &count) in total_counts.iter().enumerate() {
-            if count == 4 {
-                if self.exclude_gen_tile.is_some_and(|t| t as usize == tile_id) {
-                    continue;
-                }
-                gen_count = gen_count.saturating_add(1);
-            }
-        }
-        // AGARI_TABLE 标准分解循环（表中有此牌型时执行）
         for div in divs_opt.iter().flat_map(|d| d.iter()) {
-            // 跳过与副露不兼容的分解（碰/杠必须保持为刻子）
             if has_fuuro && !is_division_compatible_with_fuuro(div, &tile14, self.pons, self.minkans, self.ankans) {
                 continue;
             }
-
-            let mut div_fan: u8 = gen_count;
-            
-            // 3. 七对（QiDui）：+2番
-            // 七对与碰碰胡、金钩钓互斥（结构不同），但可与清一色、带幺九、断幺九叠加
-            let is_chitoi = div.has_chitoi;
-            if is_chitoi {
-                div_fan += 2;
-            }
-            
-            if !is_chitoi {
-                // 以下番型仅适用于非七对的标准分解
-
-                // 5. 金钩钓（JinGouDiao）：+1番 (4 fuuro + single wait/tanki)
-                let fuuro_count = self.pons.len() + self.minkans.len() + self.ankans.len();
-                
-                // 4. 碰碰胡（ToiToi）：+1番 (4 kotsu + 1 pair, no shuntsu)
-                // Division is computed on the full 14-tile hand (concealed + fuuro as triplets),
-                // so `div.kotsu_idxs.len()` already includes exposed pons/kans.
-                if div.shuntsu_idxs.is_empty() && div.kotsu_idxs.len() == 4 {
-                    div_fan += 1;
-                }
-
-                if fuuro_count == 4 {
-                    // Check if single wait (tanki): pair is the winning tile
-                    let is_tanki = div.pair_idx < 14 && tile14[div.pair_idx as usize] == self.winning_tile;
-                    if is_tanki {
-                        // Jin Gou Diao (Single Wait with 4 Melds).
-                        // In Bloody Battle, this stacks with ToiToi.
-                        // Base (1) + ToiToi (1) + JGD (1) = 3 Fan (4000).
-                        div_fan += 1;
-                    }
-                }
-            }
-            
-            // 6. 清一色（QingYiSe）：+2番
-            // 可与七对叠加：七对+清一色 = 平胡1+七对2+清一色2 = 5番(封顶)
-            // Check if all tiles (hand + fuuro) are same suit
-            let mut suit_kind: Option<u8> = None;
-            let mut is_qingyise = true;
-            
-            // Check hand tiles (only the filled prefix of `tile14` is meaningful)
-            for &tile_id in &tile14[..tile14_len] {
-                if tile_id >= 27 {
-                    continue; // Skip invalid tiles
-                }
-                let kind = tile_id / 9;
-                if let Some(prev_kind) = suit_kind {
-                    if prev_kind != kind {
-                        is_qingyise = false;
-                        break;
-                    }
-                } else {
-                    suit_kind = Some(kind);
-                }
-            }
-            
-            // Check fuuro tiles (pons, minkans, ankans)
-            if is_qingyise {
-                for &tile_id in self.pons.iter().chain(self.minkans.iter()).chain(self.ankans.iter()) {
-                    if tile_id >= 27 {
-                        continue;
-                    }
-                    let kind = tile_id / 9;
-                    if let Some(prev_kind) = suit_kind {
-                        if prev_kind != kind {
-                            is_qingyise = false;
-                            break;
-                        }
-                    } else {
-                        suit_kind = Some(kind);
-                    }
-                }
-            }
-            
-            if is_qingyise && suit_kind.is_some() {
-                div_fan += 2;
-            }
-            
-            // 以下番型需要顺子结构，与七对互斥（七对无顺子）
-            if !is_chitoi {
-                // 10. 一条龙（YiTiaoLong）：+1番（同一花色含有 123、456、789 三副顺子）
-                if fc.yitiaolong {
-                    let mut suit_has_shuntsu_num: [[bool; 9]; 3] = [[false; 9]; 3];
-                    for &shuntsu_idx in &div.shuntsu_idxs {
-                        let tile_id = tile14[shuntsu_idx as usize];
-                        if tile_id >= 27 {
-                            continue;
-                        }
-                        let kind = (tile_id / 9) as usize;
-                        let num = tile_id % 9;
-                        if kind < 3 {
-                            suit_has_shuntsu_num[kind][num as usize] = true;
-                        }
-                    }
-                    let is_yitiaolong = (0..3).any(|kind| {
-                        suit_has_shuntsu_num[kind][0] && suit_has_shuntsu_num[kind][3] && suit_has_shuntsu_num[kind][6]
-                    });
-                    if is_yitiaolong {
-                        div_fan += 1;
-                    }
-                }
-                
-                // 11. 夹心五（JiaXinWu）：+1番（和牌张为 5，且听牌为 4-6 夹 5，和 5 成顺 456）
-                if fc.jiaxinwu {
-                    let is_jiaxinwu = (self.winning_tile < 27 && self.winning_tile % 9 == 4)
-                        && div.shuntsu_idxs.iter().any(|&shuntsu_idx| {
-                            let tile_id = tile14[shuntsu_idx as usize];
-                            tile_id < 27
-                                && tile_id % 9 == 3
-                                && tile_id / 9 == self.winning_tile / 9
-                        });
-                    if is_jiaxinwu {
-                        div_fan += 1;
-                    }
-                }
-            }
-            
-            // 7. 带幺九（DaiYaoJiu）：+3番
-            // 可与七对叠加：七对+带幺九 = 平胡1+七对2+带幺九3 = 6番→封顶5番
-            let is_daiyaojiu = if is_chitoi {
-                // 七对：直接检查手牌中所有牌种是否都是 1 或 9
-                self.tehai.iter().enumerate().all(|(tid, &count)| {
-                    if count == 0 { return true; }
-                    let num = tid % 9;
-                    num == 0 || num == 8
-                })
-            } else {
-                let mut ok = true;
-                
-                // Check shuntsu: must start with 1 or end with 9 (1-2-3 or 7-8-9)
-                for &shuntsu_idx in &div.shuntsu_idxs {
-                    let tile_id = tile14[shuntsu_idx as usize];
-                    if tile_id >= 27 { continue; }
-                    let num = tile_id % 9;
-                    if num != 0 && num != 6 { ok = false; break; }
-                }
-                
-                // Check kotsu: must be 1 or 9
-                if ok {
-                    for &kotsu_idx in &div.kotsu_idxs {
-                        let tile_id = tile14[kotsu_idx as usize];
-                        if tile_id >= 27 { continue; }
-                        let num = tile_id % 9;
-                        if num != 0 && num != 8 { ok = false; break; }
-                    }
-                }
-                
-                // Check pair: must be 1 or 9
-                if ok {
-                    let pair_tile = tile14[div.pair_idx as usize];
-                    if pair_tile < 27 {
-                        let num = pair_tile % 9;
-                        if num != 0 && num != 8 { ok = false; }
-                    }
-                }
-                
-                // Check fuuro (pons, minkans, ankans): must be 1 or 9
-                if ok {
-                    for &tile_id in self.pons.iter().chain(self.minkans.iter()).chain(self.ankans.iter()) {
-                        if tile_id >= 27 { continue; }
-                        let num = tile_id % 9;
-                        if num != 0 && num != 8 { ok = false; break; }
-                    }
-                }
-                ok
-            };
-            
-            if fc.daiyaojiu && is_daiyaojiu {
-                div_fan += 3;
-            } else if fc.duanyaojiu {
-                // 9. 断幺九（DuanYaoJiu）：+1番（所有组合不含1和9，仅2–8；与带幺九互斥）
-                // 可与七对叠加
-                let is_duanyaojiu = if is_chitoi {
-                    // 七对：直接检查手牌中所有牌种是否都是 2-8
-                    self.tehai.iter().enumerate().all(|(tid, &count)| {
-                        if count == 0 { return true; }
-                        let num = tid % 9;
-                        num >= 1 && num <= 7
-                    })
-                } else {
-                    let mut ok = true;
-                    for &shuntsu_idx in &div.shuntsu_idxs {
-                        let tile_id = tile14[shuntsu_idx as usize];
-                        if tile_id >= 27 { continue; }
-                        let num = tile_id % 9;
-                        // 顺子仅允许 234,345,456,567,678（首张 num 1..=5），不含 123(num0)、789(num6)
-                        if num == 0 || num == 6 { ok = false; break; }
-                    }
-                    if ok {
-                        for &kotsu_idx in &div.kotsu_idxs {
-                            let tile_id = tile14[kotsu_idx as usize];
-                            if tile_id >= 27 { continue; }
-                            let num = tile_id % 9;
-                            if num == 0 || num == 8 { ok = false; break; }
-                        }
-                    }
-                    if ok {
-                        let pair_tile = tile14[div.pair_idx as usize];
-                        if pair_tile < 27 {
-                            let num = pair_tile % 9;
-                            if num == 0 || num == 8 { ok = false; }
-                        }
-                    }
-                    if ok {
-                        for &tile_id in self.pons.iter().chain(self.minkans.iter()).chain(self.ankans.iter()) {
-                            if tile_id >= 27 { continue; }
-                            let num = tile_id % 9;
-                            if num == 0 || num == 8 { ok = false; break; }
-                        }
-                    }
-                    ok
-                };
-                if is_duanyaojiu {
-                    div_fan += 1;
-                }
-            }
-            
+            let div_fan = self.calc_division_fan(div, &tile14, tile14_len, gen_count);
             max_fan = max_fan.max(div_fan);
         }
 
-        // FIX: 龙七对独立计算——当手牌是有效七对子（包括 4 张相同牌算 2 对的龙七对），
-        // 但 AGARI_TABLE 中没有对应的 has_chitoi 分解时，在此独立计算七对番数。
-        // 这确保龙七对模式不会因为不在日麻预计算表中而被遗漏。
+        // ── 龙七对独立计算 ──
         if is_chitoi_hand && !has_fuuro {
-            let mut chitoi_fan: u8 = 2; // 七对 +2番
-            chitoi_fan += gen_count; // 四归一/根
-
-            // 清一色 +2番
-            let mut chitoi_suit: Option<u8> = None;
-            let mut chitoi_qingyise = true;
-            for (tid, &count) in hand14.iter().enumerate() {
-                if count == 0 { continue; }
-                let kind = (tid / 9) as u8;
-                if let Some(prev) = chitoi_suit {
-                    if prev != kind { chitoi_qingyise = false; break; }
-                } else {
-                    chitoi_suit = Some(kind);
-                }
-            }
-            if chitoi_qingyise && chitoi_suit.is_some() {
-                chitoi_fan += 2;
-            }
-
-            // 带幺九 +3番（所有牌种都是 1 或 9）
-            if fc.daiyaojiu {
-                let chitoi_daiyaojiu = self.tehai.iter().enumerate().all(|(tid, &count)| {
-                    if count == 0 { return true; }
-                    let num = tid % 9;
-                    num == 0 || num == 8
-                });
-                if chitoi_daiyaojiu {
-                    chitoi_fan += 3;
-                } else if fc.duanyaojiu {
-                    // 断幺九 +1番（所有牌种都是 2-8）
-                    let chitoi_duanyaojiu = self.tehai.iter().enumerate().all(|(tid, &count)| {
-                        if count == 0 { return true; }
-                        let num = tid % 9;
-                        num >= 1 && num <= 7
-                    });
-                    if chitoi_duanyaojiu {
-                        chitoi_fan += 1;
-                    }
-                }
-            } else if fc.duanyaojiu {
-                // 断幺九 +1番（所有牌种都是 2-8）— 带幺九关闭时单独检查
-                let chitoi_duanyaojiu = self.tehai.iter().enumerate().all(|(tid, &count)| {
-                    if count == 0 { return true; }
-                    let num = tid % 9;
-                    num >= 1 && num <= 7
-                });
-                if chitoi_duanyaojiu {
-                    chitoi_fan += 1;
-                }
-            }
-
+            let chitoi_fan = self.calc_chitoi_standalone_fan(&hand14, gen_count);
             max_fan = max_fan.max(chitoi_fan);
         }
-        
+
         fan = fan.saturating_add(max_fan);
-        
-        // 13. 杠上花（GangShangHua）：+1番
-        if self.is_after_kan && !self.is_ron {
-            fan += 1;
-        }
-        
-        // 14. 杠上炮（GangShangPao）：+1番
-        // 注意：抢杠（chankan）和杠上炮是不同的
-        // - 抢杠：在别人加杠时抢杠和牌，+1番
-        // - 杠上炮：其他玩家杠牌后打出的牌和牌，+1番
-        if self.is_kan_discard && self.is_ron && !self.is_chankan {
-            fan += 1;
-        }
-        
-        // 15. 抢杠（Chankan）：+1番
-        // 抢杠：在别人加杠时抢杠和牌，+1番
-        // 抢杠时，被抢杠的玩家的根不应该计算（因为加杠的牌被抢走了）
-        if self.is_chankan && self.is_ron {
-            fan += 1;
-        }
-        
-        // 17. 天胡 (TianHu) / 地胡 (DiHu): Max Fan (5番)
+
+        // ── 杠相关番 ──
+        if self.is_after_kan && !self.is_ron { fan += 1; } // 杠上花
+        if self.is_kan_discard && self.is_ron && !self.is_chankan { fan += 1; } // 杠上炮
+        if self.is_chankan && self.is_ron { fan += 1; } // 抢杠
+
+        // ── 天胡/地胡 ──
         if fc.tianhu_dihu && (self.is_tianhu || self.is_dihu) {
             fan = 5;
-            // Early return or just let it be capped below (it is already 5)
         }
 
-        // 5番封顶
-        fan = fan.min(5);
-        
-        Some(Agari::Fan(fan))
+        Some(Agari::Fan(fan.min(5))) // 5番封顶
     }
+
+    // ────────────────────────────────────────────────────────
+    //  CODE-01 refactor: 从 agari() 中提取的子函数
+    // ────────────────────────────────────────────────────────
+
+    /// 计算单个 AGARI_TABLE 分解的附加番数。
+    fn calc_division_fan(&self, div: &Div, tile14: &[u8; 14], tile14_len: usize, gen_count: u8) -> u8 {
+        let fc = &self.fan_config;
+        let mut div_fan: u8 = gen_count;
+        let is_chitoi = div.has_chitoi;
+
+        // 七对 +2番
+        if is_chitoi {
+            div_fan += 2;
+        }
+
+        // 碰碰胡 / 金钩钓 (非七对)
+        if !is_chitoi {
+            let fuuro_count = self.pons.len() + self.minkans.len() + self.ankans.len();
+            if div.shuntsu_idxs.is_empty() && div.kotsu_idxs.len() == 4 {
+                div_fan += 1; // 碰碰胡
+            }
+            if fuuro_count == 4 {
+                let is_tanki = div.pair_idx < 14 && tile14[div.pair_idx as usize] == self.winning_tile;
+                if is_tanki {
+                    div_fan += 1; // 金钩钓
+                }
+            }
+        }
+
+        // 清一色 +2番
+        if check_qingyise(tile14, tile14_len, self.pons, self.minkans, self.ankans) {
+            div_fan += 2;
+        }
+
+        // 一条龙 / 夹心五 (非七对)
+        if !is_chitoi {
+            if fc.yitiaolong && check_yitiaolong(div, tile14) {
+                div_fan += 1;
+            }
+            if fc.jiaxinwu && check_jiaxinwu(div, tile14, self.winning_tile) {
+                div_fan += 1;
+            }
+        }
+
+        // 带幺九 / 断幺九 (互斥)
+        let is_daiyaojiu = check_daiyaojiu(div, tile14, self.tehai, self.pons, self.minkans, self.ankans, is_chitoi);
+        if fc.daiyaojiu && is_daiyaojiu {
+            div_fan += 3;
+        } else if fc.duanyaojiu && check_duanyaojiu(div, tile14, self.tehai, self.pons, self.minkans, self.ankans, is_chitoi) {
+            div_fan += 1;
+        }
+
+        div_fan
+    }
+
+    /// 龙七对独立番数计算（AGARI_TABLE 可能缺失龙七对分解）。
+    fn calc_chitoi_standalone_fan(&self, hand14: &[u8; 27], gen_count: u8) -> u8 {
+        let fc = &self.fan_config;
+        let mut chitoi_fan: u8 = 2 + gen_count; // 七对 +2 + 根
+
+        // 清一色 +2
+        if check_qingyise_from_hand(hand14) {
+            chitoi_fan += 2;
+        }
+
+        // 带幺九 / 断幺九 (互斥)
+        if fc.daiyaojiu && check_tehai_all_terminals(self.tehai) {
+            chitoi_fan += 3;
+        } else if fc.duanyaojiu && check_tehai_no_terminals(self.tehai) {
+            chitoi_fan += 1;
+        }
+
+        chitoi_fan
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  CODE-01 refactor: 从 agari() 提取的纯函数
+// ════════════════════════════════════════════════════════════════════════
+
+/// 四归一/根：统计手牌+副露中 4 张齐全的牌种数。
+fn calc_gen_count(tehai: &[u8; 27], pons: &[u8], minkans: &[u8], ankans: &[u8], exclude: Option<u8>) -> u8 {
+    let mut total: [u8; 27] = *tehai;
+    for &t in pons { if (t as usize) < 27 { total[t as usize] = total[t as usize].saturating_add(3); } }
+    for &t in minkans.iter().chain(ankans.iter()) { if (t as usize) < 27 { total[t as usize] = total[t as usize].saturating_add(4); } }
+    debug_assert!(total.iter().all(|&c| c <= 4), "invalid tile totals (>4) in gen counting");
+    total.iter().enumerate().filter(|&(i, &c)| c == 4 && !exclude.is_some_and(|t| t as usize == i)).count() as u8
+}
+
+/// 清一色：tile14 + 副露全部同一花色。
+fn check_qingyise(tile14: &[u8; 14], tile14_len: usize, pons: &[u8], minkans: &[u8], ankans: &[u8]) -> bool {
+    let mut suit: Option<u8> = None;
+    for &t in &tile14[..tile14_len] {
+        if t >= 27 { continue; }
+        let k = t / 9;
+        if suit.is_some_and(|s| s != k) { return false; }
+        suit = Some(k);
+    }
+    for &t in pons.iter().chain(minkans.iter()).chain(ankans.iter()) {
+        if t >= 27 { continue; }
+        let k = t / 9;
+        if suit.is_some_and(|s| s != k) { return false; }
+        suit = Some(k);
+    }
+    suit.is_some()
+}
+
+/// 清一色（从 hand14 数组直接检查，用于龙七对）。
+fn check_qingyise_from_hand(hand14: &[u8; 27]) -> bool {
+    let mut suit: Option<u8> = None;
+    for (tid, &count) in hand14.iter().enumerate() {
+        if count == 0 { continue; }
+        let k = (tid / 9) as u8;
+        if suit.is_some_and(|s| s != k) { return false; }
+        suit = Some(k);
+    }
+    suit.is_some()
+}
+
+/// 一条龙：同一花色含 123、456、789 三副顺子。
+fn check_yitiaolong(div: &Div, tile14: &[u8; 14]) -> bool {
+    let mut has: [[bool; 9]; 3] = [[false; 9]; 3];
+    for &si in &div.shuntsu_idxs {
+        let t = tile14[si as usize];
+        if t >= 27 { continue; }
+        let kind = (t / 9) as usize;
+        if kind < 3 { has[kind][(t % 9) as usize] = true; }
+    }
+    (0..3).any(|k| has[k][0] && has[k][3] && has[k][6])
+}
+
+/// 夹心五：和牌张为 5，且听牌为 4-6 夹 5。
+fn check_jiaxinwu(div: &Div, tile14: &[u8; 14], winning_tile: u8) -> bool {
+    (winning_tile < 27 && winning_tile % 9 == 4)
+        && div.shuntsu_idxs.iter().any(|&si| {
+            let t = tile14[si as usize];
+            t < 27 && t % 9 == 3 && t / 9 == winning_tile / 9
+        })
+}
+
+/// 带幺九：所有组合都含 1 或 9。
+fn check_daiyaojiu(div: &Div, tile14: &[u8; 14], tehai: &[u8; 27], pons: &[u8], minkans: &[u8], ankans: &[u8], is_chitoi: bool) -> bool {
+    if is_chitoi {
+        check_tehai_all_terminals(tehai)
+    } else {
+        // 顺子必须 123 或 789
+        for &si in &div.shuntsu_idxs {
+            let t = tile14[si as usize];
+            if t >= 27 { continue; }
+            let n = t % 9;
+            if n != 0 && n != 6 { return false; }
+        }
+        // 刻子必须 1 或 9
+        for &ki in &div.kotsu_idxs {
+            let t = tile14[ki as usize];
+            if t >= 27 { continue; }
+            let n = t % 9;
+            if n != 0 && n != 8 { return false; }
+        }
+        // 对子必须 1 或 9
+        let pt = tile14[div.pair_idx as usize];
+        if pt < 27 && pt % 9 != 0 && pt % 9 != 8 { return false; }
+        // 副露必须 1 或 9
+        for &t in pons.iter().chain(minkans.iter()).chain(ankans.iter()) {
+            if t >= 27 { continue; }
+            let n = t % 9;
+            if n != 0 && n != 8 { return false; }
+        }
+        true
+    }
+}
+
+/// 断幺九：所有组合都不含 1 和 9（仅 2-8）。
+fn check_duanyaojiu(div: &Div, tile14: &[u8; 14], tehai: &[u8; 27], pons: &[u8], minkans: &[u8], ankans: &[u8], is_chitoi: bool) -> bool {
+    if is_chitoi {
+        check_tehai_no_terminals(tehai)
+    } else {
+        for &si in &div.shuntsu_idxs {
+            let t = tile14[si as usize];
+            if t >= 27 { continue; }
+            let n = t % 9;
+            if n == 0 || n == 6 { return false; }
+        }
+        for &ki in &div.kotsu_idxs {
+            let t = tile14[ki as usize];
+            if t >= 27 { continue; }
+            let n = t % 9;
+            if n == 0 || n == 8 { return false; }
+        }
+        let pt = tile14[div.pair_idx as usize];
+        if pt < 27 && (pt % 9 == 0 || pt % 9 == 8) { return false; }
+        for &t in pons.iter().chain(minkans.iter()).chain(ankans.iter()) {
+            if t >= 27 { continue; }
+            let n = t % 9;
+            if n == 0 || n == 8 { return false; }
+        }
+        true
+    }
+}
+
+/// 手牌全是幺九（1 或 9）。
+fn check_tehai_all_terminals(tehai: &[u8; 27]) -> bool {
+    tehai.iter().enumerate().all(|(tid, &c)| c == 0 || tid % 9 == 0 || tid % 9 == 8)
+}
+
+/// 手牌不含幺九（全是 2-8）。
+fn check_tehai_no_terminals(tehai: &[u8; 27]) -> bool {
+    tehai.iter().enumerate().all(|(tid, &c)| c == 0 || (tid % 9 >= 1 && tid % 9 <= 7))
 }
 
 /// 检查某个 AGARI_TABLE 分解是否与副露兼容。

@@ -12,7 +12,24 @@ use derivative::Derivative;
 use pyo3::prelude::*;
 use serde_json as json;
 use tinyvec::ArrayVec;
+use std::sync::Mutex;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+
+/// PERF-01: Mutex wrapper that implements Clone by cloning the inner value.
+/// Needed because PlayerState derives Clone but std::sync::Mutex does not.
+pub(super) struct ClonableMutex<T: Clone>(Mutex<T>);
+
+impl<T: Clone> ClonableMutex<T> {
+    pub fn new(val: T) -> Self { Self(Mutex::new(val)) }
+    pub fn lock(&self) -> std::sync::LockResult<std::sync::MutexGuard<'_, T>> { self.0.lock() }
+}
+
+impl<T: Clone> Clone for ClonableMutex<T> {
+    fn clone(&self) -> Self {
+        let inner = self.0.lock().map(|g| g.clone()).unwrap_or_else(|e| e.into_inner().clone());
+        Self(Mutex::new(inner))
+    }
+}
 
 /// `PlayerState` is the core of the lib, which holds all the observable game
 /// state information from a specific seat's perspective with the ability to
@@ -142,6 +159,11 @@ pub struct PlayerState {
     /// Configurable fan rules for this game session.
     /// Set once at game start; all AgariCalculator calls use this config.
     pub fan_config: FanConfig,
+
+    /// PERF-01: SP 表缓存。同一决策点多次调用 encode_obs（如 normal + kan_select）时
+    /// 避免重复计算。手牌/牌山变化时由 invalidate_sp_cache() 清除。
+    #[derivative(Default(value = "ClonableMutex::new(None)"))]
+    pub(super) cached_sp: ClonableMutex<Option<super::sp_tables::SinglePlayerTables>>,
 }
 
 #[pymethods]

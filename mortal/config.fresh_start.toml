@@ -53,8 +53,9 @@ repeats = 1
 keep_data = false
 
 # 测试对局配置
+# TRAIN-03 fix: 3000→10000 (实际 2500 局，avg_rank 标准差 ~0.02-0.035)
 [test_play]
-games = 3000
+games = 10000
 log_dir = '/data/mortal/test_play'
 
 # 数据集配置
@@ -78,8 +79,10 @@ gamma = 0.99  # 阶段 1: 高 gamma，学习长期规划 (后期降到 0.98)
 pts = [4.0, 2.0, 1.0, 0.0]
 
 # TD(λ) 配置
-td_lambda = 0.95         # λ 参数: 0=TD(0), 1=MC, 0.95=推荐值
-td_lambda_enabled = true # 启用 TD(λ) 训练 (替代纯 Monte Carlo)
+# BUG-06 fix: 当前无 V(s') bootstrap, λ<1 会使有效折扣从 γ 退化为 γ×λ.
+# 必须设 λ=1.0 使 TD(λ) ≡ MC. 待引入 target network 提供 V(s') 后可降回 0.95.
+td_lambda = 1.0
+td_lambda_enabled = true # 启用 TD(λ) 回报计算路径 (λ=1.0 时等价于 MC)
 
 # 奖励塑形配置
 [reward_shaping]
@@ -87,8 +90,8 @@ td_lambda_enabled = true # 启用 TD(λ) 训练 (替代纯 Monte Carlo)
 rank_bonus_enabled = false
 rank_bonuses = [0.3, 0.1, -0.1, -0.3]
 
-# 动作级奖励 (和牌/放铳) - 阶段 2 开启
-action_bonus_enabled = true  # 启用动作奖励
+# 动作级奖励 (和牌/放铳)
+action_bonus_enabled = true  # Phase 1 即启用，提供和牌/放铳即时信号
 agari_bonus = 0.1            # 和牌奖励
 houjuu_penalty = -0.1        # 放铳惩罚
 
@@ -104,10 +107,19 @@ baseline_update_threshold = 3.2
 # │ 2. 收敛期  │  true      │ Step 100k+ (avg_pt > 2.8) │
 # └──────────────────────────────────────────────────────┘
 
-# ResNet 模型配置 - 增大模型容量
+# 规则配置
+[rules]
+# 训练时是否随机化 FanConfig (每局独立随机开关各番种)
+# true = 多规则训练 (模型学习条件化策略)
+# false = 仅标准规则 (所有番种启用) — 从零训练建议先关闭
+randomize_fan_config = false
+
+# ResNet 模型配置
+# MODEL-05 fix: SuitAwareConv1d 将有效宽度从 27 缩至 9 (单花色)，
+# 4 层 conv 即覆盖全花色，更深层仅做 channel mixing。
 [resnet]
-conv_channels = 256  # 从 192 增加，更强的表示能力
-num_blocks = 50      # 从 40 增加，更深的网络
+conv_channels = 192
+num_blocks = 30
 
 # CQL 配置 - online 模式下不生效，但保留配置
 [cql]
@@ -125,7 +137,7 @@ ding_que_aux_scale = 0.02
 ding_que_ce_weight = 1  # 阶段 1: 适度监督 (后期提高到 2-3)
 
 # 对手等待预测: 预测 3 个对手的听牌 (81 = 3×27)
-opp_wait_enabled = false  # 需要 libblood 重新编译后启用
+opp_wait_enabled = true   # 开启对手听牌预测辅助任务
 opp_wait_weight = 0.1     # BCE 损失权重
 
 # Batch Normalization 冻结配置
@@ -136,7 +148,8 @@ mortal = false
 [optim]
 eps = 1e-8
 betas = [0.9, 0.999]
-weight_decay = 0.1
+# TRAIN-01 fix: 0.1 对 30 层 192ch ResNet 过度正则化，降为 0.01。
+weight_decay = 0.01
 max_grad_norm = 1.0
 
 # 学习率调度器配置

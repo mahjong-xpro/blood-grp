@@ -34,10 +34,10 @@ pub use tile::RequiredTile;
 
 #[cfg(feature = "sp_reproduce_cpp_ver")]
 pub const MAX_TSUMOS_LEFT: usize = 18;
-/// In practice, the max number of tsumos left should be 17, since the first
-/// tsumo of oya is mandatory.
+/// BUG-09 fix: 血战到底 2 人对局时 tsumos_left 可达 28 (56/2)。
+/// 旧值 17 基于日麻（4 人始终活跃）假设，导致 2 人阶段 SP 计算直接返回 Err。
 #[cfg(not(feature = "sp_reproduce_cpp_ver"))]
-pub const MAX_TSUMOS_LEFT: usize = 17;
+pub const MAX_TSUMOS_LEFT: usize = 28;
 
 #[cfg(feature = "sp_reproduce_cpp_ver")]
 fn calc_normal_wrapper(tiles: &[u8; 27], len_div3: u8, ding_que: Option<crate::mjai::Suit>) -> i8 {

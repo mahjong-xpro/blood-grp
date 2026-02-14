@@ -707,6 +707,8 @@ impl PlayerState {
     fn hora(&mut self, actor: u8, target: u8, deltas: Option<[i32; 4]>) -> Result<()> {
         let actor_rel = self.rel(actor);
         self.players_agari[actor_rel] = true;
+        // PERF-01: players_agari 变化影响 SP 的 active_players 计算
+        self.invalidate_sp_cache();
         // 自身和牌时设置 has_agari，确保独立使用 PlayerState（日志回放、数据集生成）时
         // 后续事件（tsumo/dahai/kakan）正确跳过已和牌的玩家
         if actor_rel == 0 {
@@ -805,41 +807,18 @@ impl PlayerState {
             self.intermediate_kan.clear();
         }
 
-        if let Some(d) = deltas {
-             // deltas is [i32; 4] absolute.
-             // self.scores is [i32; 4], relative to self.player_id.
-             // We need to rotate deltas to match self.scores (which is rotated left by self.player_id)
-             let mut d_rel = d;
-             d_rel.rotate_left(self.player_id as usize);
-             
-             for i in 0..4 {
-                 self.scores[i] += d_rel[i];
-             }
-        }
+        self.apply_score_deltas(deltas);
         
         Ok(())
     }
     
     fn ryukyoku(&mut self, deltas: Option<[i32; 4]>) -> Result<()> {
-        if let Some(d) = deltas {
-             let mut d_rel = d;
-             d_rel.rotate_left(self.player_id as usize);
-             
-             for i in 0..4 {
-                 self.scores[i] += d_rel[i];
-             }
-        }
+        self.apply_score_deltas(deltas);
         Ok(())
     }
 
     fn daiminkan(&mut self, actor: u8, target: u8, pai: Tile, consumed: [Tile; 3], deltas: Option<[i32; 4]>) -> Result<()> {
-        if let Some(d) = deltas {
-             let mut d_rel = d;
-             d_rel.rotate_left(self.player_id as usize);
-             for i in 0..4 {
-                 self.scores[i] += d_rel[i];
-             }
-        }
+        self.apply_score_deltas(deltas);
 
         let actor_rel = self.rel(actor);
         let full_set = consumed.into_iter().chain(iter::once(pai)).collect();
@@ -855,19 +834,8 @@ impl PlayerState {
             self.tiles_left
         );
         self.fuuro_overview[actor_rel].push(full_set);
-        // Clear any previous kan before adding new one (only track most recent kan before discard)
+        // 只跟踪最近一次杠（打牌前重置）
         self.intermediate_kan.clear();
-        // intermediate_kan should be empty after clear(), so we can safely push
-        // But add a check just in case clear() didn't work as expected
-        assert!(
-            self.intermediate_kan.len() < 4,
-            "intermediate_kan capacity overflow: player {} has {} tiles in intermediate_kan after clear(), attempting to add one more. Maximum is 4. This indicates a bug in intermediate_kan management. kyoku: {}, at_turn: {}, tiles_left: {}",
-            self.player_id,
-            self.intermediate_kan.len(),
-            self.kyoku,
-            self.at_turn,
-            self.tiles_left
-        );
         self.intermediate_kan.push(pai);
         // Only pad kawa from the actor's perspective to avoid duplicate pushes when broadcast
         if actor_rel == 0 {
@@ -878,8 +846,6 @@ impl PlayerState {
         if actor_rel != 0 {
             for t in consumed {
                 self.witness_tile(t)?;
-            }
-            for _t in full_set {
             }
             return Ok(());
         }
@@ -906,13 +872,7 @@ impl PlayerState {
     }
 
     fn kakan(&mut self, actor: u8, pai: Tile, deltas: Option<[i32; 4]>) -> Result<()> {
-        if let Some(d) = deltas {
-             let mut d_rel = d;
-             d_rel.rotate_left(self.player_id as usize);
-             for i in 0..4 {
-                 self.scores[i] += d_rel[i];
-             }
-        }
+        self.apply_score_deltas(deltas);
 
         let actor_rel = self.rel(actor);
         for fuuro in &mut self.fuuro_overview[actor_rel] {
@@ -932,19 +892,8 @@ impl PlayerState {
                 break;
             }
         }
-        // Clear any previous kan before adding new one (only track most recent kan before discard)
+        // 只跟踪最近一次杠（打牌前重置）
         self.intermediate_kan.clear();
-        // intermediate_kan should be empty after clear(), so we can safely push
-        // But add a check just in case clear() didn't work as expected
-        assert!(
-            self.intermediate_kan.len() < 4,
-            "intermediate_kan capacity overflow: player {} has {} tiles in intermediate_kan after clear(), attempting to add one more. Maximum is 4. This indicates a bug in intermediate_kan management. kyoku: {}, at_turn: {}, tiles_left: {}",
-            self.player_id,
-            self.intermediate_kan.len(),
-            self.kyoku,
-            self.at_turn,
-            self.tiles_left
-        );
         self.intermediate_kan.push(pai);
         self.kans_on_board += 1;
 
@@ -1048,13 +997,7 @@ impl PlayerState {
     }
 
     fn ankan(&mut self, actor: u8, consumed: [Tile; 4], deltas: Option<[i32; 4]>) -> Result<()> {
-        if let Some(d) = deltas {
-             let mut d_rel = d;
-             d_rel.rotate_left(self.player_id as usize);
-             for i in 0..4 {
-                 self.scores[i] += d_rel[i];
-             }
-        }
+        self.apply_score_deltas(deltas);
 
         let actor_rel = self.rel(actor);
         let tile = consumed[0];
@@ -1115,6 +1058,18 @@ impl PlayerState {
         ((actor + 4 - self.player_id) % 4) as usize
     }
 
+    /// 将绝对 deltas 旋转到自身视角后累加到 self.scores。
+    #[inline]
+    fn apply_score_deltas(&mut self, deltas: Option<[i32; 4]>) {
+        if let Some(d) = deltas {
+            let mut d_rel = d;
+            d_rel.rotate_left(self.player_id as usize);
+            for i in 0..4 {
+                self.scores[i] += d_rel[i];
+            }
+        }
+    }
+
     ///
     /// Returns an error if we have already witnessed 4 such tiles.
     pub(super) fn witness_tile(&mut self, tile: Tile) -> Result<()> {
@@ -1159,6 +1114,9 @@ impl PlayerState {
                 *tehai_tile -= 1;
             }
         }
+
+        // PERF-01: 手牌变化 → SP 缓存失效
+        self.invalidate_sp_cache();
 
         Ok(())
     }

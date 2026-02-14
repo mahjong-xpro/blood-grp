@@ -249,7 +249,13 @@ impl PlayerState {
     #[inline]
     #[must_use]
     pub fn rule_based_agari(&self) -> bool {
-        // In Bloody Battle, we almost always want to agari if possible.
+        // 血战到底中 Ron（荣和）并非"能和必和"。策略上有合理的不和场景：
+        //   - 等自摸多 +1 番（平胡 1 番 → 自摸 2 番 = 翻倍）
+        //   - 2 人/3 人阶段剩余牌多，自摸概率上升
+        //   - 门清手荣和已有门清加番，但自摸可再叠 +1
+        //
+        // 当前实现暂时总是选择和牌（保守策略），作为 baseline 安全网。
+        // TODO: 引入启发式逻辑（番数 / 剩余牌数 / 活跃玩家数）判断是否值得等自摸。
         self.last_cans.can_agari()
     }
 
@@ -439,6 +445,15 @@ impl PlayerState {
     ///   If `None`, falls back to `self.tiles_seen` (per-player perspective, which is
     ///   incomplete and may cause incorrect calculations).
     pub(super) fn single_player_tables(&self, global_tiles_seen: Option<[u8; 27]>) -> Result<SinglePlayerTables> {
+        // PERF-01: 命中缓存时直接返回（同一决策点多次 encode_obs 共享结果）
+        if global_tiles_seen.is_none() {
+            if let Ok(guard) = self.cached_sp.lock() {
+                if let Some(ref cached) = *guard {
+                    return Ok(cached.clone());
+                }
+            }
+        }
+
         ensure!(self.tiles_left >= 4, "need at least one more tsumo");
 
         let cur_shanten = self.real_time_shanten();
@@ -562,6 +577,22 @@ impl PlayerState {
 
         let max_ev_table = sp_calc.calc(init_state, can_discard, tsumos_left, cur_shanten)?;
 
-        Ok(SinglePlayerTables { max_ev_table })
+        let tables = SinglePlayerTables { max_ev_table };
+
+        // PERF-01: 缓存结果（仅 global_tiles_seen=None 时，即标准调用路径）
+        if global_tiles_seen.is_none() {
+            if let Ok(mut guard) = self.cached_sp.lock() {
+                *guard = Some(tables.clone());
+            }
+        }
+
+        Ok(tables)
+    }
+
+    /// 清除 SP 表缓存。在手牌/牌山/状态变化时调用。
+    pub(super) fn invalidate_sp_cache(&self) {
+        if let Ok(mut guard) = self.cached_sp.lock() {
+            *guard = None;
+        }
     }
 }

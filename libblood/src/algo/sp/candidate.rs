@@ -5,7 +5,7 @@ use std::cmp::Ordering;
 
 use tinyvec::ArrayVec;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Candidate {
     /// 打牌
     pub tile: Tile,

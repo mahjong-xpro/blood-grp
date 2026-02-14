@@ -19,8 +19,8 @@ class MortalEngine:
         boltzmann_epsilon = 0,
         boltzmann_temp = 1,
         top_p = 1,
-        agari_explore_eps = 0,
         # Deprecated kwargs kept for checkpoint compatibility
+        agari_explore_eps = None,  # TRAIN-02: removed, kept for compat
         version = None,
         stochastic_latent = None,
     ):
@@ -39,7 +39,6 @@ class MortalEngine:
         self.boltzmann_epsilon = boltzmann_epsilon
         self.boltzmann_temp = boltzmann_temp
         self.top_p = top_p
-        self.agari_explore_eps = agari_explore_eps
 
     def react_batch(self, obs, masks, invisible_obs):
         try:
@@ -112,28 +111,6 @@ class MortalEngine:
         else:
             is_greedy = torch.ones(batch_size, dtype=torch.bool, device=self.device)
             actions = q_out.argmax(-1)
-
-        # ====== Agari 探索增强 ======
-        # 在 Ron 决策点 (mask[29]=agari AND mask[30]=pass 同时有效)，
-        # 以 agari_explore_eps 概率探索 Ron，防止探索死锁。
-        # 这不是"强制荣和"：
-        #   - 仅在部分决策点以概率触发，不是 100% 覆盖
-        #   - 标记为非贪婪 (is_greedy=False)，训练时不作为正样本强化
-        #   - 随着 Q 函数修正，贪婪策略自然学会 Ron，此机制逐渐失效
-        if self.agari_explore_eps > 0:
-            ron_available = masks[:, 29] & masks[:, 30]  # Ron 决策点
-            not_chose_ron = actions != 29
-            explore_trigger = torch.full(
-                (batch_size,), self.agari_explore_eps, device=self.device
-            ).bernoulli().to(torch.bool)
-            override = ron_available & not_chose_ron & explore_trigger
-            if override.any():
-                actions = torch.where(
-                    override,
-                    torch.tensor(29, device=self.device),
-                    actions,
-                )
-                is_greedy = is_greedy & ~override
 
         return actions.tolist(), q_out.tolist(), masks.tolist(), is_greedy.tolist()
 

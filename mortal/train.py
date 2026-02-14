@@ -68,8 +68,9 @@ def train():
 
     mortal = Brain(version=version, **config['resnet']).to(device)
     dqn = DQN(version=version).to(device)
-    # AuxNet dims: (4 = next_rank, 81 = opponent waits: 3 opponents × 27 tiles)
-    aux_net = AuxNet((4, 81)).to(device)
+    # AuxNet dims: (4 = next_rank, 81 = opponent waits: 3 opponents × 27 tiles, 3 = ding_que: Man/Pin/Sou)
+    # MODEL-03 fix: 定缺分类头从 DQN Q 值移到 AuxNet 独立分支，避免 CE 与 Bellman 冲突
+    aux_net = AuxNet((4, 81, 3)).to(device)
     all_models = (mortal, dqn, aux_net)
     if enable_compile:
         for m in all_models:
@@ -122,8 +123,17 @@ def train():
         best_perf = state['best_perf']
         steps = state['steps']
     
-    # Initialize scheduler after loading checkpoint to get correct steps for offset
-    # Do NOT load scheduler state as it would overwrite the offset parameter
+    # Scheduler 重启设计（TRAIN-04 文档化）:
+    # 从 checkpoint 恢复时，scheduler **不**从 state_dict 恢复，而是用当前
+    # config['optim']['scheduler'] 参数 + offset=steps 重新创建。
+    #
+    # 这是有意设计，支持"阶段切换"（Phase switching）：
+    #   - 修改 config.toml 中的 peak/final/warm_up_steps/max_steps 后重启训练，
+    #     新 LR 曲线立即生效，从 step=0 开始 warmup（offset 仅用于内部步数计算）。
+    #   - 例如 Phase 7C: 将 peak 从 5e-4 降为 2e-4，max_steps 延长到 1.35M。
+    #
+    # 注意：如果不修改 scheduler config 就重启训练，LR 曲线与中断前完全一致
+    # （因为 offset=steps 使 _step_inner 计算出相同的 LR 值）。
     scheduler = LinearWarmUpCosineAnnealingLR(optimizer, offset=steps, **config['optim']['scheduler'])
 
     optimizer.zero_grad(set_to_none=True)
@@ -204,7 +214,9 @@ def train():
             train_player = TrainPlayer()
             rankings, generated_files = train_player.train_play(mortal, dqn, device)
             logging.info(f'Generated {len(generated_files)} files from self-play')
-            logging.info(f'Average ranking: {rankings.mean():.2f}')
+            # BUG-08 fix: rankings=[1st_count,2nd_count,...], .mean() 是各档平均局数, 非平均排名
+            avg_rank = np.dot(rankings, [1, 2, 3, 4]) / max(rankings.sum(), 1)
+            logging.info(f'Average ranking: {avg_rank:.4f} (distribution: {rankings})')
             
             # 重新构建文件索引
             logging.info('Rebuilding file index with generated data...')
@@ -311,7 +323,7 @@ def train():
                 if not online:
                     cql_loss = q_out.logsumexp(-1).mean() - q.mean()
 
-                next_rank_logits, opp_wait_logits = aux_net(phi)
+                next_rank_logits, opp_wait_logits, ding_que_logits = aux_net(phi)
                 next_rank_loss = ce(next_rank_logits, player_ranks)
                 
                 # Opponent wait prediction BCE loss
@@ -326,10 +338,11 @@ def train():
                 else:
                     opp_wait_loss = torch.tensor(0.0, device=device, dtype=torch.float32)
 
-                # Ding Que CE auxiliary: supervise policy toward heuristic best suit at DingQue steps only
+                # MODEL-03 fix: 定缺 CE 现在作用于 AuxNet 独立分类头的 logits，
+                # 不再直接作用于 DQN 的 Q 值，避免 CE 与 Bellman 目标的梯度冲突。
                 sel = ding_que_best_suit >= 0
                 if sel.any() and ding_que_ce_weight > 0:
-                    ding_que_ce_loss = ce(q_out[sel, 31:34], ding_que_best_suit[sel])
+                    ding_que_ce_loss = ce(ding_que_logits[sel], ding_que_best_suit[sel])
                 else:
                     ding_que_ce_loss = torch.tensor(0.0, device=device, dtype=torch.float32)
 
@@ -598,32 +611,18 @@ def train():
             logging.info('Epoch completed. Generating new self-play data...')
             rankings, generated_files = train_player.train_play(mortal, dqn, device)
             logging.info(f'Generated {len(generated_files)} files from self-play')
-            logging.info(f'Average ranking: {rankings.mean():.2f}')
+            # BUG-08 fix: 同上
+            avg_rank = np.dot(rankings, [1, 2, 3, 4]) / max(rankings.sum(), 1)
+            logging.info(f'Average ranking: {avg_rank:.4f} (distribution: {rankings})')
             
-            # Rebuild file index with newly generated data
-            logging.info('Rebuilding file index with newly generated data...')
-            file_index = config['dataset']['file_index']
-            file_list = []
-            for pat in config['dataset']['globs']:
-                file_list.extend(glob(pat, recursive=True))
-            
-            # Apply player_names filter if needed
-            player_names_set = set()
-            for filename in config['dataset']['player_names_files']:
-                with open(filename) as f:
-                    player_names_set.update(filtered_trimmed_lines(f))
-            if len(player_names_set) > 0:
-                filtered = []
-                for filename in tqdm(file_list, unit='file', desc='Filtering files'):
-                    with gzip.open(filename, 'rt') as f:
-                        start = json.loads(next(f))
-                        if not set(start['names']).isdisjoint(player_names_set):
-                            filtered.append(filename)
-                file_list = filtered
-            
-            file_list.sort(reverse=True)
-            torch.save({'file_list': file_list}, file_index)
-            logging.info(f'File list size after self-play: {len(file_list):,}')
+            # PERF-04: 增量更新文件索引，仅追加新生成的文件（不再全量 glob + sort）。
+            # generated_files 已由 train_play() 返回，包含本次新增的完整路径。
+            if generated_files:
+                old_size = len(file_list)
+                file_list.extend(generated_files)
+                file_index = config['dataset']['file_index']
+                torch.save({'file_list': file_list}, file_index)
+                logging.info(f'File index updated: {old_size:,} + {len(generated_files)} new → {len(file_list):,} total')
             logging.info('Starting next epoch with updated data...')
 
 def main():

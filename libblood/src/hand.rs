@@ -46,6 +46,12 @@ pub fn hand(s: &str) -> Result<[u8; 27]> {
         bail!("trailing digits without suit suffix: {:?}", stack);
     }
 
+    ensure!(
+        ret.iter().all(|&c| c <= 4),
+        "tile count exceeds 4: {}",
+        tiles_to_string(&ret),
+    );
+
     Ok(ret)
 }
 
@@ -132,6 +138,16 @@ mod test {
                 0, 0, 0, 0, 0, 0, 1, 1, 1, // s
             ]
         );
+    }
+
+    #[test]
+    fn rejects_tile_count_exceeds_4() {
+        // 1m 出现 5 次 → 物理上不可能
+        assert!(hand("111444777999m 11m").is_err());
+        // 9p 出现 5 次
+        assert!(hand("9999p 9p").is_err());
+        // 恰好 4 张应通过
+        assert!(hand("1111m").is_ok());
     }
 
     #[test]

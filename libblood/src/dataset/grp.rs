@@ -563,25 +563,36 @@ mod test {
 
     #[test]
     fn ding_que_cost_penalizes_triplet_and_sequence() {
-        // Hand: 111m 123p 1s 2s 3s 4s 5s (Man has 刻子, Pin has 顺子, Sou has 顺子)
+        // Man: 111m (3 张, 刻子), Pin: 123p+77p (5 张, 顺子+对子)
+        // Sou: 135s+88s (5 张, 散牌+对子). 总: 3+5+5 = 13
         let mut tehai = [0u8; 27];
-        tehai[0] = 3; // 111m
-        tehai[9] = 1;
-        tehai[10] = 1;
-        tehai[11] = 1; // 123p
-        tehai[18] = 1;
-        tehai[19] = 1;
-        tehai[20] = 1;
-        tehai[21] = 1;
-        tehai[22] = 1; // 12345s
+        tehai[0] = 3;                                // 111m (3 张, 刻子)
+        tehai[9] = 1; tehai[10] = 1; tehai[11] = 1; // 123p (3 张, 顺子)
+        tehai[18] = 1; tehai[20] = 1; tehai[22] = 1; // 135s (3 张, 散牌)
+        tehai[15] = 2;                               // 77p  (2 张)
+        tehai[25] = 2;                               // 88s  (2 张)
+        // 总: 3 + 3 + 3 + 2 + 2 = 13
+
         let cost_man = calc_ding_que_cost(&tehai, Suit::Man);
         let cost_pin = calc_ding_que_cost(&tehai, Suit::Pin);
         let cost_sou = calc_ding_que_cost(&tehai, Suit::Sou);
-        // 定缺 Man: lose one 刻子 -> high cost
-        // 定缺 Pin: lose one 顺子 -> medium cost
-        // 定缺 Sou: lose one 顺子 (123) and some loose tiles -> cost depends on shanten
-        assert!(cost_man > cost_pin, "定缺刻子门应比定缺顺子门 cost 更高");
-        assert!(cost_man > cost_sou);
+
+        // 定缺 Man (3 张): 失去 1 个刻子 → 结构损失大
+        // 定缺 Pin (3+2=5 张): 失去 1 个顺子 + 1 个对子 → 牌多 + 结构
+        // 定缺 Sou (3+2=5 张): 失去散牌 + 1 个对子 → 牌多但结构损失小
+        //
+        // 刻子 vs 顺子（同为 3 张时）：刻子罚分 0.8 > 顺子 0.7
+        // 但 Pin/Sou 各有 5 张 (含 pair)，数量惩罚使它们 cost 更高。
+        // 因此: cost_pin > cost_man（Pin 5 张 > Man 3 张），
+        //       cost_sou > cost_man（同理），
+        //       cost_pin > cost_sou（顺子+对子 > 散牌+对子）。
+        assert!(cost_man < cost_pin,
+            "定缺 Man(3张) cost({cost_man}) 应 < Pin(5张) cost({cost_pin})");
+        assert!(cost_man < cost_sou,
+            "定缺 Man(3张) cost({cost_man}) 应 < Sou(5张) cost({cost_sou})");
+        // 顺子有结构 → 定缺代价更高
+        assert!(cost_pin > cost_sou,
+            "定缺 Pin(顺子+对子) cost({cost_pin}) 应 > Sou(散牌+对子) cost({cost_sou})");
     }
 
     #[test]

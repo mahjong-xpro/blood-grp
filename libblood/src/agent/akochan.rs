@@ -153,7 +153,7 @@ impl Agent for AkochanAgent {
         let start_game = json::json!({
             "type": "start_game",
             "kyoku_first": 0,
-            "aka_flag": true,
+            "aka_flag": false,
         });
         json::to_writer(&mut self.stdin, &start_game)?;
         self.stdin.write_all(b"\n")?;

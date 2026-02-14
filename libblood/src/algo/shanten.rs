@@ -40,16 +40,9 @@ pub fn ensure_init() {
 }
 
 fn add_suhai(lhs: &mut [u8; 10], index: usize, m: usize) {
-    // len_div3 should be 0-4, so m should be 0-4
-    // If m is out of range, clamp it to prevent index out of bounds
-    // Note: m can be 255 (u8::MAX) if tehai_len_div3 underflowed, so we need to handle it
-    let m = if m > 4 { 
-        // Log warning and clamp to 4 (safest value)
-        eprintln!("WARNING: len_div3 (m) should be 0-4, but got {}. This may indicate tehai_len_div3 underflow. Clamping to 4.", m);
-        4 
-    } else { 
-        m 
-    };
+    // len_div3 must be 0-4. Debug builds catch violations; release builds clamp silently.
+    debug_assert!(m <= 4, "add_suhai: m should be 0-4, got {} (tehai_len_div3 underflow?)", m);
+    let m = m.min(4);
     
     let tab = SUHAI_TABLE.get(index).copied().unwrap_or_default();
     

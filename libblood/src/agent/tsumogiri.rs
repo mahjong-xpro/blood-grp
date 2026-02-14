@@ -40,10 +40,23 @@ impl Agent for Tsumogiri {
                 suit,
             }
         } else if cans.can_discard {
+            // 优先摸切（tsumogiri），但摸牌可能为 None（碰后无摸牌）
+            // 或为 forbidden_tiles（碰后禁打 / 定缺约束），
+            // 此时改用 discard_candidates() 选第一张合法弃牌。
+            let pai = match state.last_self_tsumo() {
+                Some(t) if !state.forbidden_tiles[t.as_usize()] => t,
+                _ => {
+                    let dc = state.discard_candidates();
+                    let tid = dc.iter().position(|&ok| ok)
+                        .context("no valid discard candidate")?;
+                    crate::tile::Tile::try_from(tid as u8)
+                        .context("invalid tile id from discard_candidates")?
+                }
+            };
             Event::Dahai {
                 actor: self.0,
-                pai: state.last_self_tsumo().context("last tsumo is empty")?,
-                tsumogiri: true,
+                pai,
+                tsumogiri: state.last_self_tsumo() == Some(pai),
             }
         } else {
             Event::None

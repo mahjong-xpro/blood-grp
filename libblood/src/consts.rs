@@ -23,13 +23,14 @@ pub const ACTION_SPACE: usize = 27 // discard (27 tile kinds)
 #[inline]
 pub const fn obs_shape(version: u32) -> (usize, usize) {
     match version {
-        // 381 = 精简血战到底特征编码 + 可配置番型标志
+        // 423 = 精简血战到底特征编码 + 可配置番型标志 + BUG-09 修复 (SP 巡数 14→28)
         // 删除冗余: suit_count, score_deltas, active_players, genbutsu, fully_visible,
         //   kawa first-6 (×4 players), SP dead code
-        // 压缩: fuuro 4→2 ch/meld, kyoku 4→1, shanten 7→5, SP turns 17→14
+        // 压缩: fuuro 4→2 ch/meld, kyoku 4→1, shanten 7→5
         // 新增: wall_remaining, menzen, self_fuuro, at_turn, acceptance, opp_fuuro(×3)
-        // 新增: fan_config flags ×7 (menqing, duanyaojiu, daiyaojiu, yitiaolong, jiaxinwu, haidi, tianhu_dihu)
-        4 => (381, 27),
+        // 新增: fan_config flags ×7
+        // BUG-09 fix: SP turns 14→28 (+42 ch)，覆盖血战到底 2 人对局全巡程
+        4 => (423, 27),
         _ => panic!("Unsupported version: only v4 is supported"),
     }
 }

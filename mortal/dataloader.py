@@ -4,6 +4,20 @@ import numpy as np
 import logging
 from torch.utils.data import IterableDataset
 
+# PERF-03: Numba JIT for sequential loops (optional, graceful fallback)
+try:
+    from numba import njit as _njit
+    _HAS_NUMBA = True
+except ImportError:
+    _HAS_NUMBA = False
+    def _njit(*args, **kwargs):
+        """No-op decorator when numba is not installed."""
+        def _wrap(fn):
+            return fn
+        if args and callable(args[0]):
+            return args[0]
+        return _wrap
+
 # Ensure libblood is initialized before importing modules that depend on it
 # This is necessary when using 'spawn' multiprocessing method
 try:
@@ -31,6 +45,36 @@ from libblood.dataset import GameplayLoader
 from config import config
 
 
+@_njit(cache=True)
+def _td_lambda_inner(kyoku_rewards, at_kyoku, dones, apply_gamma, gamma, lambda_, game_size):
+    """Numba-accelerated (or pure Python fallback) reverse TD(λ) loop."""
+    td_returns = np.zeros(game_size, dtype=np.float64)
+    running_return = 0.0
+    for i in range(game_size - 1, -1, -1):
+        k = at_kyoku[i]
+        if dones[i]:
+            running_return = kyoku_rewards[k]
+        elif apply_gamma[i]:
+            running_return = gamma * lambda_ * running_return
+        # else: non-advancing step, running_return unchanged
+        td_returns[i] = running_return
+    return td_returns
+
+
+@_njit(cache=True)
+def _steps_to_done_inner(dones, apply_gamma, game_size):
+    """Numba-accelerated (or pure Python fallback) reverse steps_to_done loop."""
+    out = np.zeros(game_size, dtype=np.int64)
+    steps = 0
+    for i in range(game_size - 1, -1, -1):
+        if dones[i]:
+            steps = 0
+        else:
+            steps += apply_gamma[i]  # bool → 0/1
+        out[i] = steps
+    return out
+
+
 def compute_td_lambda_returns(
     kyoku_rewards: np.ndarray,
     at_kyoku: np.ndarray,
@@ -42,53 +86,27 @@ def compute_td_lambda_returns(
 ) -> np.ndarray:
     """
     计算 TD(λ) 回报.
-    
-    TD(λ) 使用资格迹混合 n-step 回报:
-    G_t^λ = r_t + γ * (1-done) * [(1-λ)*V(s') + λ*G_{t+1}^λ]
-    
-    由于我们没有 V(s) 估计, 使用简化版本:
-    - 在 kyoku 结束时, 使用该 kyoku 的奖励
-    - 中间步骤使用 TD(λ) 递推
-    
-    Args:
-        kyoku_rewards: 每个 kyoku 的奖励 (shape: [num_kyoku])
-        at_kyoku: 每步对应的 kyoku 索引 (shape: [game_size])
-        dones: 每步是否结束 (shape: [game_size])
-        apply_gamma: 每步是否应用折扣 (shape: [game_size])
-        gamma: 折扣因子
-        lambda_: TD(λ) 的 λ 参数
-        game_size: 游戏步数
-        
-    Returns:
-        td_returns: 每步的 TD(λ) 回报 (shape: [game_size])
+
+    标准 TD(λ):
+        G_t^λ = r_t + γ * [(1-λ)*V(s_{t+1}) + λ*G_{t+1}^λ]
+
+    ⚠️ BUG-06: 当前无 V(s') bootstrap, 公式退化为:
+        G_t = r_t + γ*λ*G_{t+1}
+    有效每步折扣 = γ×λ (而非 γ). λ<1 不提供方差缩减, 仅额外衰减信号.
+    因此 λ 必须设为 1.0, 使本函数等价于 MC 回报.
+    待引入 target network 提供 V(s') 后可降回 λ<1.
     """
-    td_returns = np.zeros(game_size, dtype=np.float64)
-    
-    # 反向计算 TD(λ) 回报
-    running_return = 0.0
-    
-    for i in reversed(range(game_size)):
-        k = int(at_kyoku[i])
-        step_reward = kyoku_rewards[k] if dones[i] else 0.0
-        
-        if dones[i]:
-            # Kyoku 结束, 回报就是该 kyoku 的奖励
-            running_return = step_reward
-        else:
-            # TD(λ) 递推: G_t = r_t + γλG_{t+1}
-            # 注意: apply_gamma 控制是否应用折扣
-            if apply_gamma[i]:
-                running_return = step_reward + gamma * lambda_ * running_return
-            else:
-                # FIX: 非推进步骤（定缺、碰、和、pass、杠选择等）不应折扣。
-                # 与 MC 模式一致：非推进步骤的 steps_to_done 不递增，
-                # 因此它们应获得与下一个推进步骤相同的回报值。
-                # 之前错误地乘以 λ，导致每个非推进步骤额外衰减约 5%。
-                pass  # running_return 保持不变
-        
-        td_returns[i] = running_return
-    
-    return td_returns
+    if lambda_ < 1.0:
+        import warnings
+        eff = gamma * lambda_
+        warnings.warn(
+            f"BUG-06: td_lambda={lambda_} < 1.0 但无 V(s') bootstrap. "
+            f"有效折扣 γ_eff={eff:.4f} (非配置的 γ={gamma}). "
+            f"20 步信号衰减至 {eff**20:.1%} (MC 为 {gamma**20:.1%}). "
+            f"请设 td_lambda=1.0 或引入 target network.",
+            stacklevel=2,
+        )
+    return _td_lambda_inner(kyoku_rewards, at_kyoku, dones, apply_gamma, gamma, lambda_, game_size)
 
 
 class FileDatasetsIter(IterableDataset):
@@ -253,16 +271,10 @@ class FileDatasetsIter(IterableDataset):
                 rank_by_player_seq = (-scores_seq).argsort(-1, kind='stable').argsort(-1, kind='stable')
                 player_ranks = rank_by_player_seq[:, player_id]
 
-                steps_to_done = np.zeros(game_size, dtype=np.int64)
-                # steps_to_done[i] depends on i+1, so compute with a running accumulator
-                # to avoid out-of-bounds when i == game_size - 1.
-                steps = 0
-                for i in reversed(range(game_size)):
-                    if dones[i]:
-                        steps = 0
-                    else:
-                        steps += int(apply_gamma[i])
-                    steps_to_done[i] = steps
+                # PERF-03: steps_to_done 使用 Numba 加速（或纯 Python fallback）
+                dones_arr_std = np.asarray(dones, dtype=np.bool_)
+                apply_gamma_arr_std = np.asarray(apply_gamma, dtype=np.int64)
+                steps_to_done = _steps_to_done_inner(dones_arr_std, apply_gamma_arr_std, game_size)
 
                 # TD(λ) 回报计算
                 td_lambda_enabled = config.get('env', {}).get('td_lambda_enabled', False)
@@ -286,52 +298,47 @@ class FileDatasetsIter(IterableDataset):
                 else:
                     td_returns = None
 
+                # PERF-03: pre-compute per-step arrays, minimize Python-loop overhead
+                actions_np = np.asarray(actions, dtype=np.int64)
+                at_kyoku_np = np.asarray(at_kyoku, dtype=np.int64)
+
+                # next_kyoku_idx (clamped)
+                next_kyoku_idxs = np.minimum(at_kyoku_np + 1, len(player_ranks) - 1)
+                ranks_per_step = player_ranks[next_kyoku_idxs]
+
+                # step returns
+                if td_returns is not None:
+                    returns_per_step = td_returns
+                else:
+                    returns_per_step = kyoku_rewards[at_kyoku_np]
+
+                # dq_bonus & dq_best_suit (vectorized)
+                is_dq_action = (actions_np == 31) | (actions_np == 32) | (actions_np == 33)
+                dq_bonus_arr = np.zeros(game_size, dtype=np.float64)
+                dq_best_suit_arr = np.full(game_size, -1, dtype=np.int64)
+                if player_dq_quality is not None and is_dq_action.any():
+                    dq_mask = is_dq_action & (at_kyoku_np < len(player_dq_quality))
+                    if dq_mask.any():
+                        dq_bonus_arr[dq_mask] = player_dq_quality[at_kyoku_np[dq_mask]] * ding_que_aux_scale
+                if player_dq_best_suit is not None and is_dq_action.any():
+                    dq_mask2 = is_dq_action & (at_kyoku_np < len(player_dq_best_suit))
+                    if dq_mask2.any():
+                        dq_best_suit_arr[dq_mask2] = player_dq_best_suit[at_kyoku_np[dq_mask2]]
+
+                # Build buffer entries
+                buf = self.buffer
                 for i in range(game_size):
-                    # player_ranks is based on scores_history + final_scores, so it usually has
-                    # length = (#kyoku + 1). Some logs may mark actions with at_kyoku==#kyoku
-                    # (final/terminal), so clamp to the last valid index.
-                    next_kyoku_idx = int(at_kyoku[i]) + 1
-                    if next_kyoku_idx >= len(player_ranks):
-                        next_kyoku_idx = len(player_ranks) - 1
-                    # Ding Que bonus: only at step where action is DingQue (31=Man, 32=Pin, 33=Sou)
-                    if player_dq_quality is not None and int(actions[i]) in (31, 32, 33):
-                        k = int(at_kyoku[i])
-                        if k < len(player_dq_quality):
-                            dq_bonus = float(player_dq_quality[k] * ding_que_aux_scale)
-                        else:
-                            dq_bonus = 0.0
-                    else:
-                        dq_bonus = 0.0
-                    # Ding Que best-suit label for CE auxiliary: 0=Man, 1=Pin, 2=Sou; -1 = not a DingQue step
-                    if player_dq_best_suit is not None and int(actions[i]) in (31, 32, 33):
-                        k = int(at_kyoku[i])
-                        if k < len(player_dq_best_suit):
-                            dq_best_suit = int(player_dq_best_suit[k])
-                        else:
-                            dq_best_suit = -1
-                    else:
-                        dq_best_suit = -1
-                    
-                    # returns: TD(λ) 模式下为已折扣回报，MC 模式下为 kyoku 原始奖励
-                    if td_returns is not None:
-                        step_return = td_returns[i]
-                    else:
-                        step_return = kyoku_rewards[at_kyoku[i]]
-                    
-                    entry = [
+                    buf.append([
                         obs[i],
                         actions[i],
                         masks[i],
                         steps_to_done[i],
-                        step_return,
-                        player_ranks[next_kyoku_idx],
-                        dq_bonus,
-                        dq_best_suit,
-                        np.array(opponent_waits[i], dtype=np.float32),
-                    ]
-                    # if self.oracle:
-                    #     entry.insert(1, invisible_obs[i])
-                    self.buffer.append(entry)
+                        returns_per_step[i],
+                        ranks_per_step[i],
+                        dq_bonus_arr[i],
+                        dq_best_suit_arr[i],
+                        np.asarray(opponent_waits[i], dtype=np.float32),
+                    ])
 
 
     def __iter__(self):

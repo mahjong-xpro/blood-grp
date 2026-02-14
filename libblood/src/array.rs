@@ -13,6 +13,7 @@ where
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn get(&self, row: usize, col: usize) -> T {
         self.arr[row * COLS + col]
     }

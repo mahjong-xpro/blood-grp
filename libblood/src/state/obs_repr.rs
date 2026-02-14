@@ -8,7 +8,10 @@ use ndarray::prelude::*;
 use numpy::{PyArray1, PyArray2};
 use pyo3::prelude::*;
 
-const MAX_NUM_TURNS: usize = 14; // 4 人时 56/4=14 巡，17 巡从未到达
+// BUG-09 fix: 血战到底 2 人对局时 tsumos_left 可达 28 (56/2)。
+// 旧值 14 基于"4 人始终活跃"假设，截断后半程 SP 信号。
+// 与 sp/mod.rs MAX_TSUMOS_LEFT=28 对齐。
+const MAX_NUM_TURNS: usize = 28;
 
 struct ObsEncoderContext<'a> {
     state: &'a PlayerState,
@@ -79,8 +82,20 @@ impl<'a> ObsEncoderContext<'a> {
         let state = self.state;
         let cans = state.last_cans;
 
-        if cans.can_ding_que && state.tehai.iter().sum::<u8>() == 0 {
-             log::error!("Ding Que phase but tehai is EMPTY! Player: {}.", state.player_id);
+        // BUG-05 fix: 定缺阶段手牌必然非空（start_kyoku 固定发 13 张）。
+        // 若此处 tehai 全零，说明 encode_obs 被错误调用（如 PlayerState 未经
+        // start_kyoku 初始化即被使用），属于上游根本性 Bug。
+        // 改为 panic 而非 log::error，避免用全零输入静默产生垃圾决策。
+        if cans.can_ding_que {
+            assert!(
+                state.tehai.iter().sum::<u8>() > 0,
+                "BUG-05: Ding Que phase but tehai is EMPTY! \
+                 Player: {}, kyoku: {}, tiles_left: {}. \
+                 This indicates PlayerState was not initialized via start_kyoku().",
+                state.player_id,
+                state.kyoku,
+                state.tiles_left,
+            );
         }
 
         // ══════════════════════════════════════════════════════════
@@ -333,7 +348,9 @@ impl<'a> ObsEncoderContext<'a> {
         }
         self.idx += 1;
 
-        // [S] menzen (1 ch): 門前清（无副露）— 门清加番
+        // [S] menzen (1 ch): 門前清（无明副露：无碰、无明杠）— 门清加番
+        // 暗杠不打破门清（暗杠为暗牌操作，手牌仍视为门前）。
+        // 仅检查 fuuro_overview（碰/明杠），不检查 ankan_overview。
         if state.fuuro_overview[0].is_empty() {
             self.arr.fill(self.idx, 1.);
         }
@@ -347,7 +364,9 @@ impl<'a> ObsEncoderContext<'a> {
         self.idx += 1;
 
         // [S] at turn (1 ch): 自家摸牌巡目 — 时间压力信号
-        self.arr.fill(self.idx, (state.at_turn as f32).min(17.) / 17.);
+        // BUG-11 fix: 血战到底 2 人对局时 at_turn 可达 28 (56/2)，
+        // 旧上限 17 基于日麻 4 人始终活跃假设。提升至 28 以保留后半程信号。
+        self.arr.fill(self.idx, (state.at_turn as f32).min(28.) / 28.);
         self.idx += 1;
 
         // [S] acceptance count (1 ch): 听牌时有效残枚总数 — 和牌概率核心
@@ -515,25 +534,25 @@ impl<'a> ObsEncoderContext<'a> {
                 self.encode_ev(0.);
                 // required tiles (2*27 + 2) + sp table (3 * MAX_NUM_TURNS)
                 self.idx += 2 * 27 + 2 + 3 * MAX_NUM_TURNS;
-            } else if let Ok(SinglePlayerTables { max_ev_table }) = state.single_player_tables(None) {
-                if max_ev_table.is_empty() {
+            } else {
+              // PERF-01: 只调用一次 single_player_tables，捕获 Result
+              match state.single_player_tables(None) {
+                Ok(SinglePlayerTables { max_ev_table }) if max_ev_table.is_empty() => {
                     if cans.can_discard {
-                        // max_ev (2) + required tiles (2 * 27) + max required tiles (2)
                         self.idx += 2 + 2 * 27 + 2;
                         self.encode_sp_table(max_ev_table, cans.can_discard, 0.);
                     } else {
-                        // max_ev (2) + required tiles (2 * 27 + 1) + first required (1)
                         self.idx += 2 + 2 * 27 + 1 + 1;
                         self.encode_sp_table(max_ev_table, cans.can_discard, 0.);
                     }
-                } else {
+                }
+                Ok(SinglePlayerTables { max_ev_table }) => {
                     let max_ev = max_ev_table
                         .first()
                         .and_then(|c| c.exp_values.first().copied())
                         .unwrap_or_default();
                     self.encode_ev(max_ev);
 
-                    // Encode required tiles.
                     if cans.can_discard {
                         for candidate in &max_ev_table {
                             let discard_tid = candidate.tile.as_usize();
@@ -573,31 +592,32 @@ impl<'a> ObsEncoderContext<'a> {
                     let ev_scale = if max_ev < 1. { 0. } else { 1. / max_ev };
                     self.encode_sp_table(max_ev_table, cans.can_discard, ev_scale);
                 }
-            } else {
-                if let Err(e) = state.single_player_tables(None) {
+                Err(e) => {
                     let msg = e.to_string();
                     if msg.contains("SP invariant violation") {
                         panic!("{msg}");
                     }
-                }
-                let is_ron = !cans.can_tsumo_agari;
-                let active_payers = (1..4).filter(|&i| !state.players_agari[i]).count() as f32;
-                let agari_ev = state
-                    .agari_points(is_ron, false, false, false, &[])
-                    .map(|p| {
-                        if is_ron {
-                            p.ron as f32
-                        } else {
-                            p.tsumo_ko as f32 * active_payers
-                        }
-                    })
-                    .unwrap_or_default();
-                self.encode_ev(agari_ev);
 
-                // Skip remaining: required tiles (2*27 + 2) + sp table (3 * MAX_NUM_TURNS)
-                self.idx += 2 * 27 + 2 + 3 * MAX_NUM_TURNS;
-            }
-        }
+                    let is_ron = !cans.can_tsumo_agari;
+                    let active_payers = (1..4).filter(|&i| !state.players_agari[i]).count() as f32;
+                    let agari_ev = state
+                        .agari_points(is_ron, false, false, false, &[])
+                        .map(|p| {
+                            if is_ron {
+                                p.ron as f32
+                            } else {
+                                p.tsumo_ko as f32 * active_payers
+                            }
+                        })
+                        .unwrap_or_default();
+                    self.encode_ev(agari_ev);
+
+                    // Skip remaining: required tiles (2*27 + 2) + sp table (3 * MAX_NUM_TURNS)
+                    self.idx += 2 * 27 + 2 + 3 * MAX_NUM_TURNS;
+                }
+              } // match
+            } // else (non-ding_que)
+        } // Section 12 scope
 
         // ── FanConfig flags (7 channels) ──
         // 每个 flag 填满一整行（27 elements）为 0.0 或 1.0。

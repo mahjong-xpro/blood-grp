@@ -6,6 +6,7 @@ use serde_json as json;
 
 #[derive(Debug, Clone)]
 pub struct KyokuResult {
+    #[allow(dead_code)]
     pub kyoku: u8,
     pub scores: [i32; 4],
     /// 和牌顺序（先和者在前）。用于同分排名。
