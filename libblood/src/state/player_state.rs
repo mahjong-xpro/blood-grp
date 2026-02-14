@@ -56,7 +56,8 @@ pub struct PlayerState {
     pub(super) kyoku: u8,
     /// Rotated to be relative, so `scores[0]` is the score of the player.
     pub(super) scores: [i32; 4],
-    pub(super) rank: u8,
+    // NOTE: `rank` 字段已移除。之前从未被赋值（始终为 0），浪费了 4 个观测通道。
+    // 现在 rank 在 obs_repr.rs 中从 scores 实时计算。
     /// Relative to `player_id`.
     pub(super) oya: u8,
     /// 55 is the theoretical max size of kawa (108 total tiles - 52 initial hands - 1 last draw = 55 max discards)
@@ -302,12 +303,24 @@ impl PlayerState {
         &self.players_agari
     }
 
-    /// Count remaining ding_que suit tiles in hand
+    /// Count remaining ding_que suit tiles in **concealed hand (tehai)**.
+    ///
+    /// NOTE: 只统计手牌（tehai），不含副露。正常规则下定缺花色不能碰/杠，
+    /// 因此副露中不应有定缺牌。debug_assert 用于防御性检查。
     #[must_use]
     pub fn count_ding_que_tiles(&self) -> u8 {
         if let Some(suit) = self.ding_que {
             let (start, end) = crate::ding_que::suit_range(suit);
-            (start..end).map(|i| self.tehai[i]).sum()
+            let tehai_count: u8 = (start..end).map(|i| self.tehai[i]).sum();
+            // 防御性检查：副露中不应含定缺花色牌（规则禁止碰/杠定缺花色）。
+            // 若触发，说明存在状态腐蚀或规则执行漏洞。
+            debug_assert!(
+                !self.pons.iter().chain(self.minkans.iter()).chain(self.ankans.iter())
+                    .any(|&t| crate::ding_que::is_ding_que_tile(t as usize, self.ding_que)),
+                "Fuuro contains ding_que suit tile! player={}, ding_que={:?}, pons={:?}, minkans={:?}, ankans={:?}",
+                self.player_id, self.ding_que, self.pons, self.minkans, self.ankans
+            );
+            tehai_count
         } else {
             0 // No ding_que selected
         }

@@ -83,12 +83,23 @@ impl PlayerState {
                     ret[i] = true;
                 }
             }
-            // 安全网：如果所有定缺花色牌都被 forbidden_tiles 阻止（理论上不应发生），
-            // 回退到允许丢弃任何非 forbidden 的牌，避免游戏死锁。
+            // 安全网 第一层：如果所有定缺花色牌都被 forbidden_tiles 阻止，
+            // 回退到允许丢弃任何非 forbidden 的牌。
+            // 触发场景：碰后禁打恰好覆盖了唯一的定缺牌（极罕见）。
             if ret.iter().all(|&x| !x) {
                 for (i, &count) in self.tehai.iter().enumerate() {
                     if count > 0 {
                         ret[i] = !self.forbidden_tiles[i];
+                    }
+                }
+            }
+            // 安全网 第二层：如果 forbidden_tiles 阻止了手中所有牌
+            // （碰后禁打 + 定缺约束完全覆盖），强制允许丢弃任何手中有的牌，
+            // 避免 mask 全 false 导致 panic / 游戏死锁。
+            if ret.iter().all(|&x| !x) {
+                for (i, &count) in self.tehai.iter().enumerate() {
+                    if count > 0 {
+                        ret[i] = true;
                     }
                 }
             }

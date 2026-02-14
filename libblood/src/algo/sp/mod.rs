@@ -40,8 +40,14 @@ pub const MAX_TSUMOS_LEFT: usize = 18;
 pub const MAX_TSUMOS_LEFT: usize = 17;
 
 #[cfg(feature = "sp_reproduce_cpp_ver")]
-fn calc_normal_wrapper(tiles: &[u8; 27], len_div3: u8, _ding_que: Option<crate::mjai::Suit>) -> i8 {
-    super::shanten::calc_normal(tiles, len_div3)
+fn calc_normal_wrapper(tiles: &[u8; 27], len_div3: u8, ding_que: Option<crate::mjai::Suit>) -> i8 {
+    // FIX: 旧代码忽略 ding_que，直接用 calc_normal(tiles, len_div3)，导致：
+    // 1. 定缺牌被当作有效牌，向听被严重低估
+    // 2. 未计算七对子路径
+    // 修复后使用 calc_all 正确处理定缺罚分和七对子。
+    // NOTE: reproduce_cpp_ver 模式主要用于与 C++ 版本对比验证，
+    //       但忽略定缺会使 SP 值在血战到底下完全不可靠。
+    super::shanten::calc_all(tiles, len_div3, ding_que)
 }
 
 #[cfg(feature = "sp_reproduce_cpp_ver")]

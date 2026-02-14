@@ -163,8 +163,12 @@ impl<'a> ObsEncoderContext<'a> {
             }
         }
 
-        let n = state.rank as usize;
-        self.arr.fill(self.idx + n, 1.);
+        // FIX: state.rank 从未被赋值（始终为 0），导致此 4-channel one-hot
+        // 对所有玩家永远输出 [1,0,0,0]，提供零信息。
+        // 改为从 scores 实时计算：统计有多少对手分数 > 自己（scores[0] 为自己）。
+        // rank=0 最高，rank=3 最低。
+        let rank = state.scores.iter().skip(1).filter(|&&s| s > state.scores[0]).count();
+        self.arr.fill(self.idx + rank, 1.);
         self.idx += 4;
 
         let n = state.kyoku as usize;
@@ -547,10 +551,9 @@ impl<'a> ObsEncoderContext<'a> {
                 self.encode_ev(0.);
                 // required tiles encoding (2*27 + 2) + sp table (3 * MAX_NUM_TURNS)
                 self.idx += 2 * 27 + 2 + 3 * MAX_NUM_TURNS;
-                // shape 保持一致：如果 can_discard=true（理论上不该发生于定缺阶段），也预留 best slots
-                if cans.can_discard {
-                    self.idx += 2; // best ev / win prob discard
-                }
+                // NOTE: 定缺阶段 can_discard 恒为 false（tsumo()/update_inner() 保证），
+                // 因此无需 += 2 的 best ev/win prob discard slots。
+                // 若 can_discard 为 true 会走 else-if 分支，不会到这里。
             } else if let Ok(SinglePlayerTables { max_ev_table }) = state.single_player_tables(None) {
                 // Handle empty max_ev_table (can happen in early game or special states)
                 if max_ev_table.is_empty() {

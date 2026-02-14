@@ -335,6 +335,11 @@ impl PlayerState {
         }
 
         self.last_cans.can_discard = true;
+        // FIX: 非庄家首次摸牌时 self.shanten 可能是 StartKyoku 阶段（ding_que=None）
+        // 计算的值，定缺选择后未被更新。update_shanten_discards() 内部用 self.ding_que
+        // 计算 shanten_after 但与过时的 self.shanten 比较，会产生错误的分类。
+        // 全量重算确保 self.shanten 反映当前 ding_que 状态。
+        self.update_shanten();
         self.update_shanten_discards();
 
         // Tsumo check: 自摸时以 has_yaku 为准，不再依赖 waits[]，避免 waits 漏判导致无法胡牌
@@ -495,15 +500,22 @@ impl PlayerState {
             self.forbidden_tiles.fill(false);
             self.at_rinshan = false;
 
-            // 定缺修正：打出定缺牌时，clean tile count 变化（N→N+1），
-            // clean_len_div3 可能跳档，导致结构向听 + void 双降，总改善量可达 2，
-            // 而 `shanten -= 1` 仅减 1，会引起向听漂移，且随后的增量路径在
-            // 错误基线上累积，误差越来越大。此处改为 update_shanten() 全量重算。
+            // 定缺修正：当手牌中存在定缺牌时（void_count > 0），clean_len_div3
+            // 可能因打牌而跳档（clean_sum 跨越 3 的倍数边界），
+            // 导致向听改善量可达 2，而 `shanten -= 1` 仅减 1。
             //
-            // 非定缺牌（void == 0 或打的是非定缺牌）时，clean tile count 不变，
-            // clean_len_div3 不变，标准增量 `-= 1` 仍然正确。
+            // 触发条件：
+            // (1) 打出定缺牌 → void_count 减少 + clean tile count 增加，双重变化
+            // (2) 打出非定缺牌但 void_count > 0 → clean_sum 跨越 3k 边界时
+            //     clean_len_div3 跳档，structural shanten 可下降 2
+            //
+            // 仅当 void_count == 0 时 clean_len_div3 = len_div3 不变，
+            // 标准增量 `-= 1` 才安全。
             if self.next_shanten_discards[pai.as_usize()] {
-                if crate::ding_que::is_ding_que_tile(pai.as_usize(), self.ding_que) {
+                if crate::ding_que::is_ding_que_tile(pai.as_usize(), self.ding_que)
+                    || crate::ding_que::ding_que_forced_range(&self.tehai, self.ding_que).is_some()
+                {
+                    // 手中仍有定缺牌 或 打出的就是定缺牌 → 全量重算
                     self.update_shanten();
                 } else {
                     self.shanten -= 1;

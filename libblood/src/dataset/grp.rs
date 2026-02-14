@@ -58,15 +58,25 @@ pub(crate) fn count_sequences_in_suit(counts: &[u8; 9]) -> u8 {
     num
 }
 
-/// Count how many tile kinds (0..27) improve the hand when added by one (reduce shanten).
+/// Count how many tile kinds improve the hand when added (reduce shanten).
 /// Used as a bonus: more improvement kinds = better shape after removing the suit.
-fn count_improvement_kinds(tehai_without: &[u8; 27], remaining_count: u8, shanten: i8) -> u8 {
+///
+/// `voided_suit` — 被定缺的花色范围 `(start, end)`，该花色牌全部为零，
+/// 添加一张不可能降低向听（无法与其他花色组搭），跳过以节省 ~33% 向听计算。
+fn count_improvement_kinds(
+    tehai_without: &[u8; 27],
+    remaining_count: u8,
+    shanten: i8,
+    voided_suit: (usize, usize),
+) -> u8 {
     // FIX: 使用与 base shanten 相同的 len_div3（= remaining_count / 3）。
-    // 之前用 (remaining_count + 1) / 3，当 remaining_count % 3 == 2 时目标组数多 1，
-    // 导致加牌后的向听被高估，进而系统性低估受入种类。
     let new_len_div3 = remaining_count / 3;
     let mut count: u8 = 0;
     for tid in 0..27 {
+        // 跳过被定缺的花色：该花色牌全部为零，添加孤立一张不可能降低向听。
+        if tid >= voided_suit.0 && tid < voided_suit.1 {
+            continue;
+        }
         if tehai_without[tid] >= 4 {
             continue; // cannot add one more of this kind
         }
@@ -87,8 +97,10 @@ fn count_improvement_kinds(tehai_without: &[u8; 27], remaining_count: u8, shante
 /// 2. Triplet penalty (刻子: each triplet removed is a significant loss)
 /// 3. Sequence penalty (顺子: each complete 顺子 removed is a loss)
 /// 4. Pair penalty (对子: each pair removed is a smaller loss; 刻子不重复计对子)
-/// 5. ToiToi potential bonus (if remaining hand has 4+ pairs/triplets)
-/// 6. Improvement-kinds bonus (进张种类数: more tile kinds that reduce shanten = better shape)
+/// 5. 搭子 penalty (partial sequence: 两张相邻/间隔的牌，只差一张成顺)
+/// 6. ToiToi potential bonus (remaining hand has sufficient triplet potential)
+/// 7. Improvement-kinds bonus (进张种类数: more tile kinds that reduce shanten = better shape)
+/// 8. Quantity penalty / bonus (数量惩罚: 张数越多越不想定缺)
 pub(crate) fn calc_ding_que_cost(tehai: &[u8; 27], suit: Suit) -> f32 {
     let (start, end) = crate::ding_que::suit_range(suit);
     let suit_range = start..end;
@@ -117,6 +129,23 @@ pub(crate) fn calc_ding_que_cost(tehai: &[u8; 27], suit: Suit) -> f32 {
     // 顺子 (sequence) count in this suit: how many complete 123/234/... we're removing
     let removed_sequences = count_sequences_in_suit(&suit_counts);
 
+    // 搭子 (partial sequence) count: 相邻(gap=1) 和 间隔(gap=2) 的配对
+    // 只在 count >= 1 的位置计数，避免与刻子/顺子过度重叠
+    let mut taatsu_count: u8 = 0;
+    for i in 0..8 {
+        if suit_counts[i] >= 1 && suit_counts[i + 1] >= 1 {
+            taatsu_count += 1; // 相邻搭子 (e.g., 12, 23, ...)
+        }
+    }
+    for i in 0..7 {
+        if suit_counts[i] >= 1 && suit_counts[i + 2] >= 1 {
+            taatsu_count += 1; // 间隔搭子 (e.g., 13, 24, ...)
+        }
+    }
+    // 减去已经成顺的搭子（每个顺子贡献 3 个搭子：2 个相邻 + 1 个间隔，避免重复计算）
+    // 例如 123 → 相邻(12,23) + 间隔(13) = 3 个搭子
+    taatsu_count = taatsu_count.saturating_sub(removed_sequences * 3);
+
     // Create tehai without the suit
     let mut tehai_without = *tehai;
     for i in suit_range {
@@ -139,42 +168,77 @@ pub(crate) fn calc_ding_que_cost(tehai: &[u8; 27], suit: Suit) -> f32 {
     // 对子 penalty: each 对子 (pair, count==2) removed is a smaller loss (将牌/进刻潜力); 刻子不重复计
     let pair_penalty = removed_pairs as f32 * 0.35;
 
-    // ToiToi potential: count pairs and triplets in remaining hand
-    let mut pair_triplet_count: u8 = 0;
+    // 搭子 penalty: partial sequences have half-group potential (one draw from completion)
+    let taatsu_penalty = taatsu_count as f32 * 0.2;
+
+    // ToiToi potential: count actual triplets and pairs in remaining hand
+    // FIX: 之前 pair_triplet_count >= 4 时给 bonus，但 4 个对子 + 0 个刻子
+    // 没有碰碰胡潜力。现在要求至少 2 个刻子才给 bonus。
+    let mut remaining_triplets: u8 = 0;
+    let mut remaining_pairs_or_more: u8 = 0;
     for &count in tehai_without.iter() {
-        if count >= 2 {
-            pair_triplet_count += 1;
+        if count >= 3 {
+            remaining_triplets += 1;
+            remaining_pairs_or_more += 1;
+        } else if count == 2 {
+            remaining_pairs_or_more += 1;
         }
     }
-    let toitoi_bonus = if pair_triplet_count >= 4 { 0.5 } else { 0.0 };
-
-    // Quantity Penalty (Golden Balance Plan + User Request)
-    // - Count >= 6: Soft Ban (+20.0). It's suicidal to void >=6 tiles.
-    // - Count == 5: Moderate Penalty (+0.6). Worse than pair penalty(0.35), close to sequence(0.7).
-    // - Count == 4: Slight Penalty (+0.15). Slight bias against voiding 4 tiles if 3-tile option exists.
-    let count_penalty = if removed_count >= 6 {
-        20.0
-    } else if removed_count == 5 {
-        0.8
-    } else if removed_count == 4 {
-        0.2
+    let toitoi_bonus = if remaining_triplets >= 3
+        || (remaining_triplets >= 2 && remaining_pairs_or_more >= 5)
+    {
+        0.5
     } else {
         0.0
     };
 
+    // Quantity Penalty / Bonus
+    // - Count >= 7: Hard Ban (+20.0). Almost impossible to clear quickly.
+    // - Count == 6: Heavy Penalty (+5.0). 留 6 张极为困难但不是绝对不可能。
+    // - Count == 5: Moderate Penalty (+0.8).
+    // - Count == 4: Slight Penalty (+0.2).
+    // - Count == 1: Slight Bonus (-0.3). 只需打一张就完成定缺，极高效。
+    let count_penalty = match removed_count {
+        0 => unreachable!(), // handled above
+        1 => -0.3,
+        2 | 3 => 0.0,
+        4 => 0.2,
+        5 => 0.8,
+        6 => 5.0,
+        _ => 20.0, // 7+
+    };
+
     // Improvement-kinds bonus (进张种类): more tile kinds that reduce shanten = better hand shape
-    let improvement_kinds = count_improvement_kinds(&tehai_without, remaining_count, shanten);
+    let improvement_kinds = count_improvement_kinds(
+        &tehai_without, remaining_count, shanten, (start, end),
+    );
     let improvement_bonus = (improvement_kinds as f32 * 0.12).min(2.0); // cap so one factor doesn't dominate
 
-    // Final cost: 刻子/顺子/对子 in the removed suit all increase cost (worse to 定缺 a suit that has useful structure)
-    shanten as f32 + triplet_penalty + sequence_penalty + pair_penalty - toitoi_bonus - improvement_bonus + count_penalty
+    // Final cost: structure in the removed suit increases cost; remaining hand quality decreases cost
+    shanten as f32
+        + triplet_penalty
+        + sequence_penalty
+        + pair_penalty
+        + taatsu_penalty
+        - toitoi_bonus
+        - improvement_bonus
+        + count_penalty
+}
+
+/// Compute the costs for all 3 suits, returning `[cost_Man, cost_Pin, cost_Sou]`.
+/// Shared by `best_ding_que_suit_index` and `evaluate_ding_que_quality` to avoid
+/// redundant `calc_ding_que_cost` calls.
+fn compute_ding_que_costs(tehai: &[u8; 27]) -> [f32; 3] {
+    [
+        calc_ding_que_cost(tehai, Suit::Man),
+        calc_ding_que_cost(tehai, Suit::Pin),
+        calc_ding_que_cost(tehai, Suit::Sou),
+    ]
 }
 
 /// Returns the heuristic best suit index for Ding Que: 0 = Man, 1 = Pin, 2 = Sou.
 /// On tie, returns the first with minimum cost.
-fn best_ding_que_suit_index(tehai: &[u8; 27]) -> u8 {
-    let suits = [Suit::Man, Suit::Pin, Suit::Sou];
-    let costs: Vec<f32> = suits.iter().map(|&s| calc_ding_que_cost(tehai, s)).collect();
+fn best_ding_que_suit_index_from_costs(costs: &[f32; 3]) -> u8 {
     let (best_idx, _) = costs
         .iter()
         .enumerate()
@@ -184,29 +248,26 @@ fn best_ding_que_suit_index(tehai: &[u8; 27]) -> u8 {
 }
 
 /// Evaluate the quality of a Ding Que selection.
-/// Returns: +1.0 (best), 0.0 (middle), -1.0 (worst)
-fn evaluate_ding_que_quality(tehai: &[u8; 27], chosen_suit: Suit) -> f32 {
-    let suits = [Suit::Man, Suit::Pin, Suit::Sou];
-    let costs: Vec<f32> = suits.iter().map(|&s| calc_ding_que_cost(tehai, s)).collect();
-
+/// Returns a continuous value in [-1.0, +1.0]:
+///   +1.0 = best possible choice (lowest cost)
+///   -1.0 = worst possible choice (highest cost)
+///    0.0 = all choices equivalent
+///
+/// 改为连续值而非离散 {-1, 0, +1}，避免丢失梯度信息。
+/// 例如 costs = [3.0, 3.01, 15.0] 时选 3.01 应得 ≈+0.998 而非 0.0。
+fn evaluate_ding_que_quality_from_costs(costs: &[f32; 3], chosen_suit: Suit) -> f32 {
     let chosen_idx = crate::ding_que::suit_id(chosen_suit);
-
     let chosen_cost = costs[chosen_idx];
+
     let min_cost = costs.iter().cloned().fold(f32::INFINITY, f32::min);
     let max_cost = costs.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    let range = max_cost - min_cost;
 
-    // Handle edge case: all costs are equal
-    if (max_cost - min_cost).abs() < 0.001 {
-        return 0.0; // No difference, neutral
-    }
-
-    // Check if chosen is best, worst, or middle
-    if (chosen_cost - min_cost).abs() < 0.001 {
-        1.0 // Best choice
-    } else if (chosen_cost - max_cost).abs() < 0.001 {
-        -1.0 // Worst choice
+    if range < 0.001 {
+        0.0 // All choices equivalent
     } else {
-        0.0 // Middle choice
+        // Linear map: best → +1.0, worst → -1.0
+        1.0 - 2.0 * (chosen_cost - min_cost) / range
     }
 }
 
@@ -326,10 +387,12 @@ impl GameScore {
                     if let Some(ref tehais) = current_tehais {
                         let player_idx = *actor as usize;
                         if player_idx < 4 {
+                            // 计算一次 costs，供 quality 和 best_suit 复用
+                            let costs = compute_ding_que_costs(&tehais[player_idx]);
                             current_kyoku_quality[player_idx] =
-                                evaluate_ding_que_quality(&tehais[player_idx], *suit);
+                                evaluate_ding_que_quality_from_costs(&costs, *suit);
                             current_kyoku_best_suit[player_idx] =
-                                best_ding_que_suit_index(&tehais[player_idx]);
+                                best_ding_que_suit_index_from_costs(&costs);
                         }
                     }
                 }
