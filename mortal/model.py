@@ -223,6 +223,16 @@ class DQN(nn.Module):
         else:
             v = self.v_head(phi)
             a = self.a_head(phi)
+
+        # FIX: 在 Dueling DQN 聚合前提升到 float32，防止 float16 溢出。
+        # AMP 下 v, a 为 float16（范围 ±65504）。当合法动作较多（如 ~30 个）且
+        # 各 advantage 值较大时，a_sum = Σa[i] 可能超出 float16 上限，溢出为 +inf。
+        # 此时 a_mean = inf，导致所有合法位置 v + a[i] - inf = -inf，
+        # 进而 Categorical 采样因全 -inf 而崩溃。
+        # 提升到 float32（范围 ±3.4e38）可完全消除此溢出。
+        v = v.float()
+        a = a.float()
+
         a_sum = a.masked_fill(~mask, 0.).sum(-1, keepdim=True)
         mask_sum = mask.sum(-1, keepdim=True)
         # Guard against invalid states where all actions are masked.
