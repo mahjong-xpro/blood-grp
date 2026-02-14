@@ -17,9 +17,9 @@ enable_cudnn_benchmark = true
 enable_amp = false
 enable_compile = false
 
-# 训练参数 - 4090 单卡 24GB 可用 4096
-batch_size = 4096
-opt_step_every = 1
+# 训练参数 - 4090 单卡 24GB, AMP 关闭后 float32 显存翻倍
+batch_size = 2048
+opt_step_every = 2  # 梯度累积 2 步，等效 batch_size=4096
 
 # 保存和测试频率
 save_every = 1000
