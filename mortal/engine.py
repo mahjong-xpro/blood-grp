@@ -91,8 +91,8 @@ class MortalEngine:
             phi = self.brain(obs, invisible_obs)
             q_out = self.dqn(phi, masks)
 
-        # DQN.forward() 内部已将 Dueling 聚合提升到 float32（防止 a_sum 溢出），
-        # 此处 .float() 为安全冗余：即使 DQN 返回 float16 也能正确处理后续除法。
+        # DQN.forward() 内部已禁用 autocast、全程 float32 计算。
+        # 此处 .float() 为安全冗余，防止未来修改引入 float16 回归。
         q_out = q_out.float()
 
         if self.boltzmann_epsilon > 0:

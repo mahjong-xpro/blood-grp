@@ -218,27 +218,28 @@ class DQN(nn.Module):
             nn.init.constant_(self.net.bias, 0)
 
     def forward(self, phi, mask):
-        if self.version == 4:
-            v, a = self.net(phi).split((1, ACTION_SPACE), dim=-1)
-        else:
-            v = self.v_head(phi)
-            a = self.a_head(phi)
+        # FIX: 整个 DQN 强制 float32，禁用 autocast。
+        #
+        # 根因：AMP autocast 下 nn.Linear(1024, 35) 以 float16 执行 matmul。
+        # 1024 维点积 (phi @ W^T) 在训练中权重逐渐增大后极易超出 float16
+        # 范围 (±65504)，导致 Value head 输出溢出为 -inf。
+        # 之前的修复 (v = v.float()) 在 Linear 层之后，但溢出已在 Linear
+        # 层内部发生——float16 的 -inf 提升到 float32 仍是 -inf。
+        #
+        # Brain 的 ResNet (大量 Conv1d) 受益于 float16 加速，但 DQN 仅有
+        # 一个 1024→35 的 Linear 层，float32 的性能差异可忽略。
+        phi = phi.float()
+        with torch.autocast(device_type=phi.device.type, enabled=False):
+            if self.version == 4:
+                v, a = self.net(phi).split((1, ACTION_SPACE), dim=-1)
+            else:
+                v = self.v_head(phi)
+                a = self.a_head(phi)
 
-        # FIX: 在 Dueling DQN 聚合前提升到 float32，防止 float16 溢出。
-        # AMP 下 v, a 为 float16（范围 ±65504）。当合法动作较多（如 ~30 个）且
-        # 各 advantage 值较大时，a_sum = Σa[i] 可能超出 float16 上限，溢出为 +inf。
-        # 此时 a_mean = inf，导致所有合法位置 v + a[i] - inf = -inf，
-        # 进而 Categorical 采样因全 -inf 而崩溃。
-        # 提升到 float32（范围 ±3.4e38）可完全消除此溢出。
-        v = v.float()
-        a = a.float()
-
-        a_sum = a.masked_fill(~mask, 0.).sum(-1, keepdim=True)
-        mask_sum = mask.sum(-1, keepdim=True)
-        # Guard against invalid states where all actions are masked.
-        # In that case a_sum is 0, and we want a_mean=0 (avoid NaN/Inf).
-        a_mean = a_sum / mask_sum.clamp(min=1)
-        q = (v + a - a_mean).masked_fill(~mask, -torch.inf)
+            a_sum = a.masked_fill(~mask, 0.).sum(-1, keepdim=True)
+            mask_sum = mask.sum(-1, keepdim=True)
+            a_mean = a_sum / mask_sum.clamp(min=1)
+            q = (v + a - a_mean).masked_fill(~mask, -torch.inf)
         return q
 
 
