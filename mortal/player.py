@@ -40,7 +40,7 @@ class TestPlayer:
                     is_oracle = False,
                     version = version,
                     device = device,
-                    enable_amp = True,
+                    enable_amp = False,
                     enable_rule_based_agari_guard = True,
                     name = 'baseline',
                 )
@@ -67,7 +67,7 @@ class TestPlayer:
             is_oracle = False,
             version = version,
             device = device,
-            enable_amp = True,
+            enable_amp = False,
             enable_rule_based_agari_guard = True,
             name = 'baseline',
         )
@@ -84,7 +84,7 @@ class TestPlayer:
             is_oracle = False,
             version = self.chal_version,
             device = device,
-            enable_amp = True,
+            enable_amp = False,
             enable_rule_based_agari_guard = True,
             name = 'mortal',
         )
@@ -136,7 +136,7 @@ class TrainPlayer:
                     is_oracle = False,
                     version = version,
                     device = device,
-                    enable_amp = True,
+                    enable_amp = False,
                     enable_rule_based_agari_guard = True,
                     name = 'baseline',
                 )
@@ -151,6 +151,7 @@ class TrainPlayer:
                 self.boltzmann_epsilon = cfg['boltzmann_epsilon']
                 self.boltzmann_temp = cfg['boltzmann_temp']
                 self.top_p = cfg['top_p']
+                self.agari_explore_eps = cfg.get('agari_explore_eps', 0)
                 self.keep_data = cfg.get('keep_data', False)
                 self.repeats = cfg['repeats']
                 self.repeat_counter = 0
@@ -175,7 +176,7 @@ class TrainPlayer:
             is_oracle = False,
             version = version,
             device = device,
-            enable_amp = True,
+            enable_amp = False,
             enable_rule_based_agari_guard = True,
             name = 'baseline',
         )
@@ -192,6 +193,7 @@ class TrainPlayer:
         self.boltzmann_epsilon = cfg['boltzmann_epsilon']
         self.boltzmann_temp = cfg['boltzmann_temp']
         self.top_p = cfg['top_p']
+        self.agari_explore_eps = cfg.get('agari_explore_eps', 0)
         self.keep_data = cfg.get('keep_data', False)
 
         self.repeats = cfg['repeats']
@@ -227,7 +229,7 @@ class TrainPlayer:
             is_oracle = False,
             version = version,
             device = device,
-            enable_amp = True,
+            enable_amp = False,
             enable_rule_based_agari_guard = True,
             name = 'baseline',
         )
@@ -243,8 +245,9 @@ class TrainPlayer:
             boltzmann_epsilon = self.boltzmann_epsilon,
             boltzmann_temp = self.boltzmann_temp,
             top_p = self.top_p,
+            agari_explore_eps = self.agari_explore_eps,
             device = device,
-            enable_amp = True,
+            enable_amp = False,
             name = 'trainee',
         )
 

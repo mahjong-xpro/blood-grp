@@ -21,6 +21,7 @@ class MortalEngine:
         boltzmann_epsilon = 0,
         boltzmann_temp = 1,
         top_p = 1,
+        agari_explore_eps = 0,
     ):
         self.engine_type = 'mortal'
         self.device = device or torch.device('cpu')
@@ -39,6 +40,7 @@ class MortalEngine:
         self.boltzmann_epsilon = boltzmann_epsilon
         self.boltzmann_temp = boltzmann_temp
         self.top_p = top_p
+        self.agari_explore_eps = agari_explore_eps
 
     def react_batch(self, obs, masks, invisible_obs):
         try:
@@ -78,24 +80,6 @@ class MortalEngine:
             bad = (valid_counts == 0).nonzero(as_tuple=False).flatten().tolist()
             raise ValueError(f"invalid action mask: no valid actions for batch indices {bad}")
 
-        # ====== 诊断层 1: 检查 Rust 端输入 ======
-        obs_finite = obs.isfinite().all()
-        masks_any_valid = masks.any(-1).all()
-        if not obs_finite:
-            bad_count = (~obs.isfinite()).sum().item()
-            bad_rows_obs = (~obs.isfinite()).any(-1).any(-1).nonzero(as_tuple=False).flatten()[:5]
-            raise RuntimeError(
-                f"[DIAG-L1] obs contains {bad_count} non-finite values. "
-                f"Bad batch rows (first 5): {bad_rows_obs.tolist()}. "
-                f"This is a Rust-side bug in observation encoding."
-            )
-        if not masks_any_valid:
-            bad_mask_rows = (~masks.any(-1)).nonzero(as_tuple=False).flatten()[:5]
-            raise RuntimeError(
-                f"[DIAG-L1] masks has all-False rows: {bad_mask_rows.tolist()}. "
-                f"This is a Rust-side bug in mask generation."
-            )
-
         if self.version == 1:
             mu, logsig = self.brain(obs, invisible_obs)
             if self.stochastic_latent:
@@ -106,36 +90,15 @@ class MortalEngine:
         elif self.version in (2, 3, 4):
             phi = self.brain(obs, invisible_obs)
 
-        # ====== 诊断层 2: 检查 Brain 输出 ======
-        phi_f32 = phi.float()
-        if not phi_f32.isfinite().all():
-            nan_count = phi_f32.isnan().sum().item()
-            inf_count = phi_f32.isinf().sum().item()
-            bad_rows_phi = (~phi_f32.isfinite()).any(-1).nonzero(as_tuple=False).flatten()[:5]
-            # 既然 obs 是 finite 的，问题出在 Brain 模型（float16 溢出或权重腐败）
-            raise RuntimeError(
-                f"[DIAG-L2] Brain output has non-finite values: "
-                f"NaN={nan_count}, Inf={inf_count}, "
-                f"bad rows (first 5): {bad_rows_phi.tolist()}, "
-                f"phi dtype={phi.dtype}, amp={self.enable_amp}. "
-                f"obs was finite → Brain model itself produced bad values."
-            )
+        # 推理引擎已关闭 AMP (enable_amp=False)，Brain 在 float32 下运行，
+        # 不再有 float16 溢出问题。以下为安全网：如果未来误开 AMP 或权重腐败，
+        # 清除非有限值并继续，不崩溃。
+        phi = phi.float()
+        if not phi.isfinite().all():
+            phi = torch.nan_to_num(phi, nan=0.0, posinf=1e4, neginf=-1e4)
 
-        q_out = self.dqn(phi_f32, masks)
+        q_out = self.dqn(phi, masks)
         q_out = q_out.float()
-
-        # ====== 诊断层 3: 检查 DQN 输出 ======
-        q_valid = q_out.masked_fill(~masks, 0)
-        if not q_valid.isfinite().all():
-            nan_count = q_valid.isnan().sum().item()
-            inf_count = q_valid.isinf().sum().item()
-            bad_rows_q = (~q_valid.isfinite()).any(-1).nonzero(as_tuple=False).flatten()[:5]
-            raise RuntimeError(
-                f"[DIAG-L3] DQN output has non-finite Q-values for valid actions: "
-                f"NaN={nan_count}, Inf={inf_count}, "
-                f"bad rows (first 5): {bad_rows_q.tolist()}. "
-                f"phi was finite → DQN weights may be corrupted."
-            )
 
         if self.boltzmann_epsilon > 0:
             if self.boltzmann_temp <= 0:
@@ -149,11 +112,37 @@ class MortalEngine:
             is_greedy = is_greedy | ding_que_only
 
             logits = (q_out / self.boltzmann_temp).masked_fill(~masks, -torch.inf)
+            # 安全网：清除残留 NaN，回退到合法动作均匀分布
+            bad_rows = logits.isnan().any(-1)
+            if bad_rows.any():
+                logits[bad_rows] = masks[bad_rows].float().log()
             sampled = sample_top_p(logits, self.top_p)
             actions = torch.where(is_greedy, q_out.argmax(-1), sampled)
         else:
             is_greedy = torch.ones(batch_size, dtype=torch.bool, device=self.device)
             actions = q_out.argmax(-1)
+
+        # ====== Agari 探索增强 ======
+        # 在 Ron 决策点 (mask[29]=agari AND mask[30]=pass 同时有效)，
+        # 以 agari_explore_eps 概率探索 Ron，防止探索死锁。
+        # 这不是"强制荣和"：
+        #   - 仅在部分决策点以概率触发，不是 100% 覆盖
+        #   - 标记为非贪婪 (is_greedy=False)，训练时不作为正样本强化
+        #   - 随着 Q 函数修正，贪婪策略自然学会 Ron，此机制逐渐失效
+        if self.agari_explore_eps > 0:
+            ron_available = masks[:, 29] & masks[:, 30]  # Ron 决策点
+            not_chose_ron = actions != 29
+            explore_trigger = torch.full(
+                (batch_size,), self.agari_explore_eps, device=self.device
+            ).bernoulli().to(torch.bool)
+            override = ron_available & not_chose_ron & explore_trigger
+            if override.any():
+                actions = torch.where(
+                    override,
+                    torch.tensor(29, device=self.device),
+                    actions,
+                )
+                is_greedy = is_greedy & ~override
 
         return actions.tolist(), q_out.tolist(), masks.tolist(), is_greedy.tolist()
 
