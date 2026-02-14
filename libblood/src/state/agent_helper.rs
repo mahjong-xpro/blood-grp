@@ -529,8 +529,10 @@ impl PlayerState {
             tiles_seen,
             tiles_left: self.tiles_left,
         };
+        // `tehai_len_div3` can desync after kan/pon flows; derive it from tehai shape instead.
+        let tehai_len_div3 = (self.tehai.iter().sum::<u8>() / 3) as u8;
         let sp_calc = SPCalculator {
-            tehai_len_div3: self.tehai_len_div3,
+            tehai_len_div3,
             pons: &self.pons,
             minkans: &self.minkans,
             ankans: &self.ankans,

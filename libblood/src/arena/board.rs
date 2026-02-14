@@ -63,6 +63,16 @@ pub struct BoardState {
     #[derivative(Default(value = "Vec::new()"))]
     gang_history: Vec<GangRecord>,
 
+    /// 出牌（Dahai）计数，用于天胡/地胡精准判定。
+    /// - 天胡: dahai_count == 0（庄家摸牌后直接自摸，无人出过牌）
+    /// - 地胡: dahai_count == 1（庄家第一次打牌即被荣和）
+    ///
+    /// 不能只用 `tiles_left == 55 && kans == 0`，因为碰不消耗牌墙：
+    /// 庄家出牌 → 碰链 → 庄家碰 → 庄家再出牌 → 荣和，tiles_left 仍为 55，
+    /// 但此时并非庄家第一次出牌，不应触发地胡。
+    #[derivative(Default(value = "0"))]
+    dahai_count: u16,
+
     // 定缺选择阶段状态
     #[derivative(Default(value = "false"))]
     ding_que_phase: bool,
@@ -529,18 +539,13 @@ impl BoardState {
         let is_haidi = self.tiles_left == 0 || self.board.yama.is_empty();
 
         // Check for TianHu / DiHu
-        // Total tiles: 108. 4 players * 13 = 52. Remaining: 56.
-        // First tsumo: 55 left.
-        // TianHu: Tsumo, Oya, First Turn (55 left, 0 kans)
-        // DiHu: Ron, Target is Oya, First Turn (55 left, 0 kans)
-        // Note: For DiHu, single_target is the one who discarded (Oya).
-        //       And it must be the FIRST discard of the game.
-        //       Usually tiles_left == 55 check implies no other draws happened.
-        //       And we need to check if it's the first discard.
-        //       Normally if tiles_left == 55, only 1 tile has been drawn (by Oya) and discarded.
-        let is_first_turn = self.tiles_left == 55 && self.kans == 0;
-        let is_tianhu = is_first_turn && !is_ron && single_actor == self.oya;
-        let is_dihu = is_first_turn && is_ron && single_target == self.oya;
+        // 天胡：庄家摸牌后直接自摸（无人出过牌，dahai_count == 0）
+        // 地胡：庄家第一次打牌即被荣和（仅庄家出了一张牌，dahai_count == 1）
+        //
+        // 使用 dahai_count 而非 tiles_left，因为碰不消耗牌墙：
+        // 碰链可使 tiles_left 保持 55 但已经不是第一巡。
+        let is_tianhu = self.dahai_count == 0 && !is_ron && single_actor == self.oya;
+        let is_dihu = self.dahai_count == 1 && self.kans == 0 && is_ron && single_target == self.oya;
 
         // This uses the actual fan calculation from AgariCalculator
         let point = self.player_states[single_actor as usize]
@@ -951,16 +956,7 @@ impl BoardState {
             Event::Dahai { actor, pai: _pai, .. } => {
                 self.broadcast(&ev.event);
                 self.add_log(ev.clone());
-                
-                // 基础规则：如果 tiles_left == 0，应该触发流局
-                // 但不能在这里立即触发，必须等待其他玩家对Dahai的反应（如Ron）
-                // 真正的流局检查会在下一次step的Event::None中进行（如果没有人Ron）
-                /*
-                if self.tiles_left == 0 || self.board.yama.is_empty() {
-                    self.exhaustive_ryukyoku();
-                    return Ok(Poll::End);
-                }
-                */
+                self.dahai_count += 1;
                 
                 let mut next_actor = (actor + 1) % 4;
                 // 基础规则：最多3人和牌，所以最多循环3次就能找到未和牌玩家
