@@ -78,22 +78,64 @@ class MortalEngine:
             bad = (valid_counts == 0).nonzero(as_tuple=False).flatten().tolist()
             raise ValueError(f"invalid action mask: no valid actions for batch indices {bad}")
 
+        # ====== 诊断层 1: 检查 Rust 端输入 ======
+        obs_finite = obs.isfinite().all()
+        masks_any_valid = masks.any(-1).all()
+        if not obs_finite:
+            bad_count = (~obs.isfinite()).sum().item()
+            bad_rows_obs = (~obs.isfinite()).any(-1).any(-1).nonzero(as_tuple=False).flatten()[:5]
+            raise RuntimeError(
+                f"[DIAG-L1] obs contains {bad_count} non-finite values. "
+                f"Bad batch rows (first 5): {bad_rows_obs.tolist()}. "
+                f"This is a Rust-side bug in observation encoding."
+            )
+        if not masks_any_valid:
+            bad_mask_rows = (~masks.any(-1)).nonzero(as_tuple=False).flatten()[:5]
+            raise RuntimeError(
+                f"[DIAG-L1] masks has all-False rows: {bad_mask_rows.tolist()}. "
+                f"This is a Rust-side bug in mask generation."
+            )
+
         if self.version == 1:
             mu, logsig = self.brain(obs, invisible_obs)
             if self.stochastic_latent:
                 latent = Normal(mu, logsig.exp() + 1e-6).sample()
             else:
                 latent = mu
-            q_out = self.dqn(latent, masks)
+            phi = latent
         elif self.version in (2, 3, 4):
-            # FIX: oracle 模式下必须传入 invisible_obs，否则 Brain.forward() 会 assert 失败。
-            # 非 oracle 模式 invisible_obs 为 None，Brain.forward() 会忽略它。
             phi = self.brain(obs, invisible_obs)
-            q_out = self.dqn(phi, masks)
 
-        # DQN.forward() 内部已禁用 autocast、全程 float32 计算。
-        # 此处 .float() 为安全冗余，防止未来修改引入 float16 回归。
+        # ====== 诊断层 2: 检查 Brain 输出 ======
+        phi_f32 = phi.float()
+        if not phi_f32.isfinite().all():
+            nan_count = phi_f32.isnan().sum().item()
+            inf_count = phi_f32.isinf().sum().item()
+            bad_rows_phi = (~phi_f32.isfinite()).any(-1).nonzero(as_tuple=False).flatten()[:5]
+            # 既然 obs 是 finite 的，问题出在 Brain 模型（float16 溢出或权重腐败）
+            raise RuntimeError(
+                f"[DIAG-L2] Brain output has non-finite values: "
+                f"NaN={nan_count}, Inf={inf_count}, "
+                f"bad rows (first 5): {bad_rows_phi.tolist()}, "
+                f"phi dtype={phi.dtype}, amp={self.enable_amp}. "
+                f"obs was finite → Brain model itself produced bad values."
+            )
+
+        q_out = self.dqn(phi_f32, masks)
         q_out = q_out.float()
+
+        # ====== 诊断层 3: 检查 DQN 输出 ======
+        q_valid = q_out.masked_fill(~masks, 0)
+        if not q_valid.isfinite().all():
+            nan_count = q_valid.isnan().sum().item()
+            inf_count = q_valid.isinf().sum().item()
+            bad_rows_q = (~q_valid.isfinite()).any(-1).nonzero(as_tuple=False).flatten()[:5]
+            raise RuntimeError(
+                f"[DIAG-L3] DQN output has non-finite Q-values for valid actions: "
+                f"NaN={nan_count}, Inf={inf_count}, "
+                f"bad rows (first 5): {bad_rows_q.tolist()}. "
+                f"phi was finite → DQN weights may be corrupted."
+            )
 
         if self.boltzmann_epsilon > 0:
             if self.boltzmann_temp <= 0:
@@ -101,12 +143,11 @@ class MortalEngine:
             is_greedy = torch.full((batch_size,), 1-self.boltzmann_epsilon, device=self.device).bernoulli().to(torch.bool)
             
             # 定缺动作 (31=万, 32=饼, 33=条) 强制使用贪婪选择，跳过探索
-            # 只有当可用动作仅限于定缺时才跳过探索
             ding_que_only = (
                 masks[:, 31] | masks[:, 32] | masks[:, 33]
             ) & (masks[:, :31].sum(-1) == 0) & (masks[:, 34:].sum(-1) == 0)
-            is_greedy = is_greedy | ding_que_only  # 定缺时强制贪婪
-            
+            is_greedy = is_greedy | ding_que_only
+
             logits = (q_out / self.boltzmann_temp).masked_fill(~masks, -torch.inf)
             sampled = sample_top_p(logits, self.top_p)
             actions = torch.where(is_greedy, q_out.argmax(-1), sampled)
