@@ -92,11 +92,11 @@ cd mortal && python -c "from config import config; print('OK:', config['control'
 
 ## 4. 训练阶段
 
-### Phase 1: 探索期 (Step 0 — 100k)
+### Phase 1: 基础探索 [已完成] (Step 0 — 70k)
 
 **目标**: 从随机策略学会基础出牌逻辑（和牌、定缺、避免花猪）
 
-#### 配置 (已在 config.fresh_start.toml 中设置)
+#### 配置 (config.fresh_start.toml)
 
 | 参数 | 值 | 说明 |
 |------|-----|------|
@@ -112,17 +112,23 @@ cd mortal && python -c "from config import config; print('OK:', config['control'
 | `batch_size` | **4096** | 4090 24GB 可承载 |
 | `randomize_fan_config` | **false** | 标准规则 |
 
-#### 监控指标与目标
+#### 实际达成情况
 
-| 指标 | 初始值 | 目标 | 观察方法 |
-|------|--------|------|----------|
-| `avg_rank` | ~2.50 (随机) | < 2.35 | TensorBoard |
-| `avg_pt` | ~1.75 (随机) | > 2.0 | TensorBoard |
-| `dqn_loss` | 高波动 | 稳步下降 | TensorBoard |
-| `ding_que/dqn_match_rate` | ~33% (随机) | > 70% | TensorBoard |
-| `ding_que/aux_match_rate` | ~33% (随机) | > 90% | TensorBoard |
-| 和牌率 | ~10% | > 18% | test_play 日志 |
-| 放铳率 | ~25% | < 20% | test_play 日志 |
+| 指标 | 初始值 | 达成值 (70k) | 说明 |
+|------|--------|-------------|------|
+| 定缺准确率 | ~33% | 98.5% | MODEL-03b 修复后快速收敛 |
+| 基本出牌 | 随机 | 初步掌握 | 碰杠判断基本合理 |
+| 副露率 | ~95% | ~77% | 学会控制副露 |
+| 放铳率 | ~25% | ~33.8% | ⚠️ 未学会防守 |
+| 和牌平均点数 | — | ~5,500 | 主要做 1-2 番小牌 |
+
+#### Baseline 更新记录
+
+| BL# | Step | 恢复速度 | 说明 |
+|-----|------|---------|------|
+| #1 | 20k | 快 (5k步) | baseline 极弱，差距小 |
+| #2 | 38k | 中 (12k步) | baseline 有基本能力 |
+| #3 | 55k | 慢 (15k+) | baseline 显著更强，防守弱点暴露 |
 
 #### 启动命令
 
@@ -137,185 +143,178 @@ CUDA_VISIBLE_DEVICES=1 python client.py  # 重复 7 次，GPU 1-7
 python train.py
 ```
 
-#### 里程碑与判断
-
-- **Step ~5k**: dqn_loss 开始下降 → 正常
-- **Step ~20k**: avg_rank 降到 ~2.45 → 模型开始学习
-- **Step ~50k**: `ding_que/dqn_match_rate` > 60% → DQN 定缺辅助生效
-- **Step ~100k**: avg_rank < 2.35, avg_pt > 2.0 → **进入 Phase 2**
-
-⚠️ **异常信号**: dqn_loss 持续上升或 avg_rank 不降 → 检查 self-play 是否正常产出数据
+⚠️ **Phase 1 核心瓶颈**: 高探索率 (30%) 产生嘈杂数据 + 无排名奖励 → 模型无法学习防守
 
 ---
 
-### Phase 2: 收敛期 (Step 100k — 300k)
+### Phase 2: 防守与收敛 (Step 70k — ~200k) [当前阶段]
 
-**目标**: 策略初步收敛，学会基础防守与进攻平衡
+**目标**: 学会防守，放铳率从 33% 降至 15% 以下
 
-#### 配置修改 (修改 config.toml 后重启 train.py)
+#### 配置修改 (修改 config.toml 后重启 train.py + 所有 client.py)
 
 ```toml
-# 降低探索
-boltzmann_epsilon = 0.15
-boltzmann_temp = 0.2
+# 降低探索，减少噪声数据
+boltzmann_epsilon = 0.15    # 0.30 → 0.15
+boltzmann_temp = 0.20       # 0.30 → 0.20
 
 # ⚠️ 关键变更：开启排名奖励（Phase 1 为 false，此处必须改为 true）
 [reward_shaping]
-rank_bonus_enabled = true
+rank_bonus_enabled = true   # false → true (防守学习的关键信号)
 rank_bonuses = [0.3, 0.1, -0.1, -0.3]
 # action_bonus 保持不变 (agari=0.1, houjuu=-0.1)
 
 # 提高定缺监督
-ding_que_ce_weight = 2.0
-
-# Scheduler 自动重启（TRAIN-04: 无需改 scheduler 参数，offset 机制保证连续性）
+[aux]
+ding_que_ce_weight = 2.0    # 1.0 → 2.0
 ```
 
 #### 监控目标
 
-| 指标 | 入口 | 目标 |
-|------|------|------|
-| `avg_rank` | < 2.35 | < 2.20 |
-| `avg_pt` | > 2.0 | > 2.3 |
-| `ding_que/dqn_match_rate` | > 70% | > 85% |
-| 和牌率 | > 18% | > 22% |
-| 放铳率 | < 20% | < 16% |
+| 指标 | 入口值 | 目标 | 重要性 |
+|------|--------|------|--------|
+| 放铳率 | ~33% | < 15% | ⭐ 最关键 |
+| `avg_ranking` | — | < 2.35 (对当前 BL) | 高 |
+| `avg_pt` | — | > 2.0 (对当前 BL) | 高 |
+| `ding_que/dqn_match_rate` | 98.5% | 保持 >95% | 低 |
+| 和牌率 | — | > 20% | 中 |
 
-#### Baseline 更新
+#### Baseline 更新策略
+
+**每 30k 步强制更新**（不等指标达标）。纯自博弈中数据质量比指标稳定性更重要。
 
 ```bash
-# 当 avg_pt 稳定 > 2.5 时手动更新
+# 每 30k 步执行
 cp /data/mortal/mortal.pth /data/mortal/baseline.pth
 # 重启所有 client.py（client 不会自动 reload baseline）
 ```
 
 ---
 
-### Phase 3: 精调期 (Step 300k — 600k)
+### Phase 3: 进攻/防守平衡 (Step ~200k — ~500k)
 
-**目标**: 策略精细化，学会番数价值评估与大牌追求
+**目标**: 在维持低放铳率的前提下提升和牌质量
 
 #### 配置修改
 
 ```toml
-# 低探索，精细调优
-boltzmann_epsilon = 0.05
-boltzmann_temp = 0.1
+# 进一步降低探索
+boltzmann_epsilon = 0.08    # 0.15 → 0.08
+boltzmann_temp = 0.15       # 0.20 → 0.15
 
-# 排名奖励保持开启（Phase 2 已开启，此处不变）
+# 减弱动作奖励，让分数差主导
 [reward_shaping]
 rank_bonus_enabled = true
 rank_bonuses = [0.3, 0.1, -0.1, -0.3]
+agari_bonus = 0.05          # 0.1 → 0.05
+houjuu_penalty = -0.05      # -0.1 → -0.05
 
-# 微调动作奖励（减小剂量，让分数差主导）
-action_bonus_enabled = true
-agari_bonus = 0.05
-houjuu_penalty = -0.05
-
-# 可选: 降低 gamma 缩短视野（聚焦当前局）
-[env]
-gamma = 0.98
-
-# Scheduler: 降低 peak LR
+# 降低学习率
 [optim.scheduler]
-peak = 3e-4
-final = 5e-5
-warm_up_steps = 3000
-max_steps = 1000000
+peak = 3e-4                 # 5e-4 → 3e-4
+final = 5e-5                # 1e-4 → 5e-5
 ```
 
 #### 监控目标
 
 | 指标 | 入口 | 目标 |
 |------|------|------|
-| `avg_rank` | < 2.20 | < 2.10 |
-| `avg_pt` | > 2.3 | > 2.5 |
-| `ding_que/dqn_match_rate` | > 85% | > 90% |
-| 自摸率 | | > 12% |
-| 平均和牌番数 | | > 1.8 |
+| 放铳率 | < 15% | < 12% |
+| 和牌点数 | ~5,500 | > 8,000 |
+| `avg_ranking` | — | < 2.20 |
+
+#### Baseline 更新策略
+
+每 40-50k 步或当 avg_ranking < 2.30 时更新。
 
 ---
 
-### Phase 4: 深度精调期 (Step 600k — 1M)
+### Phase 4: 精细优化 (Step ~500k — ~1M)
 
-**目标**: 策略接近最优，精细化对手建模与防守策略
+**目标**: 策略接近最优，最大化胜率
 
 #### 配置修改
 
 ```toml
-boltzmann_epsilon = 0.08   # 略微回升探索，避免局部最优
-boltzmann_temp = 0.15
+boltzmann_epsilon = 0.05    # 0.08 → 0.05
+boltzmann_temp = 0.10       # 0.15 → 0.10
 
-# 极轻量奖励
+# 弱化正奖励，保留 4th 惩罚
 [reward_shaping]
 rank_bonus_enabled = true
-rank_bonuses = [0.0, 0.0, 0.0, -0.15]  # 仅惩罚 4th
+rank_bonuses = [0.1, 0.0, 0.0, -0.15]  # 弱化正奖励，保留4th惩罚
+agari_bonus = 0.02          # 0.05 → 0.02
+houjuu_penalty = -0.02      # -0.05 → -0.02
 
-action_bonus_enabled = true
-agari_bonus = 0.05
-houjuu_penalty = -0.05
-
-# 更频繁测试
-test_every = 3000
-
-# LR 重启
 [optim.scheduler]
-peak = 2e-4
-final = 1e-5
-warm_up_steps = 5000
-max_steps = 1350000
+peak = 2e-4                 # 3e-4 → 2e-4
+final = 1e-5                # 5e-5 → 1e-5
 ```
 
 #### 监控目标
 
 | 指标 | 入口 | 目标 |
 |------|------|------|
-| `avg_rank` | < 2.10 | < 2.05 |
-| `avg_pt` | > 2.5 | > 2.7 |
+| `avg_ranking` | < 2.20 | < 2.10 |
+| `avg_pt` | — | > 2.5 |
+| 放铳率 | < 12% | < 10% |
+
+#### Baseline 更新策略
+
+每 50-80k 步，当 avg_ranking 稳定 < 2.25 时更新。
 
 ---
 
-### Phase 5 (可选): 多规则训练 (Step 1M+)
+### Phase 5: 超人类 (Step 1M+)
 
-**目标**: 验证 FanConfig 条件化策略泛化能力
-
-#### 前提
-
-- Phase 4 完成，标准规则下 avg_rank < 2.10
-- FANCFG-02 短训验证通过
+**目标**: 移除几乎所有奖励塑形，让纯分数差驱动策略
 
 #### 配置修改
 
 ```toml
-[rules]
-randomize_fan_config = true  # 开启多规则随机
+boltzmann_epsilon = 0.03    # 0.05 → 0.03
+boltzmann_temp = 0.08       # 0.10 → 0.08
+
+# 关闭所有辅助奖励，纯 score_diff / 10000 驱动
+[reward_shaping]
+rank_bonus_enabled = false
+action_bonus_enabled = false
+
+[optim.scheduler]
+peak = 1e-4                 # 2e-4 → 1e-4
+final = 1e-5
 ```
 
-#### 验证清单
+#### 可选增强
 
-1. 开启后 10k 步内无报错
-2. Loss 曲线无异常跳变
-3. 标准规则 avg_rank 无明显退化（允许 +0.05）
-4. 不同 FanConfig 下决策有可观察差异
+- `randomize_fan_config = true`（多规则泛化）
+- 引入 target network + 降低 td_lambda（减少 MC 方差）
+- Population-based training（多 baseline 池）
+
+#### Baseline 更新策略
+
+每 100k 步，当 avg_ranking < 2.20 时更新。
 
 ---
 
 ## 5. 阶段转换决策树
 
 ```
-Step 0 ──────────── Phase 1 ────────────┐
-                                         │
-avg_rank < 2.35 && avg_pt > 2.0 ────────▼
-                                  Phase 2
-                                         │
-avg_rank < 2.20 && avg_pt > 2.3 ────────▼
+Step 0 ──────────── Phase 1 [已完成] ───┐
+                                         │  70k steps, 防守弱(33.8%)
+                                         ▼
+                    Phase 2 [当前] ──────┐
+                    防守与收敛             │
+                    放铳率 < 15%? ────────▼
                                   Phase 3
-                                         │
-avg_rank < 2.10 && avg_pt > 2.5 ────────▼
+                    进攻/防守平衡          │
+                    放铳率 < 12%           │
+                    和牌点数 > 8000? ─────▼
                                   Phase 4
-                                         │
-avg_rank < 2.05 && 验证 FANCFG-02 ─────▼
-                                  Phase 5 (可选)
+                    精细优化               │
+                    avg_ranking < 2.10? ──▼
+                                  Phase 5
+                    超人类 (纯分数差驱动)
 ```
 
 **阶段转换操作**:
@@ -324,35 +323,45 @@ avg_rank < 2.05 && 验证 FANCFG-02 ─────▼
 3. 重启 `train.py`（scheduler 自动适配新参数）
 4. 重启所有 `client.py`（加载新 baseline）
 
+**自博弈 Baseline 更新规则**:
+
+纯自博弈的 baseline 更新是最关键的超参数之一：
+- **过于频繁**: 模型持续处于追赶状态，无法积累有效策略
+- **过于稀疏**: 数据质量低，学习效率差
+
+| 阶段 | 更新间隔 | 条件 |
+|------|---------|------|
+| Phase 2 | 30k 步 | 强制更新（数据质量优先） |
+| Phase 3 | 40-50k 步 | avg_ranking < 2.30 或到达间隔上限 |
+| Phase 4 | 50-80k 步 | avg_ranking < 2.25 |
+| Phase 5 | 100k 步 | avg_ranking < 2.20 |
+
 ---
 
 ## 6. 关键配置速查表
 
-### 6.1 探索参数进度表
+### 6.1 全阶段配置对比
 
-| 阶段 | Step 范围 | epsilon | temp | 说明 |
-|------|-----------|---------|------|------|
-| Phase 1 | 0–100k | 0.30 | 0.30 | 大范围探索 |
-| Phase 2 | 100k–300k | 0.15 | 0.20 | 收敛 |
-| Phase 3 | 300k–600k | 0.05 | 0.10 | 精调 |
-| Phase 4 | 600k–1M | 0.08 | 0.15 | 微回升避免局部最优 |
+| 参数 | Phase 1 (完成) | Phase 2 (当前) | Phase 3 | Phase 4 | Phase 5 |
+|------|---------------|---------------|---------|---------|---------|
+| epsilon | 0.30 | **0.15** | 0.08 | 0.05 | 0.03 |
+| temp | 0.30 | **0.20** | 0.15 | 0.10 | 0.08 |
+| rank_bonus | false | **true** | true | true | false |
+| rank_bonuses | — | [.3,.1,-.1,-.3] | [.3,.1,-.1,-.3] | [.1,0,0,-.15] | — |
+| agari_bonus | 0.1 | 0.1 | 0.05 | 0.02 | 0 |
+| houjuu_penalty | -0.1 | -0.1 | -0.05 | -0.02 | 0 |
+| peak LR | 5e-4 | 5e-4 | 3e-4 | 2e-4 | 1e-4 |
+| ding_que_ce | 1.0 | **2.0** | 2.0 | 1.0 | 1.0 |
+| BL更新间隔 | ~15-20k | 30k | 40-50k | 50-80k | 100k |
 
 ### 6.2 学习率进度表
 
 | 阶段 | peak | final | warmup | max_steps |
 |------|------|-------|--------|-----------|
-| Phase 1 | 5e-4 | 1e-4 | 2000 | 1000000 |
-| Phase 3+ | 3e-4 | 5e-5 | 3000 | 1000000 |
+| Phase 1-2 | 5e-4 | 1e-4 | 2000 | 1000000 |
+| Phase 3 | 3e-4 | 5e-5 | 3000 | 1000000 |
 | Phase 4 | 2e-4 | 1e-5 | 5000 | 1350000 |
-
-### 6.3 奖励塑形进度表
-
-| 阶段 | rank_bonus_enabled | rank_bonuses | agari | houjuu | 说明 |
-|------|-------------------|--------------|-------|--------|------|
-| Phase 1 | **false** | — | 0.1 | -0.1 | 纯分数差 + 动作信号 |
-| Phase 2 | **true** ⬆️ | [0.3, 0.1, -0.1, -0.3] | 0.1 | -0.1 | 开启全排名奖励 |
-| Phase 3 | true | [0.3, 0.1, -0.1, -0.3] | 0.05 | -0.05 | 保持排名奖励，减弱动作奖励 |
-| Phase 4 | true | [0, 0, 0, -0.15] | 0.05 | -0.05 | 仅惩罚 4th |
+| Phase 5 | 1e-4 | 1e-5 | 5000 | 2000000 |
 
 ---
 
@@ -427,10 +436,17 @@ L_total = L_dqn
 ### 8.3 奖励构成
 
 ```
-每步奖励 = 分数差(Δscore) / 240000
+每步奖励 = 分数差(Δscore) / 10000
          + action_bonus (和牌+0.1 / 放铳-0.1)
          + rank_bonus (仅最后一步, 按最终排名)
 ```
+
+量级参考（Phase 2 配置）:
+- 1 番和牌 (1,000 点) → reward ≈ 0.1
+- 2 番和牌 (2,000 点) → reward ≈ 0.2
+- 5 番封顶 (16,000 点) → reward ≈ 1.6
+- agari_bonus: +0.1 / houjuu_penalty: -0.1
+- rank_bonus: 1st=+0.3, 2nd=+0.1, 3rd=-0.1, 4th=-0.3
 
 ---
 
@@ -462,17 +478,17 @@ L_total = L_dqn
 
 ## 10. 预计时间线
 
-基于 4090×8 服务器（7 client + 1 trainer）估算:
+基于实际观测: ~0.5 秒/步，4090×8 (7 client + 1 trainer)
 
 | 阶段 | Step 范围 | 预计耗时 | 累计 |
 |------|-----------|----------|------|
-| Phase 1 | 0–100k | ~3-5 天 | 3-5 天 |
-| Phase 2 | 100k–300k | ~5-7 天 | 8-12 天 |
-| Phase 3 | 300k–600k | ~7-10 天 | 15-22 天 |
-| Phase 4 | 600k–1M | ~10-14 天 | 25-36 天 |
-| Phase 5 | 1M+ | 开放 | — |
+| Phase 1 [已完成] | 0–70k | ~10h | ~10h |
+| Phase 2 | 70k–200k | ~18h | ~28h |
+| Phase 3 | 200k–500k | ~42h | ~70h (~3天) |
+| Phase 4 | 500k–1M | ~70h | ~140h (~6天) |
+| Phase 5 | 1M–2M | ~140h | ~280h (~12天) |
 
-**总计**: 约 1-1.5 个月达到接近最优策略。
+**总计**: 约 2 周达到接近超人类水平 (2M 步)。如果性能瓶颈在某阶段出现，可能需要更长。
 
 ---
 
@@ -515,3 +531,21 @@ python one_vs_three.py
 # 清理旧数据
 find /data/mortal/train_play -name "*.json.gz" -mtime +3 -delete
 ```
+
+---
+
+## 附录 C: Baseline 更新日志
+
+| 时间 | Step | avg_ranking | avg_pt | dqn_match_rate | 备注 |
+|------|------|------------|--------|---------------|------|
+| 2025-02-15 | 20k | 1.618 | 3.057 | — (修复前) | Phase 1 首次更新；同步部署 MODEL-03b（DQN 弱 CE + 定缺指标拆分）|
+| 2025-02-15 | 38k | 1.819 | 2.651 | 98.1% | Phase 1 第二次更新；旧 baseline 过弱，提前刷新 |
+| 2025-02-15 | 55k | 2.264 | 2.010 | 98.5% | Phase 1 第三次更新；纯自博弈频繁刷新提升数据质量；暂不切 Phase 2 |
+
+> 更新后指标回调至 avg_ranking=1.915, avg_pt=2.520（对更强 baseline 的正常表现）。
+> dqn_match_rate 在修复后 2k 步内从 ~33% 飙升至 97.6%，验证修复有效。
+
+**Phase 2 切换** (Step 70k):
+- 配置变更: epsilon 0.30→0.15, temp 0.30→0.20, rank_bonus_enabled true, ding_que_ce_weight 2.0
+- 目标: 放铳率从 33% 降至 <15%
+- BL#3 (55k) 继续使用，不更新 baseline

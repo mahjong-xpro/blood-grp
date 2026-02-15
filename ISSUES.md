@@ -780,3 +780,5 @@ if online:
 |------|------|------------|--------|------|------|
 | 2025-02-15 | 20k | 1.618 | 3.057 | `cp mortal.pth baseline.pth` | Phase 1 首次更新；同步部署 MODEL-03b 修复（DQN 弱 CE + 定缺指标拆分） |
 | 2025-02-15 | 38k | 1.819 | 2.651 | `cp mortal.pth baseline.pth` | Phase 1 第二次更新；旧 baseline 过弱，提前刷新 |
+| 2025-02-15 | 55k | 2.264 | 2.010 | `cp mortal.pth baseline.pth` | Phase 1 第三次更新；纯自博弈频繁刷新；暂不切 Phase 2 |
+| 2025-02-15 | 70k | — | — | Phase 2 配置切换 | epsilon 0.30→0.15, temp 0.30→0.20, rank_bonus=true, ding_que_ce=2.0; BL#3(55k)继续使用 |
