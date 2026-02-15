@@ -454,8 +454,8 @@ def train():
                 }
                 torch.save(state, state_file)
                 
-                # 每 50k 步保存一个历史 checkpoint，用于阶梯式训练
-                if steps % 50000 == 0:
+                # 每 test_every 步保存一个历史 checkpoint，与 test_play 同步
+                if steps % test_every == 0:
                     checkpoint_dir = '/data/mortal/checkpoints'
                     os.makedirs(checkpoint_dir, exist_ok=True)
                     checkpoint_file = f'{checkpoint_dir}/mortal_{steps // 1000}k.pth'
