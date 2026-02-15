@@ -573,6 +573,7 @@ impl PlayerState {
             ding_que: self.ding_que,
             n_active_payers,
             fan_config: self.fan_config,
+            is_at_rinshan: self.at_rinshan,
         };
 
         let max_ev_table = sp_calc.calc(init_state, can_discard, tsumos_left, cur_shanten)?;

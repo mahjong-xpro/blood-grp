@@ -687,7 +687,7 @@ if online:
 
 | 编号 | 文件 | 类别 | 说明 | 理由 |
 |------|------|------|------|------|
-| AUDIT-08 | `algo/sp/calc.rs` + `agari.rs` | TODO | SPCalculator 不跟踪 `is_after_kan`/`is_kan_discard`（杠上花/杠上炮始终为 false） | 杠后自摸/杠后放铳场景稀少，EV 差异极小（<1%），修复需侵入式改动 SP 状态机 |
+| AUDIT-08 | `algo/sp/calc.rs` + `agent_helper.rs` | **已修复** | SPCalculator 杠上花(is_after_kan)始终为 false → 新增 `is_at_rinshan` 字段，从 PlayerState 传入。杠上炮不适用（SP 只算自摸） |
 | AUDIT-09 | `agent/mortal.rs` L364 | EDGE | agari guard fallback `unwrap_or(30)` 若 pass 也被 mask 则选择非法动作 | 理论上 mask 中始终有 pass，且下游 event 处理会兜底 |
 | AUDIT-10 | `dataset/grp.rs` | CODE | `calc_ding_que_cost` 中 0.8/0.7/0.35 等权重为硬编码魔数 | 权重经调优确定，提取常量收益低，不影响正确性 |
 | AUDIT-11 | `common.py` | CODE | socket 操作无 try/except 保护 | 调用方上层已有异常处理，online 模式非主要路径 |
@@ -708,7 +708,7 @@ if online:
 | WARN | 2 | 2 (AUDIT-01/02) | 0 | 0 |
 | CODE | 4 | 3 (AUDIT-03/04/05) | 0 | 3 (AUDIT-10/11/12) |
 | DEAD | 1 | 1 (AUDIT-06) | 0 | 0 |
-| TODO | 1 | 0 | 0 | 1 (AUDIT-08) |
+| TODO | 1 | 1 (AUDIT-08) | 0 | 0 |
 | EDGE | 1 | 0 | 0 | 1 (AUDIT-09) |
 | 误报排除 | 16 | — | 16 | — |
 
@@ -745,6 +745,7 @@ if online:
 | **已修复** | BUG-07 | TrainPlayer._baseline_cfg 未初始化（潜在崩溃） |
 | **已修复** | MODEL-02 | **AuxNet 加入隐藏层（85K→568K 参数，增强辅助梯度信号）** |
 | **已修复** | MODEL-03 | **定缺 CE 移到 AuxNet 独立分支（消除与 Bellman 的梯度冲突）** |
+| **已修复** | MODEL-03b | **新增 DQN 弱 CE (0.1) + 拆分 aux/dqn match_rate 指标（修复定缺指标脱钩）** |
 | **已移除** | TRAIN-02 | **agari_explore_eps 功能移除（is_greedy 未用、污染 Q、血战无需）** |
 | **已修复** | TRAIN-03 | **test_play 对局数 5000→10000（减少评估噪声）** |
 | **已修复** | PERF-01 | **SP 表缓存（ClonableMutex + move_tile/hora 失效）** |
@@ -765,5 +766,17 @@ if online:
 | **已修复** | PERF-04 | **Offline 文件索引增量更新（消除全量 glob+sort）** |
 | **不修复** | PERF-05 | **DDP 不实施（瓶颈在 self-play CPU，非 GPU 训练）** |
 | **已修复** | AUDIT-01~07 | **全面代码审计（77 文件 → 7 修复，16 误报排除，编译零警告）** |
-| **不修复** | AUDIT-08~12 | 审计已知项（SP 杠番 TODO / agari guard edge / 魔数 / socket / 索引复杂度） |
+| **已修复** | AUDIT-08 | **SP 杠上花修复（is_at_rinshan 传入 SPCalculator）** |
+| **不修复** | AUDIT-09~12 | 审计已知项（agari guard edge / 魔数 / socket / 索引复杂度） |
 | **P3 — 低** | OPS-01/02 | 运维优化 |
+
+---
+
+## 训练日志
+
+### Baseline 更新记录
+
+| 时间 | Step | avg_ranking | avg_pt | 操作 | 备注 |
+|------|------|------------|--------|------|------|
+| 2025-02-15 | 20k | 1.618 | 3.057 | `cp mortal.pth baseline.pth` | Phase 1 首次更新；同步部署 MODEL-03b 修复（DQN 弱 CE + 定缺指标拆分） |
+| 2025-02-15 | 38k | 1.819 | 2.651 | `cp mortal.pth baseline.pth` | Phase 1 第二次更新；旧 baseline 过弱，提前刷新 |

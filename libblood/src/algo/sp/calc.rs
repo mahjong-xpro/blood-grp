@@ -58,6 +58,10 @@ pub struct SPCalculator<'a> {
 
     /// Configurable fan rules for agari scoring.
     pub fan_config: FanConfig,
+
+    /// 是否处于岭上摸牌状态（杠后补牌）。
+    /// true 时自摸和牌 +1番（杠上花）。
+    pub is_at_rinshan: bool,
 }
 
 struct SPCalculatorState<'a, const MAX_TSUMO: usize> {
@@ -670,8 +674,8 @@ impl<const MAX_TSUMO: usize> SPCalculatorState<'_, MAX_TSUMO> {
             winning_tile: win_tile.as_u8(),
             is_ron: false,
             ding_que: self.sup.ding_que,
-            is_after_kan: false, // TODO: Track if this is after kan (for 杠上花 calculation)
-            is_kan_discard: false, // TODO: Track if this is from kan discard (for 杠上炮 calculation)
+            is_after_kan: self.sup.is_at_rinshan, // 杠上花：岭上自摸 +1番
+            is_kan_discard: false, // 杠上炮：SP 只算自摸，不适用
             is_chankan: false, // SPCalculator doesn't track chankan
             exclude_gen_tile: None,
             is_haidi: false,
@@ -727,6 +731,7 @@ mod test {
             ding_que: None,
             n_active_payers: 3,
             fan_config: FanConfig::default(),
+            is_at_rinshan: false,
         };
 
         let tehai = hand("45678m 34789p 3344m").unwrap();
@@ -786,6 +791,7 @@ mod test {
             ding_que: None,
             n_active_payers: 3,
             fan_config: FanConfig::default(),
+            is_at_rinshan: false,
         };
 
         let tehai = hand("45677m 456778p 248s").unwrap();
@@ -830,6 +836,7 @@ mod test {
             ding_que: None,
             n_active_payers: 3,
             fan_config: FanConfig::default(),
+            is_at_rinshan: false,
         };
         let tehai = hand("9999m 6677p 88s 335m 1m").unwrap();
         let tiles_seen = tehai;
@@ -875,6 +882,7 @@ mod test {
             ding_que: None,
             n_active_payers: 3,
             fan_config: FanConfig::default(),
+            is_at_rinshan: false,
         };
 
         // Test hand: 45677m 456778p 48s (tenpai, waiting for 7p or 9s)
@@ -938,6 +946,7 @@ mod test {
             ding_que: None,
             n_active_payers: 3,
             fan_config: FanConfig::default(), // 门清=true
+            is_at_rinshan: false,
         };
         let shanten = CALC_SHANTEN_FN(&tehai, 4, None);
         let state1 = InitState { tehai, tiles_seen, tiles_left };
@@ -958,6 +967,7 @@ mod test {
             ding_que: None,
             n_active_payers: 3,
             fan_config: fc_no_menqing,
+            is_at_rinshan: false,
         };
         let state2 = InitState { tehai, tiles_seen, tiles_left };
         let cands2 = calc_no_menqing.calc(state2, can_discard, tsumos_left, shanten).unwrap();
@@ -998,6 +1008,7 @@ mod test {
             ding_que: None,
             n_active_payers: 3,
             fan_config: FanConfig::default(), // duanyaojiu=true
+            is_at_rinshan: false,
         };
         let cands_with = calc_with.calc(state1, can_discard, tsumos_left, shanten).unwrap();
 
@@ -1017,6 +1028,7 @@ mod test {
             ding_que: None,
             n_active_payers: 3,
             fan_config: fc_no,
+            is_at_rinshan: false,
         };
         let cands_no = calc_no.calc(state2, can_discard, tsumos_left, shanten).unwrap();
 
@@ -1054,6 +1066,7 @@ mod test {
             ding_que: None,
             n_active_payers: 3,
             fan_config: FanConfig::default(),
+            is_at_rinshan: false,
         };
         let cands_default = calc_default.calc(state1, can_discard, tsumos_left, shanten).unwrap();
 
@@ -1080,6 +1093,7 @@ mod test {
             ding_que: None,
             n_active_payers: 3,
             fan_config: fc_none,
+            is_at_rinshan: false,
         };
         let cands_none = calc_none.calc(state2, can_discard, tsumos_left, shanten).unwrap();
 
