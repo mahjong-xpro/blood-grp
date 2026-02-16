@@ -4,6 +4,8 @@ import os
 import shutil
 import secrets
 import logging
+import glob
+import random
 from os import path
 from model import Brain, DQN
 from engine import MortalEngine
@@ -273,6 +275,38 @@ class TrainPlayer:
             name = 'baseline',
         )
         logging.info(f'Baseline engine reloaded from {baseline_file}')
+
+    def _select_from_pool(self):
+        """从对手池中加权随机选择一个检查点文件。
+        最新文件（按修改时间）权重 = newest_weight，其他文件权重 = 1.0。
+        如果池为空或不存在，返回默认 baseline 路径。
+        """
+        pool_cfg = config.get('baseline', {}).get('pool', {})
+        pool_dir = pool_cfg.get('pool_dir', '')
+        newest_weight = pool_cfg.get('newest_weight', 3.0)
+
+        if not pool_dir or not path.isdir(pool_dir):
+            return self._baseline_cfg['state_file']
+
+        files = glob.glob(path.join(pool_dir, '*.pth'))
+        if not files:
+            logging.warning(f'Baseline pool is empty: {pool_dir}, using default baseline')
+            return self._baseline_cfg['state_file']
+
+        # 按修改时间排序（最旧在前，最新在后），避免文件名字典序排序错误
+        # 例如 mortal_80k.pth 字典序 > mortal_235k.pth，但实际是更旧的
+        files.sort(key=lambda f: os.path.getmtime(f))
+
+        weights = [1.0] * len(files)
+        weights[-1] = newest_weight
+        chosen = random.choices(files, weights=weights, k=1)[0]
+        logging.info(f'Selected baseline from pool: {path.basename(chosen)} (pool size={len(files)})')
+        return chosen
+
+    def reload_baseline_from_pool(self):
+        """从对手池中随机选取一个检查点并重载为 baseline。"""
+        chosen_file = self._select_from_pool()
+        self.reload_baseline(chosen_file)
 
     def train_play(self, mortal, dqn, device):
         torch.backends.cudnn.benchmark = False

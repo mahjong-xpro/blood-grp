@@ -785,3 +785,51 @@ if online:
 | 2025-02-15 | 100k | 2.476 | 1.772 | `cp mortal.pth baseline.pth` | BL#4; Phase 2 首次 BL 更新，对 BL#3 开始拉开差距 (point_per_round=-86) |
 | 2025-02-16 | 130k | 2.547 | 1.680 | `cp mortal.pth baseline.pth` | BL#5; 对 BL#4 恢复缓慢，放铳率 38%，按 30k 间隔强制更新 |
 | 2025-02-16 | 180k | 2.551 | 1.685 | 关闭所有奖励塑形 | rank_bonus=false, action_bonus=false; 110k 步塑形未教会防守，纯 score_diff 驱动 |
+| 2025-02-16 | 236k | 2.590 | 1.655 | `cp mortal.pth baseline.pth` | BL#6; 纯 score_diff 55k 步：和牌点数 +41%（5256→7417），但放铳率恶化至 45%（"赌博模式"） |
+| 2025-02-16 | 240k | 2.531 | 1.719 | V3 训练策略制定 | BL#6 后放铳率降至 39.2% 但可能是虚假进步（激进型对手互相喂分）；制定对手池方案，待实施 |
+
+### V3 训练策略分析（Step 240k）
+
+#### 纯 score_diff 实验总结（180k-235k，55k 步）
+
+| 指标 | 180k (关闭前) | 235k (55k 后) | 变化 | 评价 |
+|------|-------------|-------------|------|------|
+| 和牌点数 | 5,256 | 6,373-7,417 | +21-41% | 成功：学会追大牌 |
+| 放铳率 | 41.0% | 44-46% | +3-5% | 失败：防守恶化 |
+| point_per_round | -314 | -80~-341 | 高方差 | 未稳定转正 |
+| 和牌率 | 63.4% | 54-59% | -5-9% | 合理：追大牌代价 |
+| 4th 占比 | 26.8% | 28-31% | +1-4% | 恶化 |
+
+**结论**：纯 score_diff 能教手牌价值，不能教防守。MC 回报的信用分配太慢。
+
+#### "虚假进步"分析
+
+BL#6（235k，激进型模型）更新后 4k 步，放铳率从 45% 降至 39%。但原因可能是：
+1. 3 个激进型对手（放铳率 ~45%）互相喂分
+2. 激进对手快速结束回合，减少模型暴露在危险中的时间
+3. 模型不是"学会防守"而是"对手太弱"
+
+#### 案例研究启发
+
+调研了 AlphaGo Zero、OpenAI Five、AlphaStar、Suphx、Mortal 的训练策略：
+- 我们的纯零知识 + DQN + 单一 baseline 是所有系统中最难的模式
+- 所有成功系统至少使用了：MCTS / 监督预训练 / 对手池 / 联赛训练 之一
+- 最适合我们的改进：对手池（参考 OpenAI Five 的 80/20 策略）
+
+#### V3 方案（已实施，Step 249k）
+
+三大支柱：
+1. **对手池**：维护 5-8 个历史检查点，每次自博弈随机选取（已改 player.py、client.py、config.toml）
+2. **定向 houjuu_penalty = -0.2**：仅放铳惩罚，不开 agari_bonus 和 rank_bonus
+3. **快速 baseline 轮换**：每 20k 步保存到池，不等 point_per_round > 0
+
+代码改动：
+- `mortal/config.toml`: 新增 `[baseline.pool]` 配置段; `action_bonus_enabled=true`, `agari_bonus=0.0`, `houjuu_penalty=-0.2`
+- `mortal/player.py`: 新增 `_select_from_pool()`, `reload_baseline_from_pool()` 方法
+- `mortal/client.py`: 启动时从池中选取 baseline; 每次迭代后周期性重选
+- `mortal/config.fresh_start.toml`: 同步 pool 配置段（默认关闭）
+
+部署步骤：
+1. 在训练服务器创建 `/data/mortal/baseline_pool/` 目录
+2. 将 130k、180k、225k、235k 检查点复制到池中
+3. 重启 train.py 和所有 client.py

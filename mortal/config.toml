@@ -27,8 +27,8 @@ test_every = 5000
 submit_every = 1000
 
 # ═══════════════════════════════════════════════════════
-# 阶段 2 配置: 防守与收敛 (Step 70k - 200k)
-# 降低探索，开启排名奖励，学习防守
+# V3 配置: 对手池 + 定向防守信号 (Step 249k+)
+# 参考 OpenAI Five 80/20 对手池策略
 # ═══════════════════════════════════════════════════════
 
 [train_play.default]
@@ -88,30 +88,30 @@ td_lambda_enabled = true # 启用 TD(λ) 回报计算路径 (λ=1.0 时等价于
 
 # 奖励塑形配置
 [reward_shaping]
-# Step 180k: 关闭所有奖励塑形，纯 score_diff / 10000 驱动
-# 原因: 110k 步的 rank_bonus + action_bonus 未能教会防守，
-# agari_bonus 反而激励快攻小牌（局部最优），去掉后让分数差主导。
-rank_bonus_enabled = false    # true → false (180k)
+# V3 策略 (Step 249k): 仅 houjuu_penalty 定向防守信号
+# 历史: 180k 关闭全部塑形 → 55k 步证明纯 score_diff 能教手牌价值但无法教防守
+# 方案: 只开 houjuu_penalty 提供放铳即时惩罚，不开 agari_bonus 避免快攻局部最优
+rank_bonus_enabled = false
 rank_bonuses = [0.3, 0.1, -0.1, -0.3]
 
-# 动作级奖励 (和牌/放铳)
-action_bonus_enabled = false  # true → false (180k)
-agari_bonus = 0.1            # 保留值，但 enabled=false 不生效
-houjuu_penalty = -0.1        # 保留值，但 enabled=false 不生效
+# 动作级奖励: 仅放铳惩罚
+action_bonus_enabled = true   # false → true (249k, V3)
+agari_bonus = 0.0             # 不奖励和牌，避免快攻小牌
+houjuu_penalty = -0.2         # -0.1 → -0.2 (249k, V3): 放铳直接惩罚，等效 2000 点
 
 # 自动更新 baseline 的阈值 (阶梯式训练)
 # 当 avg_pt 超过此值时，自动用当前模型替换 baseline
 baseline_update_threshold = 3.2
 
-# 阶段转换指南 (V2):
+# 阶段转换指南 (V3):
 # ┌──────────────────────────────────────────────────────────────────────────┐
-# │ 阶段             │ rank_bonus │ agari  │ houjuu │ BL更新间隔            │
+# │ 阶段             │ rank_bonus │ agari  │ houjuu │ BL策略                │
 # ├──────────────────────────────────────────────────────────────────────────┤
-# │ 1. 基础探索 [完成] │  false     │  0.1   │ -0.1   │ ~15-20k              │
-# │ 2. 防守与收敛      │  true      │  0.1   │ -0.1   │ 30k                  │
-# │ 3. 进攻/防守平衡   │  true      │  0.05  │ -0.05  │ 40-50k               │
-# │ 4. 精细优化        │  true      │  0.02  │ -0.02  │ 50-80k               │
-# │ 5. 超人类          │  false     │  0     │  0     │ 100k                 │
+# │ 1. 基础探索 [完成] │  false     │  0.1   │ -0.1   │ 手动 15-20k          │
+# │ 2. 防守与收敛[当前]│  false     │  0.0   │ -0.2   │ 对手池 20k           │
+# │ 3. 进攻/防守平衡   │  false     │  0.0   │ -0.1   │ 对手池 20-30k        │
+# │ 4. 精细优化        │  false     │  0.0   │ -0.05  │ 对手池 30-50k        │
+# │ 5. 超人类          │  false     │  0     │  0     │ 对手池 50-80k        │
 # └──────────────────────────────────────────────────────────────────────────┘
 
 # 规则配置
@@ -178,6 +178,15 @@ state_file = '/data/mortal/baseline.pth'
 device = 'cuda:0'
 enable_compile = false
 state_file = '/data/mortal/baseline.pth'
+
+# V3: 对手池配置 (参考 OpenAI Five 80/20 策略)
+# 维护 5-8 个历史检查点，每次自博弈随机选取一个作为 baseline
+# 打破单一 baseline 过拟合，创造对手多样性
+[baseline.pool]
+enabled = true
+pool_dir = '/data/mortal/baseline_pool'
+reload_every = 1        # 每 N 次 train_play 迭代重选 baseline
+newest_weight = 3.0     # 最新检查点的采样权重（其他为 1.0）
 
 # 在线训练配置
 [online]

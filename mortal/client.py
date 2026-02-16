@@ -33,6 +33,16 @@ def main():
     history_window = config['online']['history_window']
     history = []
 
+    # V3: 对手池配置
+    pool_cfg = config.get('baseline', {}).get('pool', {})
+    pool_enabled = pool_cfg.get('enabled', False)
+    pool_reload_every = pool_cfg.get('reload_every', 1)
+    iteration = 0
+
+    # V3: 初始加载时从对手池选取 baseline
+    if pool_enabled:
+        train_player.reload_baseline_from_pool()
+
     while True:
         while True:
             with socket.socket() as conn:
@@ -78,6 +88,12 @@ def main():
                 'param_version': param_version,
             })
             logging.info('logs have been submitted')
+
+        # V3: 从对手池中周期性重选 baseline
+        iteration += 1
+        if pool_enabled and iteration % pool_reload_every == 0:
+            train_player.reload_baseline_from_pool()
+
         gc.collect()
         # FIX: 仅在 CUDA 可用时调用 CUDA 清理函数，避免 CPU 环境下崩溃。
         if torch.cuda.is_available():

@@ -177,6 +177,14 @@ device = 'cuda:0'
 enable_compile = false
 state_file = '/data/mortal/baseline.pth'
 
+# V3: 对手池配置 (Phase 1 默认关闭，Phase 2+ 开启)
+# 维护 5-8 个历史检查点，每次自博弈随机选取一个作为 baseline
+[baseline.pool]
+enabled = false              # Phase 1: 关闭; Phase 2+: 改为 true
+pool_dir = '/data/mortal/baseline_pool'
+reload_every = 1
+newest_weight = 3.0
+
 # 在线训练配置
 [online]
 history_window = 50

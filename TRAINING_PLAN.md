@@ -128,6 +128,103 @@ Phase 1 各奖励信号量级（每局 kyoku）：
 
 **结论**: 随着 baseline 变强，恢复时间指数增长。过早/过频繁更新会导致模型长期处于追赶状态。
 
+### 4.4 训练实况总结（Step 70k-240k）
+
+#### Phase 2 奖励塑形实验 (70k-180k)
+
+70k 切换 Phase 2 配置（rank_bonus=true, epsilon 0.15, temp 0.20）后：
+- BL#4 (100k) 和 BL#5 (130k) 更新后，模型陷入长期追赶（perpetual chasing）
+- 110k 步的 rank_bonus + action_bonus 未能教会防守，放铳率从 33% 上升到 38-41%
+- agari_bonus 反而激励"快攻小牌"（局部最优），和牌点数停滞在 ~5,500
+
+#### 纯 score_diff 实验 (180k-235k，关闭所有奖励塑形)
+
+180k 关闭所有奖励塑形（rank_bonus=false, action_bonus=false），55k 步纯 score_diff 结果：
+
+| 指标 | 180k (关闭前) | 225k (最佳点) | 235k | 分析 |
+|------|-------------|-------------|------|------|
+| 和牌点数 | 5,256 | 6,501 | 6,373 | +21-33%，模型学会追大牌 |
+| 放铳率 | 41.0% | 44.0% | 45.2% | 不降反升，防守未学会 |
+| point_per_round | -314 | -80 | -341 | 高方差震荡，未能转正 |
+| 和牌率 | 63.4% | 59.4% | 56.1% | 下降（追大牌的代价） |
+| 4th 占比 | 26.8% | 28.4% | 30.2% | 恶化 |
+
+**结论**：纯 score_diff 能教会手牌价值（和牌点数 +41%），但无法教会防守。MC 回报的信用分配太慢，模型进入"赌博模式"（高和牌点数 + 高放铳率）。
+
+#### BL#6 更新实验 (236k-240k)
+
+236k 更新 BL#6（激进型 235k 模型），240k 评估：
+
+| 指标 | 235k (BL更新前) | 240k (BL更新后) | 变化 |
+|------|-----------------|-----------------|------|
+| 放铳率 | 45.2% | 39.2% | -6%! |
+| 4th 占比 | 30.2% | 26.5% | -3.7% |
+| avg_ranking | 2.590 | 2.531 | 改善 |
+| 和牌点数 | 6,373 | 6,837 | 维持高位 |
+
+**但存在"虚假进步"风险**：BL#6 本身放铳率 ~45%，3 个激进型对手互相喂分，模型只是利用了对手弱点而非真正学会防守。这是典型的**单一 baseline 过拟合**。
+
+### 4.5 成功案例研究
+
+调研了业界主要自博弈 AI 系统的训练策略：
+
+#### AlphaGo Zero（围棋，零知识）
+- MCTS 每步 1600 次模拟，提供强探索和精确价值估计
+- Baseline 更新：新网络在 400 局中胜率 >55% 才替换
+- 单一对手，但 MCTS 弥补了对手多样性不足
+
+#### OpenAI Five（Dota 2，零知识）
+- **80% 对局 vs 最新自身，20% vs 历史版本对手池**
+- 历史版本按质量加权采样（更强对手被更频繁选中）
+- 规模：256 GPU，每天 180 年等效对局量
+
+#### AlphaStar（星际争霸 II）
+- **联赛训练**：主力 + 主力剥削者 + 联赛剥削者，3 类 agent
+- 优先虚拟自博弈（PFSP）选择对手
+- 先监督学习人类数据，再 RL
+
+#### Suphx（日麻，超人类）
+- **非零知识**：Oracle Guiding（完美信息监督预训练）
+- Global Reward Prediction 改善信用分配
+- 运行时策略自适应
+
+#### Mortal（日麻，本代码库原型）
+- 监督预训练（人类对局数据）+ 自博弈 RL 强化
+
+#### 核心洞察
+
+我们的方案（纯零知识 + DQN 无 MCTS + 单一 baseline）比所有成功系统都更难。每个成功系统至少使用了以下之一：**MCTS、监督预训练、对手池、联赛训练**。
+
+### 4.6 诊断总结与对手池方案
+
+#### 三大瓶颈
+
+1. **单一 Baseline 过拟合**：模型优化"打赢这个对手"而非"打好麻将"，策略循环
+2. **纯 score_diff 无防守信号**：MC 回报信用分配太慢，放铳率锁死 44-46%
+3. **Baseline 更新两难**：太频繁→追赶，太稀疏→过拟合
+
+#### 对手池方案（V3 策略，待实施）
+
+参考 OpenAI Five 的 80/20 策略，引入对手池：
+
+```
+[baseline.pool]
+enabled = true
+pool_dir = '/data/mortal/baseline_pool'    # 存放 5-8 个历史检查点
+reload_every = 1                            # 每次 train_play 迭代重选 baseline
+newest_weight = 3.0                         # 最新检查点采样权重 3x
+```
+
+**代码改动**（3 个文件）：
+- `player.py`：添加 `_select_from_pool()` 和 `reload_baseline_from_pool()`
+- `client.py`：主循环中周期性重载 baseline
+- `config.toml`：新增 `[baseline.pool]` 配置段
+
+**配合措施**：
+- 重新启用 `houjuu_penalty = -0.2`（仅放铳惩罚，不开 agari_bonus 和 rank_bonus）
+- 每 20k 步保存检查点到对手池，不等 point_per_round > 0
+- 初始池：130k（保守型）、180k、225k、235k（激进型）
+
 ---
 
 ## 5. 训练阶段
@@ -187,9 +284,9 @@ python train.py
 
 ---
 
-### Phase 2: 防守与收敛 (Step 70k — ~200k) [当前阶段]
+### Phase 2: 防守与收敛 (Step 70k — ~300k) [当前阶段]
 
-**目标**: 学会防守，放铳率从 33% 降至 15% 以下
+**目标**: 学会基本防守，提升手牌价值
 
 #### 配置修改 (修改 config.toml 后重启 train.py + 所有 client.py)
 
@@ -198,46 +295,49 @@ python train.py
 boltzmann_epsilon = 0.15    # 0.30 → 0.15
 boltzmann_temp = 0.20       # 0.30 → 0.20
 
-# ⚠️ 关键变更：开启排名奖励（Phase 1 为 false，此处必须改为 true）
+# 定向防守信号（V3 策略：仅 houjuu_penalty，不开 rank_bonus 和 agari_bonus）
 [reward_shaping]
-rank_bonus_enabled = true   # false → true (防守学习的关键信号)
-rank_bonuses = [0.3, 0.1, -0.1, -0.3]
-# action_bonus 保持不变 (agari=0.1, houjuu=-0.1)
+rank_bonus_enabled = false
+action_bonus_enabled = true
+agari_bonus = 0.0
+houjuu_penalty = -0.2       # 放铳直接惩罚，改善信用分配
 
 # 提高定缺监督
 [aux]
 ding_que_ce_weight = 2.0    # 1.0 → 2.0
 ```
 
-#### 监控目标
+#### 监控目标（V3 修正：基于实际训练经验调整）
 
 | 指标 | 入口值 | 目标 | 重要性 |
 |------|--------|------|--------|
-| 放铳率 | ~33% | < 15% | ⭐ 最关键 |
-| `avg_ranking` | — | < 2.35 (对当前 BL) | 高 |
-| `avg_pt` | — | > 2.0 (对当前 BL) | 高 |
-| `ding_que/dqn_match_rate` | 98.5% | 保持 >95% | 低 |
-| 和牌率 | — | > 20% | 中 |
+| 放铳率 | ~45% | < 35% | 最关键 |
+| 和牌点数 | ~5,500 | > 6,000 | 高（已达成） |
+| `avg_ranking` | — | < 2.45 (对当前 BL) | 高 |
+| `ding_que/dqn_match_rate` | 99.4% | 保持 >99% | 低 |
 
-#### Baseline 更新策略 (V2 修订)
+#### Baseline 更新策略 (V3 修订：对手池)
 
-**必须让模型充分超越 baseline 后再更新**，避免 perpetual chasing。
+**V3 策略**：引入对手池，替代单一 baseline 更新。
 
-更新条件（同时满足）：
-1. 距上次更新 ≥ 30k 步
-2. point_per_round > 0（连续 2-3 个测评点）
+对手池管理：
+1. 每 20k 步将当前检查点保存到 `/data/mortal/baseline_pool/`
+2. 保留最近 5-8 个检查点，删除更旧的
+3. 每次 train_play 迭代从池中加权随机选取 baseline（最新 3x 权重）
 
 ```bash
-# 确认 point_per_round 稳定 > 0 后执行
+# 保存检查点到对手池
+cp /data/mortal/mortal.pth /data/mortal/baseline_pool/mortal_XXXk.pth
+# 如果未实施对手池代码，仍使用传统方式：
 cp /data/mortal/mortal.pth /data/mortal/baseline.pth
-# 重启所有 client.py（client 不会自动 reload baseline）
+# 重启所有 client.py
 ```
 
 ---
 
-### Phase 3: 进攻/防守平衡 (Step ~200k — ~500k)
+### Phase 3: 进攻/防守平衡 (Step ~300k — ~600k)
 
-**目标**: 在维持低放铳率的前提下提升和牌质量
+**目标**: 在维持防守的前提下提升和牌质量和整体胜率
 
 #### 配置修改
 
@@ -246,12 +346,12 @@ cp /data/mortal/mortal.pth /data/mortal/baseline.pth
 boltzmann_epsilon = 0.08    # 0.15 → 0.08
 boltzmann_temp = 0.15       # 0.20 → 0.15
 
-# 减弱动作奖励，让分数差主导
+# 减弱放铳惩罚，让分数差主导
 [reward_shaping]
-rank_bonus_enabled = true
-rank_bonuses = [0.3, 0.1, -0.1, -0.3]
-agari_bonus = 0.05          # 0.1 → 0.05
-houjuu_penalty = -0.05      # -0.1 → -0.05
+rank_bonus_enabled = false
+action_bonus_enabled = true
+agari_bonus = 0.0
+houjuu_penalty = -0.1       # -0.2 → -0.1（减弱，分数差已可接力）
 
 # 降低学习率
 [optim.scheduler]
@@ -259,21 +359,21 @@ peak = 3e-4                 # 5e-4 → 3e-4
 final = 5e-5                # 1e-4 → 5e-5
 ```
 
-#### 监控目标
+#### 监控目标（V3 修正）
 
 | 指标 | 入口 | 目标 |
 |------|------|------|
-| 放铳率 | < 15% | < 12% |
-| 和牌点数 | ~5,500 | > 8,000 |
-| `avg_ranking` | — | < 2.20 |
+| 放铳率 | < 35% | < 25% |
+| 和牌点数 | > 6,000 | > 7,500 |
+| `avg_ranking` | < 2.45 | < 2.30 |
 
 #### Baseline 更新策略
 
-每 40-50k 步或当 avg_ranking < 2.30 时更新。
+对手池持续运作，每 20-30k 步添加新检查点。
 
 ---
 
-### Phase 4: 精细优化 (Step ~500k — ~1M)
+### Phase 4: 精细优化 (Step ~600k — ~1M)
 
 **目标**: 策略接近最优，最大化胜率
 
@@ -283,35 +383,34 @@ final = 5e-5                # 1e-4 → 5e-5
 boltzmann_epsilon = 0.05    # 0.08 → 0.05
 boltzmann_temp = 0.10       # 0.15 → 0.10
 
-# 弱化正奖励，保留 4th 惩罚
+# 进一步弱化惩罚
 [reward_shaping]
-rank_bonus_enabled = true
-rank_bonuses = [0.1, 0.0, 0.0, -0.15]  # 弱化正奖励，保留4th惩罚
-agari_bonus = 0.02          # 0.05 → 0.02
-houjuu_penalty = -0.02      # -0.05 → -0.02
+rank_bonus_enabled = false
+action_bonus_enabled = true
+agari_bonus = 0.0
+houjuu_penalty = -0.05      # -0.1 → -0.05
 
 [optim.scheduler]
 peak = 2e-4                 # 3e-4 → 2e-4
 final = 1e-5                # 5e-5 → 1e-5
 ```
 
-#### 监控目标
+#### 监控目标（V3 修正）
 
 | 指标 | 入口 | 目标 |
 |------|------|------|
-| `avg_ranking` | < 2.20 | < 2.10 |
-| `avg_pt` | — | > 2.5 |
-| 放铳率 | < 12% | < 10% |
+| `avg_ranking` | < 2.30 | < 2.15 |
+| 放铳率 | < 25% | < 18% |
 
 #### Baseline 更新策略
 
-每 50-80k 步，当 avg_ranking 稳定 < 2.25 时更新。
+对手池持续运作，每 30-50k 步添加新检查点。
 
 ---
 
 ### Phase 5: 超人类 (Step 1M+)
 
-**目标**: 移除几乎所有奖励塑形，让纯分数差驱动策略
+**目标**: 移除所有奖励塑形，纯分数差驱动
 
 #### 配置修改
 
@@ -333,11 +432,18 @@ final = 1e-5
 
 - `randomize_fan_config = true`（多规则泛化）
 - 引入 target network + 降低 td_lambda（减少 MC 方差）
-- Population-based training（多 baseline 池）
+- 对手池保留但减少更新频率
+
+#### 监控目标（V3 修正）
+
+| 指标 | 入口 | 目标 |
+|------|------|------|
+| `avg_ranking` | < 2.15 | < 2.05 |
+| 放铳率 | < 18% | < 12% |
 
 #### Baseline 更新策略
 
-每 100k 步，当 avg_ranking < 2.20 时更新。
+对手池，每 50-80k 步添加新检查点。
 
 ---
 
@@ -348,15 +454,15 @@ Step 0 ──────────── Phase 1 [已完成] ───┐
                                          │  70k steps, 防守弱(33.8%)
                                          ▼
                     Phase 2 [当前] ──────┐
-                    防守与收敛             │
-                    放铳率 < 15%? ────────▼
+                    防守与收敛             │  对手池 + houjuu_penalty
+                    放铳率 < 35%? ────────▼
                                   Phase 3
                     进攻/防守平衡          │
-                    放铳率 < 12%           │
-                    和牌点数 > 8000? ─────▼
+                    放铳率 < 25%           │
+                    和牌点数 > 7500? ─────▼
                                   Phase 4
                     精细优化               │
-                    avg_ranking < 2.10? ──▼
+                    avg_ranking < 2.15? ──▼
                                   Phase 5
                     超人类 (纯分数差驱动)
 ```
@@ -367,21 +473,26 @@ Step 0 ──────────── Phase 1 [已完成] ───┐
 3. 重启 `train.py`（scheduler 自动适配新参数）
 4. 重启所有 `client.py`（加载新 baseline）
 
-**自博弈 Baseline 更新规则** (V2 修订):
+**自博弈 Baseline 更新规则** (V3 修订：对手池策略):
 
-纯自博弈的 baseline 更新是最关键的超参数之一：
-- **过于频繁**: 模型持续处于追赶状态（"perpetual chasing"），无法建立正反馈闭环
-- **过于稀疏**: 数据质量低，学习效率差
+#### 历史经验
 
-经验教训（BL#4 事件）：BL#4(100k) 更新后模型 30k 步无恢复，强制更新 BL#5 导致算力浪费。
-修订原则：**必须让模型充分超越当前 baseline 后再更新**。
+- V1（Phase 1）：手动更新，15-20k 间隔，适用于弱 baseline
+- V2（Phase 2 初期）：要求 point_per_round > 0 再更新，但模型 55k 步未达标
+- **单一 baseline 的根本问题**：模型过拟合于特定对手风格（策略循环），更新时机无论如何选择都有缺陷
 
-| 阶段 | 最短间隔 | 必要条件 |
-|------|---------|---------|
-| Phase 2 | 30k 步 | point_per_round > 0（连续 2-3 个测评点） |
-| Phase 3 | 40k 步 | avg_ranking < 2.30 |
-| Phase 4 | 50k 步 | avg_ranking < 2.25 |
-| Phase 5 | 80k 步 | avg_ranking < 2.20 |
+#### V3 策略：对手池
+
+参考 OpenAI Five 的 80/20 对手池策略，用对手多样性替代单一 baseline 的更新时机问题。
+
+| 阶段 | 池更新间隔 | 池大小 | 最新权重 |
+|------|----------|--------|---------|
+| Phase 2 | 20k 步 | 5-8 个 | newest_weight = 3.0 |
+| Phase 3 | 20-30k 步 | 5-8 个 | newest_weight = 3.0 |
+| Phase 4 | 30-50k 步 | 5-8 个 | newest_weight = 2.0 |
+| Phase 5 | 50-80k 步 | 5-8 个 | newest_weight = 2.0 |
+
+> 如果对手池代码尚未实施，退回 V2 策略：手动更新单一 baseline，间隔 ≥ 20k 步。
 
 ---
 
@@ -389,17 +500,16 @@ Step 0 ──────────── Phase 1 [已完成] ───┐
 
 ### 7.1 全阶段配置对比
 
-| 参数 | Phase 1 (完成) | Phase 2 (当前) | Phase 3 | Phase 4 | Phase 5 |
-|------|---------------|---------------|---------|---------|---------|
+| 参数 | Phase 1 (完成) | Phase 2 (当前, V3) | Phase 3 | Phase 4 | Phase 5 |
+|------|---------------|-------------------|---------|---------|---------|
 | epsilon | 0.30 | **0.15** | 0.08 | 0.05 | 0.03 |
 | temp | 0.30 | **0.20** | 0.15 | 0.10 | 0.08 |
-| rank_bonus | false | **true** | true | true | false |
-| rank_bonuses | — | [.3,.1,-.1,-.3] | [.3,.1,-.1,-.3] | [.1,0,0,-.15] | — |
-| agari_bonus | 0.1 | 0.1 | 0.05 | 0.02 | 0 |
-| houjuu_penalty | -0.1 | -0.1 | -0.05 | -0.02 | 0 |
+| rank_bonus | false | **false** | false | false | false |
+| agari_bonus | 0.1 | **0.0** | 0.0 | 0.0 | 0 |
+| houjuu_penalty | -0.1 | **-0.2** | -0.1 | -0.05 | 0 |
 | peak LR | 5e-4 | 5e-4 | 3e-4 | 2e-4 | 1e-4 |
 | ding_que_ce | 1.0 | **2.0** | 2.0 | 1.0 | 1.0 |
-| BL更新条件 | ~15-20k | ≥30k + ppr>0 | ≥40k + rank<2.30 | ≥50k + rank<2.25 | ≥80k + rank<2.20 |
+| BL策略 | 手动 15-20k | 对手池 20k | 对手池 20-30k | 对手池 30-50k | 对手池 50-80k |
 
 ### 7.2 学习率进度表
 
@@ -600,3 +710,11 @@ find /data/mortal/train_play -name "*.json.gz" -mtime +3 -delete
 | 2025-02-15 | 100k | 2.476 | 1.772 | 99.1% | Phase 2 首次 BL 更新 (BL#4)；30k 步训练后对 BL#3 开始拉开差距 |
 | 2025-02-16 | 130k | 2.547 | 1.680 | 99.2% | BL#5; 对 BL#4 恢复缓慢 (30k步仅 avg_ranking -0.02)，放铳率 38%，强制更新 |
 | 2025-02-16 | 180k | 2.551 | 1.685 | 99.4% | 关闭所有奖励塑形 (rank_bonus=false, action_bonus=false); 纯 score_diff 驱动 |
+| 2025-02-16 | 236k | 2.590 | 1.655 | 99.5% | BL#6; 纯 score_diff 55k 步后更新；和牌点数 +41% 但放铳率恶化至 45% |
+| 2025-02-16 | 240k | 2.531 | 1.719 | 99.5% | BL#6 后效果：放铳率 39.2%、4th=26.5%（可能是"虚假进步"） |
+
+**V3 训练策略制定** (Step 240k):
+- 诊断：单一 baseline 过拟合 + 纯 score_diff 无法教防守
+- 案例研究：AlphaGo Zero、OpenAI Five、AlphaStar、Suphx、Mortal
+- 决策：引入对手池（参考 OpenAI Five 80/20 策略）+ 定向 houjuu_penalty=-0.2
+- 状态：方案已写入文档，代码待实施
