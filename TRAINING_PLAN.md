@@ -1,6 +1,7 @@
-# 血战到底麻将 AI 训练计划
+# 血战到底 AI 超人类训练计划 V2
 
-> 基于全部代码审计（ISSUES.md 77 文件）和历史训练经验制定。
+> 基于全部代码审计（ISSUES.md 77 文件）和 70k+ 步纯自博弈实战经验制定。
+> 目标：从零知识自博弈达到超人类水平。
 > 配套配置文件: `mortal/config.fresh_start.toml`
 
 ---
@@ -90,7 +91,46 @@ cd mortal && python -c "from config import config; print('OK:', config['control'
 
 ---
 
-## 4. 训练阶段
+## 4. 深度现状分析
+
+### 4.1 训练实况总结（Step 0-70k）
+
+纯自博弈 70k 步，3 次 baseline 更新（20k, 38k, 55k），关键发现：
+
+- **已掌握**: 定缺 98.5%、基本出牌、碰杠判断（副露率从 95% 降至 77%）
+- **未掌握**: 防守（放铳率 33.8%）、番数追求（和牌平均 5,500 点 ≈ 1-2 番）、对手建模
+- **核心瓶颈**: 高探索率（30%）产生嘈杂数据 + 无排名奖励 → 模型无法学习防守
+
+### 4.2 奖励信号量级分析
+
+代码实际奖励计算（`dataloader.py:232`）：
+
+```python
+kyoku_rewards = calc_delta_points(...) / 10000.0  # 1.0 reward = 10,000 点
+```
+
+Phase 1 各奖励信号量级（每局 kyoku）：
+
+- 分数差: 和牌 ±0.1~1.6（1番=0.1, 2番=0.2, 3番=0.4, 4番=0.8, 5番封顶=1.6）
+- action_bonus: 和牌 +0.1 / 放铳 -0.1
+- rank_bonus: **关闭** ← 这是防守学不会的关键原因
+- ding_que_bonus: ±0.02（极微）
+
+**问题**：放铳的惩罚信号来自分数差（失去点数），但通过 MC 回报传播到每一步时被大幅稀释（γ^n 衰减 + 与其他步骤信号混合）。没有 rank_bonus 意味着没有"垫底会被额外惩罚"的信号，模型不学习风险规避。
+
+### 4.3 自博弈 baseline 更新经验
+
+| BL# | Step | 更新后恢复速度 | 分析 |
+|-----|------|------------|------|
+| #1 | 20k | 快（5k步回升） | baseline 极弱（随机→初级），差距小 |
+| #2 | 38k | 中（12k步恢复） | baseline 有基本能力，差距适中 |
+| #3 | 55k | 慢（15k+未完全恢复） | baseline 显著更强，模型防守弱点暴露 |
+
+**结论**: 随着 baseline 变强，恢复时间指数增长。过早/过频繁更新会导致模型长期处于追赶状态。
+
+---
+
+## 5. 训练阶段
 
 ### Phase 1: 基础探索 [已完成] (Step 0 — 70k)
 
@@ -179,12 +219,16 @@ ding_que_ce_weight = 2.0    # 1.0 → 2.0
 | `ding_que/dqn_match_rate` | 98.5% | 保持 >95% | 低 |
 | 和牌率 | — | > 20% | 中 |
 
-#### Baseline 更新策略
+#### Baseline 更新策略 (V2 修订)
 
-**每 30k 步强制更新**（不等指标达标）。纯自博弈中数据质量比指标稳定性更重要。
+**必须让模型充分超越 baseline 后再更新**，避免 perpetual chasing。
+
+更新条件（同时满足）：
+1. 距上次更新 ≥ 30k 步
+2. point_per_round > 0（连续 2-3 个测评点）
 
 ```bash
-# 每 30k 步执行
+# 确认 point_per_round 稳定 > 0 后执行
 cp /data/mortal/mortal.pth /data/mortal/baseline.pth
 # 重启所有 client.py（client 不会自动 reload baseline）
 ```
@@ -297,7 +341,7 @@ final = 1e-5
 
 ---
 
-## 5. 阶段转换决策树
+## 6. 阶段转换决策树
 
 ```
 Step 0 ──────────── Phase 1 [已完成] ───┐
@@ -323,24 +367,27 @@ Step 0 ──────────── Phase 1 [已完成] ───┐
 3. 重启 `train.py`（scheduler 自动适配新参数）
 4. 重启所有 `client.py`（加载新 baseline）
 
-**自博弈 Baseline 更新规则**:
+**自博弈 Baseline 更新规则** (V2 修订):
 
 纯自博弈的 baseline 更新是最关键的超参数之一：
-- **过于频繁**: 模型持续处于追赶状态，无法积累有效策略
+- **过于频繁**: 模型持续处于追赶状态（"perpetual chasing"），无法建立正反馈闭环
 - **过于稀疏**: 数据质量低，学习效率差
 
-| 阶段 | 更新间隔 | 条件 |
-|------|---------|------|
-| Phase 2 | 30k 步 | 强制更新（数据质量优先） |
-| Phase 3 | 40-50k 步 | avg_ranking < 2.30 或到达间隔上限 |
-| Phase 4 | 50-80k 步 | avg_ranking < 2.25 |
-| Phase 5 | 100k 步 | avg_ranking < 2.20 |
+经验教训（BL#4 事件）：BL#4(100k) 更新后模型 30k 步无恢复，强制更新 BL#5 导致算力浪费。
+修订原则：**必须让模型充分超越当前 baseline 后再更新**。
+
+| 阶段 | 最短间隔 | 必要条件 |
+|------|---------|---------|
+| Phase 2 | 30k 步 | point_per_round > 0（连续 2-3 个测评点） |
+| Phase 3 | 40k 步 | avg_ranking < 2.30 |
+| Phase 4 | 50k 步 | avg_ranking < 2.25 |
+| Phase 5 | 80k 步 | avg_ranking < 2.20 |
 
 ---
 
-## 6. 关键配置速查表
+## 7. 关键配置速查表
 
-### 6.1 全阶段配置对比
+### 7.1 全阶段配置对比
 
 | 参数 | Phase 1 (完成) | Phase 2 (当前) | Phase 3 | Phase 4 | Phase 5 |
 |------|---------------|---------------|---------|---------|---------|
@@ -352,9 +399,9 @@ Step 0 ──────────── Phase 1 [已完成] ───┐
 | houjuu_penalty | -0.1 | -0.1 | -0.05 | -0.02 | 0 |
 | peak LR | 5e-4 | 5e-4 | 3e-4 | 2e-4 | 1e-4 |
 | ding_que_ce | 1.0 | **2.0** | 2.0 | 1.0 | 1.0 |
-| BL更新间隔 | ~15-20k | 30k | 40-50k | 50-80k | 100k |
+| BL更新条件 | ~15-20k | ≥30k + ppr>0 | ≥40k + rank<2.30 | ≥50k + rank<2.25 | ≥80k + rank<2.20 |
 
-### 6.2 学习率进度表
+### 7.2 学习率进度表
 
 | 阶段 | peak | final | warmup | max_steps |
 |------|------|-------|--------|-----------|
@@ -365,9 +412,9 @@ Step 0 ──────────── Phase 1 [已完成] ───┐
 
 ---
 
-## 7. 监控与故障排除
+## 8. 监控与故障排除
 
-### 7.1 TensorBoard 监控
+### 8.1 TensorBoard 监控
 
 ```bash
 tensorboard --logdir /data/mortal/logs --bind_all
@@ -385,7 +432,7 @@ tensorboard --logdir /data/mortal/logs --bind_all
 - `ding_que/dqn_match_rate`: DQN 实际定缺决策准确率（应逐步上升至 >70%）
 - `lr`: 学习率曲线，验证 scheduler 行为
 
-### 7.2 常见故障
+### 8.2 常见故障
 
 | 现象 | 原因 | 解决方案 |
 |------|------|----------|
@@ -399,7 +446,7 @@ tensorboard --logdir /data/mortal/logs --bind_all
 | 和牌率低 | 探索不足 / 奖励信号弱 | 提高 epsilon/temp; 增大 agari_bonus |
 | 训练速度慢 | CPU 瓶颈 | 增加 client 数; 提高 num_workers |
 
-### 7.3 磁盘空间管理
+### 8.3 磁盘空间管理
 
 ```bash
 # 每 ~50k 步清理旧 train_play 数据（保留最近 20k 步即可）
@@ -411,9 +458,9 @@ du -sh /data/mortal/*
 
 ---
 
-## 8. 数据流与损失函数
+## 9. 数据流与损失函数
 
-### 8.1 主损失: DQN (Bellman)
+### 9.1 主损失: DQN (Bellman)
 
 ```
 L_dqn = MSE(Q(s,a), r + γ·max_a' Q(s',a'))
@@ -422,7 +469,7 @@ L_dqn = MSE(Q(s,a), r + γ·max_a' Q(s',a'))
 - 当前使用 TD(λ=1.0) ≡ Monte Carlo: `target = Σ γ^t · r_t`
 - 未来引入 target network 后可回调 λ=0.95
 
-### 8.2 辅助损失
+### 9.2 辅助损失
 
 ```
 L_total = L_dqn
@@ -433,7 +480,7 @@ L_total = L_dqn
         + min_q_weight × CQL_penalty                                  [0.0, 关闭]
 ```
 
-### 8.3 奖励构成
+### 9.3 奖励构成
 
 ```
 每步奖励 = 分数差(Δscore) / 10000
@@ -450,9 +497,9 @@ L_total = L_dqn
 
 ---
 
-## 9. 重要约束与已知限制
+## 10. 重要约束与已知限制
 
-### 9.1 不可更改
+### 10.1 不可更改
 
 | 项 | 值 | 原因 |
 |-----|-----|------|
@@ -461,13 +508,13 @@ L_total = L_dqn
 | `version` | 4 | obs_shape=423, 唯一支持版本 |
 | DDP | 不使用 | 瓶颈在 self-play CPU，非 GPU (PERF-05) |
 
-### 9.2 SPCalculator 已知不足 (AUDIT-08)
+### 10.2 SPCalculator 已知不足 (AUDIT-08)
 
 - 杠上花/杠上炮 番型在 SP 期望值计算中始终为 false
 - 影响: 极微（杠场景稀少，EV 差异 <1%）
 - 状态: 已知 TODO，暂不修复
 
-### 9.3 阶段切换注意事项
+### 10.3 阶段切换注意事项
 
 - 修改 config.toml 后只需重启 `train.py`，**不需要删除 checkpoint**
 - Scheduler 自动适配新参数（TRAIN-04 设计）
@@ -476,7 +523,7 @@ L_total = L_dqn
 
 ---
 
-## 10. 预计时间线
+## 11. 预计时间线
 
 基于实际观测: ~0.5 秒/步，4090×8 (7 client + 1 trainer)
 
@@ -549,3 +596,7 @@ find /data/mortal/train_play -name "*.json.gz" -mtime +3 -delete
 - 配置变更: epsilon 0.30→0.15, temp 0.30→0.20, rank_bonus_enabled true, ding_que_ce_weight 2.0
 - 目标: 放铳率从 33% 降至 <15%
 - BL#3 (55k) 继续使用，不更新 baseline
+
+| 2025-02-15 | 100k | 2.476 | 1.772 | 99.1% | Phase 2 首次 BL 更新 (BL#4)；30k 步训练后对 BL#3 开始拉开差距 |
+| 2025-02-16 | 130k | 2.547 | 1.680 | 99.2% | BL#5; 对 BL#4 恢复缓慢 (30k步仅 avg_ranking -0.02)，放铳率 38%，强制更新 |
+| 2025-02-16 | 180k | 2.551 | 1.685 | 99.4% | 关闭所有奖励塑形 (rank_bonus=false, action_bonus=false); 纯 score_diff 驱动 |

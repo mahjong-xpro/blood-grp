@@ -88,14 +88,16 @@ td_lambda_enabled = true # 启用 TD(λ) 回报计算路径 (λ=1.0 时等价于
 
 # 奖励塑形配置
 [reward_shaping]
-# Phase 2: 开启排名奖励，学习防守与风险规避
-rank_bonus_enabled = true     # Phase 2 关键变更: false → true
+# Step 180k: 关闭所有奖励塑形，纯 score_diff / 10000 驱动
+# 原因: 110k 步的 rank_bonus + action_bonus 未能教会防守，
+# agari_bonus 反而激励快攻小牌（局部最优），去掉后让分数差主导。
+rank_bonus_enabled = false    # true → false (180k)
 rank_bonuses = [0.3, 0.1, -0.1, -0.3]
 
 # 动作级奖励 (和牌/放铳)
-action_bonus_enabled = true
-agari_bonus = 0.1            # 和牌奖励
-houjuu_penalty = -0.1        # 放铳惩罚
+action_bonus_enabled = false  # true → false (180k)
+agari_bonus = 0.1            # 保留值，但 enabled=false 不生效
+houjuu_penalty = -0.1        # 保留值，但 enabled=false 不生效
 
 # 自动更新 baseline 的阈值 (阶梯式训练)
 # 当 avg_pt 超过此值时，自动用当前模型替换 baseline

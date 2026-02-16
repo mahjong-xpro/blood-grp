@@ -782,3 +782,6 @@ if online:
 | 2025-02-15 | 38k | 1.819 | 2.651 | `cp mortal.pth baseline.pth` | Phase 1 第二次更新；旧 baseline 过弱，提前刷新 |
 | 2025-02-15 | 55k | 2.264 | 2.010 | `cp mortal.pth baseline.pth` | Phase 1 第三次更新；纯自博弈频繁刷新；暂不切 Phase 2 |
 | 2025-02-15 | 70k | — | — | Phase 2 配置切换 | epsilon 0.30→0.15, temp 0.30→0.20, rank_bonus=true, ding_que_ce=2.0; BL#3(55k)继续使用 |
+| 2025-02-15 | 100k | 2.476 | 1.772 | `cp mortal.pth baseline.pth` | BL#4; Phase 2 首次 BL 更新，对 BL#3 开始拉开差距 (point_per_round=-86) |
+| 2025-02-16 | 130k | 2.547 | 1.680 | `cp mortal.pth baseline.pth` | BL#5; 对 BL#4 恢复缓慢，放铳率 38%，按 30k 间隔强制更新 |
+| 2025-02-16 | 180k | 2.551 | 1.685 | 关闭所有奖励塑形 | rank_bonus=false, action_bonus=false; 110k 步塑形未教会防守，纯 score_diff 驱动 |
