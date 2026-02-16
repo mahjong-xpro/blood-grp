@@ -1089,22 +1089,31 @@ impl BoardState {
                 self.add_log(new_ev_ext);
             }
 
-            Event::Kakan { actor, .. } => {
+            Event::Kakan { actor, pai, .. } => {
                 self.tsumo_actor = actor;
                 self.kans += 1;
-                
-                // Instant Payment (Gua Feng - Wan Gang): All non-agari opponents pay 1000 points
+
+                // 及时雨规则：补杠即时收益仅在「刚摸到的牌 == 补杠的牌」时生效。
+                // - 碰了之后摸到同一张牌，立即补杠 → 有收益（及时雨）
+                // - 碰了之后摸到别的牌，从手牌拿出之前的牌补杠 → 无收益
+                let is_timely = self.player_states[actor as usize]
+                    .last_self_tsumo()
+                    .map_or(false, |tsumo_tile| tsumo_tile == pai);
+
                 let mut payment_deltas = [0i32; 4];
                 let mut total_revenue = 0;
-                let payment_per_person = 1000;
-                
-                for i in 0..4 {
-                    if i != actor as usize && !self.players_agari[i] {
-                         payment_deltas[i] = -payment_per_person;
-                         total_revenue += payment_per_person;
+
+                if is_timely {
+                    let payment_per_person = 1000;
+                    for i in 0..4 {
+                        if i != actor as usize && !self.players_agari[i] {
+                            payment_deltas[i] = -payment_per_person;
+                            total_revenue += payment_per_person;
+                        }
                     }
+                    payment_deltas[actor as usize] = total_revenue;
                 }
-                payment_deltas[actor as usize] = total_revenue;
+
                 vec_add_assign(&mut self.kyoku_deltas, &payment_deltas);
 
                 // Score Transfer tracking
