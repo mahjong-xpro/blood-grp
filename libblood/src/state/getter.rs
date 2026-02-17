@@ -86,6 +86,23 @@ impl PlayerState {
         self.last_cans
     }
 
+    /// 清除 last_cans 中所有行动标志。
+    /// 用于 board.rs 在 Hora 事件全部处理完毕后清除残留的行动标志。
+    ///
+    /// 背景：Hora 是 announce 事件，PlayerState::update 不会重置 last_cans
+    /// （为支持多家荣和时连续 broadcast Hora）。但所有 Hora 在同一个 step()
+    /// 内完成后，Dahai/Kakan 窗口残留的 can_pon / can_daiminkan / can_ron_agari
+    /// 等标志必须清除，否则 poll() 会误认为仍有玩家可行动。
+    ///
+    /// 安全性：
+    /// - agari_points() 在 handle_hora() 内调用，早于此方法
+    /// - furiten 检测在 broadcast(Hora) → update() 时完成，也早于此方法
+    pub fn clear_action_candidates(&mut self) {
+        self.last_cans = ActionCandidate::default();
+        self.ankan_candidates.clear();
+        self.kakan_candidates.clear();
+    }
+
     #[inline]
     #[pyo3(name = "ankan_candidates")]
     fn ankan_candidates_py(&self) -> Vec<String> {

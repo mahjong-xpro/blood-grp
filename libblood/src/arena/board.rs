@@ -869,7 +869,20 @@ impl BoardState {
                 }
             }
             self.tsumo_actor = next_actor;
-             
+
+            // FIX: 荣和处理后，清除所有玩家的残留行动标志。
+            // Hora 是 announce 事件，PlayerState::update 不会重置 last_cans（为支持多家荣和
+            // 时连续 broadcast Hora）。但所有 Hora 在本 step() 内处理完毕后，
+            // Dahai/Kakan 窗口遗留的 can_pon / can_daiminkan / can_ron_agari 等标志
+            // 必须清除，否则 poll() 会误认为有玩家仍可行动，导致其他玩家在别人荣和后
+            // 仍能碰/杠同一张已被荣和的牌。
+            //
+            // 安全性：agari_points() 和 furiten 检测均在上方 handle_hora() 循环内完成，
+            // 此处清除不影响已完成的计算。
+            for ps in &mut self.player_states {
+                ps.clear_action_candidates();
+            }
+
              return Ok(Poll::InGame);
         }
 
