@@ -1464,3 +1464,20 @@ Phase 6c — 启用 Oracle（Target Network 稳定后）:
 - 配置: `oracle.enabled = true`, `distill_weight = 0.0`, `batch_size = 2048`
 - Oracle 先自学 ~5k 步（distill_weight=0 只通过自身 DQN loss 学习）
 - 分阶段调大蒸馏: 0.0 → 0.1 → 0.3 → 0.5（每次 5-10k 步间隔）
+
+**Phase 6 渐进式部署 Commit 列表** (2026-02-19 准备):
+
+705k checkpoint 恢复验证通过后（710k: avg_ranking=2.52, avg_pt=1.72, dqn_match_rate=99.94%），
+按以下顺序在服务器上逐步 `git pull` / `git checkout <hash>` 部署，每步之间观察指标达标后再推进：
+
+| Commit | 阶段 | 配置变更 | 通过标准 |
+|--------|------|---------|---------|
+| `10907a7` | Phase 6a | `target_network=true`, `td_lambda=0.99` | avg_ranking < 2.55, dqn_match_rate > 99.5%, 观察 10k 步 |
+| `3736cc7` | Phase 6b-1 | `td_lambda=0.98` | 同上，观察 10k 步 |
+| `a2e68f1` | Phase 6b-2 | `td_lambda=0.95` (A1+A3 目标值到位) | 同上，观察 10k 步 |
+| `712ec6d` | Phase 6c-1 | `oracle=true`, `distill=0.0`, `batch=2048` | Student 无退化 (avg_ranking < 2.60), oracle_dqn_loss 下降，观察 5k 步 |
+| `d342709` | Phase 6c-2a | `distill_weight=0.1` | avg_ranking 无恶化 > 0.1，观察 5k 步 |
+| `47f3616` | Phase 6c-2b | `distill_weight=0.3` | 同上，观察 5k 步 |
+| `f01b694` | Phase 6c-2c | `distill_weight=0.5` (A2 目标值到位) | 长期运行，A1+A2+A3 全部就绪 |
+
+应急回退: 任何一步出现 avg_ranking > 2.70 或 dqn_match_rate < 98%，立即 `git checkout` 回退到上一个 commit。
