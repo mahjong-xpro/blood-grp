@@ -163,7 +163,11 @@ def train():
         mortal.load_state_dict(state['mortal'])
         dqn.load_state_dict(state['current_dqn'])
         aux_net.load_state_dict(state['aux_net'])
-        optimizer.load_state_dict(state['optimizer'])
+        try:
+            optimizer.load_state_dict(state['optimizer'])
+        except (ValueError, RuntimeError) as e:
+            logging.warning(f'Optimizer state incompatible (likely model structure change): {e}')
+            logging.warning('Reinitializing optimizer — Adam momentum will restart from scratch')
         scaler.load_state_dict(state['scaler'])
         best_perf = state['best_perf']
         steps = state['steps']
@@ -451,9 +455,14 @@ def train():
                     oracle_q = oracle_q_out[range(batch_size), actions]
                     o_dqn_loss = 0.5 * mse(oracle_q, q_target)
 
+                    # KL distillation: replace -inf with -1e9 to avoid NaN.
+                    # softmax(-inf)=0, log_softmax(-inf)=-inf → kl_div computes
+                    # 0 * (-inf - (-inf)) = 0 * NaN = NaN in IEEE 754.
+                    oracle_q_safe = oracle_q_out.masked_fill(~masks, -1e9)
+                    student_q_safe = q_out.masked_fill(~masks, -1e9)
                     with torch.no_grad():
-                        oracle_policy = F.softmax(oracle_q_out / oracle_distill_temp, dim=-1)
-                    student_log_policy = F.log_softmax(q_out / oracle_distill_temp, dim=-1)
+                        oracle_policy = F.softmax(oracle_q_safe / oracle_distill_temp, dim=-1)
+                    student_log_policy = F.log_softmax(student_q_safe / oracle_distill_temp, dim=-1)
                     distill_loss = F.kl_div(student_log_policy, oracle_policy, reduction='batchmean')
                 else:
                     o_dqn_loss = torch.tensor(0.0, device=device, dtype=torch.float32)
