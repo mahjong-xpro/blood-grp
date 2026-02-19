@@ -518,6 +518,8 @@ def train():
                             tp.data.mul_(1 - target_tau).add_(sp.data, alpha=target_tau)
                         for tp, sp in zip(target_dqn.parameters(), dqn.parameters()):
                             tp.data.mul_(1 - target_tau).add_(sp.data, alpha=target_tau)
+                        for tb, sb in zip(target_mortal.buffers(), mortal.buffers()):
+                            tb.data.copy_(sb.data)
             pb.update(1)
 
             if online and steps % submit_every == 0:
