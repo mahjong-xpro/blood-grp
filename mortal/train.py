@@ -370,8 +370,11 @@ def train():
                 raise RuntimeError(msg)
 
             # Q-target 计算:
-            # - Target Network 启用时: 1-step TD
-            #     q_target = r_imm + discount * V_target(s') + dq_bonus
+            # - Target Network 启用时: td_lambda 混合 MC 回报与 1-step TD
+            #     td1 = r_imm + discount * V_target(s')
+            #     mc  = returns (MC 或 TD(λ) 回报)
+            #     q_target = λ * mc + (1-λ) * td1 + dq_bonus
+            #     λ=1.0 → 纯 MC (等同于未启用 TN), λ=0.0 → 纯 1-step TD
             # - 否则: MC 回报 (向后兼容)
             if target_network_enabled and next_obs is not None:
                 next_obs_t = next_obs.to(dtype=torch.float32, device=device)
@@ -387,7 +390,10 @@ def train():
                         q_next_all.masked_fill(~next_masks_t, -torch.inf).max(dim=-1).values,
                         torch.zeros_like(bd),
                     )
-                q_target = ir + bd * v_next + ding_que_bonus
+                td1_target = ir + bd * v_next
+                mc_target = returns.to(dtype=torch.float32, device=device)
+                td_lambda_val = config.get('env', {}).get('td_lambda', 1.0)
+                q_target = td_lambda_val * mc_target + (1.0 - td_lambda_val) * td1_target + ding_que_bonus
             else:
                 td_lambda_enabled = config.get('env', {}).get('td_lambda_enabled', False)
                 if td_lambda_enabled:
