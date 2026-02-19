@@ -1448,16 +1448,23 @@ find /data/mortal/train_play -name "*.json.gz" -mtime +3 -delete
 - 恢复 `mortal_705k.pth` checkpoint
 - 配置回滚: batch_size=4096, td_lambda=1.0, target_network.enabled=false, oracle.enabled=false
 
-**Phase 6 渐进式恢复计划** (纯配置修改，不改代码):
+**Phase 6 渐进式恢复计划** (纯配置修改 + 4 个代码 BUG 修复):
 
-Phase 6a — 单独启用 Target Network:
+Phase 6a — 单独启用 Target Network: ✅ 通过
 - 配置: `target_network.enabled = true`, `td_lambda = 0.99`
 - td_lambda=0.99 使 99% 仍来自 MC，仅 1% bootstrap，最小化 Q-target 突变
 - batch_size 保持 4096（无 Oracle 不 OOM）
 - 通过标准: avg_ranking < 2.55, dqn_match_rate > 99.5%（观察 5-10k 步）
+- **实际结果 (705k-737k, 32k 步)**:
+  - avg_ranking: 2.497-2.529 (< 2.55 ✅)
+  - dqn_match_rate: 99.94% (> 99.5% ✅)
+  - dqn_loss 下降 18.6% (Phase 5: 0.206 → Phase 6a: 0.167)，确认 TN 已生效
+  - q_target std 收窄 (0.872 → 0.800)，TD bootstrap 平滑效应
+  - point_per_round: -164 ~ -358，正常波动
 
 Phase 6b — 逐步降低 td_lambda（每次只改一行）:
-- 每步间隔 10k 步: 0.99 → 0.98 → 0.97 → 0.95
+- Phase 6b-1 (737k 部署): `td_lambda = 0.98` (2% TD bootstrap)
+- Phase 6b-2: `td_lambda = 0.95` (5% TD bootstrap, A1+A3 目标值)
 - 每次确认无明显退化（avg_ranking 波动 < 0.05）
 
 Phase 6c — 启用 Oracle（Target Network 稳定后）:
@@ -1465,19 +1472,27 @@ Phase 6c — 启用 Oracle（Target Network 稳定后）:
 - Oracle 先自学 ~5k 步（distill_weight=0 只通过自身 DQN loss 学习）
 - 分阶段调大蒸馏: 0.0 → 0.1 → 0.3 → 0.5（每次 5-10k 步间隔）
 
-**Phase 6 渐进式部署 Commit 列表** (2026-02-19 准备):
+**代码 BUG 修复记录** (Phase 6 部署前修复):
 
-705k checkpoint 恢复验证通过后（710k: avg_ranking=2.52, avg_pt=1.72, dqn_match_rate=99.94%），
-按以下顺序在服务器上逐步 `git pull` / `git checkout <hash>` 部署，每步之间观察指标达标后再推进：
+| BUG | 描述 | 影响 |
+|-----|------|------|
+| BUG 1 | Q-target 混合: TN 启用时强制 100% 1-step TD，忽略 td_lambda | Phase 6 两次崩溃根因 |
+| BUG 2 | Target Network 软更新未同步 BN running_mean/running_var | V_target 特征分布渐偏 |
+| BUG 3 | GameplayLoader 未传 trust_seed=True，Oracle invisible_obs 随机重构 | Oracle 蒸馏信号含噪 |
+| BUG 4 | TN 分支 td_lambda_enabled=false 时 mc_target 缺少 gamma 折扣 | 防御性修复，当前不触发 |
 
-| Commit | 阶段 | 配置变更 | 通过标准 |
-|--------|------|---------|---------|
-| `10907a7` | Phase 6a | `target_network=true`, `td_lambda=0.99` | avg_ranking < 2.55, dqn_match_rate > 99.5%, 观察 10k 步 |
-| `3736cc7` | Phase 6b-1 | `td_lambda=0.98` | 同上，观察 10k 步 |
-| `a2e68f1` | Phase 6b-2 | `td_lambda=0.95` (A1+A3 目标值到位) | 同上，观察 10k 步 |
-| `712ec6d` | Phase 6c-1 | `oracle=true`, `distill=0.0`, `batch=2048` | Student 无退化 (avg_ranking < 2.60), oracle_dqn_loss 下降，观察 5k 步 |
-| `d342709` | Phase 6c-2a | `distill_weight=0.1` | avg_ranking 无恶化 > 0.1，观察 5k 步 |
-| `47f3616` | Phase 6c-2b | `distill_weight=0.3` | 同上，观察 5k 步 |
-| `f01b694` | Phase 6c-2c | `distill_weight=0.5` (A2 目标值到位) | 长期运行，A1+A2+A3 全部就绪 |
+**Phase 6 渐进式部署 Commit 列表**:
 
-应急回退: 任何一步出现 avg_ranking > 2.70 或 dqn_match_rate < 98%，立即 `git checkout` 回退到上一个 commit。
+705k checkpoint 恢复 + BUG 修复后部署，按以下顺序推进：
+
+| Step 范围 | 阶段 | 配置变更 | 结果 |
+|-----------|------|---------|------|
+| 705k-737k | Phase 6a | `target_network=true`, `td_lambda=0.99` | ✅ 通过 (32k 步稳定) |
+| 737k- | Phase 6b-1 | `td_lambda=0.98` | 🔄 进行中 |
+| — | Phase 6b-2 | `td_lambda=0.95` (A1+A3 目标值) | ⏳ 待部署 |
+| — | Phase 6c-1 | `oracle=true`, `distill=0.0`, `batch=2048` | ⏳ 待部署 |
+| — | Phase 6c-2a | `distill_weight=0.1` | ⏳ 待部署 |
+| — | Phase 6c-2b | `distill_weight=0.3` | ⏳ 待部署 |
+| — | Phase 6c-2c | `distill_weight=0.5` (A2 目标值) | ⏳ 待部署 |
+
+应急回退: 任何一步出现 avg_ranking > 2.70 或 dqn_match_rate < 98%，立即回退到上一阶段配置。
