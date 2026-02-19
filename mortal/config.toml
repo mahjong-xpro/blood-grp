@@ -84,10 +84,10 @@ gamma = 0.99  # 阶段 1: 高 gamma，学习长期规划 (后期降到 0.98)
 pts = [4.0, 2.0, 1.0, 0.0]
 
 # TD(λ) 配置
-# 历史: λ=1.0 (Phase 1-5, MC) → λ=0.99 (Phase 6a, 705-737k 稳定通过)
+# 历史: λ=1.0 (Phase 1-5) → 0.99 (6a, 705-737k) → 0.98 (6b-1, 737-753k)
 # 现在 td_lambda 控制 MC/1-step-TD 混合比: λ=1.0→纯MC, λ=0→纯1-step-TD
-# Phase 6b: 渐进降低 → 0.98 → 0.95
-td_lambda = 0.98
+# Phase 6b-2: A1+A3 目标值到位
+td_lambda = 0.95
 td_lambda_enabled = true
 
 # 奖励塑形配置
