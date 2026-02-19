@@ -152,8 +152,10 @@ ding_que_aux_scale = 0.02
 # 定缺 CE 监督 - AuxNet 分类头 (主)
 # 定缺已收敛 (CE=0.003)，降低权重减少对 Brain 的梯度干扰
 ding_que_ce_weight = 1.0  # 2.0 → 1.0 (580k, Phase 5)
-# 定缺 CE 监督 - DQN Q 值弱 CE: 关闭，消除竞争梯度
-ding_que_dqn_ce_weight = 0.0  # 0.1 → 0 (580k, Phase 5)
+# 定缺 CE 监督 - DQN Q 值极弱 CE: 防止定缺 Q 值漂移
+# 659k 时 dqn_match_rate 从 99.9% 降至 97.3%，加回极小权重防漂移
+# 梯度贡献 ~0.002%，不影响梯度净化效果
+ding_que_dqn_ce_weight = 0.01  # 0 → 0.01 (659k): 防漂移
 
 # 对手等待预测: 预测 3 个对手的听牌 (81 = 3×27)
 opp_wait_enabled = true   # 开启对手听牌预测辅助任务
