@@ -1399,12 +1399,68 @@ find /data/mortal/train_play -name "*.json.gz" -mtime +3 -delete
 - 355k 检查点加入对手池（池内: 130k, 200k, 249k, 295k, 355k）
 - 目标: 放铳率 <25%, avg_ranking <2.30, point_per_round 稳定转正
 
-**Phase 6 切换** (Step 700k):
+**Phase 6 切换** (Step 705k, 2026-02-19 部署):
 - Phase 5 plateau 分析 (665k-700k)：avg_ranking 稳定在 2.49-2.52，point_per_round 波动但始终为负
 - 根因：MC 回报噪声大（无法精确信用分配）+ 单次前向传播无法推断隐藏信息
 - 三个同步变更：
   - A1: `target_network.enabled = true` → 1-step TD 替代 MC
   - A2: `oracle.enabled = true, distill_weight = 0.5` → 完美信息教师蒸馏
   - A3: `td_lambda = 0.95` → 配合 Target Network
+- `batch_size = 4096 → 2048`（新增 4 个模型导致 24GB OOM）
+- Optimizer 从零初始化（Oracle 新增参数导致 state_dict 不兼容，预期行为）
 - 推理时搜索评估：PIMC 不推荐（策略融合缺陷），ISMCE 推荐但留待 Phase 7
-- 部署注意：需清空 buffer + 重启所有服务（数据格式变更）
+- 已清空 buffer + 重启所有服务（数据格式变更：+4 TN 字段 +1 Oracle 字段）
+
+**Phase 6 失败与回滚** (Step 706k-715k, 2026-02-19 回滚):
+
+指标崩溃记录（Phase 5 稳态 → 715k）：
+
+| 指标 | Phase 5 (700-705k) | 710k | 715k |
+|------|-------------------|------|------|
+| avg_ranking | 2.50 | 2.79 | **3.33** |
+| avg_pt | 1.73 | 1.38 | **0.74** |
+| point_per_round | -311 | -2459 | **-6494** |
+| 1st place | 23.0% | 17.3% | **7.3%** |
+| 4th place | 23.7% | 36.4% | **59.4%** |
+| agari_rate | 64.6% | 50.5% | **19.4%** |
+| houjuu_rate | 31.2% | 37.3% | **43.4%** |
+| fuuro_rate | 65.3% | 30.7% | **72.5%** |
+| fuuro_point | 2094 | 383 | **-2181** |
+| ding_que_dqn_ce_loss | 0.007 | 0.582 | **0.597** |
+| dqn_match_rate | 99.94% | 98.77% | **99.13%** |
+
+失败根因分析 — 死亡螺旋（非过渡震荡）：
+1. **Q-target 尺度突变**: MC→1-step TD 导致所有 Q 值尺度失调
+2. **随机 Oracle 毒化**: 从零初始化的 Oracle 输出噪声信号，通过 KL 蒸馏注入 Student
+3. **Optimizer 归零**: Adam 动量消失，700k 步积累的梯度统计全部丢失
+4. **三个正反馈环互相放大**:
+   - Student-Target: 坏 Q 值 → Target soft update 吸收 → 更差 target → Student 更差
+   - Oracle-Student: 坏数据训练 Oracle → Oracle 恶化 → 蒸馏错误信号 → Student 更差
+   - Self-play 数据: 模型变差 → 对局质量下降 → 训练数据恶化 → 模型进一步变差
+5. **710k→715k 加速恶化**证实死亡螺旋，排除"过渡震荡"可能
+
+教训：
+- 多个重大变更（尤其涉及 Q-target 尺度）不可同时激活
+- 随机初始化的 Oracle 直接蒸馏等同于向 Student 注入噪声
+- batch_size 减半 + Optimizer 重置进一步放大不稳定性
+
+回滚操作：
+- 恢复 `mortal_705k.pth` checkpoint
+- 配置回滚: batch_size=4096, td_lambda=1.0, target_network.enabled=false, oracle.enabled=false
+
+**Phase 6 渐进式恢复计划** (纯配置修改，不改代码):
+
+Phase 6a — 单独启用 Target Network:
+- 配置: `target_network.enabled = true`, `td_lambda = 0.99`
+- td_lambda=0.99 使 99% 仍来自 MC，仅 1% bootstrap，最小化 Q-target 突变
+- batch_size 保持 4096（无 Oracle 不 OOM）
+- 通过标准: avg_ranking < 2.55, dqn_match_rate > 99.5%（观察 5-10k 步）
+
+Phase 6b — 逐步降低 td_lambda（每次只改一行）:
+- 每步间隔 10k 步: 0.99 → 0.98 → 0.97 → 0.95
+- 每次确认无明显退化（avg_ranking 波动 < 0.05）
+
+Phase 6c — 启用 Oracle（Target Network 稳定后）:
+- 配置: `oracle.enabled = true`, `distill_weight = 0.0`, `batch_size = 2048`
+- Oracle 先自学 ~5k 步（distill_weight=0 只通过自身 DQN loss 学习）
+- 分阶段调大蒸馏: 0.0 → 0.1 → 0.3 → 0.5（每次 5-10k 步间隔）
