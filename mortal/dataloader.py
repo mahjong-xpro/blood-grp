@@ -119,6 +119,7 @@ class FileDatasetsIter(IterableDataset):
         file_list,
         pts,
         oracle = False,
+        trust_seed = False,
         file_batch_size = 20, # hint: around 660 instances per file
         reserve_ratio = 0,
         player_names = None,
@@ -132,6 +133,7 @@ class FileDatasetsIter(IterableDataset):
         self.file_list = file_list
         self.pts = pts
         self.oracle = oracle
+        self.trust_seed = trust_seed
         self.file_batch_size = file_batch_size
         self.reserve_ratio = reserve_ratio
         self.player_names = player_names
@@ -162,6 +164,7 @@ class FileDatasetsIter(IterableDataset):
             oracle = self.oracle,
             player_names = self.player_names,
             excludes = self.excludes,
+            trust_seed = self.trust_seed,
             augmented = augmented,
         )
         self.buffer = []

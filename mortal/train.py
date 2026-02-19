@@ -315,6 +315,7 @@ def train():
             file_list = file_list,
             pts = pts,
             oracle = True,
+            trust_seed = True,
             file_batch_size = file_batch_size,
             reserve_ratio = reserve_ratio,
             player_names = player_names,
@@ -391,7 +392,11 @@ def train():
                         torch.zeros_like(bd),
                     )
                 td1_target = ir + bd * v_next
-                mc_target = returns.to(dtype=torch.float32, device=device)
+                td_lambda_enabled = config.get('env', {}).get('td_lambda_enabled', False)
+                if td_lambda_enabled:
+                    mc_target = returns.to(dtype=torch.float32, device=device)
+                else:
+                    mc_target = (gamma ** steps_to_done * returns).to(dtype=torch.float32, device=device)
                 td_lambda_val = config.get('env', {}).get('td_lambda', 1.0)
                 q_target = td_lambda_val * mc_target + (1.0 - td_lambda_val) * td1_target + ding_que_bonus
             else:
