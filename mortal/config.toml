@@ -17,8 +17,8 @@ enable_cudnn_benchmark = true
 enable_amp = false
 enable_compile = false
 
-# 训练参数 - 4090 单卡 24GB 可用 4096
-batch_size = 4096
+# 训练参数 - Phase 6: 4096→2048 (Target Network + Oracle 模型增多，24GB OOM)
+batch_size = 2048
 opt_step_every = 1
 
 # 保存和测试频率
