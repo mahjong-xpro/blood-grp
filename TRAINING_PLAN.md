@@ -439,7 +439,7 @@ houjuu_penalty = 0.0          # -0.05 → 0
 
 ---
 
-### Phase 5: 梯度净化 (Step 580k+) [当前阶段]
+### Phase 5: 梯度净化 (Step 580k — 700k) [已完成]
 
 **目标**: 消除辅助任务对 RL 梯度的干扰，让 DQN 主导编码器学习
 
@@ -499,124 +499,215 @@ ding_que_dqn_ce_weight = 0.0   # 0.1 → 0: 消除竞争梯度
 
 ---
 
-### Phase 6: Target Network 引入 (Step ~800k — ~1.2M)
+### Phase 6: Target Network + Oracle Guiding (Step 700k+) [当前阶段]
 
-**目标**: 引入 Target Network，使 TD(λ<1) 生效，解决信用分配瓶颈
+**目标**: 同时启用 Target Network 和 Oracle Guiding，解决信用分配和隐藏信息两大瓶颈
 
-#### 问题诊断
+#### 700k 入口指标
 
-当前 TD(λ=1.0) 等价于 Monte Carlo 回报。一局 ~20 步出牌，仅 1-2 次关键决策产生分数变化，
-MC 将 reward 均匀回传到所有前序动作：
+| 指标 | 值 | 分析 |
+|------|-----|------|
+| avg_ranking | 2.503 | 对 baseline 无优势，处于平台期 |
+| point_per_round | -210 | 净亏损，665k-700k 间波动大 (-106 ~ -375) |
+| agari_rate | 63.5% | 和牌率尚可 |
+| **houjuu_rate** | **32.9%** | **最大失分来源** |
+| agari_point | 5898 | 和牌质量中等 |
+| houjuu_point | -2934 | 放铳平均损失大 |
+| 1st_place_rate | 23.6% | 接近随机 (25%) |
+| dqn_loss | 0.210 | 稳定 |
+| aux_match_rate | 99.94% | 定缺准确率极高 |
+| lr | 1.01e-4 | 已降至 final LR 附近 |
 
-- 1 番荣和 (1000点) → reward = 0.1
-- 回传 20 步后，第 1 步信号 ≈ 0.1 × 0.99^19 ≈ 0.083
-- 每个动作有效梯度信号 ≈ 0.004
+**平台期根因分析**:
+1. MC 回报噪声大（TD(λ=1.0)），模型无法精确定位「是哪步导致放铳」
+2. 单次前向传播无法推断对手隐藏手牌，防守策略天花板受限
+3. 放铳率 32.9% × 平均损失 2934 ≈ 每局损失 965 点，抵消了和牌收益
 
-**结果**: 模型无法精确定位「是哪步出牌导致放铳」，防守学习极慢。
+#### 三个同步配置变更
 
-#### 改动要点
-
-1. **添加 Target Network**（Brain + DQN 的延迟副本）
-2. **软更新**：每 1000 步，τ=0.005
-3. **降低 td_lambda**：1.0 → 0.95（启用 V(s') bootstrap）
-4. **降低探索**：epsilon 0.05→0.03, temp 0.10→0.08
+**A1: Target Network 启用** — 解决信用分配
 
 ```toml
-boltzmann_epsilon = 0.03    # 0.05 → 0.03
-boltzmann_temp = 0.08       # 0.10 → 0.08
-
-[env]
-td_lambda = 0.95            # 1.0 → 0.95 (Target Network 启用后)
-
 [target_network]
-enabled = true
-tau = 0.005                 # 软更新系数
-update_every = 1000         # 每 N 步更新
-
-[optim.scheduler]
-peak = 1e-4                 # 3e-4 → 1e-4
-final = 1e-5
+enabled = true    # false → true
+tau = 0.005
+update_every = 1
 ```
 
-#### 代码改动（3 个文件）
+- Q-target 从 MC 回报切换为 1-step TD: `q_target = r_imm + γ × V_target(s')`
+- 放铳/和牌的 reward 精确归因到单步决策，不再均匀回传整局
+- Target Network 从当前模型权重初始化，通过 τ=0.005 软更新逐步追踪
 
-| 文件 | 改动 |
-|------|------|
-| `train.py` | 创建 target_brain/target_dqn；软更新循环；TD(λ) 传入 V(s') |
-| `dataloader.py` | `compute_td_lambda_returns()` 接收 V(s') 参数做 bootstrap |
-| `config.toml` | 新增 `[target_network]` 配置段 |
+**A2: Oracle Guiding 启用** — 解决隐藏信息
+
+```toml
+[oracle]
+enabled = true          # false → true
+distill_weight = 0.5    # 1.0 → 0.5 (Oracle 从零开始，保守起步)
+oracle_dqn_weight = 1.0
+```
+
+- Oracle 模型（Brain 15 blocks + DQN）看到所有手牌和牌墙（完美信息）
+- 与 Student 联合训练：Oracle 学习最优策略 → KL 蒸馏到 Student
+- `distill_weight = 0.5` 保守起步，Oracle 从随机初始化开始，初期蒸馏信号有噪声
+- 待 oracle_dqn_loss 收敛后可调至 1.0
+
+**A3: TD(λ=0.95)** — 配合 Target Network
+
+```toml
+[env]
+td_lambda = 0.95   # 1.0 → 0.95
+```
+
+- Target Network 提供 V(s') bootstrap，λ<1.0 现在安全
+- λ=0.95 平衡偏差（TD 估计）和方差（MC 回报）
+
+#### 代码实现状态
+
+| 组件 | 状态 | 文件 |
+|------|------|------|
+| Target Network 基础设施 | **已实现** | `train.py` (模型创建、软更新、checkpoint) |
+| 1-step TD Q-target | **已实现** | `train.py` (train_batch), `dataloader.py` (populate_buffer) |
+| Oracle Brain + DQN | **已实现** | `train.py` (模型创建、优化器、checkpoint) |
+| KL 蒸馏损失 | **已实现** | `train.py` (distill_loss, NaN 安全处理) |
+| Oracle 数据管线 | **已实现** | `dataloader.py` (invisible_obs 存储) |
+| TensorBoard 日志 | **已实现** | `train.py` (oracle_dqn_loss, distill_loss) |
+| Optimizer 兼容性 | **已修复** | `train.py` (try/except 处理新参数) |
+
+#### 部署注意事项
+
+1. **清空 buffer**: Target Network 启用后每条数据多 4 个字段（next_obs, next_masks, bootstrap_discount, imm_reward），Oracle 启用后多 1 个字段（invisible_obs），旧数据不兼容
+2. **重启所有服务**: server + 7 个 client
+3. **Optimizer 重初始化**: 首次加载旧 checkpoint 时，Oracle 新增参数导致 optimizer state 不匹配，自动 fallback 到全新 optimizer（Adam momentum 重启）
 
 #### 预期效果
 
-| 指标 | 入口 | 目标 | 原理 |
-|------|------|------|------|
-| 放铳率 | ~30% | < 25% | 信用分配精确到单步，防守行为快速收敛 |
-| point_per_round | ~0 | > +200 | V(s') 减少 MC 方差，策略稳定 |
-| agari_point | ~6500 | > 7000 | 更好地评估追番 vs 速胡的 EV |
-| avg_ranking | ~2.40 | < 2.25 | 综合提升 |
+| 指标 | 入口 (700k) | 目标 | 改善原理 |
+|------|------------|------|---------|
+| 放铳率 | 32.9% | < 25% | Target Network 精确归因 + Oracle 防守蒸馏 |
+| point_per_round | -210 | > +200 | 减少放铳 = 直接提升净得分 |
+| agari_point | 5898 | > 7000 | Oracle 教会更好的手牌构建 |
+| avg_ranking | 2.503 | < 2.30 | 综合提升 |
+
+#### 新增 TensorBoard 指标
+
+| 指标 | 含义 | 关注点 |
+|------|------|--------|
+| oracle_dqn_loss | Oracle 模型自身的 DQN 损失 | 应快速下降（完美信息任务简单） |
+| distill_loss | KL(student \|\| oracle) 蒸馏损失 | 初期高（Oracle 随机），应逐步下降 |
 
 #### 风险与回退
 
-- **风险**: Target Network 初始化不当可能导致 V(s') 估计偏差
-- **回退**: 若 30k 步后 dqn_loss 爆炸，恢复 td_lambda=1.0 并检查 target 更新频率
+- **风险 1**: Oracle 初期噪声干扰 Student → 若 700k-720k dqn_loss 暴增，降 distill_weight 至 0.1
+- **风险 2**: 1-step TD 偏差过大 → 若 avg_ranking 持续恶化，升 td_lambda 至 0.98
+- **回退条件**: 30k 步后 point_per_round < -500 且持续恶化
+
+#### 后续调整计划
+
+- 720k-750k: 观察 oracle_dqn_loss 收敛速度，若已稳定可升 distill_weight 至 1.0
+- 800k+: 评估是否降低探索 (epsilon 0.05→0.03, temp 0.10→0.08)
+- 900k+: 评估是否需要推理时增强 (ISMCE)
 
 ---
 
-### Phase 7: 超人类突破 (Step ~1.2M+)
+### Phase 7: 推理时增强 + 超人类突破 (Step ~1M+)
 
-**目标**: 引入推理时搜索或 Oracle Guiding，突破单次前向传播的天花板
+**目标**: 通过推理时搜索突破单次前向传播的天花板
 
-#### 选项 A: Oracle Guiding（参考 Suphx）
+#### 推理时搜索方案深度评估 (700k 分析)
 
-1. 训练 Oracle 模型：输入包含所有玩家手牌（完美信息），学习理论最优策略
-2. Oracle 监督预训练：用 Oracle 策略做 CE 监督，让当前模型学会「理想出牌」
-3. 切回自博弈 RL：在 Oracle 初始化的基础上继续强化
+##### 方案 A: PIMC（完美信息蒙特卡洛搜索）— 不推荐作为 V1
 
-| 阶段 | 训练方式 | 预计步数 |
-|------|---------|---------|
-| Oracle 训练 | 自博弈（完美信息，收敛快） | ~200k |
-| Oracle 蒸馏 | CE(student, oracle) | ~100k |
-| RL 强化 | 自博弈（不完美信息） | ~500k+ |
+PIMC 流程：确定化（采样对手手牌）→ 每个动作 rollout N 局 → 取平均回报。
 
-#### 选项 B: 推理时搜索（轻量版）
+**根本缺陷 — 策略融合 (Strategy Fusion)**:
 
-不改训练流程，只在推理时增强：
+PIMC 对每个确定化世界独立决策再取平均，无法表达风险规避推理。例如：
+- 世界 A（对手缺万）：打 8万安全，收益高
+- 世界 B（对手听 8万）：打 8万放铳 -8000 点
+- PIMC 取平均 → 可能得出"打 8万 微正"
+- 正确推理：在不确定时应规避高损失事件
 
-1. 对每个合法动作，用当前模型 rollout N 局（N=100-500）
-2. 取平均回报最高的动作
-3. 可选：信息集采样（随机猜测对手手牌，多次采样取平均）
+PIMC 是风险中性的，但麻将防守需要风险规避。
 
-| 参数 | 值 | 说明 |
-|------|-----|------|
-| rollout_per_action | 100-500 | 每个动作模拟局数 |
-| info_set_samples | 10-50 | 对手手牌采样次数 |
-| 推理延迟 | ~100ms/步 | 可接受（人类思考 1-5 秒） |
+**其他问题**:
 
-#### 选项 C: Population-Based Training（参考 AlphaStar）
+| 问题 | 影响 |
+|------|------|
+| Tsumogiri rollout 无用 | 随机对手不防守/不碰/不和，估值严重偏离 |
+| 模型 rollout 复杂 | Rust↔Python 嵌套调用，~800 行代码 |
+| 确定化一致性 | 需尊重定缺、行为推理（对手没碰=可能没有该牌） |
+| PlayerState 重算 | 修改 tehai 后需重算 waits/shanten/tiles_seen |
+| 延迟 | 模型 rollout ~200ms/步 |
 
-维护 5-10 个独立 agent，各自与不同对手组合训练：
+##### 方案 B: ISMCE（信息集蒙特卡洛评估）— 推荐
 
-- **主力 agent**：正常自博弈
-- **剥削者**：专门针对主力弱点训练
-- **防守型**：优化放铳率目标
-- **进攻型**：优化 agari_point 目标
+**核心思路**: 不搜索游戏树，而是用信息集采样更好地评估当前局面。
 
-所有 agent 组成联赛，互相对弈产生数据。
+```
+正常推理: obs → Brain → DQN → Q(s,a) → argmax → 动作
 
-#### 推荐路径
+ISMCE 增强:
+    Q(s,a) ←→ 信息集采样 (纯 Rust, <5ms)
+               ├── 采样 M=100 个对手手牌配置
+               ├── 检测: 每个对手是否听牌？听什么？
+               ├── 计算: 每张出牌的危险度
+               └── danger_scores[27]
+    Q_adj(a) = Q(a) - α × danger(a) → 动作
+```
 
-**Phase 7A (Oracle Guiding)** > Phase 7B (搜索) > Phase 7C (Population)
+**ISMCE vs PIMC 对比**:
 
-理由：
-- Oracle Guiding 实现复杂度适中，效果已在 Suphx 验证
-- 血战到底规则简单，Oracle（完美信息）训练快
-- 搜索需要改推理流程，延迟增加；Population 需要大幅增加计算资源
+| 维度 | PIMC | ISMCE |
+|------|------|-------|
+| 解决核心问题（放铳） | 间接（通过平均回报） | 直接（显式危险度） |
+| 策略融合 | 有（风险评估失真） | 无 |
+| 延迟 | ~200ms/步 | <5ms/步 |
+| 实现复杂度 | ~800 行 Rust+Python | ~350 行纯 Rust |
+| 需要 rollout 引擎 | 是 | 否 |
+| 额外 Python 调用 | 每 rollout 步 | 零 |
+| 可解释性 | 低 | 高（每张牌危险度可打印） |
+
+**ISMCE 危险度计算**:
+
+```
+danger(tile) = (1/M) × Σ_m Σ_opp [
+    is_tenpai(opp, sample_m) × is_in_wait(tile, opp, sample_m) × expected_loss(opp)
+]
+```
+
+- 采样约束: 尊重已知 ding_que，后续可加行为推理
+- 性能: M=100 次采样 × 3 对手 shanten 计算 ≈ 5ms/决策
+- 复用现有 `shanten::calc_all()` Rust 实现
+
+##### 方案 C: RTPA（运行时策略自适应，Suphx 风格）
+
+根据局面动态调整策略温度：
+- 领先时保守（降低 boltzmann_temp → 选安全牌）
+- 落后时激进（升高 temp → 选高番牌）
+- 不需要 rollout，不受策略融合影响
+- Suphx 用此方法达到超人类日麻
+
+#### 推荐实施路径
+
+```
+Phase 7a: ISMCE 危险度调整 (~350 行 Rust)
+    ├── 直接降低放铳率，纯 Rust <5ms
+    │
+Phase 7b: + RTPA 策略自适应 (~200 行)
+    ├── 局面感知攻守切换
+    │
+Phase 7c: + 选择性短 rollout (仅 Q 值模糊时触发)
+    ├── 需要 Clone + 模型 rollout
+    │
+Phase 7d: + PIMC 完整搜索 (离线评估用)
+```
 
 #### 监控目标
 
 | 指标 | 入口 | 超人类目标 |
 |------|------|-----------|
-| avg_ranking | < 2.25 | < 2.05 |
+| avg_ranking | < 2.30 | < 2.05 |
 | 放铳率 | < 25% | < 18% |
 | agari_point | > 7000 | > 7500 |
 | point_per_round | > +200 | > +500 |
@@ -638,15 +729,15 @@ Step 0 ──────────── Phase 1 [已完成] ───┐
                     Phase 4 [已完成] ────┐
                     纯博弈 (485k-580k)    │  关闭所有奖励塑形
                     plateau, 梯度审计 ───▼
-                    Phase 5 [当前]       │
-                    梯度净化 (580k-800k)   │  DQN 梯度 43%→95%
-                    point_per_round > 0? ─▼
-                    Phase 6 [计划]       │
-                    Target Network (800k-1.2M) │  TD(λ=0.95), 信用分配改善
+                    Phase 5 [已完成]     │
+                    梯度净化 (580k-700k)   │  DQN 梯度 43%→95%
+                    plateau持续, 放铳32.9%─▼
+                    Phase 6 [当前]       │
+                    TN+Oracle (700k+)     │  TD(λ=0.95), 信用分配+Oracle蒸馏
                     放铳率 < 25%? ────────▼
                     Phase 7 [计划]
-                    超人类突破 (1.2M+)
-                    Oracle Guiding / 搜索 / Population
+                    推理时增强 (1M+)
+                    ISMCE 危险度 / RTPA / 选择性搜索
 ```
 
 **阶段转换操作**:
@@ -682,23 +773,24 @@ Step 0 ──────────── Phase 1 [已完成] ───┐
 
 ### 7.1 全阶段配置对比
 
-| 参数 | Phase 1 (完成) | Phase 2 (完成) | Phase 3 (完成) | Phase 4 (完成) | Phase 5 (当前) | Phase 6 (计划) | Phase 7 (计划) |
+| 参数 | Phase 1 (完成) | Phase 2 (完成) | Phase 3 (完成) | Phase 4 (完成) | Phase 5 (完成) | Phase 6 (当前) | Phase 7 (计划) |
 |------|---------------|---------------|----------------|----------------|----------------|----------------|----------------|
-| epsilon | 0.30 | 0.15 | 0.08 | 0.05 | **0.05** | 0.03 | 0.02 |
-| temp | 0.30 | 0.20 | 0.15 | 0.10 | **0.10** | 0.08 | 0.05 |
-| rank_bonus | false | false | false | false | **false** | false | false |
-| agari_bonus | 0.1 | 0.0 | 0.0 | 0.0 | **0** | 0 | 0 |
-| houjuu_penalty | -0.1 | -0.2 | -0.1 | 0 | **0** | 0 | 0 |
-| next_rank_weight | 0.25 | 0.25 | 0.25 | 0.25 | **0** | 0 | 0 |
-| ding_que_aux | true | true | true | true | **false** | false | false |
-| ding_que_ce | 1.0 | 2.0 | 2.0 | 2.0 | **1.0** | 1.0 | 1.0 |
-| ding_que_dqn_ce | 0.1 | 0.1 | 0.1 | 0.1 | **0.01** | 0.01 | 0.01 |
-| td_lambda | 1.0 | 1.0 | 1.0 | 1.0 | **1.0** | 0.95 | 0.95 |
-| target_network | 无 | 无 | 无 | 无 | **无** | 有 (τ=0.005) | 有 |
-| peak LR | 5e-4 | 5e-4 | 3e-4 | 3e-4 | **3e-4** | 1e-4 | 1e-4 |
-| final LR | 1e-4 | 1e-4 | 5e-5 | 5e-5 | **5e-5** | 1e-5 | 1e-5 |
-| BL策略 | 手动 15-20k | 对手池 20k | 对手池 20-30k | 对手池 30-50k | **滑动窗口 3个** | 滑动窗口 | Oracle+滑动窗口 |
-| 特殊技术 | — | — | — | — | **梯度净化** | Target Network | Oracle/搜索 |
+| epsilon | 0.30 | 0.15 | 0.08 | 0.05 | 0.05 | **0.05** | 0.03 |
+| temp | 0.30 | 0.20 | 0.15 | 0.10 | 0.10 | **0.10** | 0.08 |
+| rank_bonus | false | false | false | false | false | **false** | false |
+| agari_bonus | 0.1 | 0.0 | 0.0 | 0.0 | 0 | **0** | 0 |
+| houjuu_penalty | -0.1 | -0.2 | -0.1 | 0 | 0 | **0** | 0 |
+| next_rank_weight | 0.25 | 0.25 | 0.25 | 0.25 | 0 | **0** | 0 |
+| ding_que_aux | true | true | true | true | false | **false** | false |
+| ding_que_ce | 1.0 | 2.0 | 2.0 | 2.0 | 1.0 | **1.0** | 1.0 |
+| ding_que_dqn_ce | 0.1 | 0.1 | 0.1 | 0.1 | 0.01 | **0.01** | 0.01 |
+| td_lambda | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | **0.95** | 0.95 |
+| target_network | 无 | 无 | 无 | 无 | 无 | **有 (τ=0.005)** | 有 |
+| oracle | 无 | 无 | 无 | 无 | 无 | **有 (distill=0.5)** | 有 (distill=1.0) |
+| peak LR | 5e-4 | 5e-4 | 3e-4 | 3e-4 | 3e-4 | **3e-4** | 1e-4 |
+| final LR | 1e-4 | 1e-4 | 5e-5 | 5e-5 | 5e-5 | **5e-5** | 1e-5 |
+| BL策略 | 手动 15-20k | 对手池 20k | 对手池 20-30k | 对手池 30-50k | 滑动窗口 3个 | **对手池+TN+Oracle** | Oracle+ISMCE |
+| 特殊技术 | — | — | — | — | 梯度净化 | **TN+Oracle+TD(0.95)** | +ISMCE/RTPA |
 
 ### 7.2 学习率进度表
 
@@ -1160,6 +1252,75 @@ Pluribus 证明了无人类数据也能超人类，但它有在线搜索。
 血战到底的简单性是最大优势。在同样的技术栈下，血战到底比日麻更容易达到超人类。
 关键是补上 Suphx 使用的 Oracle Guiding 和 RTPA 中的至少一个。
 
+### 12.10 全面优化路径分析 (700k 步深度评估)
+
+#### 优化方向分类
+
+**A. 训练信号优化（改善"学什么"）**
+
+| 编号 | 优化 | 状态 | 预期效果 | 优先级 |
+|------|------|------|---------|-------|
+| A1 | Target Network (1-step TD) | **Phase 6 启用** | 高: 信用分配精确化 | 最高 |
+| A2 | Oracle Guiding (KL 蒸馏) | **Phase 6 启用** | 高: 完美信息教师 | 最高 |
+| A3 | TD(λ=0.95) | **Phase 6 启用** | 中: 偏差-方差平衡 | 最高 |
+| A4 | 优先经验回放 (PER) | 未实现 | 中: 聚焦高误差样本 | 中 |
+| A5 | 防御性奖励塑形 | 之前关闭 | 中低: 直接奖励安全出牌 | 低 |
+
+**B. 模型架构优化（改善"用什么学"）**
+
+| 编号 | 优化 | 状态 | 预期效果 | 优先级 |
+|------|------|------|---------|-------|
+| B1 | 对手建模头 (听牌预测增强) | opp_wait 存在但弱 | 高: 显式预测对手听牌 | 高 |
+| B2 | 注意力机制 | 无 | 中: 长距离特征交互 | 中 |
+| B3 | 增大模型 | 30 blocks, 192ch | 低: 可能不是瓶颈 | 低 |
+
+**C. 推理时优化（改善"怎么用"）**
+
+| 编号 | 优化 | 状态 | 预期效果 | 优先级 |
+|------|------|------|---------|-------|
+| C1 | ISMCE 危险度调整 | 已设计未实现 | 高: 直接降放铳率 | Phase 7 首选 |
+| C2 | RTPA 策略自适应 | 无 | 中: 攻守切换 | Phase 7b |
+| C3 | PIMC 完整搜索 | 已分析不推荐 V1 | 中: 策略融合限制 | Phase 7d |
+
+**D. 训练流程优化（改善"怎么学"）**
+
+| 编号 | 优化 | 状态 | 预期效果 | 优先级 |
+|------|------|------|---------|-------|
+| D1 | 对手池策略优化 | 有 | 中: 更合理对手梯度 | 中 |
+| D2 | 更长时间训练 | 700k | 中: 仍有提升空间 | 中 |
+
+#### 优先级排序与实施时间线
+
+```
+Phase 6 [当前, 700k+]: A1 + A2 + A3 (已启用, 零代码)
+    │  Target Network + Oracle Guiding + TD(λ=0.95)
+    │  预期: 放铳率 32.9% → <25%, point_per_round -210 → >+200
+    │
+    ├── 720k: 检查 oracle_dqn_loss 收敛, 考虑升 distill_weight 至 1.0
+    ├── 800k: 评估是否降探索 (epsilon 0.05→0.03)
+    │
+Phase 7a [~1M]: C1 — ISMCE 危险度调整 (~350 行 Rust)
+    │  信息集采样 + 显式危险度计算, 纯 Rust <5ms
+    │  预期: 放铳率再降 5-8%
+    │
+Phase 7b [~1.1M]: C2 — RTPA 策略自适应 (~200 行)
+    │  局面感知攻守切换
+    │
+Phase 7c [~1.2M+]: B1 — 对手建模头增强
+    │  更准确的对手听牌预测
+    │
+超人类目标: avg_ranking < 2.05, 放铳率 < 18%, point_per_round > +500
+```
+
+#### 关键洞察
+
+**最大的优化不是写新代码，而是启用已写好的 Target Network 和 Oracle Guiding。**
+
+- Target Network 解决信用分配（模型知道"这步做对了"）
+- Oracle Guiding 解决隐藏信息（教师知道"最优策略是什么"）
+- 700k 平台期的根因是 MC 回报噪声 + 缺乏隐藏信息推理，Phase 6 直接解决这两个问题
+- ISMCE 等推理时优化是锦上添花，等训练信号改善后再评估必要性
+
 ---
 
 ## 附录 A: 完整文件清单
@@ -1237,3 +1398,13 @@ find /data/mortal/train_play -name "*.json.gz" -mtime +3 -delete
 - 配置变更: epsilon 0.15→0.08, temp 0.20→0.15, houjuu -0.2→-0.1, peak LR 5e-4→3e-4, final LR 1e-4→5e-5, warmup 2000→3000
 - 355k 检查点加入对手池（池内: 130k, 200k, 249k, 295k, 355k）
 - 目标: 放铳率 <25%, avg_ranking <2.30, point_per_round 稳定转正
+
+**Phase 6 切换** (Step 700k):
+- Phase 5 plateau 分析 (665k-700k)：avg_ranking 稳定在 2.49-2.52，point_per_round 波动但始终为负
+- 根因：MC 回报噪声大（无法精确信用分配）+ 单次前向传播无法推断隐藏信息
+- 三个同步变更：
+  - A1: `target_network.enabled = true` → 1-step TD 替代 MC
+  - A2: `oracle.enabled = true, distill_weight = 0.5` → 完美信息教师蒸馏
+  - A3: `td_lambda = 0.95` → 配合 Target Network
+- 推理时搜索评估：PIMC 不推荐（策略融合缺陷），ISMCE 推荐但留待 Phase 7
+- 部署注意：需清空 buffer + 重启所有服务（数据格式变更）

@@ -27,10 +27,10 @@ test_every = 5000
 submit_every = 1000
 
 # ═══════════════════════════════════════════════════════
-# Phase 5 配置: 梯度净化 (Step 580k+)
-# 关闭 next_rank 辅助任务 (占 54.5% 梯度，严重干扰 RL)
-# 关闭 ding_que 隐藏奖励塑形和竞争梯度
-# DQN 梯度占比: 43% → 95%
+# Phase 6 配置: Target Network + Oracle Guiding (Step 700k+)
+# A1: Target Network 启用 → 1-step TD 替代 MC，信用分配精确化
+# A2: Oracle Guiding 启用 → 完美信息教师蒸馏，提升防守/进攻策略
+# A3: TD(λ=0.95) → 配合 Target Network，平衡偏差-方差
 # ═══════════════════════════════════════════════════════
 
 [train_play.default]
@@ -50,8 +50,8 @@ boltzmann_temp = 0.10     # Phase 4: 0.12 → 0.10 (485k)
 # │ 3a.进攻/防守[完成] │  0.08   │ 0.15  │ 355k - 420k    │
 # │ 3b.减弱惩罚[完成]  │  0.06   │ 0.12  │ 420k - 485k    │
 # │ 4. 纯博弈 [完成]    │  0.05   │ 0.10  │ 485k - 580k    │
-# │ 5. 梯度净化 [当前]  │  0.05   │ 0.10  │ 580k - 1M      │
-# │ 6. 超人类          │  0.03   │ 0.08  │ 1M+            │
+# │ 5. 梯度净化 [完成]  │  0.05   │ 0.10  │ 580k - 700k    │
+# │ 6. TN+Oracle [当前] │  0.05   │ 0.10  │ 700k+          │
 # └──────────────────────────────────────────────────────┘
 
 top_p = 1.0
@@ -85,10 +85,11 @@ gamma = 0.99  # 阶段 1: 高 gamma，学习长期规划 (后期降到 0.98)
 pts = [4.0, 2.0, 1.0, 0.0]
 
 # TD(λ) 配置
-# BUG-06 fix: 当前无 V(s') bootstrap, λ<1 会使有效折扣从 γ 退化为 γ×λ.
-# 必须设 λ=1.0 使 TD(λ) ≡ MC. 待引入 target network 提供 V(s') 后可降回 0.95.
-td_lambda = 1.0
-td_lambda_enabled = true # 启用 TD(λ) 回报计算路径 (λ=1.0 时等价于 MC)
+# A3: Target Network 已启用，可安全使用 λ<1.0
+# λ=0.95 平衡偏差(TD)和方差(MC)，配合 V_target(s') bootstrap
+# 历史: λ=1.0 (Phase 1-5, MC) → λ=0.95 (Phase 6, 配合 Target Network)
+td_lambda = 0.95
+td_lambda_enabled = true
 
 # 奖励塑形配置
 [reward_shaping]
@@ -116,8 +117,8 @@ baseline_update_threshold = 3.2
 # │ 3a.进攻/防守[完成] │  false     │  0.0   │ -0.1   │ 对手池 20-30k        │
 # │ 3b.减弱惩罚[完成]  │  false     │  0.0   │ -0.05  │ 对手池 30k           │
 # │ 4. 纯博弈 [完成]    │  false     │  0     │  0     │ 对手池 30-50k        │
-# │ 5. 梯度净化 [当前]  │  false     │  0     │  0     │ 对手池 + 净化梯度    │
-# │ 6. 超人类          │  false     │  0     │  0     │ 对手池 50-80k        │
+# │ 5. 梯度净化 [完成]  │  false     │  0     │  0     │ 对手池 + 净化梯度    │
+# │ 6. TN+Oracle [当前] │  false     │  0     │  0     │ 对手池 + TN + Oracle │
 # └──────────────────────────────────────────────────────────────────────────┘
 
 # 规则配置
@@ -161,27 +162,27 @@ ding_que_dqn_ce_weight = 0.01  # 0 → 0.01 (659k): 防漂移
 opp_wait_enabled = true   # 开启对手听牌预测辅助任务
 opp_wait_weight = 0.1     # BCE 损失权重
 
-# Target Network 配置
+# Target Network 配置 (A1)
 # 延迟更新的 Brain+DQN 副本，提供稳定的 V(s') 估计
 # 启用后 Q-target 从 MC 回报切换为 1-step TD:
 #   q_target = r_imm + γ * V_target(s') * (1-done)
 # 解决 MC 回报的信用分配问题: 放铳/和牌的 reward 精确归因到单步决策
 [target_network]
-enabled = false           # Phase 5 暂不启用，Phase 6 (800k+) 启用
+enabled = true            # Phase 6 (700k): 启用 1-step TD
 tau = 0.005               # 软更新系数: θ_target ← τ*θ + (1-τ)*θ_target
 update_every = 1          # 每 N 个 optimizer step 执行一次软更新
 
-# Oracle Guiding 配置（完美信息教师指导）
+# Oracle Guiding 配置 (A2) — 完美信息教师指导
 # Oracle 模型看到所有玩家手牌+牌墙（完美信息），学习理论最优策略
 # 通过 KL 散度蒸馏将 Oracle 策略传授给 Student（不完美信息）
 # Oracle 与 Student 联合训练：无需单独预训练阶段
 [oracle]
-enabled = false           # Phase 7: Oracle Guiding
+enabled = true            # Phase 6 (700k): 与 Target Network 同时启用
 num_blocks = 15           # Oracle Brain 块数（完美信息任务更简单，比 Student 的 30 少）
 conv_channels = 192       # Oracle Brain 通道数
-distill_weight = 1.0      # KL 蒸馏损失权重
+distill_weight = 0.5      # KL 蒸馏损失权重 (Oracle 从零开始，保守起步，稳定后可调至 1.0)
 distill_temperature = 1.0 # softmax 温度（越高分布越平滑，越低越尖锐）
-oracle_dqn_weight = 1.0   # Oracle 自身 DQN 损失权重
+oracle_dqn_weight = 1.0   # Oracle 自身 DQN 损失权重（Oracle 需要快速学习）
 
 # Batch Normalization 冻结配置
 [freeze_bn]
