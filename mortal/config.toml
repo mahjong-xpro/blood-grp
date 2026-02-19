@@ -86,7 +86,7 @@ pts = [4.0, 2.0, 1.0, 0.0]
 # TD(λ) 配置
 # 历史: λ=1.0 (Phase 1-5, MC) → λ=0.95 (Phase 6, 已回滚)
 # Phase 6a 计划: 渐进式降低 1.0 → 0.99 → 0.98 → 0.97 → 0.95
-td_lambda = 1.0
+td_lambda = 0.99
 td_lambda_enabled = true
 
 # 奖励塑形配置
@@ -167,7 +167,7 @@ opp_wait_weight = 0.1     # BCE 损失权重
 # Phase 6 (706-715k) 同时启用导致死亡螺旋，已回滚
 # Phase 6a 计划: 单独启用 + td_lambda=0.99 渐进过渡
 [target_network]
-enabled = false           # 回滚: Phase 6a 时单独启用
+enabled = true            # Phase 6a: 单独启用 (td_lambda=0.99 渐进过渡)
 tau = 0.005               # 软更新系数: θ_target ← τ*θ + (1-τ)*θ_target
 update_every = 1          # 每 N 个 optimizer step 执行一次软更新
 
