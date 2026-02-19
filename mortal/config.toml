@@ -180,7 +180,7 @@ update_every = 1          # 每 N 个 optimizer step 执行一次软更新
 enabled = true            # Phase 6c: Oracle 自学阶段 (distill_weight=0.0)
 num_blocks = 15           # Oracle Brain 块数（完美信息任务更简单，比 Student 的 30 少）
 conv_channels = 192       # Oracle Brain 通道数
-distill_weight = 0.1      # Phase 6c-2: 蒸馏起步 (目标值 0.5)
+distill_weight = 0.3      # Phase 6c-2: 蒸馏中间 (目标值 0.5)
 distill_temperature = 1.0 # softmax 温度（越高分布越平滑，越低越尖锐）
 oracle_dqn_weight = 1.0   # Oracle 自身 DQN 损失权重
 
