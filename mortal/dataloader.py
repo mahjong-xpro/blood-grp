@@ -90,22 +90,25 @@ def compute_td_lambda_returns(
     标准 TD(λ):
         G_t^λ = r_t + γ * [(1-λ)*V(s_{t+1}) + λ*G_{t+1}^λ]
 
-    ⚠️ BUG-06: 当前无 V(s') bootstrap, 公式退化为:
+    当 target_network.enabled=false 时，无 V(s') bootstrap，公式退化为:
         G_t = r_t + γ*λ*G_{t+1}
     有效每步折扣 = γ×λ (而非 γ). λ<1 不提供方差缩减, 仅额外衰减信号.
-    因此 λ 必须设为 1.0, 使本函数等价于 MC 回报.
-    待引入 target network 提供 V(s') 后可降回 λ<1.
+    因此无 target network 时 λ 必须设为 1.0 (等价于 MC 回报).
+
+    当 target_network.enabled=true 时，1-step TD 在 train.py 中计算，
+    本函数仍用于计算 MC 回报作为参考/回退。
     """
     if lambda_ < 1.0:
-        import warnings
-        eff = gamma * lambda_
-        warnings.warn(
-            f"BUG-06: td_lambda={lambda_} < 1.0 但无 V(s') bootstrap. "
-            f"有效折扣 γ_eff={eff:.4f} (非配置的 γ={gamma}). "
-            f"20 步信号衰减至 {eff**20:.1%} (MC 为 {gamma**20:.1%}). "
-            f"请设 td_lambda=1.0 或引入 target network.",
-            stacklevel=2,
-        )
+        tn_enabled = config.get('target_network', {}).get('enabled', False)
+        if not tn_enabled:
+            import warnings
+            eff = gamma * lambda_
+            warnings.warn(
+                f"td_lambda={lambda_} < 1.0 但 target_network 未启用. "
+                f"有效折扣 γ_eff={eff:.4f} (非配置的 γ={gamma}). "
+                f"请设 td_lambda=1.0 或启用 target_network.",
+                stacklevel=2,
+            )
     return _td_lambda_inner(kyoku_rewards, at_kyoku, dones, apply_gamma, gamma, lambda_, game_size)
 
 
@@ -327,10 +330,37 @@ class FileDatasetsIter(IterableDataset):
                     if dq_mask2.any():
                         dq_best_suit_arr[dq_mask2] = player_dq_best_suit[at_kyoku_np[dq_mask2]]
 
+                # Target Network: precompute per-step 1-step TD ingredients
+                # q_target = imm_reward + bootstrap_discount * V_target(s') + dq_bonus
+                target_network_enabled = config.get('target_network', {}).get('enabled', False)
+                if target_network_enabled:
+                    obs_shape_tuple = obs[0].shape
+                    mask_len = len(masks[0])
+                    next_obs_arr = []
+                    next_masks_arr = []
+                    bootstrap_discount_arr = np.zeros(game_size, dtype=np.float64)
+                    imm_reward_arr = np.zeros(game_size, dtype=np.float64)
+                    dones_list = list(dones) if isinstance(dones, bytes) else dones
+                    ag_list = list(apply_gamma) if isinstance(apply_gamma, bytes) else apply_gamma
+                    for i in range(game_size):
+                        is_done = bool(dones_list[i])
+                        if is_done:
+                            imm_reward_arr[i] = kyoku_rewards[at_kyoku_np[i]]
+                            bootstrap_discount_arr[i] = 0.0
+                        else:
+                            imm_reward_arr[i] = 0.0
+                            bootstrap_discount_arr[i] = gamma if bool(ag_list[i]) else 1.0
+                        if i + 1 < game_size and not is_done:
+                            next_obs_arr.append(obs[i + 1])
+                            next_masks_arr.append(masks[i + 1])
+                        else:
+                            next_obs_arr.append(np.zeros(obs_shape_tuple, dtype=np.float32))
+                            next_masks_arr.append(np.zeros(mask_len, dtype=np.bool_))
+
                 # Build buffer entries
                 buf = self.buffer
                 for i in range(game_size):
-                    buf.append([
+                    entry = [
                         obs[i],
                         actions[i],
                         masks[i],
@@ -340,7 +370,15 @@ class FileDatasetsIter(IterableDataset):
                         dq_bonus_arr[i],
                         dq_best_suit_arr[i],
                         np.asarray(opponent_waits[i], dtype=np.float32),
-                    ])
+                    ]
+                    if target_network_enabled:
+                        entry.extend([
+                            next_obs_arr[i],
+                            next_masks_arr[i],
+                            bootstrap_discount_arr[i],
+                            imm_reward_arr[i],
+                        ])
+                    buf.append(entry)
 
 
     def __iter__(self):

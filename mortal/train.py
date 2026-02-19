@@ -1,6 +1,7 @@
 def train():
     import prelude
 
+    import copy
     import logging
     import sys
     import os
@@ -77,11 +78,30 @@ def train():
         for m in all_models:
             m.compile()
 
+    # Target Network: delayed copy of Brain+DQN for stable Q-target computation
+    tn_config = config.get('target_network', {})
+    target_network_enabled = tn_config.get('enabled', False)
+    target_tau = tn_config.get('tau', 0.005)
+    target_update_every = tn_config.get('update_every', 1)
+    target_mortal = None
+    target_dqn = None
+    if target_network_enabled:
+        target_mortal = copy.deepcopy(mortal).to(device)
+        target_dqn = copy.deepcopy(dqn).to(device)
+        target_mortal.eval()
+        target_dqn.eval()
+        for p in target_mortal.parameters():
+            p.requires_grad_(False)
+        for p in target_dqn.parameters():
+            p.requires_grad_(False)
+
     logging.info(f'version: {version}')
     logging.info(f'obs shape: {obs_shape(version)}')
     logging.info(f'mortal params: {parameter_count(mortal):,}')
     logging.info(f'dqn params: {parameter_count(dqn):,}')
     logging.info(f'aux params: {parameter_count(aux_net):,}')
+    if target_network_enabled:
+        logging.info(f'target network: enabled (tau={target_tau}, update_every={target_update_every})')
 
     mortal.freeze_bn(config['freeze_bn']['mortal'])
 
@@ -123,6 +143,15 @@ def train():
         scaler.load_state_dict(state['scaler'])
         best_perf = state['best_perf']
         steps = state['steps']
+        if target_network_enabled:
+            if 'target_mortal' in state and 'target_dqn' in state:
+                target_mortal.load_state_dict(state['target_mortal'])
+                target_dqn.load_state_dict(state['target_dqn'])
+                logging.info('target network: loaded from checkpoint')
+            else:
+                target_mortal.load_state_dict(state['mortal'])
+                target_dqn.load_state_dict(state['current_dqn'])
+                logging.info('target network: initialized from online network (no prior target state)')
     
     # Scheduler 重启设计（TRAIN-04 文档化）:
     # 从 checkpoint 恢复时，scheduler **不**从 state_dict 恢复，而是用当前
@@ -265,19 +294,17 @@ def train():
             worker_init_fn = worker_init_fn,
         ))
 
-        remaining_obs = []
-        remaining_actions = []
-        remaining_masks = []
-        remaining_steps_to_done = []
-        remaining_returns = []
-        remaining_player_ranks = []
-        remaining_ding_que_bonus = []
-        remaining_ding_que_best_suit = []
-        remaining_opponent_waits = []
+        remaining_batches_list = []
         remaining_bs = 0
         pb = tqdm(total=save_every, desc='TRAIN', initial=steps % save_every)
 
-        def train_batch(obs, actions, masks, steps_to_done, returns, player_ranks, ding_que_bonus, ding_que_best_suit, opponent_waits):
+        # Number of fields per buffer entry depends on target_network
+        _n_base_fields = 9
+        _n_extra_fields = 4 if target_network_enabled else 0
+
+        def train_batch(obs, actions, masks, steps_to_done, returns, player_ranks,
+                        ding_que_bonus, ding_que_best_suit, opponent_waits,
+                        next_obs=None, next_masks=None, bootstrap_discount=None, imm_reward=None):
             nonlocal steps
             nonlocal idx
             nonlocal pb
@@ -293,28 +320,41 @@ def train():
             ding_que_best_suit = ding_que_best_suit.to(dtype=torch.int64, device=device)
             opponent_waits = opponent_waits.to(dtype=torch.float32, device=device)
 
-            # Skip batch if any (state, action) pair is invalid (action not allowed by mask).
-            # This can happen when logs contain moves from a buggy version (e.g. discard before
-            # ding_que) or when replay state diverges from the state when the action was recorded.
             valid = masks[range(batch_size), actions]
             if not valid.all():
                 invalid_count = (~valid).sum().item()
                 first_invalid = (~valid).nonzero(as_tuple=True)[0][0].item()
-                # Raise RuntimeError to force debugging
                 msg = (f"Skipping batch at step {steps + 1}: {invalid_count}/{batch_size} samples have action not allowed by mask "
                        f"(first invalid idx={first_invalid}, action={actions[first_invalid].item()}). "
                        f"Likely bad log or ding_que replay bug.")
                 logging.error(msg)
                 raise RuntimeError(msg)
 
-            # returns 的含义取决于训练模式（由 dataloader 预计算）:
-            #   TD(λ) 模式: 已折扣的 TD(λ) 回报，直接使用
-            #   MC 模式:    原始 kyoku delta points，需乘 gamma^n 折扣
-            td_lambda_enabled = config.get('env', {}).get('td_lambda_enabled', False)
-            if td_lambda_enabled:
-                q_target = returns + ding_que_bonus
+            # Q-target 计算:
+            # - Target Network 启用时: 1-step TD
+            #     q_target = r_imm + discount * V_target(s') + dq_bonus
+            # - 否则: MC 回报 (向后兼容)
+            if target_network_enabled and next_obs is not None:
+                next_obs_t = next_obs.to(dtype=torch.float32, device=device)
+                next_masks_t = next_masks.to(dtype=torch.bool, device=device)
+                bd = bootstrap_discount.to(dtype=torch.float32, device=device)
+                ir = imm_reward.to(dtype=torch.float32, device=device)
+                with torch.no_grad():
+                    phi_next = target_mortal(next_obs_t)
+                    q_next_all = target_dqn(phi_next, next_masks_t)
+                    has_valid = next_masks_t.any(dim=-1)
+                    v_next = torch.where(
+                        has_valid,
+                        q_next_all.masked_fill(~next_masks_t, -torch.inf).max(dim=-1).values,
+                        torch.zeros_like(bd),
+                    )
+                q_target = ir + bd * v_next + ding_que_bonus
             else:
-                q_target = gamma ** steps_to_done * returns + ding_que_bonus
+                td_lambda_enabled = config.get('env', {}).get('td_lambda_enabled', False)
+                if td_lambda_enabled:
+                    q_target = returns + ding_que_bonus
+                else:
+                    q_target = gamma ** steps_to_done * returns + ding_que_bonus
             q_target = q_target.to(torch.float32)
 
             with torch.autocast(device.type, enabled=enable_amp):
@@ -399,10 +439,14 @@ def train():
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad(set_to_none=True)
-                # FIX: scheduler.step() 移入 optimizer step 内部。
-                # 之前放在外层，导致 opt_step_every > 1 时 LR 调度比优化器快 N 倍，
-                # 且 GradScaler 跳过 NaN 梯度时 LR 也会错误推进。
                 scheduler.step()
+                # Target Network 软更新: θ_target ← τ*θ + (1-τ)*θ_target
+                if target_network_enabled and steps % target_update_every == 0:
+                    with torch.no_grad():
+                        for tp, sp in zip(target_mortal.parameters(), mortal.parameters()):
+                            tp.data.mul_(1 - target_tau).add_(sp.data, alpha=target_tau)
+                        for tp, sp in zip(target_dqn.parameters(), dqn.parameters()):
+                            tp.data.mul_(1 - target_tau).add_(sp.data, alpha=target_tau)
             pb.update(1)
 
             if online and steps % submit_every == 0:
@@ -452,6 +496,9 @@ def train():
                     'best_perf': best_perf,
                     'config': config,
                 }
+                if target_network_enabled:
+                    state['target_mortal'] = target_mortal.state_dict()
+                    state['target_dqn'] = target_dqn.state_dict()
                 torch.save(state, state_file)
                 
                 # 每 test_every 步保存一个历史 checkpoint，与 test_play 同步
@@ -554,54 +601,38 @@ def train():
                         return
                 pb = tqdm(total=save_every, desc='TRAIN')
 
-        for obs, actions, masks, steps_to_done, returns, player_ranks, ding_que_bonus, ding_que_best_suit, opponent_waits in data_loader:
-            bs = obs.shape[0]
+        def _unpack_batch(batch_tuple):
+            base = batch_tuple[:_n_base_fields]
+            if target_network_enabled and len(batch_tuple) > _n_base_fields:
+                extra = batch_tuple[_n_base_fields:_n_base_fields + _n_extra_fields]
+            else:
+                extra = (None, None, None, None)
+            return (*base, *extra)
+
+        for batch_tuple in data_loader:
+            bs = batch_tuple[0].shape[0]
             if bs != batch_size:
-                remaining_obs.append(obs)
-                remaining_actions.append(actions)
-                remaining_masks.append(masks)
-                remaining_steps_to_done.append(steps_to_done)
-                remaining_returns.append(returns)
-                remaining_player_ranks.append(player_ranks)
-                remaining_ding_que_bonus.append(ding_que_bonus)
-                remaining_ding_que_best_suit.append(ding_que_best_suit)
-                remaining_opponent_waits.append(opponent_waits)
+                remaining_batches_list.append(batch_tuple)
                 remaining_bs += bs
                 continue
-            train_batch(obs, actions, masks, steps_to_done, returns, player_ranks, ding_que_bonus, ding_que_best_suit, opponent_waits)
+            train_batch(*_unpack_batch(batch_tuple))
             if _need_restart:
                 break
 
-        # BUG-01 fix: skip remaining batches and submit, let train_epoch() return
-        # so that while True loop recreates everything with a fresh DataLoader.
         if _need_restart:
             return
 
         remaining_batches = remaining_bs // batch_size
         if remaining_batches > 0:
-            obs = torch.cat(remaining_obs, dim=0)
-            actions = torch.cat(remaining_actions, dim=0)
-            masks = torch.cat(remaining_masks, dim=0)
-            steps_to_done = torch.cat(remaining_steps_to_done, dim=0)
-            returns = torch.cat(remaining_returns, dim=0)
-            player_ranks = torch.cat(remaining_player_ranks, dim=0)
-            ding_que_bonus = torch.cat(remaining_ding_que_bonus, dim=0)
-            ding_que_best_suit = torch.cat(remaining_ding_que_best_suit, dim=0)
-            opponent_waits = torch.cat(remaining_opponent_waits, dim=0)
+            catted = []
+            for fi in range(len(remaining_batches_list[0])):
+                catted.append(torch.cat([b[fi] for b in remaining_batches_list], dim=0))
+            catted = tuple(catted)
             start = 0
             end = batch_size
             while end <= remaining_bs:
-                train_batch(
-                    obs[start:end],
-                    actions[start:end],
-                    masks[start:end],
-                    steps_to_done[start:end],
-                    returns[start:end],
-                    player_ranks[start:end],
-                    ding_que_bonus[start:end],
-                    ding_que_best_suit[start:end],
-                    opponent_waits[start:end],
-                )
+                sliced = tuple(c[start:end] for c in catted)
+                train_batch(*_unpack_batch(sliced))
                 if _need_restart:
                     break
                 start = end
