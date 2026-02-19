@@ -171,6 +171,18 @@ enabled = false           # Phase 5 暂不启用，Phase 6 (800k+) 启用
 tau = 0.005               # 软更新系数: θ_target ← τ*θ + (1-τ)*θ_target
 update_every = 1          # 每 N 个 optimizer step 执行一次软更新
 
+# Oracle Guiding 配置（完美信息教师指导）
+# Oracle 模型看到所有玩家手牌+牌墙（完美信息），学习理论最优策略
+# 通过 KL 散度蒸馏将 Oracle 策略传授给 Student（不完美信息）
+# Oracle 与 Student 联合训练：无需单独预训练阶段
+[oracle]
+enabled = false           # Phase 7: Oracle Guiding
+num_blocks = 15           # Oracle Brain 块数（完美信息任务更简单，比 Student 的 30 少）
+conv_channels = 192       # Oracle Brain 通道数
+distill_weight = 1.0      # KL 蒸馏损失权重
+distill_temperature = 1.0 # softmax 温度（越高分布越平滑，越低越尖锐）
+oracle_dqn_weight = 1.0   # Oracle 自身 DQN 损失权重
+
 # Batch Normalization 冻结配置
 [freeze_bn]
 mortal = false

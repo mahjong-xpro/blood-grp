@@ -357,6 +357,9 @@ class FileDatasetsIter(IterableDataset):
                             next_obs_arr.append(np.zeros(obs_shape_tuple, dtype=np.float32))
                             next_masks_arr.append(np.zeros(mask_len, dtype=np.bool_))
 
+                # Oracle Guiding: store invisible_obs for distillation
+                oracle_guiding_enabled = config.get('oracle', {}).get('enabled', False)
+
                 # Build buffer entries
                 buf = self.buffer
                 for i in range(game_size):
@@ -378,6 +381,8 @@ class FileDatasetsIter(IterableDataset):
                             bootstrap_discount_arr[i],
                             imm_reward_arr[i],
                         ])
+                    if oracle_guiding_enabled and self.oracle:
+                        entry.append(invisible_obs[i])
                     buf.append(entry)
 
 

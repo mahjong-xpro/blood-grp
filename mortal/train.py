@@ -73,7 +73,27 @@ def train():
     # AuxNet dims: (4 = next_rank, 81 = opponent waits: 3 opponents × 27 tiles, 3 = ding_que: Man/Pin/Sou)
     # MODEL-03 fix: 定缺分类头从 DQN Q 值移到 AuxNet 独立分支，避免 CE 与 Bellman 冲突
     aux_net = AuxNet((4, 81, 3)).to(device)
+
+    # Oracle Guiding: perfect-information teacher model
+    oracle_config = config.get('oracle', {})
+    oracle_enabled = oracle_config.get('enabled', False)
+    oracle_distill_weight = oracle_config.get('distill_weight', 1.0)
+    oracle_distill_temp = oracle_config.get('distill_temperature', 1.0)
+    oracle_dqn_weight = oracle_config.get('oracle_dqn_weight', 1.0)
+    oracle_mortal = None
+    oracle_dqn = None
+    if oracle_enabled:
+        oracle_mortal = Brain(
+            version=version,
+            conv_channels=oracle_config.get('conv_channels', config['resnet']['conv_channels']),
+            num_blocks=oracle_config.get('num_blocks', 15),
+            is_oracle=True,
+        ).to(device)
+        oracle_dqn = DQN(version=version).to(device)
+
     all_models = (mortal, dqn, aux_net)
+    if oracle_enabled:
+        all_models = (mortal, dqn, aux_net, oracle_mortal, oracle_dqn)
     if enable_compile:
         for m in all_models:
             m.compile()
@@ -102,6 +122,10 @@ def train():
     logging.info(f'aux params: {parameter_count(aux_net):,}')
     if target_network_enabled:
         logging.info(f'target network: enabled (tau={target_tau}, update_every={target_update_every})')
+    if oracle_enabled:
+        logging.info(f'oracle mortal params: {parameter_count(oracle_mortal):,}')
+        logging.info(f'oracle dqn params: {parameter_count(oracle_dqn):,}')
+        logging.info(f'oracle: enabled (distill_weight={oracle_distill_weight}, temp={oracle_distill_temp}, dqn_weight={oracle_dqn_weight})')
 
     mortal.freeze_bn(config['freeze_bn']['mortal'])
 
@@ -152,6 +176,13 @@ def train():
                 target_mortal.load_state_dict(state['mortal'])
                 target_dqn.load_state_dict(state['current_dqn'])
                 logging.info('target network: initialized from online network (no prior target state)')
+        if oracle_enabled:
+            if 'oracle_mortal' in state and 'oracle_dqn' in state:
+                oracle_mortal.load_state_dict(state['oracle_mortal'])
+                oracle_dqn.load_state_dict(state['oracle_dqn'])
+                logging.info('oracle: loaded from checkpoint')
+            else:
+                logging.info('oracle: initialized from scratch (no prior oracle state in checkpoint)')
     
     # Scheduler 重启设计（TRAIN-04 文档化）:
     # 从 checkpoint 恢复时，scheduler **不**从 state_dict 恢复，而是用当前
@@ -190,6 +221,8 @@ def train():
         'ding_que_aux_match': 0,
         'ding_que_dqn_match': 0,
         'ding_que_total': 0,
+        'oracle_dqn_loss': 0,
+        'distill_loss': 0,
     }
     all_q = torch.zeros((save_every, batch_size), device=device, dtype=torch.float32)
     all_q_target = torch.zeros((save_every, batch_size), device=device, dtype=torch.float32)
@@ -298,13 +331,15 @@ def train():
         remaining_bs = 0
         pb = tqdm(total=save_every, desc='TRAIN', initial=steps % save_every)
 
-        # Number of fields per buffer entry depends on target_network
+        # Number of fields per buffer entry: base(9) + target_network(0|4) + oracle(0|1)
         _n_base_fields = 9
-        _n_extra_fields = 4 if target_network_enabled else 0
+        _n_tn_fields = 4 if target_network_enabled else 0
+        _n_oracle_fields = 1 if oracle_enabled else 0
 
         def train_batch(obs, actions, masks, steps_to_done, returns, player_ranks,
                         ding_que_bonus, ding_que_best_suit, opponent_waits,
-                        next_obs=None, next_masks=None, bootstrap_discount=None, imm_reward=None):
+                        next_obs=None, next_masks=None, bootstrap_discount=None, imm_reward=None,
+                        invisible_obs=None):
             nonlocal steps
             nonlocal idx
             nonlocal pb
@@ -408,6 +443,22 @@ def train():
                     stats['ding_que_dqn_match'] += (dqn_suit == ding_que_best_suit[sel]).sum().item()
                     stats['ding_que_total'] += sel.sum().item()
 
+                # Oracle Guiding: teacher forward pass + distillation
+                if oracle_enabled and invisible_obs is not None:
+                    inv_obs = invisible_obs.to(dtype=torch.float32, device=device)
+                    oracle_phi = oracle_mortal(obs, inv_obs)
+                    oracle_q_out = oracle_dqn(oracle_phi, masks)
+                    oracle_q = oracle_q_out[range(batch_size), actions]
+                    o_dqn_loss = 0.5 * mse(oracle_q, q_target)
+
+                    with torch.no_grad():
+                        oracle_policy = F.softmax(oracle_q_out / oracle_distill_temp, dim=-1)
+                    student_log_policy = F.log_softmax(q_out / oracle_distill_temp, dim=-1)
+                    distill_loss = F.kl_div(student_log_policy, oracle_policy, reduction='batchmean')
+                else:
+                    o_dqn_loss = torch.tensor(0.0, device=device, dtype=torch.float32)
+                    distill_loss = torch.tensor(0.0, device=device, dtype=torch.float32)
+
                 loss = sum((
                     dqn_loss,
                     cql_loss * min_q_weight,
@@ -415,6 +466,8 @@ def train():
                     ding_que_ce_loss * ding_que_ce_weight,
                     ding_que_dqn_ce_loss * ding_que_dqn_ce_weight,
                     opp_wait_loss * opp_wait_weight,
+                    o_dqn_loss * oracle_dqn_weight if oracle_enabled else 0,
+                    distill_loss * oracle_distill_weight if oracle_enabled else 0,
                 ))
             scaler.scale(loss / opt_step_every).backward()
 
@@ -426,6 +479,9 @@ def train():
                 stats['ding_que_ce_loss'] += ding_que_ce_loss
                 stats['ding_que_dqn_ce_loss'] += ding_que_dqn_ce_loss
                 stats['opp_wait_loss'] += opp_wait_loss
+                if oracle_enabled:
+                    stats['oracle_dqn_loss'] += o_dqn_loss
+                    stats['distill_loss'] += distill_loss
                 all_q[idx] = q
                 all_q_target[idx] = q_target
 
@@ -467,6 +523,9 @@ def train():
                 writer.add_scalar('loss/ding_que_ce_loss', stats['ding_que_ce_loss'] / save_every, steps)
                 writer.add_scalar('loss/ding_que_dqn_ce_loss', stats['ding_que_dqn_ce_loss'] / save_every, steps)
                 writer.add_scalar('loss/opp_wait_loss', stats['opp_wait_loss'] / save_every, steps)
+                if oracle_enabled:
+                    writer.add_scalar('loss/oracle_dqn_loss', stats['oracle_dqn_loss'] / save_every, steps)
+                    writer.add_scalar('loss/distill_loss', stats['distill_loss'] / save_every, steps)
                 # 定缺匹配率: aux = AuxNet 分类头准确率, dqn = DQN 实际动作准确率
                 dq_total = stats['ding_que_total']
                 if dq_total > 0:
@@ -499,6 +558,9 @@ def train():
                 if target_network_enabled:
                     state['target_mortal'] = target_mortal.state_dict()
                     state['target_dqn'] = target_dqn.state_dict()
+                if oracle_enabled:
+                    state['oracle_mortal'] = oracle_mortal.state_dict()
+                    state['oracle_dqn'] = oracle_dqn.state_dict()
                 torch.save(state, state_file)
                 
                 # 每 test_every 步保存一个历史 checkpoint，与 test_play 同步
@@ -602,12 +664,18 @@ def train():
                 pb = tqdm(total=save_every, desc='TRAIN')
 
         def _unpack_batch(batch_tuple):
-            base = batch_tuple[:_n_base_fields]
-            if target_network_enabled and len(batch_tuple) > _n_base_fields:
-                extra = batch_tuple[_n_base_fields:_n_base_fields + _n_extra_fields]
+            idx = _n_base_fields
+            base = batch_tuple[:idx]
+            if target_network_enabled and len(batch_tuple) > idx:
+                tn = batch_tuple[idx:idx + _n_tn_fields]
+                idx += _n_tn_fields
             else:
-                extra = (None, None, None, None)
-            return (*base, *extra)
+                tn = (None, None, None, None)
+            if oracle_enabled and len(batch_tuple) > idx:
+                oracle = (batch_tuple[idx],)
+            else:
+                oracle = (None,)
+            return (*base, *tn, *oracle)
 
         for batch_tuple in data_loader:
             bs = batch_tuple[0].shape[0]
