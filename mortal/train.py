@@ -91,9 +91,9 @@ def train():
         ).to(device)
         oracle_dqn = DQN(version=version).to(device)
 
-    all_models = (mortal, dqn, aux_net)
-    if oracle_enabled:
-        all_models = (mortal, dqn, aux_net, oracle_mortal, oracle_dqn)
+    student_models = (mortal, dqn, aux_net)
+    oracle_models = (oracle_mortal, oracle_dqn) if oracle_enabled else ()
+    all_models = student_models + oracle_models
     if enable_compile:
         for m in all_models:
             m.compile()
@@ -129,23 +129,27 @@ def train():
 
     mortal.freeze_bn(config['freeze_bn']['mortal'])
 
-    decay_params = []
-    no_decay_params = []
-    for model in all_models:
-        params_dict = {}
-        to_decay = set()
-        for mod_name, mod in model.named_modules():
-            for name, param in mod.named_parameters(prefix=mod_name, recurse=False):
-                params_dict[name] = param
-                if isinstance(mod, (nn.Linear, nn.Conv1d)) and name.endswith('weight'):
-                    to_decay.add(name)
-        decay_params.extend(params_dict[name] for name in sorted(to_decay))
-        no_decay_params.extend(params_dict[name] for name in sorted(params_dict.keys() - to_decay))
-    param_groups = [
-        {'params': decay_params, 'weight_decay': weight_decay},
-        {'params': no_decay_params},
-    ]
-    optimizer = optim.AdamW(param_groups, lr=1, weight_decay=0, betas=betas, eps=eps)
+    def build_param_groups(models):
+        decay, no_decay = [], []
+        for model in models:
+            params_dict = {}
+            to_decay = set()
+            for mod_name, mod in model.named_modules():
+                for name, param in mod.named_parameters(prefix=mod_name, recurse=False):
+                    params_dict[name] = param
+                    if isinstance(mod, (nn.Linear, nn.Conv1d)) and name.endswith('weight'):
+                        to_decay.add(name)
+            decay.extend(params_dict[name] for name in sorted(to_decay))
+            no_decay.extend(params_dict[name] for name in sorted(params_dict.keys() - to_decay))
+        return [
+            {'params': decay, 'weight_decay': weight_decay},
+            {'params': no_decay},
+        ]
+
+    optimizer = optim.AdamW(build_param_groups(student_models), lr=1, weight_decay=0, betas=betas, eps=eps)
+    oracle_optimizer = None
+    if oracle_enabled:
+        oracle_optimizer = optim.AdamW(build_param_groups(oracle_models), lr=1, weight_decay=0, betas=betas, eps=eps)
     scaler = GradScaler(device.type, enabled=enable_amp)
     test_player = TestPlayer()
     best_perf = {
@@ -182,11 +186,22 @@ def train():
                 logging.info('target network: initialized from online network (no prior target state)')
         if oracle_enabled:
             if 'oracle_mortal' in state and 'oracle_dqn' in state:
-                oracle_mortal.load_state_dict(state['oracle_mortal'])
-                oracle_dqn.load_state_dict(state['oracle_dqn'])
-                logging.info('oracle: loaded from checkpoint')
+                try:
+                    oracle_mortal.load_state_dict(state['oracle_mortal'])
+                    oracle_dqn.load_state_dict(state['oracle_dqn'])
+                    logging.info('oracle: loaded from checkpoint')
+                except RuntimeError as e:
+                    logging.warning(f'oracle: architecture changed, reinitializing from scratch: {e}')
             else:
                 logging.info('oracle: initialized from scratch (no prior oracle state in checkpoint)')
+            if 'oracle_optimizer' in state and oracle_optimizer is not None:
+                try:
+                    oracle_optimizer.load_state_dict(state['oracle_optimizer'])
+                    logging.info('oracle optimizer: loaded from checkpoint')
+                except (ValueError, RuntimeError) as e:
+                    logging.warning(f'oracle optimizer: incompatible, reinitializing: {e}')
+            else:
+                logging.info('oracle optimizer: initialized from scratch')
     
     # Scheduler 重启设计（TRAIN-04 文档化）:
     # 从 checkpoint 恢复时，scheduler **不**从 state_dict 恢复，而是用当前
@@ -200,8 +215,13 @@ def train():
     # 注意：如果不修改 scheduler config 就重启训练，LR 曲线与中断前完全一致
     # （因为 offset=steps 使 _step_inner 计算出相同的 LR 值）。
     scheduler = LinearWarmUpCosineAnnealingLR(optimizer, offset=steps, **config['optim']['scheduler'])
+    oracle_scheduler = None
+    if oracle_enabled and oracle_optimizer is not None:
+        oracle_scheduler = LinearWarmUpCosineAnnealingLR(oracle_optimizer, offset=steps, **config['optim']['scheduler'])
 
     optimizer.zero_grad(set_to_none=True)
+    if oracle_optimizer is not None:
+        oracle_optimizer.zero_grad(set_to_none=True)
     mse = nn.MSELoss()
     ce = nn.CrossEntropyLoss()
 
@@ -485,16 +505,17 @@ def train():
                     o_dqn_loss = torch.tensor(0.0, device=device, dtype=torch.float32)
                     distill_loss = torch.tensor(0.0, device=device, dtype=torch.float32)
 
-                loss = sum((
+                student_loss = sum((
                     dqn_loss,
                     cql_loss * min_q_weight,
                     next_rank_loss * next_rank_weight,
                     ding_que_ce_loss * ding_que_ce_weight,
                     ding_que_dqn_ce_loss * ding_que_dqn_ce_weight,
                     opp_wait_loss * opp_wait_weight,
-                    o_dqn_loss * oracle_dqn_weight if oracle_enabled else 0,
                     distill_loss * oracle_distill_weight if oracle_enabled else 0,
                 ))
+                oracle_loss = o_dqn_loss * oracle_dqn_weight if oracle_enabled else torch.tensor(0.0)
+                loss = student_loss + oracle_loss
             scaler.scale(loss / opt_step_every).backward()
 
             with torch.inference_mode():
@@ -516,12 +537,22 @@ def train():
             if idx % opt_step_every == 0:
                 if max_grad_norm > 0:
                     scaler.unscale_(optimizer)
-                    params = chain.from_iterable(g['params'] for g in optimizer.param_groups)
-                    clip_grad_norm_(params, max_grad_norm)
+                    student_params = chain.from_iterable(g['params'] for g in optimizer.param_groups)
+                    clip_grad_norm_(student_params, max_grad_norm)
+                    if oracle_optimizer is not None:
+                        scaler.unscale_(oracle_optimizer)
+                        oracle_params = chain.from_iterable(g['params'] for g in oracle_optimizer.param_groups)
+                        clip_grad_norm_(oracle_params, max_grad_norm)
                 scaler.step(optimizer)
+                if oracle_optimizer is not None:
+                    scaler.step(oracle_optimizer)
                 scaler.update()
                 optimizer.zero_grad(set_to_none=True)
+                if oracle_optimizer is not None:
+                    oracle_optimizer.zero_grad(set_to_none=True)
                 scheduler.step()
+                if oracle_scheduler is not None:
+                    oracle_scheduler.step()
                 # Target Network 软更新: θ_target ← τ*θ + (1-τ)*θ_target
                 if target_network_enabled and steps % target_update_every == 0:
                     with torch.no_grad():
@@ -589,6 +620,8 @@ def train():
                 if oracle_enabled:
                     state['oracle_mortal'] = oracle_mortal.state_dict()
                     state['oracle_dqn'] = oracle_dqn.state_dict()
+                    if oracle_optimizer is not None:
+                        state['oracle_optimizer'] = oracle_optimizer.state_dict()
                 torch.save(state, state_file)
                 
                 # 每 test_every 步保存一个历史 checkpoint，与 test_play 同步
