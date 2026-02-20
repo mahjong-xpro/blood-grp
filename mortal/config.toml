@@ -152,10 +152,10 @@ ding_que_aux_scale = 0.02
 # 定缺 CE 监督 - AuxNet 分类头 (主)
 # 定缺已收敛 (CE=0.003)，降低权重减少对 Brain 的梯度干扰
 ding_que_ce_weight = 1.0  # 2.0 → 1.0 (580k, Phase 5)
-# 定缺 CE 监督 - DQN Q 值 CE: 抵抗蒸馏梯度对定缺 Q 值的冲突
-# 历史: 0 → 0.01 (659k 防漂移) → 0.1 (773k 对抗 distill 梯度)
-# 773k 时 distill_weight=0.1 使蒸馏梯度比 CE 强 350x，定缺 Q 值被 Oracle 拉偏
-ding_que_dqn_ce_weight = 0.1  # 0.01 → 0.1 (773k): 对抗蒸馏梯度冲突
+# 定缺 CE 监督 - DQN Q 值 CE: 防止定缺 Q 值漂移
+# 历史: 0 → 0.01 (659k 防漂移) → 0.1 (773k 对抗 distill) → 0.01 (ISSUE-1 已过滤定缺蒸馏)
+# ISSUE-1 fix 将定缺步排除蒸馏，无蒸馏梯度冲突，恢复防漂移水平
+ding_que_dqn_ce_weight = 0.01  # 0.1 → 0.01: ISSUE-1 已过滤定缺蒸馏，恢复防漂移水平
 
 # 对手等待预测: 预测 3 个对手的听牌 (81 = 3×27)
 opp_wait_enabled = true   # 开启对手听牌预测辅助任务
