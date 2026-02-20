@@ -177,12 +177,12 @@ update_every = 1          # 每 N 个 optimizer step 执行一次软更新
 # 通过 KL 散度蒸馏将 Oracle 策略传授给 Student（不完美信息）
 # 回滚至 760k: Oracle 从零开始，先自学再蒸馏
 # 历史: 0.0 (6c-1, 763-770k) → 0.1 (6c-2a, 770-777k 恶化) → 回滚 760k
-# 计划: distill=0.0 (Oracle 自学 5-10k) → 0.1 (观察稳定后)
+#   → 0.0 (760-800k Oracle 自学 40k 步) → 0.1 (~800k, oracle_dqn_loss 收敛 -11%)
 [oracle]
 enabled = true            # 回滚 760k 后重启 Phase 6c-1（Oracle 从零初始化）
 num_blocks = 15           # Oracle Brain 块数（完美信息任务更简单，比 Student 的 30 少）
 conv_channels = 192       # Oracle Brain 通道数
-distill_weight = 0.0      # 回滚: Oracle 先自学，待 oracle_dqn_loss 收敛后再开蒸馏
+distill_weight = 0.1      # Phase 6c-2a (~800k): Oracle 自学 40k 步，oracle_dqn_loss 0.231→0.205 (-11%)，开启轻量蒸馏
 distill_temperature = 2.0 # ISSUE-3 fix: 1.0→2.0 软化分布，传递 dark knowledge
 oracle_dqn_weight = 0.5   # ISSUE-2 fix: 1.0→0.5 减少 Oracle 梯度占比，缓解梯度竞争
 
