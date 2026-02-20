@@ -217,7 +217,7 @@ def train():
     scheduler = LinearWarmUpCosineAnnealingLR(optimizer, offset=steps, **config['optim']['scheduler'])
     oracle_scheduler = None
     if oracle_enabled and oracle_optimizer is not None:
-        oracle_scheduler = LinearWarmUpCosineAnnealingLR(oracle_optimizer, offset=steps, **config['optim']['scheduler'])
+        oracle_scheduler = LinearWarmUpCosineAnnealingLR(oracle_optimizer, offset=0, **config['optim']['scheduler'])
 
     optimizer.zero_grad(set_to_none=True)
     if oracle_optimizer is not None:
