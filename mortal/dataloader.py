@@ -315,7 +315,13 @@ class FileDatasetsIter(IterableDataset):
                 ranks_per_step = player_ranks[next_kyoku_idxs]
 
                 # step returns
-                if td_returns is not None:
+                # BUG-5 fix: TN 启用时提供原始 kyoku 奖励，γ^n 折扣和 λ 混合
+                # 由 train.py 处理，避免 dataloader 的 TD(λ) 衰减与 train.py 的
+                # λ 混合权重双重应用（(γλ)^n × λ 而非正确的 γ^n × λ）
+                tn_enabled_for_returns = config.get('target_network', {}).get('enabled', False)
+                if tn_enabled_for_returns:
+                    returns_per_step = kyoku_rewards[at_kyoku_np]
+                elif td_returns is not None:
                     returns_per_step = td_returns
                 else:
                     returns_per_step = kyoku_rewards[at_kyoku_np]

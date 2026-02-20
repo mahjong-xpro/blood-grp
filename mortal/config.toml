@@ -19,7 +19,7 @@ enable_compile = false
 
 # 训练参数
 batch_size = 2048  # Phase 6c: Oracle 新增 2 个模型，4096 会 OOM
-opt_step_every = 1
+opt_step_every = 2  # ISSUE-5 fix: 梯度累积 2 步，等效 batch_size=4096，降低梯度噪声
 
 # 保存和测试频率
 save_every = 1000
@@ -182,8 +182,8 @@ enabled = true            # Phase 6c-1 起启用
 num_blocks = 15           # Oracle Brain 块数（完美信息任务更简单，比 Student 的 30 少）
 conv_channels = 192       # Oracle Brain 通道数
 distill_weight = 0.1      # Phase 6c-2a: 轻量蒸馏开始
-distill_temperature = 1.0 # softmax 温度（越高分布越平滑，越低越尖锐）
-oracle_dqn_weight = 1.0   # Oracle 自身 DQN 损失权重
+distill_temperature = 2.0 # ISSUE-3 fix: 1.0→2.0 软化分布，传递 dark knowledge
+oracle_dqn_weight = 0.5   # ISSUE-2 fix: 1.0→0.5 减少 Oracle 梯度占比，缓解梯度竞争
 
 # Batch Normalization 冻结配置
 [freeze_bn]

@@ -392,11 +392,9 @@ def train():
                         torch.zeros_like(bd),
                     )
                 td1_target = ir + bd * v_next
-                td_lambda_enabled = config.get('env', {}).get('td_lambda_enabled', False)
-                if td_lambda_enabled:
-                    mc_target = returns.to(dtype=torch.float32, device=device)
-                else:
-                    mc_target = (gamma ** steps_to_done * returns).to(dtype=torch.float32, device=device)
+                # BUG-5 fix: dataloader 现在始终提供原始 kyoku 奖励（TN 启用时），
+                # 此处统一应用 γ^n 折扣，λ 仅作为 MC/TD1 混合权重（不再双重衰减）
+                mc_target = (gamma ** steps_to_done * returns).to(dtype=torch.float32, device=device)
                 td_lambda_val = config.get('env', {}).get('td_lambda', 1.0)
                 q_target = td_lambda_val * mc_target + (1.0 - td_lambda_val) * td1_target + ding_que_bonus
             else:
@@ -466,15 +464,23 @@ def train():
                     oracle_q = oracle_q_out[range(batch_size), actions]
                     o_dqn_loss = 0.5 * mse(oracle_q, q_target)
 
-                    # KL distillation: replace -inf with -1e9 to avoid NaN.
-                    # softmax(-inf)=0, log_softmax(-inf)=-inf → kl_div computes
-                    # 0 * (-inf - (-inf)) = 0 * NaN = NaN in IEEE 754.
-                    oracle_q_safe = oracle_q_out.masked_fill(~masks, -1e9)
-                    student_q_safe = q_out.masked_fill(~masks, -1e9)
-                    with torch.no_grad():
-                        oracle_policy = F.softmax(oracle_q_safe / oracle_distill_temp, dim=-1)
-                    student_log_policy = F.log_softmax(student_q_safe / oracle_distill_temp, dim=-1)
-                    distill_loss = F.kl_div(student_log_policy, oracle_policy, reduction='batchmean')
+                    # ISSUE-1 fix: 定缺步排除蒸馏。定缺步仅允许 action 31/32/33，
+                    # Oracle 无显式定缺 CE 监督，其定缺 Q 值不可靠，
+                    # 蒸馏会破坏 Student 已学好的定缺策略。
+                    is_ding_que_only = (masks[:, :31].sum(-1) == 0) & (masks[:, 34:].sum(-1) == 0)
+                    distill_select = ~is_ding_que_only
+
+                    if distill_select.any():
+                        # KL distillation: replace -inf with -1e9 to avoid NaN.
+                        d_masks = masks[distill_select]
+                        oracle_q_safe = oracle_q_out[distill_select].masked_fill(~d_masks, -1e9)
+                        student_q_safe = q_out[distill_select].masked_fill(~d_masks, -1e9)
+                        with torch.no_grad():
+                            oracle_policy = F.softmax(oracle_q_safe / oracle_distill_temp, dim=-1)
+                        student_log_policy = F.log_softmax(student_q_safe / oracle_distill_temp, dim=-1)
+                        distill_loss = F.kl_div(student_log_policy, oracle_policy, reduction='batchmean')
+                    else:
+                        distill_loss = torch.tensor(0.0, device=device, dtype=torch.float32)
                 else:
                     o_dqn_loss = torch.tensor(0.0, device=device, dtype=torch.float32)
                     distill_loss = torch.tensor(0.0, device=device, dtype=torch.float32)
