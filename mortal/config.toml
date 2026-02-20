@@ -175,13 +175,13 @@ update_every = 1          # 每 N 个 optimizer step 执行一次软更新
 # Oracle Guiding 配置 — 完美信息教师指导
 # Oracle 模型看到所有玩家手牌+牌墙（完美信息），学习理论最优策略
 # 通过 KL 散度蒸馏将 Oracle 策略传授给 Student（不完美信息）
-# Phase 6c-1: Oracle 先自学 (distill=0.0)，不向 Student 蒸馏
-# 后续 6c-2a/b/c 分阶段调大蒸馏: 0.0 → 0.1 → 0.3 → 0.5
+# Phase 6c-2a: 开始向 Student 蒸馏 (distill=0.1)
+# 历史: 0.0 (6c-1, 763-770k Oracle 自学) → 0.1 → 0.3 → 0.5
 [oracle]
-enabled = true            # Phase 6c-1: 启用 Oracle，先自学
+enabled = true            # Phase 6c-1 起启用
 num_blocks = 15           # Oracle Brain 块数（完美信息任务更简单，比 Student 的 30 少）
 conv_channels = 192       # Oracle Brain 通道数
-distill_weight = 0.0      # Phase 6c-1: 蒸馏关闭，Oracle 仅通过自身 DQN loss 学习
+distill_weight = 0.1      # Phase 6c-2a: 轻量蒸馏开始
 distill_temperature = 1.0 # softmax 温度（越高分布越平滑，越低越尖锐）
 oracle_dqn_weight = 1.0   # Oracle 自身 DQN 损失权重
 
