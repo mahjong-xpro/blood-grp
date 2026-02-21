@@ -1,0 +1,35 @@
+# Blood-v2 Stage 2: Competitive League (Self-Play)
+# Goal: Develop complex strategies through iterative self-improvement
+
+# Parallelism (8x 4090)
+num_gpus: 8
+num_workers: 128
+num_envs_per_worker: 32
+batch_size: 131072
+num_batches_per_epoch: 2
+ppo_epochs: 1
+
+# Learning
+learning_rate: 0.0003        # Lowered LR for stability
+lr_schedule: kl_adaptive_minibatch
+exploration_loss_coeff: 0.005 # Reduced exploration
+gamma: 0.998
+gae_lambda: 0.95
+
+# League (Enabled for diversity)
+league_enabled: true
+league_pool_dir: checkpoints/league/
+league_add_every: 100000
+opponent_mode: selfplay
+
+# Oracle & Aux (Teacher as a Guide)
+oracle_enabled: true
+oracle_distill_weight: 0.02   # Lower teacher influence, focus on game win reward
+aux_opp_waits_weight: 0.1
+suit_augment_prob: 0.5
+
+# Model
+blood_obs_channels: 384
+blood_conv_channels: 256
+blood_num_res_blocks: 20
+blood_encoder_out_dim: 1024

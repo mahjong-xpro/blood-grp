@@ -1,0 +1,65 @@
+# Phase 3: Elite — fine-tuning for superhuman play
+# Duration: ~10M+ env steps
+# Goal: maximize Elo through refined self-play + search
+# Prerequisite: resume from competitive checkpoint
+
+# Sample Factory
+num_workers: 8
+num_envs_per_worker: 32
+batch_size: 16384
+num_batches_per_epoch: 8
+ppo_clip_ratio: 0.05
+max_grad_norm: 0.5
+gamma: 0.999
+gae_lambda: 0.97
+learning_rate: 1e-4
+lr_schedule: kl_adaptive_minibatch
+exploration_loss_coeff: 0.002
+train_for_env_steps: 10000000
+
+# Environment
+env: blood_mahjong
+encoder_custom: blood_encoder
+experiment: blood_v2_elite
+
+# Model
+blood_obs_channels: 385
+blood_conv_channels: 192
+blood_num_res_blocks: 30
+blood_encoder_out_dim: 1024
+
+# Opponents: neural self-play via league
+opponent_mode: selfplay
+opponent_refresh_every: 10
+
+# Oracle distillation — minimal weight; student should surpass oracle
+oracle_enabled: true
+oracle_num_blocks: 25
+oracle_distill_weight: 0.01
+oracle_distill_temperature: 1.5
+
+# League — very frequent snapshots for fine-grained progression
+league_enabled: true
+league_pool_dir: checkpoints/league/
+league_add_every: 25000
+league_newest_weight: 5.0
+
+# No reward shaping
+warmup_reward_shaping: false
+
+# Data augmentation
+suit_augment_prob: 0.5
+
+# Auxiliary tasks — reduced weight as model matures
+aux_dingque_weight: 0.5
+aux_opp_waits_weight: 0.05
+
+# RTPA — enable runtime policy adaptation during evaluation
+rtpa_enabled: true
+rtpa_attack_temp: 0.8
+rtpa_defend_temp: 1.5
+
+# ISMCE — enable during evaluation (not training)
+ismce_enabled: true
+ismce_num_worlds: 64
+ismce_rollout_depth: 4

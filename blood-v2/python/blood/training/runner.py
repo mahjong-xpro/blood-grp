@@ -1,0 +1,141 @@
+"""Main training entry point for Sample Factory v2."""
+
+import sys
+import logging
+
+import torch
+from sample_factory.cfg.arguments import parse_full_cfg, parse_sf_args
+from sample_factory.envs.env_utils import register_env
+from sample_factory.train import make_runner
+from sample_factory.algo.learning.learner import Learner
+
+from blood.cfg import add_blood_args, blood_override_defaults
+from blood.env.blood_env import BloodMahjongEnv
+from blood.model.factory import register_blood_model
+from blood.training.callbacks import BloodObserver
+
+log = logging.getLogger(__name__)
+
+
+def make_blood_env(full_env_name, cfg=None, env_config=None, render_mode=None):
+    opp_mode = getattr(cfg, "opponent_mode", "rulebot")
+    if opp_mode == "selfplay":
+        from blood.env.selfplay_env import SelfPlayEnv
+        return SelfPlayEnv(cfg=cfg)
+    return BloodMahjongEnv(cfg=cfg)
+
+
+def register_blood_components():
+    register_env("blood_mahjong", make_blood_env)
+    register_blood_model()
+
+
+def _patch_learner():
+    """Inject auxiliary + oracle distillation losses into the SF2 training loop.
+
+    SF2 training calls forward_head → forward_core → forward_tail (never forward()),
+    so we compute extra losses here using the encoder output cached by forward_head.
+
+    Losses injected:
+    1. AuxHead: opponent dingque + waiting tiles prediction (CE + BCE)
+    2. Oracle distillation: KL(student || oracle) using perfect-info teacher
+       - Oracle CE is weighted by advantages to avoid circular dependency
+       - Student distillation uses KL divergence against oracle (detached)
+    """
+    _original = Learner._calculate_losses
+
+    def _patched(self, mb, num_invalids):
+        result = _original(self, mb, num_invalids)
+        action_dist, policy_loss, exploration_loss, kl_old, kl_loss, value_loss, summaries = result
+
+        ac = self.actor_critic
+        features = getattr(ac, "_cached_encoder_out", None)
+        obs = getattr(ac, "_cached_obs", None)
+
+        if features is None or obs is None or not ac.training:
+            return result
+
+        cache_gen = getattr(ac, "_cache_gen", 0)
+        loss_gen = getattr(ac, "_loss_gen", 0)
+        if cache_gen <= loss_gen:
+            log.warning("Stale encoder cache detected (gen %d <= %d); skipping aux losses", cache_gen, loss_gen)
+            return result
+        ac._loss_gen = cache_gen
+
+        device = value_loss.device if hasattr(value_loss, 'device') else 'cpu'
+        extra_loss = torch.zeros(1, device=device)
+
+        if getattr(ac, "_aux_enabled", False):
+            dq_labels = obs.get("dq_labels")
+            ow_labels = obs.get("ow_labels")
+            if dq_labels is not None and ow_labels is not None:
+                aux_loss = ac.aux_head.loss(
+                    features, dq_labels.long(), ow_labels,
+                    dq_weight=ac.dq_weight, ow_weight=ac.ow_weight,
+                )
+                extra_loss = extra_loss + aux_loss
+                summaries["aux_loss"] = aux_loss.detach()
+
+        if getattr(ac, "oracle_enabled", False):
+            oracle_obs = obs.get("oracle_obs")
+            action_mask = obs.get("action_mask")
+            if oracle_obs is not None:
+                oracle_logits = ac.oracle_encoder(oracle_obs)
+
+                student_logits = getattr(action_dist, 'logits', None)
+                if student_logits is None:
+                    log.warning("Cannot find 'logits' attribute on action_dist; skipping distillation")
+                else:
+                    mask_bool = action_mask.bool() if action_mask is not None else None
+                    distill_loss = ac.distill_loss_fn(student_logits, oracle_logits.detach(), mask_bool)
+                    extra_loss = extra_loss + ac.distill_weight * distill_loss
+                    summaries["distill_loss"] = distill_loss.detach()
+
+                oracle_ce_weight = getattr(ac, "oracle_ce_weight", 0.1)
+                advantages = getattr(mb, "advantages", None)
+                oracle_logits_masked = oracle_logits.clone()
+                if action_mask is not None:
+                    oracle_logits_masked = oracle_logits_masked.masked_fill(
+                        ~action_mask.bool(), torch.finfo(oracle_logits.dtype).min
+                    )
+                oracle_ce_raw = torch.nn.functional.cross_entropy(
+                    oracle_logits_masked,
+                    mb.actions.long(),
+                    reduction="none",
+                )
+                if advantages is not None:
+                    adv_weights = torch.clamp(advantages.detach(), min=0.0)
+                    adv_weights = adv_weights / (adv_weights.mean() + 1e-8)
+                    oracle_ce = (oracle_ce_raw * adv_weights).mean()
+                else:
+                    oracle_ce = oracle_ce_raw.mean()
+                extra_loss = extra_loss + oracle_ce_weight * oracle_ce
+                summaries["oracle_ce"] = oracle_ce.detach()
+
+        policy_loss = policy_loss + extra_loss.squeeze()
+        return action_dist, policy_loss, exploration_loss, kl_old, kl_loss, value_loss, summaries
+
+    Learner._calculate_losses = _patched
+
+
+def run_training():
+    register_blood_components()
+    _patch_learner()
+
+    parser, partial_cfg = parse_sf_args(evaluation=False)
+    add_blood_args(parser)
+    blood_override_defaults(parser)
+    cfg = parse_full_cfg(parser)
+
+    cfg, runner = make_runner(cfg)
+
+    observer = BloodObserver(cfg)
+    runner.register_observer(observer)
+
+    runner.init()
+    status = runner.run()
+    return status
+
+
+if __name__ == "__main__":
+    sys.exit(run_training())

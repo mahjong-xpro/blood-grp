@@ -1,0 +1,55 @@
+# Phase 1: Warmup — learn basic mahjong from RuleBot opponents
+# Duration: ~500K env steps
+# Goal: learn dingque, basic discard, simple winning patterns
+
+# Sample Factory
+num_workers: 8
+num_envs_per_worker: 32
+batch_size: 4096
+num_batches_per_epoch: 2
+ppo_clip_ratio: 0.2
+max_grad_norm: 1.0
+gamma: 0.99
+gae_lambda: 0.95
+learning_rate: 5e-4
+lr_schedule: kl_adaptive_minibatch
+exploration_loss_coeff: 0.01
+train_for_env_steps: 500000
+
+# Environment
+env: blood_mahjong
+encoder_custom: blood_encoder
+experiment: blood_v2_warmup
+
+# Model
+blood_obs_channels: 385
+blood_conv_channels: 192
+blood_num_res_blocks: 30
+blood_encoder_out_dim: 1024
+
+# Opponents: RuleBot during warmup
+opponent_mode: rulebot
+
+# Oracle distillation — enabled from the start
+oracle_enabled: true
+oracle_num_blocks: 25
+oracle_distill_weight: 0.1
+oracle_distill_temperature: 3.0
+
+# League — collect snapshots but don't use them yet
+league_enabled: true
+league_pool_dir: checkpoints/league/
+league_add_every: 100000
+league_newest_weight: 3.0
+
+# Reward shaping — extra signals to accelerate early learning
+warmup_reward_shaping: true
+warmup_dq_bonus: 0.05
+warmup_win_bonus: 0.1
+
+# Data augmentation — full strength
+suit_augment_prob: 0.5
+
+# Auxiliary tasks — higher weight during warmup for faster dingque learning
+aux_dingque_weight: 2.0
+aux_opp_waits_weight: 0.2

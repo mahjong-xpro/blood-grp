@@ -1,0 +1,917 @@
+use crate::consts::*;
+use crate::tile::*;
+use crate::hand::*;
+use crate::algo::agari::{WinContext, FanConfig, calc_fan};
+use crate::algo::point::calc_score;
+use crate::algo::shanten::{calc_shanten, waiting_tiles};
+use super::player::PlayerState;
+use super::action::{Action, ActionCandidate};
+use super::event::Event;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Phase {
+    DingQue,
+    SelfCheck,
+    KanSelect,
+    Discard,
+    Reaction,
+    Scoring,
+    Done,
+}
+
+/// Full board state for a single game of Bloody Battle Mahjong
+#[derive(Debug, Clone)]
+pub struct BoardState {
+    pub phase: Phase,
+    pub players: [PlayerState; NUM_PLAYERS],
+    pub wall: Vec<Tile>,
+    pub wall_idx: usize,
+    pub wall_back_idx: usize, // for kan draws from back
+    pub dealer: usize,
+    pub current_player: usize,
+    pub turn_count: u16,
+    pub ding_que_done: [bool; NUM_PLAYERS],
+    pub win_count: u8,
+
+    // Last discard tracking
+    pub last_discard: Option<(usize, Tile)>,
+    pub last_discard_is_kan: bool,
+
+    // Reaction collection
+    pub reactions: [Option<Action>; NUM_PLAYERS],
+    pub reaction_pending: [bool; NUM_PLAYERS],
+
+    // Event log
+    pub events: Vec<Event>,
+
+    // Fan config
+    pub fan_config: FanConfig,
+
+    // Turn 0 tracking for tianhu/dihu
+    pub dahai_count: u16,
+}
+
+impl BoardState {
+    pub fn new(seed: u64) -> Self {
+        let mut rng = fastrand::Rng::with_seed(seed);
+        let wall = generate_deck(&mut rng);
+        let dealer = (seed % NUM_PLAYERS as u64) as usize;
+
+        let mut state = Self {
+            phase: Phase::DingQue,
+            players: std::array::from_fn(|_| PlayerState::new()),
+            wall,
+            wall_idx: 0,
+            wall_back_idx: 0,
+            dealer,
+            current_player: dealer,
+            turn_count: 0,
+            ding_que_done: [false; NUM_PLAYERS],
+            win_count: 0,
+            last_discard: None,
+            last_discard_is_kan: false,
+            reactions: [None; NUM_PLAYERS],
+            reaction_pending: [false; NUM_PLAYERS],
+            events: Vec::new(),
+            fan_config: FanConfig::default(),
+            dahai_count: 0,
+        };
+
+        // Deal 13 tiles to each player
+        for p in 0..NUM_PLAYERS {
+            for _ in 0..HAND_SIZE {
+                let tile = state.draw_from_wall();
+                add_tile(&mut state.players[p].hand, tile);
+                state.players[p].see_tile(tile);
+            }
+        }
+        // Dealer gets 14th tile
+        let extra = state.draw_from_wall();
+        add_tile(&mut state.players[dealer].hand, extra);
+        state.players[dealer].last_drawn_tile = Some(extra);
+        state.players[dealer].see_tile(extra);
+
+        state.wall_back_idx = state.wall.len();
+
+        state
+    }
+
+    pub fn wall_remaining(&self) -> usize {
+        if self.wall_back_idx > self.wall_idx {
+            self.wall_back_idx - self.wall_idx
+        } else {
+            0
+        }
+    }
+
+    fn draw_from_wall(&mut self) -> Tile {
+        debug_assert!(self.wall_idx < self.wall.len(), "draw_from_wall: wall exhausted");
+        let t = self.wall[self.wall_idx];
+        self.wall_idx += 1;
+        t
+    }
+
+    fn draw_from_back(&mut self) -> Tile {
+        debug_assert!(self.wall_back_idx > self.wall_idx, "draw_from_back: wall exhausted");
+        self.wall_back_idx -= 1;
+        self.wall[self.wall_back_idx]
+    }
+
+    pub fn is_done(&self) -> bool {
+        self.phase == Phase::Done
+    }
+
+    pub fn active_player_count(&self) -> usize {
+        self.players.iter().filter(|p| !p.has_won).count()
+    }
+
+    /// Get the decision request for the current state
+    pub fn get_decision_request(&self, player_id: usize) -> Option<ActionCandidate> {
+        match self.phase {
+            Phase::DingQue => {
+                if !self.ding_que_done[player_id] {
+                    Some(ActionCandidate {
+                        can_ding_que: true,
+                        ..Default::default()
+                    })
+                } else {
+                    None
+                }
+            }
+            Phase::SelfCheck if self.current_player == player_id => {
+                self.get_self_check_actions(player_id)
+            }
+            Phase::KanSelect if self.current_player == player_id => {
+                let p = &self.players[player_id];
+                let ankan = p.can_ankan_tiles();
+                let kakan = p.can_kakan_tiles();
+                let mut kan_tiles = ankan;
+                kan_tiles.extend(kakan);
+                Some(ActionCandidate {
+                    at_kan_select: true,
+                    kan_tiles,
+                    ..Default::default()
+                })
+            }
+            Phase::Discard if self.current_player == player_id => {
+                let p = &self.players[player_id];
+                let candidates = p.discard_candidates();
+                Some(ActionCandidate {
+                    can_discard: true,
+                    discard_tiles: candidates,
+                    ..Default::default()
+                })
+            }
+            Phase::Reaction if self.reaction_pending[player_id] => {
+                self.get_reaction_actions(player_id)
+            }
+            _ => None,
+        }
+    }
+
+    fn get_self_check_actions(&self, player_id: usize) -> Option<ActionCandidate> {
+        let p = &self.players[player_id];
+        if p.has_won { return None; }
+        let shanten = calc_shanten(&p.hand, p.melds.len());
+
+        let mut candidate = ActionCandidate::default();
+
+        // Tsumo check
+        if shanten == -1 && p.ding_que_completed() {
+            candidate.can_agari = true;
+        }
+
+        // AnKan check
+        let ankan_tiles = p.can_ankan_tiles();
+        let kakan_tiles = p.can_kakan_tiles();
+
+        if !ankan_tiles.is_empty() || !kakan_tiles.is_empty() {
+            let mut kan_tiles = ankan_tiles;
+            kan_tiles.extend(kakan_tiles);
+            candidate.can_kan = true;
+            candidate.kan_tiles = kan_tiles;
+        }
+
+        // If can agari or kan, add pass option too (to decline and just discard)
+        if candidate.can_agari || candidate.can_kan {
+            candidate.can_pass = true;
+            return Some(candidate);
+        }
+
+        // Otherwise go straight to discard
+        None
+    }
+
+    fn get_reaction_actions(&self, player_id: usize) -> Option<ActionCandidate> {
+        let (discarder, tile) = self.last_discard?;
+        if discarder == player_id { return None; }
+        let p = &self.players[player_id];
+        if p.has_won { return None; }
+
+        let mut candidate = ActionCandidate {
+            can_pass: true,
+            ..Default::default()
+        };
+
+        // Ron check
+        if p.ding_que_completed() {
+            let mut h = p.hand;
+            add_tile(&mut h, tile);
+            if is_complete(&h, p.melds.len()) {
+                let waits = waiting_tiles(&p.hand, p.melds.len());
+                let is_perm_furiten = p.is_permanent_furiten(&waits);
+
+                if !is_perm_furiten {
+                    if let Some(passed_fan) = p.furiten_passed_ron_fan {
+                        // 过手加番: even with temporary furiten, allow ron if fan increased
+                        let ctx = self.make_win_context(player_id, tile, true);
+                        if let Some(result) = calc_fan(&ctx) {
+                            if result.fan > passed_fan {
+                                candidate.can_agari = true;
+                            }
+                        }
+                    } else if !p.temporary_furiten {
+                        candidate.can_agari = true;
+                    }
+                }
+            }
+        }
+
+        // Pon check
+        if p.hand[tile as usize] >= 2 {
+            if let Some(suit) = p.ding_que {
+                if Suit::from_tile(tile) != suit {
+                    candidate.can_pon = true;
+                }
+            } else {
+                candidate.can_pon = true;
+            }
+        }
+
+        // MinKan check
+        if p.hand[tile as usize] >= 3 {
+            if let Some(suit) = p.ding_que {
+                if Suit::from_tile(tile) != suit {
+                    candidate.can_kan = true;
+                    candidate.kan_tiles = vec![tile];
+                }
+            } else {
+                candidate.can_kan = true;
+                candidate.kan_tiles = vec![tile];
+            }
+        }
+
+        if candidate.can_agari || candidate.can_pon || candidate.can_kan {
+            Some(candidate)
+        } else {
+            None
+        }
+    }
+
+    /// Apply an action from a player
+    pub fn apply_action(&mut self, player_id: usize, action: Action) {
+        match self.phase {
+            Phase::DingQue => self.apply_ding_que(player_id, action),
+            Phase::SelfCheck => self.apply_self_check(player_id, action),
+            Phase::KanSelect => self.apply_kan_select(player_id, action),
+            Phase::Discard => self.apply_discard(player_id, action),
+            Phase::Reaction => self.apply_reaction(player_id, action),
+            _ => {}
+        }
+    }
+
+    fn apply_ding_que(&mut self, player_id: usize, action: Action) {
+        if let Action::DingQue(suit) = action {
+            self.players[player_id].ding_que = Some(suit);
+            self.ding_que_done[player_id] = true;
+            self.events.push(Event::DingQue { player: player_id, suit });
+
+            if self.ding_que_done.iter().all(|&d| d) {
+                self.current_player = self.dealer;
+                self.phase = Phase::SelfCheck;
+                if self.get_self_check_actions(self.dealer).is_none() {
+                    self.phase = Phase::Discard;
+                }
+            }
+        }
+    }
+
+    fn apply_self_check(&mut self, player_id: usize, action: Action) {
+        match action {
+            Action::Agari => {
+                let tile = self.players[player_id].last_drawn_tile
+                    .expect("tsumo declared but no drawn tile recorded");
+                self.events.push(Event::Tsumo { player: player_id, tile });
+                self.process_win(player_id, None, tile);
+            }
+            Action::Kan => {
+                let p = &self.players[player_id];
+                let ankan = p.can_ankan_tiles();
+                let kakan = p.can_kakan_tiles();
+                let mut all_kan: Vec<Tile> = ankan.clone();
+                all_kan.extend(&kakan);
+
+                if all_kan.len() == 1 {
+                    self.execute_kan(player_id, all_kan[0], ankan.contains(&all_kan[0]));
+                } else if all_kan.len() > 1 {
+                    self.phase = Phase::KanSelect;
+                } else {
+                    self.phase = Phase::Discard;
+                }
+            }
+            Action::Pass | Action::Discard(_) => {
+                self.phase = Phase::Discard;
+                if let Action::Discard(t) = action {
+                    self.do_discard(player_id, t);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn apply_kan_select(&mut self, player_id: usize, action: Action) {
+        if let Action::Discard(tile) = action {
+            let p = &self.players[player_id];
+            let ankan = p.can_ankan_tiles();
+            let kakan = p.can_kakan_tiles();
+            let is_ankan = ankan.contains(&tile);
+            let is_kakan = kakan.contains(&tile);
+            if is_ankan || is_kakan {
+                self.execute_kan(player_id, tile, is_ankan);
+                return;
+            }
+        }
+        // Invalid action or unrecognized tile — fall back to discard phase
+        self.phase = Phase::Discard;
+    }
+
+    fn execute_kan(&mut self, player_id: usize, tile: Tile, is_ankan: bool) {
+        let p = &mut self.players[player_id];
+
+        if is_ankan {
+            // AnKan
+            remove_tile(&mut p.hand, tile);
+            remove_tile(&mut p.hand, tile);
+            remove_tile(&mut p.hand, tile);
+            remove_tile(&mut p.hand, tile);
+            p.melds.push(MeldType::AnKan(tile));
+
+            for i in 0..NUM_PLAYERS {
+                if i != player_id && !self.players[i].has_won {
+                    for _ in 0..4 {
+                        self.players[i].see_tile(tile);
+                    }
+                }
+            }
+
+            self.events.push(Event::AnKan { player: player_id, tile });
+
+            // AnKan payment: each non-winner pays 2000
+            for i in 0..NUM_PLAYERS {
+                if i != player_id && !self.players[i].has_won {
+                    self.players[i].score -= 2000;
+                    self.players[player_id].score += 2000;
+                    self.events.push(Event::KanPayment {
+                        payer: i, receiver: player_id, amount: 2000,
+                    });
+                }
+            }
+        } else {
+            // KaKan
+            let drawn = p.last_drawn_tile;
+            let is_jishiyu = drawn == Some(tile);
+
+            remove_tile(&mut p.hand, tile);
+            // Convert Pon to KaKan
+            if let Some(pos) = p.melds.iter().position(|m| matches!(m, MeldType::Pon(t) if *t == tile)) {
+                p.melds[pos] = MeldType::KaKan(tile);
+            }
+
+            for i in 0..NUM_PLAYERS {
+                if i != player_id && !self.players[i].has_won {
+                    self.players[i].see_tile(tile);
+                }
+            }
+
+            self.events.push(Event::KaKan { player: player_id, tile, is_jishiyu });
+
+            // KaKan payment: 及时雨 only
+            let mut jishiyu_paid = false;
+            if is_jishiyu {
+                jishiyu_paid = true;
+                for i in 0..NUM_PLAYERS {
+                    if i != player_id && !self.players[i].has_won {
+                        self.players[i].score -= 1000;
+                        self.players[player_id].score += 1000;
+                        self.events.push(Event::KanPayment {
+                            payer: i, receiver: player_id, amount: 1000,
+                        });
+                    }
+                }
+            }
+
+            // Chankan: other players can ron the kakan tile
+            let chankan_winners = self.check_chankan(player_id, tile);
+            if !chankan_winners.is_empty() {
+                // Revert kakan → restore to pon
+                if let Some(pos) = self.players[player_id].melds.iter().position(
+                    |m| matches!(m, MeldType::KaKan(t) if *t == tile)
+                ) {
+                    self.players[player_id].melds[pos] = MeldType::Pon(tile);
+                }
+                add_tile(&mut self.players[player_id].hand, tile);
+
+                // Refund jishiyu payment if paid
+                if jishiyu_paid {
+                    for i in 0..NUM_PLAYERS {
+                        if i != player_id && !self.players[i].has_won {
+                            self.players[i].score += 1000;
+                            self.players[player_id].score -= 1000;
+                        }
+                    }
+                }
+
+                for &winner in &chankan_winners {
+                    self.events.push(Event::Ron { player: winner, from: player_id, tile });
+                    self.process_chankan_win(winner, player_id, tile);
+                }
+
+                if self.win_count >= 3 {
+                    self.phase = Phase::Scoring;
+                } else {
+                    // Kakan player has the tile restored to hand, needs to discard
+                    self.current_player = player_id;
+                    self.phase = Phase::Discard;
+                }
+                return;
+            }
+        }
+
+        // Draw from back of wall
+        if self.wall_remaining() > 0 {
+            let new_tile = self.draw_from_back();
+            let p = &mut self.players[player_id];
+            add_tile(&mut p.hand, new_tile);
+            p.last_drawn_tile = Some(new_tile);
+            p.is_rinshan = true;
+            p.see_tile(new_tile);
+
+            // Clear temporary furiten on hand change
+            p.temporary_furiten = false;
+            p.furiten_passed_ron_fan = None;
+
+            self.phase = Phase::SelfCheck;
+        } else {
+            self.phase = Phase::Scoring;
+        }
+    }
+
+    fn apply_discard(&mut self, player_id: usize, action: Action) {
+        if let Action::Discard(tile) = action {
+            self.do_discard(player_id, tile);
+        }
+    }
+
+    fn do_discard(&mut self, player_id: usize, tile: Tile) {
+        let p = &mut self.players[player_id];
+        let was_rinshan = p.is_rinshan;
+        let is_tsumogiri = p.last_drawn_tile == Some(tile);
+
+        remove_tile(&mut p.hand, tile);
+        p.discards.push(tile);
+        p.discard_history.push(tile);
+        p.tsumogiri.push(is_tsumogiri);
+        p.last_drawn_tile = None;
+        p.is_rinshan = false;
+
+        for i in 0..NUM_PLAYERS {
+            if i != player_id && !self.players[i].has_won {
+                self.players[i].see_tile(tile);
+            }
+        }
+
+        self.last_discard = Some((player_id, tile));
+        self.last_discard_is_kan = was_rinshan;
+        self.dahai_count += 1;
+
+        self.events.push(Event::Discard {
+            player: player_id,
+            tile,
+            is_tsumogiri,
+        });
+
+        // Set up reaction phase
+        self.phase = Phase::Reaction;
+        self.reactions = [None; NUM_PLAYERS];
+        self.reaction_pending = [false; NUM_PLAYERS];
+
+        let mut any_can_react = false;
+        for i in 0..NUM_PLAYERS {
+            if i == player_id || self.players[i].has_won { continue; }
+            if self.get_reaction_actions(i).is_some() {
+                self.reaction_pending[i] = true;
+                any_can_react = true;
+            }
+        }
+
+        if !any_can_react {
+            self.resolve_reactions();
+        }
+    }
+
+    fn apply_reaction(&mut self, player_id: usize, action: Action) {
+        self.reactions[player_id] = Some(action);
+        self.reaction_pending[player_id] = false;
+
+        // If action is Pass, set temporary furiten for this player
+        if action == Action::Pass {
+            if let Some((_, tile)) = self.last_discard {
+                let p = &self.players[player_id];
+                let shanten = calc_shanten(&p.hand, p.melds.len());
+                if shanten == 0 {
+                    let waits = waiting_tiles(&p.hand, p.melds.len());
+                    if waits.contains(&tile) {
+                        // Passed on a winning tile → temporary furiten
+                        self.players[player_id].temporary_furiten = true;
+                        // Record fan for 过手加番
+                        let ctx = self.make_win_context(player_id, tile, true);
+                        if let Some(result) = calc_fan(&ctx) {
+                            self.players[player_id].furiten_passed_ron_fan = Some(result.fan);
+                        }
+                    }
+                }
+            }
+        }
+
+        if self.reaction_pending.iter().all(|&p| !p) {
+            self.resolve_reactions();
+        }
+    }
+
+    fn resolve_reactions(&mut self) {
+        let (discarder, tile) = match self.last_discard {
+            Some(d) => d,
+            None => { self.advance_to_next_draw(); return; }
+        };
+
+        // Priority: Ron > Pon/Kan > Pass
+        let mut ron_players = Vec::new();
+        let mut pon_player = None;
+        let mut kan_player = None;
+
+        for i in 0..NUM_PLAYERS {
+            if let Some(action) = self.reactions[i] {
+                match action {
+                    Action::Agari => ron_players.push(i),
+                    Action::Pon if pon_player.is_none() => pon_player = Some(i),
+                    Action::Kan if kan_player.is_none() => kan_player = Some(i),
+                    _ => {}
+                }
+            }
+        }
+
+        if !ron_players.is_empty() {
+            for &winner in &ron_players {
+                self.events.push(Event::Ron { player: winner, from: discarder, tile });
+                self.process_win(winner, Some(discarder), tile);
+            }
+            if self.win_count >= 3 {
+                self.phase = Phase::Scoring;
+                return;
+            }
+            // Per rules: advance from the farthest winner's seat (in turn order from discarder)
+            let last_winner = ron_players.iter()
+                .max_by_key(|&&w| (w + NUM_PLAYERS - discarder) % NUM_PLAYERS)
+                .copied().unwrap();
+            self.current_player = last_winner;
+            self.advance_to_next_draw();
+        } else if let Some(ponner) = pon_player {
+            self.execute_pon(ponner, discarder, tile);
+        } else if let Some(kanner) = kan_player {
+            self.execute_minkan(kanner, discarder, tile);
+        } else {
+            self.advance_to_next_draw();
+        }
+    }
+
+    fn execute_pon(&mut self, player_id: usize, from: usize, tile: Tile) {
+        let p = &mut self.players[player_id];
+        remove_tile(&mut p.hand, tile);
+        remove_tile(&mut p.hand, tile);
+        p.melds.push(MeldType::Pon(tile));
+        p.temporary_furiten = false;
+        p.furiten_passed_ron_fan = None;
+
+        // Remove tile from discarder's discard pile (it's been claimed)
+        if let Some(pos) = self.players[from].discards.iter().rposition(|&t| t == tile) {
+            self.players[from].discards.remove(pos);
+            self.players[from].tsumogiri.remove(pos);
+        }
+
+        for i in 0..NUM_PLAYERS {
+            if i != player_id && !self.players[i].has_won {
+                self.players[i].see_tile(tile);
+                self.players[i].see_tile(tile);
+            }
+        }
+
+        self.events.push(Event::Pon { player: player_id, from, tile });
+        self.current_player = player_id;
+        self.phase = Phase::Discard;
+    }
+
+    fn execute_minkan(&mut self, player_id: usize, from: usize, tile: Tile) {
+        let p = &mut self.players[player_id];
+        remove_tile(&mut p.hand, tile);
+        remove_tile(&mut p.hand, tile);
+        remove_tile(&mut p.hand, tile);
+        p.melds.push(MeldType::MinKan(tile));
+
+        // Remove from discard pile
+        if let Some(pos) = self.players[from].discards.iter().rposition(|&t| t == tile) {
+            self.players[from].discards.remove(pos);
+            self.players[from].tsumogiri.remove(pos);
+        }
+
+        for i in 0..NUM_PLAYERS {
+            if i != player_id && !self.players[i].has_won {
+                self.players[i].see_tile(tile);
+                self.players[i].see_tile(tile);
+                self.players[i].see_tile(tile);
+            }
+        }
+
+        self.events.push(Event::MinKan { player: player_id, from, tile });
+
+        // MinKan payment: discarder pays 2000
+        self.players[from].score -= 2000;
+        self.players[player_id].score += 2000;
+        self.events.push(Event::KanPayment {
+            payer: from, receiver: player_id, amount: 2000,
+        });
+
+        // Draw from back
+        if self.wall_remaining() > 0 {
+            let new_tile = self.draw_from_back();
+            let p = &mut self.players[player_id];
+            add_tile(&mut p.hand, new_tile);
+            p.last_drawn_tile = Some(new_tile);
+            p.is_rinshan = true;
+            p.see_tile(new_tile);
+
+            // Clear temporary furiten on hand change
+            p.temporary_furiten = false;
+            p.furiten_passed_ron_fan = None;
+
+            self.current_player = player_id;
+            self.phase = Phase::SelfCheck;
+        } else {
+            self.phase = Phase::Scoring;
+        }
+    }
+
+    fn process_win(&mut self, winner: usize, loser: Option<usize>, winning_tile: Tile) {
+        let ctx = self.make_win_context(winner, winning_tile, loser.is_some());
+
+        let Some(result) = calc_fan(&ctx) else { return; };
+        let score = calc_score(result.fan);
+
+        match loser {
+            Some(from) => {
+                self.players[from].score -= score;
+                self.players[winner].score += score;
+            }
+            None => {
+                for i in 0..NUM_PLAYERS {
+                    if i != winner && !self.players[i].has_won {
+                        self.players[i].score -= score;
+                        self.players[winner].score += score;
+                    }
+                }
+            }
+        }
+
+        self.players[winner].has_won = true;
+        self.win_count += 1;
+
+        if self.win_count >= 3 {
+            self.phase = Phase::Scoring;
+        } else if loser.is_none() {
+            self.advance_to_next_draw();
+        }
+    }
+
+    fn advance_to_next_draw(&mut self) {
+        let mut next = (self.current_player + 1) % NUM_PLAYERS;
+        for _ in 0..NUM_PLAYERS {
+            if !self.players[next].has_won {
+                break;
+            }
+            next = (next + 1) % NUM_PLAYERS;
+        }
+        if self.players[next].has_won {
+            self.phase = Phase::Scoring;
+            return;
+        }
+
+        if self.wall_remaining() == 0 {
+            self.phase = Phase::Scoring;
+            return;
+        }
+
+        // Draw tile
+        let tile = self.draw_from_wall();
+        let p = &mut self.players[next];
+        add_tile(&mut p.hand, tile);
+        p.last_drawn_tile = Some(tile);
+        p.is_rinshan = false;
+        p.see_tile(tile);
+        p.temporary_furiten = false;
+        p.furiten_passed_ron_fan = None;
+
+        self.events.push(Event::Draw { player: next, tile });
+        self.current_player = next;
+        self.turn_count += 1;
+        self.phase = Phase::SelfCheck;
+
+        // Check if self-check has any special actions, otherwise go to discard
+        if self.get_self_check_actions(next).is_none() {
+            self.phase = Phase::Discard;
+        }
+    }
+
+    fn make_win_context(&self, player_id: usize, winning_tile: Tile, is_ron: bool) -> WinContext {
+        let p = &self.players[player_id];
+        let mut tehai = p.hand;
+        if is_ron {
+            add_tile(&mut tehai, winning_tile);
+        }
+        WinContext {
+            tehai,
+            melds: p.melds.clone(),
+            winning_tile,
+            is_ron,
+            ding_que: p.ding_que,
+            is_after_kan: p.is_rinshan,
+            is_kan_discard: self.last_discard_is_kan,
+            is_chankan: false,
+            is_haidi: self.wall_remaining() == 0,
+            is_tianhu: !is_ron && self.dahai_count == 0 && player_id == self.dealer,
+            is_dihu: is_ron && self.dahai_count == 1 && self.last_discard.map_or(false, |(d, _)| d == self.dealer),
+            exclude_gen_tile: None,
+            fan_config: self.fan_config.clone(),
+        }
+    }
+
+    /// End-of-game scoring: 查花猪 + 查大叫
+    pub fn finalize_scoring(&mut self) {
+        // 查花猪: players who haven't completed ding que pay max hand to each tenpai player
+        let mut hua_zhu = Vec::new(); // players with ding que tiles remaining
+        let mut tenpai_players = Vec::new();
+
+        for i in 0..NUM_PLAYERS {
+            if self.players[i].has_won { continue; }
+            if !self.players[i].ding_que_completed() {
+                hua_zhu.push(i);
+            } else {
+                let shanten = calc_shanten(&self.players[i].hand, self.players[i].melds.len());
+                if shanten == 0 {
+                    tenpai_players.push(i);
+                }
+            }
+        }
+
+        // 花猪 pays max possible points to each tenpai player
+        for &hz in &hua_zhu {
+            for &tp in &tenpai_players {
+                let max_score = self.calc_max_hand_score(tp);
+                self.players[hz].score -= max_score;
+                self.players[tp].score += max_score;
+            }
+        }
+
+        // 查大叫: non-tenpai players (who completed ding que) pay tenpai players
+        for i in 0..NUM_PLAYERS {
+            if self.players[i].has_won { continue; }
+            if hua_zhu.contains(&i) { continue; }
+            if tenpai_players.contains(&i) { continue; }
+
+            // This player is not tenpai and not hua zhu → pays tenpai
+            for &tp in &tenpai_players {
+                let max_score = self.calc_max_hand_score(tp);
+                self.players[i].score -= max_score;
+                self.players[tp].score += max_score;
+            }
+        }
+
+        self.phase = Phase::Done;
+        self.events.push(Event::GameEnd);
+    }
+
+    fn calc_max_hand_score(&self, player_id: usize) -> i32 {
+        let p = &self.players[player_id];
+        let waits = waiting_tiles(&p.hand, p.melds.len());
+        let mut max_score = 0i32;
+
+        for wt in waits {
+            let mut h = p.hand;
+            add_tile(&mut h, wt);
+            let ctx = WinContext {
+                tehai: h,
+                melds: p.melds.clone(),
+                winning_tile: wt,
+                is_ron: false, // assume tsumo for max
+                ding_que: p.ding_que,
+                is_after_kan: false,
+                is_kan_discard: false,
+                is_chankan: false,
+                is_haidi: false,
+                is_tianhu: false,
+                is_dihu: false,
+                exclude_gen_tile: None,
+                fan_config: self.fan_config.clone(),
+            };
+            if let Some(result) = calc_fan(&ctx) {
+                let s = calc_score(result.fan);
+                max_score = max_score.max(s);
+            }
+        }
+
+        max_score
+    }
+
+    pub fn get_scores(&self) -> [i32; NUM_PLAYERS] {
+        std::array::from_fn(|i| self.players[i].score)
+    }
+
+    pub fn get_rewards(&self, player_id: usize, prev_score: i32) -> f32 {
+        let current = self.players[player_id].score;
+        (current - prev_score) as f32 / 16000.0
+    }
+
+    fn check_chankan(&self, kakan_player: usize, tile: Tile) -> Vec<usize> {
+        let mut winners = Vec::new();
+        for i in 0..NUM_PLAYERS {
+            if i == kakan_player || self.players[i].has_won { continue; }
+            let p = &self.players[i];
+            if !p.ding_que_completed() { continue; }
+
+            let mut h = p.hand;
+            add_tile(&mut h, tile);
+            if !is_complete(&h, p.melds.len()) { continue; }
+
+            let waits = waiting_tiles(&p.hand, p.melds.len());
+            let is_perm_furiten = p.is_permanent_furiten(&waits);
+            if is_perm_furiten { continue; }
+
+            if let Some(passed_fan) = p.furiten_passed_ron_fan {
+                let ctx = self.make_chankan_win_context(i, tile);
+                if let Some(result) = calc_fan(&ctx) {
+                    if result.fan > passed_fan {
+                        winners.push(i);
+                    }
+                }
+            } else if !p.temporary_furiten {
+                winners.push(i);
+            }
+        }
+        winners
+    }
+
+    fn make_chankan_win_context(&self, player_id: usize, winning_tile: Tile) -> WinContext {
+        let p = &self.players[player_id];
+        let mut tehai = p.hand;
+        add_tile(&mut tehai, winning_tile);
+        WinContext {
+            tehai,
+            melds: p.melds.clone(),
+            winning_tile,
+            is_ron: true,
+            ding_que: p.ding_que,
+            is_after_kan: false,
+            is_kan_discard: false,
+            is_chankan: true,
+            is_haidi: self.wall_remaining() == 0,
+            is_tianhu: false,
+            is_dihu: false,
+            exclude_gen_tile: None,
+            fan_config: self.fan_config.clone(),
+        }
+    }
+
+    fn process_chankan_win(&mut self, winner: usize, loser: usize, winning_tile: Tile) {
+        let ctx = self.make_chankan_win_context(winner, winning_tile);
+        let Some(result) = calc_fan(&ctx) else { return; };
+        let score = calc_score(result.fan);
+        self.players[loser].score -= score;
+        self.players[winner].score += score;
+
+        self.players[winner].has_won = true;
+        self.win_count += 1;
+    }
+
+    /// Public version of make_win_context for observation encoding
+    pub fn make_win_context_for_obs(&self, player_id: usize, winning_tile: Tile) -> crate::algo::agari::WinContext {
+        self.make_win_context(player_id, winning_tile, true)
+    }
+}

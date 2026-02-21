@@ -1,0 +1,34 @@
+# Blood-v2 Stage 1: Oracle Bootstrapping
+# Goal: Learn basic mahjong efficiency from the perfect-info Oracle teacher
+
+# Parallelism (8x 4090)
+num_gpus: 8
+num_workers: 128
+num_envs_per_worker: 32
+batch_size: 131072
+num_batches_per_epoch: 2
+ppo_epochs: 1
+
+# Learning
+learning_rate: 0.0005
+lr_schedule: kl_adaptive_minibatch
+exploration_loss_coeff: 0.01  # Higher exploration for bootstrapping
+gamma: 0.998
+gae_lambda: 0.95
+
+# League (Disabled in Stage 1)
+# Training against rulebot baselines to learn fundamental rules
+league_enabled: false
+opponent_mode: rulebot
+
+# Oracle & Aux (High Teacher Influence)
+oracle_enabled: true
+oracle_distill_weight: 0.1    # Strong distillation focus
+aux_opp_waits_weight: 0.2
+suit_augment_prob: 0.5
+
+# Model
+blood_obs_channels: 384
+blood_conv_channels: 256
+blood_num_res_blocks: 20
+blood_encoder_out_dim: 1024

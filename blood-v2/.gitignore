@@ -1,0 +1,44 @@
+# Rust
+target/
+**/*.rs.bk
+Cargo.lock
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ipynb_checkpoints/
+*.so
+*.pyd
+
+# Environments
+.venv/
+venv/
+env/
+.env
+
+# Distribution / Build
+dist/
+build/
+*.egg-info/
+.maturin/
+
+# ML / Training
+train_dir/
+runs/
+wandb/
+checkpoints/
+*.pth
+*.pt
+*.onnx
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

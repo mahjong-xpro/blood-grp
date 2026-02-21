@@ -1,0 +1,46 @@
+# Blood-v2 Production Hyperparameters
+# Single unified configuration for superhuman-level training
+
+# Sample Factory
+num_workers: 8
+num_envs_per_worker: 32
+batch_size: 8192
+num_batches_per_epoch: 4
+ppo_clip_ratio: 0.1
+max_grad_norm: 1.0
+gamma: 0.998
+gae_lambda: 0.95
+learning_rate: 3e-4
+lr_schedule: kl_adaptive_minibatch
+exploration_loss_coeff: 0.005
+
+# Environment
+env: blood_mahjong
+encoder_custom: blood_encoder
+experiment: blood_v2
+
+# Model
+blood_obs_channels: 384
+blood_conv_channels: 256
+blood_num_res_blocks: 20
+blood_encoder_out_dim: 1024
+
+# Oracle
+oracle_enabled: true
+oracle_num_blocks: 25
+oracle_distill_weight: 0.05
+oracle_distill_temperature: 2.0
+
+# League
+league_enabled: true
+league_pool_dir: checkpoints/league/
+league_add_every: 50000
+league_newest_weight: 3.0
+opponent_mode: selfplay
+
+# Data augmentation
+suit_augment_prob: 0.5
+
+# Auxiliary tasks
+aux_dingque_weight: 1.0
+aux_opp_waits_weight: 0.1
