@@ -2,7 +2,7 @@
 resolver = "3"
 members = [
     "libblood",
-    "exe-wrapper",
+    "exe-wrapper", "v2_architecture/env_core",
 ]
 
 [profile.release]
