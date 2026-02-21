@@ -9,10 +9,10 @@ from sample_factory.envs.env_utils import register_env
 from sample_factory.train import make_runner
 from sample_factory.algo.learning.learner import Learner
 
-from blood.cfg import add_blood_args, blood_override_defaults
-from blood.env.blood_env import BloodMahjongEnv
-from blood.model.factory import register_blood_model
-from blood.training.callbacks import BloodObserver
+from ..cfg import add_blood_args, blood_override_defaults
+from ..env.blood_env import BloodMahjongEnv
+from ..model.factory import register_blood_model
+from .callbacks import BloodObserver
 
 log = logging.getLogger(__name__)
 

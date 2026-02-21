@@ -12,9 +12,9 @@ from sample_factory.model.actor_critic import ActorCritic, ActorCriticSharedWeig
 from sample_factory.model.encoder import Encoder
 from sample_factory.utils.typing import ActionSpace, Config, ObsSpace
 
-from blood.model.encoder import SuitAwareResNetEncoder
-from blood.model.heads import AuxHead
-from blood.model.oracle import OracleEncoder, DistillationLoss
+from .encoder import SuitAwareResNetEncoder
+from .heads import AuxHead
+from .oracle import OracleEncoder, DistillationLoss
 
 
 class BloodActorCritic(ActorCriticSharedWeights):
