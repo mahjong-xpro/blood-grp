@@ -1488,11 +1488,64 @@ Phase 6c — 启用 Oracle（Target Network 稳定后）:
 | Step 范围 | 阶段 | 配置变更 | 结果 |
 |-----------|------|---------|------|
 | 705k-737k | Phase 6a | `target_network=true`, `td_lambda=0.99` | ✅ 通过 (32k 步稳定) |
-| 737k- | Phase 6b-1 | `td_lambda=0.98` | 🔄 进行中 |
-| — | Phase 6b-2 | `td_lambda=0.95` (A1+A3 目标值) | ⏳ 待部署 |
-| — | Phase 6c-1 | `oracle=true`, `distill=0.0`, `batch=2048` | ⏳ 待部署 |
-| — | Phase 6c-2a | `distill_weight=0.1` | ⏳ 待部署 |
-| — | Phase 6c-2b | `distill_weight=0.3` | ⏳ 待部署 |
-| — | Phase 6c-2c | `distill_weight=0.5` (A2 目标值) | ⏳ 待部署 |
+| 737k-745k | Phase 6b-1 | `td_lambda=0.98` | ✅ 通过 |
+| 745k-760k | Phase 6b-2 | `td_lambda=0.95` | ✅ 通过 |
+| 760k-770k | Phase 6c-1 | `oracle=true`, `distill=0.0`, `batch=2048`, BUG-5+ISSUE修复 | ✅ Oracle 自学启动 |
+| 770k-777k | Phase 6c-2a | `distill_weight=0.1` (首次) | ❌ 恶化→回滚760k |
+| 760k-800k | Phase 6c-1 重启 | 回滚760k, `distill=0.0`, Oracle 自学40k步 | ✅ oracle_dqn_loss 0.231→0.205 |
+| 800k-808k | Phase 6c-2a 重试 | `distill_weight=0.1` | ⚠️ KL=0.0006 蒸馏无效 (Oracle容量不足) |
+| 808k-832k | Phase 6d | Oracle 25blocks, 独立optimizer, `distill=0.0`, `dqn_weight=1.0` | ⚠️ Oracle LR offset bug |
+| 832k-921k | Phase 6d (LR fix) | Oracle scheduler offset=0 修复 | ✅ oracle_dqn_loss 0.200→0.180 |
+| 921k- | **Phase 6e** | `max_steps` 1M→1.5M + `distill_weight=0.05` | 🔄 进行中 |
+| — | Phase 6e-2 | `distill_weight=0.1` (Oracle 进一步收敛后) | ⏳ 待部署 |
+| — | Phase 6e-3 | `distill_weight=0.3` | ⏳ 待部署 |
+
+**Phase 6d 变更详情** (~808k):
+
+诊断: 15-block Oracle 的 `oracle_dqn_loss`(0.200) 比 Student `dqn_loss`(0.145) 高 38%，
+拥有完美信息却比不完美信息的 Student 差 → 容量瓶颈 → KL散度=0.0006 → 蒸馏无效。
+
+代码+配置变更:
+- `config.toml`: `num_blocks` 15→25, `oracle_dqn_weight` 0.5→1.0, `distill_weight` 0.1→0.0
+- `train.py`: Oracle 使用独立 AdamW optimizer + scheduler + grad_clip（不再与 Student 共享）
+- `train.py`: checkpoint 保存/加载 `oracle_optimizer` 状态
+- `train.py`: Oracle 架构变更时 `RuntimeError` 自动降级为从零初始化
+
+重启后预期行为:
+- Oracle mortal: 架构不兼容 → 从零初始化 ✅
+- Student optimizer: param_groups 变更 → 动量重建 (~3k步) ✅
+- Student 模型权重: 正常加载, 不受影响 ✅
+- GPU 显存: ~16.7→~19 GiB (24 GiB 安全范围) ⏳ 待确认
+
+通过标准: `oracle_dqn_loss` < Student `dqn_loss`(0.145) → Oracle 已利用完美信息
+蒸馏触发条件: `oracle_dqn_loss` 收敛且 < 0.12 → 设 `distill_weight=0.1`
 
 应急回退: 任何一步出现 avg_ranking > 2.70 或 dqn_match_rate < 98%，立即回退到上一阶段配置。
+
+**Phase 6e 变更详情** (~921k):
+
+诊断: 性能从 860k 起持续恶化 60k 步:
+- avg_ranking: 2.496(860k) → 2.525(920k), +0.03
+- avg_pt: 1.728(860k) → 1.690(920k), -0.038
+- point_per_round: -383(860k) → -546(920k), -163
+- agari_point: 5104(860k) → 4998(avg 905-920k), -150
+- fuuro_point: 1961(860k) → 1773(avg 905-920k), -99
+- 同时 dqn_loss 仍在下降 (0.145→0.138)，说明训练 loss 与实战脱节
+
+根因: LR cosine schedule 在 max_steps=1M 下已接近底部 (5.9e-5 ≈ final=5e-5)。
+模型学习能力冻结，无法适应 self-play 分布漂移。
+
+配置变更:
+- `max_steps`: 1,000,000 → 1,500,000 (Student LR 从 5.9e-5 恢复到 ~1.3e-4)
+- `distill_weight`: 0.0 → 0.05 (轻量蒸馏，Oracle KL≈0.0005 时实际梯度极小)
+- Oracle LR 不受影响 (scheduler offset=0, 仍在 peak 附近)
+
+预期效果:
+- Student LR 恢复到 ~850k 水平的学习能力
+- 蒸馏信号随 Oracle 继续改善逐步增强
+- 需要 restart 生效
+
+监控指标:
+- avg_ranking 是否止跌回升 (目标: < 2.51)
+- point_per_round 是否改善 (目标: > -450)
+- distill_loss 是否从 0.0005 开始下降 (Oracle 与 Student 趋同)

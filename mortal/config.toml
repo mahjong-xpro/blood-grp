@@ -184,7 +184,7 @@ update_every = 1          # 每 N 个 optimizer step 执行一次软更新
 enabled = true
 num_blocks = 25           # 15→25: 解决容量瓶颈 (544ch 输入需要足够深度)
 conv_channels = 192
-distill_weight = 0.0      # 新 Oracle 从零初始化，先自学再蒸馏
+distill_weight = 0.05     # Phase 6e (~921k): 0→0.05, 轻量蒸馏开始传递 Oracle 知识
 distill_temperature = 2.0
 oracle_dqn_weight = 1.0   # 0.5→1.0: 独立 optimizer 后无梯度竞争，恢复全梯度
 
@@ -205,7 +205,7 @@ max_grad_norm = 1.0
 peak = 3e-4   # 阶段 3: 5e-4 → 3e-4 (355k)，精细调整
 final = 5e-5  # 阶段 3: 1e-4 → 5e-5，降低最终 LR
 warm_up_steps = 3000  # 阶段 3: 2000 → 3000，平滑过渡
-max_steps = 1000000
+max_steps = 1500000  # Phase 6e (~921k): 1M→1.5M, LR 从 5.9e-5 恢复到 ~1.3e-4
 
 # Baseline 模型配置
 [baseline.train]
