@@ -7,10 +7,10 @@ def add_blood_args(parser: ArgumentParser):
     """Add Blood-specific command-line arguments."""
     p = parser
 
-    # Model
-    p.add_argument("--blood_obs_channels", type=int, default=385)
-    p.add_argument("--blood_conv_channels", type=int, default=192)
-    p.add_argument("--blood_num_res_blocks", type=int, default=30)
+    # Model — 与 Rust consts.rs 保持一致 (NUM_STUDENT_CHANNELS=384, Bottleneck 256ch/20blocks)
+    p.add_argument("--blood_obs_channels", type=int, default=384)
+    p.add_argument("--blood_conv_channels", type=int, default=256)
+    p.add_argument("--blood_num_res_blocks", type=int, default=20)
     p.add_argument("--blood_encoder_out_dim", type=int, default=1024)
 
     # Oracle

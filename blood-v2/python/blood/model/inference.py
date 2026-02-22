@@ -14,7 +14,7 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from blood.model.encoder import (
-    SuitAwareConv1d, ResBlock, ChannelAttention,
+    SuitAwareConv1d, BottleneckBlock, ChannelAttention,
     _num_groups, NUM_TILES, DEFAULT_OBS_CHANNELS,
 )
 
@@ -33,8 +33,8 @@ class PolicyModel(nn.Module):
     def __init__(
         self,
         obs_channels: int = DEFAULT_OBS_CHANNELS,
-        conv_ch: int = 192,
-        num_blocks: int = 30,
+        conv_ch: int = 256,
+        num_blocks: int = 20,
         encoder_out: int = 1024,
         action_dim: int = ACTION_DIM,
     ):
@@ -47,7 +47,7 @@ class PolicyModel(nn.Module):
             nn.Mish(inplace=True),
         ]
         for _ in range(num_blocks):
-            layers.append(ResBlock(conv_ch))
+            layers.append(BottleneckBlock(conv_ch))
         self.conv_stack = nn.Sequential(*layers)
 
         self.final_conv = nn.Sequential(
@@ -108,7 +108,7 @@ class PolicyModel(nn.Module):
         )
 
         obs_channels = DEFAULT_OBS_CHANNELS
-        conv_ch = 192
+        conv_ch = 256
         encoder_out = 1024
         first_conv_key = "conv_stack.0.conv.weight"
         if first_conv_key in encoder_sd:

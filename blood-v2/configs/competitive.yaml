@@ -22,10 +22,12 @@ env: blood_mahjong
 encoder_custom: blood_encoder
 experiment: blood_v2_competitive
 
-# Model
-blood_obs_channels: 385
-blood_conv_channels: 192
-blood_num_res_blocks: 30
+# Model — 与 warmup.yaml/default.yaml 保持一致 (256ch/20blocks Bottleneck)
+# 修复: 原 192ch/30blocks 为 V1 规格，无法加载 warmup 阶段的 256ch/20blocks 权重
+# 修复: blood_obs_channels 385 → 384 (Rust NUM_STUDENT_CHANNELS=384)
+blood_obs_channels: 384
+blood_conv_channels: 256
+blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024
 
 # Opponents: neural self-play via league
