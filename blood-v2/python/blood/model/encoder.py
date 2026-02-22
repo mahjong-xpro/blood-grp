@@ -38,6 +38,26 @@ class SuitAwareConv1d(nn.Module):
         return x
 
 
+class SuitPositionalEncoding(nn.Module):
+    """Learnable rank-position embedding, shared across suits.
+
+    Adds a (channels, 9) embedding tiled across all 3 suits to give the
+    model explicit awareness of tile rank (1-9). Suits are isomorphic so
+    the same embedding is reused for Man, Pin, and Sou.
+    """
+
+    def __init__(self, channels: int, tiles_per_suit: int = TILES_PER_SUIT):
+        super().__init__()
+        # One embedding vector per rank position, shared across suits
+        self.pos_embed = nn.Parameter(torch.zeros(channels, tiles_per_suit))
+        nn.init.trunc_normal_(self.pos_embed, std=0.02)
+
+    def forward(self, x: Tensor) -> Tensor:
+        # x: (B, C, 27)
+        embed = self.pos_embed.repeat(1, 3)   # (C, 27) — tile across 3 suits
+        return x + embed.unsqueeze(0)          # broadcast over batch
+
+
 class BottleneckBlock(nn.Module):
     """Bottleneck ResBlock: 1x1 (down) -> 3x3 (SuitAware) -> 1x1 (up)."""
 
@@ -91,6 +111,33 @@ class ChannelAttention(nn.Module):
         return x * scale
 
 
+class TileAttention(nn.Module):
+    """Multi-head self-attention over 27 tile positions.
+
+    Allows direct cross-suit tile interaction (e.g. Man-1 attending to Pin-1,
+    or Man-5 attending to Sou-5) that the suit-isolated convolutions cannot model.
+    Uses pre-norm + residual connection for training stability.
+    """
+
+    def __init__(self, channels: int, num_heads: int = 4, dropout: float = 0.0):
+        super().__init__()
+        assert channels % num_heads == 0, "channels must be divisible by num_heads"
+        self.norm = nn.LayerNorm(channels)
+        self.attn = nn.MultiheadAttention(
+            embed_dim=channels,
+            num_heads=num_heads,
+            dropout=dropout,
+            batch_first=True,
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        # x: (B, C, 27)
+        x_t = x.permute(0, 2, 1)                              # (B, 27, C)
+        x_norm = self.norm(x_t)                                # pre-norm
+        attn_out, _ = self.attn(x_norm, x_norm, x_norm)
+        return (x_t + attn_out).permute(0, 2, 1)              # (B, C, 27)
+
+
 def _num_groups(channels: int, preferred: int = 16) -> int:
     """Find a valid number of groups for GroupNorm."""
     for g in [preferred, 8, 4, 2, 1]:
@@ -124,9 +171,11 @@ class SuitAwareResNetEncoder(Encoder):
 
     Architecture:
         obs (B, C*27) -> reshape (B, C, 27)
-        -> SuitAwareConv(C -> conv_ch) [parallelized]
-        -> BottleneckBlock x num_blocks (conv_ch)
-        -> Trunk Output [B, conv_ch, 27]
+        -> stem: SuitAwareConv(C -> conv_ch) + GroupNorm + Mish
+        -> pos_enc: SuitPositionalEncoding (rank-aware embeddings)
+        -> res_blocks: BottleneckBlock x num_blocks
+        -> tile_attn: TileAttention (cross-suit tile interaction)
+        -> flatten -> [B, conv_ch * 27]
     """
 
     def __init__(self, cfg: Config, obs_space: ObsSpace):
@@ -137,24 +186,27 @@ class SuitAwareResNetEncoder(Encoder):
         num_blocks = getattr(cfg, "blood_num_res_blocks", 20)
 
         ng = _num_groups(conv_ch)
-        layers = [
+
+        self.stem = nn.Sequential(
             SuitAwareConv1d(self.obs_channels, conv_ch, kernel_size=3),
             nn.GroupNorm(ng, conv_ch),
             nn.Mish(inplace=True),
-        ]
-        for _ in range(num_blocks):
-            layers.append(BottleneckBlock(conv_ch))
+        )
+        self.pos_enc = SuitPositionalEncoding(conv_ch)
+        self.res_blocks = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(num_blocks)])
+        self.tile_attn = TileAttention(conv_ch, num_heads=4)
 
-        self.conv_stack = nn.Sequential(*layers)
         self._out_size = conv_ch * NUM_TILES
 
     def forward(self, obs_dict):
         obs = obs_dict["obs"]
         B = obs.shape[0]
         x = obs.view(B, self.obs_channels, NUM_TILES)
-        x = self.conv_stack(x)
-        x = x.reshape(B, -1)
-        return x
+        x = self.stem(x)
+        x = self.pos_enc(x)
+        x = self.res_blocks(x)
+        x = self.tile_attn(x)
+        return x.reshape(B, -1)
 
     def get_out_size(self) -> int:
         return self._out_size

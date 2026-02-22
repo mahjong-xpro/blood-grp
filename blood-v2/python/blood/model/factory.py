@@ -30,15 +30,21 @@ class BloodActorCritic(ActorCriticSharedWeights):
 
         enc_out = self.encoder.get_out_size()
         head_dim = 512
-        
-        # NOTE: Decoupled heads for Actor and Critic
+
+        # NOTE: Decoupled 2-layer heads for Actor and Critic
         self.actor_head = nn.Sequential(
             nn.Linear(enc_out, head_dim),
+            nn.Mish(inplace=True),
+            nn.LayerNorm(head_dim),
+            nn.Linear(head_dim, head_dim),
             nn.Mish(inplace=True),
             nn.LayerNorm(head_dim),
         )
         self.critic_head = nn.Sequential(
             nn.Linear(enc_out, head_dim),
+            nn.Mish(inplace=True),
+            nn.LayerNorm(head_dim),
+            nn.Linear(head_dim, head_dim),
             nn.Mish(inplace=True),
             nn.LayerNorm(head_dim),
         )

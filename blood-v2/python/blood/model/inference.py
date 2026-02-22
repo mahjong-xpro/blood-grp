@@ -15,6 +15,7 @@ from torch import Tensor
 
 from blood.model.encoder import (
     SuitAwareConv1d, BottleneckBlock, ChannelAttention,
+    SuitPositionalEncoding, TileAttention,
     _num_groups, NUM_TILES, DEFAULT_OBS_CHANNELS,
 )
 
@@ -26,8 +27,9 @@ ACTION_DIM = 34
 class PolicyModel(nn.Module):
     """Standalone policy model for opponent inference.
 
-    Same encoder architecture as the training model, paired with a
-    simple action head.  Weights are loaded from SF2 checkpoints.
+    Mirrors the SuitAwareResNetEncoder architecture (stem + pos_enc +
+    res_blocks + tile_attn) paired with a simple action head.
+    Weights are loaded from SF2 checkpoints.
     """
 
     def __init__(
@@ -41,22 +43,16 @@ class PolicyModel(nn.Module):
         super().__init__()
 
         ng = _num_groups(conv_ch)
-        layers = [
+        self.stem = nn.Sequential(
             SuitAwareConv1d(obs_channels, conv_ch, kernel_size=3),
             nn.GroupNorm(ng, conv_ch),
             nn.Mish(inplace=True),
-        ]
-        for _ in range(num_blocks):
-            layers.append(BottleneckBlock(conv_ch))
-        self.conv_stack = nn.Sequential(*layers)
-
-        self.final_conv = nn.Sequential(
-            nn.Conv1d(conv_ch, 64, 1),
-            nn.GroupNorm(_num_groups(64), 64),
-            nn.Mish(inplace=True),
         )
+        self.pos_enc = SuitPositionalEncoding(conv_ch)
+        self.res_blocks = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(num_blocks)])
+        self.tile_attn = TileAttention(conv_ch, num_heads=4)
 
-        flat_dim = 64 * NUM_TILES
+        flat_dim = conv_ch * NUM_TILES
         self.fc = nn.Sequential(
             nn.Linear(flat_dim, encoder_out),
             nn.Mish(inplace=True),
@@ -69,10 +65,11 @@ class PolicyModel(nn.Module):
         """obs_flat: (B, C*27) → logits (B, action_dim)"""
         B = obs_flat.shape[0]
         x = obs_flat.view(B, self._obs_channels, NUM_TILES)
-        x = self.conv_stack(x)
-        x = self.final_conv(x)
-        x = x.reshape(B, -1)
-        features = self.fc(x)
+        x = self.stem(x)
+        x = self.pos_enc(x)
+        x = self.res_blocks(x)
+        x = self.tile_attn(x)
+        features = self.fc(x.reshape(B, -1))
         return self.action_head(features)
 
     @torch.no_grad()
@@ -110,25 +107,29 @@ class PolicyModel(nn.Module):
         obs_channels = DEFAULT_OBS_CHANNELS
         conv_ch = 256
         encoder_out = 1024
-        first_conv_key = "conv_stack.0.conv.weight"
+
+        # Detect obs_channels and conv_ch from stem key
+        first_conv_key = "stem.0.conv.weight"
         if first_conv_key in encoder_sd:
             obs_channels = encoder_sd[first_conv_key].shape[1]
             conv_ch = encoder_sd[first_conv_key].shape[0]
 
+        # Detect encoder_out from fc projection key
         fc_key = "fc.0.weight"
         if fc_key in encoder_sd:
             encoder_out = encoder_sd[fc_key].shape[0]
 
+        # Detect num_blocks from res_blocks keys
         num_blocks = 0
-        while f"conv_stack.{3 + num_blocks}.block.0.weight" in encoder_sd:
+        while f"res_blocks.{num_blocks}.block.0.weight" in encoder_sd:
             num_blocks += 1
         if num_blocks == 0:
             log.warning(
-                "Could not detect num_blocks from checkpoint keys; defaulting to 30. "
-                "First conv_stack keys: %s",
-                [k for k in encoder_sd if k.startswith("conv_stack.")][:5],
+                "Could not detect num_blocks from checkpoint keys; defaulting to 20. "
+                "First encoder keys: %s",
+                [k for k in encoder_sd][:5],
             )
-            num_blocks = 30
+            num_blocks = 20
 
         model = cls(
             obs_channels=obs_channels,
@@ -137,12 +138,6 @@ class PolicyModel(nn.Module):
             encoder_out=encoder_out,
         )
         model.to(device)
-
-        enc_keys = set(encoder_sd.keys())
-        model_enc_keys = set()
-        for k in model.state_dict():
-            if not k.startswith("action_head"):
-                model_enc_keys.add(k)
 
         partial_sd = {}
         for k, v in encoder_sd.items():

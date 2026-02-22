@@ -186,6 +186,15 @@ impl RustMahjongEnv {
     fn get_win_count(&self) -> u8 {
         self.state.win_count
     }
+
+    fn get_aux_labels<'py>(&self, py: Python<'py>, player_id: usize) -> PyResult<Bound<'py, PyDict>> {
+        let _ = player_id; // always computed from self.player_id (seat 0)
+        let (dq_labels, ow_labels) = self.compute_aux_labels();
+        let dict = PyDict::new_bound(py);
+        dict.set_item("dq_labels", PyArray1::from_vec_bound(py, dq_labels))?;
+        dict.set_item("ow_labels", PyArray1::from_vec_bound(py, ow_labels))?;
+        Ok(dict)
+    }
 }
 
 impl RustMahjongEnv {

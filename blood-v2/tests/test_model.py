@@ -5,7 +5,9 @@ import torch
 import numpy as np
 
 from blood.model.encoder import (
-    SuitAwareConv1d, ChannelAttention, ResBlock, SuitAwareResNetEncoder,
+    SuitAwareConv1d, ChannelAttention, ResBlock,
+    SuitPositionalEncoding, TileAttention, BottleneckBlock,
+    SuitAwareResNetEncoder,
     NUM_TILES, DEFAULT_OBS_CHANNELS,
 )
 from blood.model.heads import AuxHead
@@ -13,6 +15,38 @@ from blood.model.oracle import OracleEncoder, DistillationLoss
 from blood.model.inference import PolicyModel
 
 ACTION_DIM = 34
+
+
+class TestSuitPositionalEncoding:
+    def test_output_shape(self):
+        pe = SuitPositionalEncoding(32)
+        x = torch.randn(2, 32, NUM_TILES)
+        out = pe(x)
+        assert out.shape == (2, 32, NUM_TILES)
+
+    def test_suit_shared_offset(self):
+        """Man and Pin should receive the same positional offset."""
+        pe = SuitPositionalEncoding(8)
+        x = torch.zeros(1, 8, NUM_TILES)
+        out = pe(x)
+        # The added embedding for Man (0:9) and Pin (9:18) should be identical
+        assert torch.allclose(out[:, :, 0:9], out[:, :, 9:18], atol=1e-6)
+        assert torch.allclose(out[:, :, 9:18], out[:, :, 18:27], atol=1e-6)
+
+
+class TestTileAttention:
+    def test_output_shape(self):
+        attn = TileAttention(64, num_heads=4)
+        x = torch.randn(2, 64, NUM_TILES)
+        out = attn(x)
+        assert out.shape == (2, 64, NUM_TILES)
+
+    def test_residual_connection(self):
+        """Output should differ from input (attention contributes)."""
+        attn = TileAttention(32, num_heads=4)
+        x = torch.randn(2, 32, NUM_TILES)
+        out = attn(x)
+        assert not torch.allclose(out, x)
 
 
 class TestSuitAwareConv1d:
@@ -78,6 +112,15 @@ class TestSuitAwareResNetEncoder:
         cfg = self._make_cfg()
         enc = SuitAwareResNetEncoder(cfg, obs_space=None)
         assert enc.get_out_size() == 64 * NUM_TILES
+
+    def test_named_submodules(self):
+        """Encoder should expose stem, pos_enc, res_blocks, tile_attn."""
+        cfg = self._make_cfg()
+        enc = SuitAwareResNetEncoder(cfg, obs_space=None)
+        assert hasattr(enc, "stem")
+        assert hasattr(enc, "pos_enc")
+        assert hasattr(enc, "res_blocks")
+        assert hasattr(enc, "tile_attn")
 
 
 class TestAuxHead:
@@ -161,32 +204,33 @@ class TestPolicyModel:
     def test_checkpoint_round_trip(self, tmp_path):
         """Verify from_sf2_checkpoint correctly infers architecture params."""
         conv_ch, num_blocks, enc_out = 32, 4, 128
-        enc = SuitAwareResNetEncoder.__new__(SuitAwareResNetEncoder)
-        torch.nn.Module.__init__(enc)
         from blood.model.encoder import _num_groups
         import torch.nn as nn
+
+        # Build a minimal encoder matching the new named-submodule structure
         ng = _num_groups(conv_ch)
-        layers = [
+        stem = nn.Sequential(
             SuitAwareConv1d(DEFAULT_OBS_CHANNELS, conv_ch, kernel_size=3),
             nn.GroupNorm(ng, conv_ch),
             nn.Mish(inplace=True),
-        ]
-        for _ in range(num_blocks):
-            layers.append(ResBlock(conv_ch))
-        enc.conv_stack = nn.Sequential(*layers)
-        enc.final_conv = nn.Sequential(
-            nn.Conv1d(conv_ch, 64, 1),
-            nn.GroupNorm(_num_groups(64), 64),
-            nn.Mish(inplace=True),
         )
-        enc.fc = nn.Sequential(nn.Linear(64 * NUM_TILES, enc_out), nn.Mish(inplace=True))
-        enc.obs_channels = DEFAULT_OBS_CHANNELS
-
+        pos_enc = SuitPositionalEncoding(conv_ch)
+        res_blocks = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(num_blocks)])
+        tile_attn = TileAttention(conv_ch, num_heads=4)
+        fc = nn.Sequential(nn.Linear(conv_ch * NUM_TILES, enc_out), nn.Mish(inplace=True))
         action_head = nn.Linear(enc_out, ACTION_DIM)
 
         sd = {}
-        for k, v in enc.state_dict().items():
-            sd[f"encoder.{k}"] = v
+        for k, v in stem.state_dict().items():
+            sd[f"encoder.stem.{k}"] = v
+        for k, v in pos_enc.state_dict().items():
+            sd[f"encoder.pos_enc.{k}"] = v
+        for k, v in res_blocks.state_dict().items():
+            sd[f"encoder.res_blocks.{k}"] = v
+        for k, v in tile_attn.state_dict().items():
+            sd[f"encoder.tile_attn.{k}"] = v
+        for k, v in fc.state_dict().items():
+            sd[f"encoder.fc.{k}"] = v
         sd["action_parameterization.distribution_linear.weight"] = action_head.weight.data
         sd["action_parameterization.distribution_linear.bias"] = action_head.bias.data
 
