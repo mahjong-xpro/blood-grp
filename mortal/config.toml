@@ -1,6 +1,6 @@
-# 🚀 Fresh Start Training Configuration
-# 新服务器 4090×8 优化配置
-# 阶段 1: 初期探索期 (Step 0 - 100k)
+# 🔧 Phase 7 配置: Oracle 蒸馏强化 + LR 重置
+# 基于 TensorBoard 指标分析 (step 1185k) 的针对性修复
+# 核心问题: distill_loss=0.0003(蒸馏失效) + LR衰减末期(8e-5且缓慢恶化)
 
 [control]
 version = 4
@@ -27,18 +27,22 @@ test_every = 5000
 submit_every = 1000
 
 # ═══════════════════════════════════════════════════════
-# Phase 5 配置: 梯度净化 (回滚自 Phase 6 死亡螺旋)
-# Phase 6 (706-715k) 同时启用 TN+Oracle+TD(λ=0.95) 导致灾难性崩溃
-# 回滚至 705k Phase 5 稳态，后续采用渐进式激活策略
+# Phase 7 配置: Oracle 蒸馏强化 (1185k+)
+# 诊断: distill_loss=0.0003 (极低) → Oracle 与 Student 策略趋同，蒸馏无效
+#   oracle_dqn_loss(0.095) ≈ student_dqn_loss(0.102) → Oracle 未提供额外知识
+#   放铳率 38.9% (Phase 5 时 33.3%) → 防守退化
+# 修复: distill_weight 0.05→0.3, temp 2.0→3.0, LR 重置
+# 注: baseline_update_threshold 在 online 模式下对 client 无效（client 独立进程，
+#     只从 pool_dir 读取，train.py 触发更新时不写 pool_dir），保持原值 3.2
 # ═══════════════════════════════════════════════════════
 
 [train_play.default]
 games = 6400
 log_dir = '/data/mortal/train_play'
 
-# 探索参数 - Phase 4: 精细优化
-boltzmann_epsilon = 0.05  # Phase 4: 0.06 → 0.05 (485k)
-boltzmann_temp = 0.10     # Phase 4: 0.12 → 0.10 (485k)
+# 探索参数 - Phase 7: 轻微增大探索，打破当前均衡
+boltzmann_epsilon = 0.08  # 0.05 → 0.08 (1185k): 当前均衡太稳定，需要更多探索
+boltzmann_temp = 0.12     # 0.10 → 0.12 (1185k): 配合 epsilon 增大
 
 # 阶段转换指南 (V2):
 # ┌──────────────────────────────────────────────────────┐
@@ -104,7 +108,10 @@ agari_bonus = 0.0
 houjuu_penalty = 0.0          # -0.05 → 0 (485k, Phase 4): 完全关闭
 
 # 自动更新 baseline 的阈值 (阶梯式训练)
-# 当 avg_pt 超过此值时，自动用当前模型替换 baseline
+# 当 avg_pt 超过此值时，用当前模型替换 baseline，创造持续进步压力
+# 注意: online 模式下此机制对 client 无效 —— train.py 只写 baseline.pth，
+# 但 client 是独立进程，只从 pool_dir 读取，而 pool_dir 从不被自动更新。
+# 此参数仅对 offline 模式有意义，online 模式保持原值。
 baseline_update_threshold = 3.2
 
 # 阶段转换指南 (V3):
@@ -184,8 +191,9 @@ update_every = 1          # 每 N 个 optimizer step 执行一次软更新
 enabled = true
 num_blocks = 25           # 15→25: 解决容量瓶颈 (544ch 输入需要足够深度)
 conv_channels = 192
-distill_weight = 0.05     # Phase 6e (~921k): 0→0.05, 轻量蒸馏开始传递 Oracle 知识
-distill_temperature = 2.0
+distill_weight = 0.3      # 0.05 → 0.3 (1185k): distill_loss=0.0003 说明蒸馏信号太弱
+                          # Oracle 与 Student 趋同，需要强迫 Student 向 Oracle 靠拢
+distill_temperature = 3.0 # 2.0 → 3.0 (1185k): 更高温度软化分布，KL 梯度更有效
 oracle_dqn_weight = 1.0   # 0.5→1.0: 独立 optimizer 后无梯度竞争，恢复全梯度
 
 # Batch Normalization 冻结配置
@@ -201,11 +209,13 @@ weight_decay = 0.01
 max_grad_norm = 1.0
 
 # 学习率调度器配置
+# Phase 7 (1185k): 重置 LR 调度，当前 LR=8e-5 且缓慢恶化
+# 降低峰值避免破坏已有权重，延长 max_steps 给模型更多空间
 [optim.scheduler]
-peak = 3e-4   # 阶段 3: 5e-4 → 3e-4 (355k)，精细调整
-final = 5e-5  # 阶段 3: 1e-4 → 5e-5，降低最终 LR
-warm_up_steps = 3000  # 阶段 3: 2000 → 3000，平滑过渡
-max_steps = 1500000  # Phase 6e (~921k): 1M→1.5M, LR 从 5.9e-5 恢复到 ~1.3e-4
+peak = 1.5e-4  # 3e-4 → 1.5e-4 (1185k): 降低峰值，避免破坏 1185k 已有权重
+final = 2e-5   # 5e-5 → 2e-5 (1185k): 更低终态 LR，精细收敛
+warm_up_steps = 5000   # 3000 → 5000 (1185k): 更平滑的 LR 爬升
+max_steps = 2000000    # 1500000 → 2000000 (1185k): 从当前 step 重置，LR 从 ~1.5e-4 重新衰减
 
 # Baseline 模型配置
 [baseline.train]
