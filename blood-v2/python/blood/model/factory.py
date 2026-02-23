@@ -57,7 +57,7 @@ class BloodActorCritic(ActorCriticSharedWeights):
         # self.critic_linear = nn.Linear(..., 1)
         
         # We need to re-bind the input dimensions for these final layers
-        self.action_parameterization = model_factory.make_action_parameterization(cfg, head_dim, action_space)
+        self.action_parameterization = self.get_action_parameterization(head_dim)
         self.critic_linear = nn.Linear(head_dim, 1)
 
         # AuxHead reads post-LSTM features (core_out) to avoid gradient conflict.
