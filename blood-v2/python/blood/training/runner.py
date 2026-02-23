@@ -35,11 +35,23 @@ def _inject_config_yaml():
         cfg = yaml.safe_load(f)
     if not cfg:
         return
+
+    # Keys handled outside SF2 arg parsing — skip them here
+    _skip = {"encoder_custom"}
+
     # Append yaml values as CLI args (only if not already in sys.argv)
     existing = set(sys.argv)
     for key, val in cfg.items():
+        if key in _skip:
+            continue
         flag = f"--{key}"
-        if flag not in existing:
+        if flag in existing:
+            continue
+        # Boolean yaml values: true → store_true flag (no value), false → skip
+        if isinstance(val, bool):
+            if val:
+                sys.argv.append(flag)
+        else:
             sys.argv.extend([flag, str(val)])
 
 
