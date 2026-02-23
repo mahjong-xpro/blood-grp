@@ -169,44 +169,62 @@ num_batches_per_epoch: 8
 
 ---
 
-## 九、启动三阶段课程训练
+## 九、使用 manage.sh 管理训练
+
+所有训练、监控、评估、导出操作统一通过 `scripts/manage.sh` 管理。
 
 ```bash
 conda activate blood
 cd ~/Mahjong/blood/blood-v2
 
-# 使用 tmux 防止 SSH 断线
+# 查看所有命令
+./scripts/manage.sh help
+```
+
+### 启动三阶段训练
+
+训练是**前台运行**，SSH 断线会中断。使用 tmux 保持会话：
+
+```bash
+# 新建 tmux 会话
 tmux new -s blood_train
 
 # Phase 1: Warmup（~2M 步，RuleBot 对手）
-python -m blood.training.runner \
-    --config configs/warmup.yaml \
-    --device cuda
+./scripts/manage.sh train warmup
 
-# Phase 2: Competitive（~5M 步，联赛自博弈）
-# 等 warmup 完成后执行
-python -m blood.training.runner \
-    --config configs/competitive.yaml \
-    --device cuda \
-    --load_checkpoint_kind best
+# Phase 2: Competitive（~5M 步，联赛自博弈）—— warmup 完成后执行
+./scripts/manage.sh train competitive --resume
 
-# Phase 3: Elite（~10M+ 步，精调）
-python -m blood.training.runner \
-    --config configs/elite.yaml \
-    --device cuda \
-    --load_checkpoint_kind best
+# Phase 3: Elite（~10M+ 步，精调）—— competitive 完成后执行
+./scripts/manage.sh train elite --resume
 ```
 
 tmux 操作：`Ctrl+B D` 脱离会话，`tmux attach -t blood_train` 重新连接。
+
+多 GPU 训练（8 张 4090 各跑一个 policy，联赛多样性更好）：
+
+```bash
+./scripts/manage.sh train competitive --resume --num-policies 8
+```
+
+### 查看 Checkpoint 状态
+
+```bash
+./scripts/manage.sh status
+```
 
 ---
 
 ## 十、监控训练
 
 ```bash
-# TensorBoard（另开一个 tmux 窗口）
-tensorboard --logdir=train_dir/ --port=6006 --bind_all
+# 另开一个 tmux 窗口启动 TensorBoard
+tmux new -s blood_monitor
+./scripts/manage.sh monitor
 # 本地浏览器访问: http://<服务器IP>:6006
+
+# 自定义端口
+./scripts/manage.sh monitor --port 6007
 
 # GPU 实时监控
 watch -n 1 nvidia-smi
@@ -261,6 +279,11 @@ print('System ready.')
 │   ├── warmup.yaml
 │   ├── competitive.yaml
 │   └── elite.yaml
+├── scripts/
+│   ├── manage.sh           # 统一管理入口（训练/监控/评估/导出）
+│   ├── train.sh            # 原始训练脚本
+│   ├── eval.sh             # 原始评估脚本
+│   └── export_onnx.py      # ONNX 导出
 └── ...
 ```
 
