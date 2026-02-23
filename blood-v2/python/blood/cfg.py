@@ -92,7 +92,6 @@ def blood_override_defaults(parser: ArgumentParser):
     parser.set_defaults(
         env="blood_mahjong",
         encoder_custom="blood_encoder",
-        encoder_custom="blood_encoder",
         num_workers=8,
         num_envs_per_worker=32,
         batch_size=8192,
