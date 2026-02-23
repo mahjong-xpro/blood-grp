@@ -143,7 +143,7 @@ def run_training():
     register_blood_components()
     _patch_learner()
 
-    parser, partial_cfg = parse_sf_args(evaluation=False)
+    parser, partial_cfg = parse_sf_args(argv=["--env", "blood_mahjong"], evaluation=False)
     add_blood_args(parser)
     blood_override_defaults(parser)
     cfg = parse_full_cfg(parser)
