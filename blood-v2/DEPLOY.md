@@ -110,8 +110,11 @@ cd ~/Mahjong/blood/blood-v2
 # release 模式编译（128 核并行，速度快）
 maturin develop --release
 
+# 将 Python 包安装到 conda 环境（editable 模式，代码修改即时生效）
+pip install -e python/
+
 # 验证引擎可导入
-python -c "from blood._engine import BloodEnv; print('Engine OK')"
+python -c "from blood._engine import RustMahjongEnv; print('Engine OK')"
 ```
 
 ---
@@ -124,7 +127,8 @@ pip install "sample-factory>=2.0" "gymnasium>=0.29" "numpy>=1.24" "pyyaml>=6.0"
 # 可选：开发工具
 pip install pytest ruff tensorboard
 
-# 完整导入验证
+# 完整导入验证（需先设置 PYTHONPATH）
+export PYTHONPATH="$(pwd)/python:${PYTHONPATH:-}"
 python -c "
 from blood.training.runner import register_blood_components
 register_blood_components()
@@ -253,7 +257,8 @@ cargo test --release
 # Python 模型测试
 python -m pytest tests/ -v
 
-# 快速冒烟测试
+# 快速冒烟测试（需先设置 PYTHONPATH）
+export PYTHONPATH="$(pwd)/python:${PYTHONPATH:-}"
 python -c "
 import torch
 from blood.training.runner import register_blood_components
