@@ -45,7 +45,7 @@ Blood-v2 管理脚本
 命令:
   train <phase> [选项]
       phase: warmup | competitive | elite
-      --device <cuda|cpu>   训练设备 (默认: cuda)
+      --device <gpu|cpu>    训练设备 (默认: gpu)
       --resume              从最新 checkpoint 恢复
       --num-policies <N>    多 GPU 策略数 (默认: 1, 每个 policy 占一张 GPU)
 
@@ -82,7 +82,7 @@ EOF
 # ── train ─────────────────────────────────────────────────────────────────────
 cmd_train() {
     local phase="${1:-}"; shift || true
-    local device="cuda"
+    local device="gpu"
     local resume=0
     local num_policies=1
     local extra_args=()
