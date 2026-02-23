@@ -2,9 +2,10 @@
 
 import logging
 import os
-import signal
+import threading
 import gymnasium as gym
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from gymnasium import spaces
 
 from .augment import SUIT_PERMUTATIONS, augment_obs, augment_action
@@ -15,9 +16,34 @@ log = logging.getLogger(__name__)
 _rust_engine_ok = True
 _RUST_TIMEOUT_SEC = 15
 
+# One thread per process for running Rust engine calls with timeout.
+# Using a single-thread executor avoids spawning a new thread per call
+# while still allowing future.result(timeout=) from any calling thread.
+_executor_lock = threading.Lock()
+_executor: ThreadPoolExecutor | None = None
 
-def _rust_alarm_handler(signum, frame):
-    raise TimeoutError(f"RustMahjongEnv timed out after {_RUST_TIMEOUT_SEC}s (pid={os.getpid()})")
+
+def _get_executor() -> ThreadPoolExecutor:
+    global _executor
+    if _executor is None:
+        with _executor_lock:
+            if _executor is None:
+                _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="rust_engine")
+    return _executor
+
+
+def _run_with_timeout(fn, timeout=_RUST_TIMEOUT_SEC):
+    """Run fn() in a dedicated thread; raise TimeoutError if it takes too long.
+
+    Works from any thread (including SF2 event-loop threads) unlike signal.alarm
+    which requires the main thread.
+    """
+    future = _get_executor().submit(fn)
+    try:
+        return future.result(timeout=timeout)
+    except FuturesTimeoutError:
+        raise TimeoutError(f"Rust engine call timed out after {timeout}s (pid={os.getpid()})")
+
 
 NUM_TILE_TYPES = 27
 ACTION_SPACE = 34
@@ -125,6 +151,14 @@ class BloodMahjongEnv(gym.Env):
         inv_perm = tuple(self._current_perm.index(i) for i in range(3))
         return augment_action(action, inv_perm)
 
+    def _dummy_obs(self):
+        obs = np.zeros(OBS_SIZE, dtype=np.float32)
+        oracle = np.zeros(ORACLE_OBS_SIZE, dtype=np.float32)
+        mask = np.zeros(ACTION_SPACE, dtype=np.float32)
+        shanten = np.zeros(15, dtype=np.float32)
+        ow = np.zeros(81, dtype=np.float32)
+        return obs, oracle, mask, shanten, ow
+
     def reset(self, *, seed=None, options=None):
         if seed is not None:
             self._rng = np.random.default_rng(seed)
@@ -133,40 +167,36 @@ class BloodMahjongEnv(gym.Env):
         self._maybe_pick_augmentation()
 
         global _rust_engine_ok
+        obs_dict = None
         if self._engine_cls is not None and _rust_engine_ok:
-            old_handler = signal.signal(signal.SIGALRM, _rust_alarm_handler)
-            signal.alarm(_RUST_TIMEOUT_SEC)
+            engine_cls = self._engine_cls
+            opp_mode = self._opponent_mode
             try:
-                log.debug("RustMahjongEnv(seed=%d, mode=%s) pid=%d", game_seed, self._opponent_mode, os.getpid())
-                self._env = self._engine_cls(game_seed, self._opponent_mode)
-                obs_dict = self._env.reset(game_seed)
-                signal.alarm(0)
+                self._env, obs_dict = _run_with_timeout(
+                    lambda: _reset_engine(engine_cls, game_seed, opp_mode),
+                    timeout=_RUST_TIMEOUT_SEC,
+                )
             except TimeoutError as e:
-                log.error("FATAL: %s — Rust engine is hanging. "
-                          "Check blood._engine build. Disabling for this worker.", e)
+                log.error("FATAL: %s — Rust engine is hanging. Disabling for this worker.", e)
                 _rust_engine_ok = False
                 self._env = None
-                signal.alarm(0)
+                obs_dict = None
             except Exception as e:
                 log.error("RustMahjongEnv error pid=%d: %s", os.getpid(), e, exc_info=True)
                 self._env = None
-                signal.alarm(0)
-            finally:
-                signal.signal(signal.SIGALRM, old_handler)
+                obs_dict = None
 
-        if self._env is not None:
+        if obs_dict is not None:
             obs = np.array(obs_dict["obs"], dtype=np.float32)
             oracle = np.array(obs_dict["oracle_obs"], dtype=np.float32)
             mask = np.array(obs_dict["action_mask"], dtype=np.float32)
-            shanten = np.array(obs_dict["shanten_labels"], dtype=np.float32)
+            # "shanten_labels" is the current key; "dq_labels" was used in older builds
+            shanten_raw = obs_dict.get("shanten_labels", obs_dict.get("dq_labels"))
+            shanten = np.array(shanten_raw, dtype=np.float32) if shanten_raw is not None else np.zeros(15, dtype=np.float32)
             ow = np.array(obs_dict["ow_labels"], dtype=np.float32)
         else:
-            obs = np.zeros(OBS_SIZE, dtype=np.float32)
-            oracle = np.zeros(ORACLE_OBS_SIZE, dtype=np.float32)
-            mask = np.zeros(ACTION_SPACE, dtype=np.float32)
+            obs, oracle, mask, shanten, ow = self._dummy_obs()
             mask[31:34] = 1.0
-            shanten = np.zeros(15, dtype=np.float32)
-            ow = np.zeros(81, dtype=np.float32)
 
         self._episode_count += 1
         return {
@@ -179,49 +209,35 @@ class BloodMahjongEnv(gym.Env):
 
     def step(self, action):
         if self._env is None:
-            obs = np.zeros(OBS_SIZE, dtype=np.float32)
-            oracle = np.zeros(ORACLE_OBS_SIZE, dtype=np.float32)
-            mask = np.zeros(ACTION_SPACE, dtype=np.float32)
-            shanten = np.zeros(15, dtype=np.float32)
-            ow = np.zeros(81, dtype=np.float32)
+            obs, oracle, mask, shanten, ow = self._dummy_obs()
             return {"obs": obs, "oracle_obs": oracle, "action_mask": mask, "shanten_labels": shanten, "ow_labels": ow}, 0.0, True, False, {}
 
         global _rust_engine_ok
         engine_action = self._inverse_action(int(action))
-        old_handler = signal.signal(signal.SIGALRM, _rust_alarm_handler)
-        signal.alarm(_RUST_TIMEOUT_SEC)
+        env = self._env
         try:
-            obs_dict, reward, terminated, truncated, info = self._env.step(engine_action)
-            signal.alarm(0)
+            result = _run_with_timeout(
+                lambda: env.step(engine_action),
+                timeout=_RUST_TIMEOUT_SEC,
+            )
+            obs_dict, reward, terminated, truncated, info = result
         except TimeoutError as e:
-            log.error("FATAL: %s — Rust engine hung in step(). "
-                      "Check blood._engine build. Disabling for this worker.", e)
+            log.error("FATAL: %s — Rust engine hung in step(). Disabling for this worker.", e)
             _rust_engine_ok = False
             self._env = None
-            signal.alarm(0)
-            obs = np.zeros(OBS_SIZE, dtype=np.float32)
-            oracle = np.zeros(ORACLE_OBS_SIZE, dtype=np.float32)
-            mask = np.zeros(ACTION_SPACE, dtype=np.float32)
-            shanten = np.zeros(15, dtype=np.float32)
-            ow = np.zeros(81, dtype=np.float32)
+            obs, oracle, mask, shanten, ow = self._dummy_obs()
             return {"obs": obs, "oracle_obs": oracle, "action_mask": mask, "shanten_labels": shanten, "ow_labels": ow}, 0.0, True, False, {}
         except Exception as e:
             log.error("step() error pid=%d: %s", os.getpid(), e, exc_info=True)
             self._env = None
-            signal.alarm(0)
-            obs = np.zeros(OBS_SIZE, dtype=np.float32)
-            oracle = np.zeros(ORACLE_OBS_SIZE, dtype=np.float32)
-            mask = np.zeros(ACTION_SPACE, dtype=np.float32)
-            shanten = np.zeros(15, dtype=np.float32)
-            ow = np.zeros(81, dtype=np.float32)
+            obs, oracle, mask, shanten, ow = self._dummy_obs()
             return {"obs": obs, "oracle_obs": oracle, "action_mask": mask, "shanten_labels": shanten, "ow_labels": ow}, 0.0, True, False, {}
-        finally:
-            signal.signal(signal.SIGALRM, old_handler)
 
         obs = np.array(obs_dict["obs"], dtype=np.float32)
         oracle = np.array(obs_dict["oracle_obs"], dtype=np.float32)
         mask = np.array(obs_dict["action_mask"], dtype=np.float32)
-        shanten = np.array(obs_dict["shanten_labels"], dtype=np.float32)
+        shanten_raw = obs_dict.get("shanten_labels", obs_dict.get("dq_labels"))
+        shanten = np.array(shanten_raw, dtype=np.float32) if shanten_raw is not None else np.zeros(15, dtype=np.float32)
         ow = np.array(obs_dict["ow_labels"], dtype=np.float32)
 
         return {
@@ -231,3 +247,10 @@ class BloodMahjongEnv(gym.Env):
             "shanten_labels": self._apply_augment_shanten(shanten),
             "ow_labels": self._apply_augment_ow(ow),
         }, float(reward), terminated, truncated, info
+
+
+def _reset_engine(engine_cls, game_seed, opp_mode):
+    """Create and reset a RustMahjongEnv; returns (env, obs_dict) tuple."""
+    env = engine_cls(game_seed, opp_mode)
+    obs_dict = env.reset(game_seed)
+    return env, obs_dict
