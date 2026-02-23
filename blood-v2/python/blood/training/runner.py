@@ -143,7 +143,13 @@ def run_training():
     register_blood_components()
     _patch_learner()
 
-    parser, partial_cfg = parse_sf_args(argv=["--env", "blood_mahjong"], evaluation=False)
+    # SF2 requires --env as a mandatory CLI argument before set_defaults can run.
+    # Inject it into sys.argv if not already present so blood_override_defaults
+    # can set the real default later.
+    if "--env" not in sys.argv:
+        sys.argv.extend(["--env", "blood_mahjong"])
+
+    parser, partial_cfg = parse_sf_args(evaluation=False)
     add_blood_args(parser)
     blood_override_defaults(parser)
     cfg = parse_full_cfg(parser)
