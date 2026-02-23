@@ -5,7 +5,6 @@ import os
 import threading
 import gymnasium as gym
 import numpy as np
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from gymnasium import spaces
 
 from .augment import SUIT_PERMUTATIONS, augment_obs, augment_action
@@ -16,33 +15,35 @@ log = logging.getLogger(__name__)
 _rust_engine_ok = True
 _RUST_TIMEOUT_SEC = 15
 
-# One thread per process for running Rust engine calls with timeout.
-# Using a single-thread executor avoids spawning a new thread per call
-# while still allowing future.result(timeout=) from any calling thread.
-_executor_lock = threading.Lock()
-_executor: ThreadPoolExecutor | None = None
-
-
-def _get_executor() -> ThreadPoolExecutor:
-    global _executor
-    if _executor is None:
-        with _executor_lock:
-            if _executor is None:
-                _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="rust_engine")
-    return _executor
-
 
 def _run_with_timeout(fn, timeout=_RUST_TIMEOUT_SEC):
-    """Run fn() in a dedicated thread; raise TimeoutError if it takes too long.
+    """Run fn() in a fresh daemon thread; raise TimeoutError if it takes too long.
+
+    Uses a per-call daemon thread instead of a shared ThreadPoolExecutor so that
+    a hung Rust call never blocks subsequent calls.  When the timeout fires the
+    caller gives up; the daemon thread is abandoned and will be reaped when the
+    worker process exits (or when Rust eventually unblocks).
 
     Works from any thread (including SF2 event-loop threads) unlike signal.alarm
     which requires the main thread.
     """
-    future = _get_executor().submit(fn)
-    try:
-        return future.result(timeout=timeout)
-    except FuturesTimeoutError:
+    result: list = [None]
+    exc: list = [None]
+
+    def _target():
+        try:
+            result[0] = fn()
+        except Exception as e:
+            exc[0] = e
+
+    t = threading.Thread(target=_target, daemon=True, name=f"rust_engine_{os.getpid()}")
+    t.start()
+    t.join(timeout=timeout)
+    if t.is_alive():
         raise TimeoutError(f"Rust engine call timed out after {timeout}s (pid={os.getpid()})")
+    if exc[0] is not None:
+        raise exc[0]
+    return result[0]
 
 
 NUM_TILE_TYPES = 27

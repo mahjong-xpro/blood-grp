@@ -210,10 +210,12 @@ impl SPCalculator {
         let mut sample_score = 0i64;
         let mut n_sampled = 0u32;
 
-        /// Cap per-candidate depth-traversal to balance accuracy vs runtime.
-        /// 8 samples covers most iishanten paths while keeping SP calc under ~400µs;
-        /// lower to 4 if latency is critical.
-        const MAX_SAMPLES: u32 = 8;
+        /// Set to 0 to skip waiting_tiles calls in the lookahead path.
+        /// waiting_tiles calls calc_shanten 27 times per sample; with 14 candidates
+        /// and 8 samples each that is ~3000 calc_shanten calls per observation,
+        /// causing multi-second hangs during rollout collection.
+        /// The fast fill_deep_estimate path is used instead when n_sampled == 0.
+        const MAX_SAMPLES: u32 = 0;
         for eff_t in 0..NUM_TILE_TYPES as u8 {
             let avail = state.available_count(eff_t);
             if avail == 0 || hand[eff_t as usize] >= 4 { continue; }
