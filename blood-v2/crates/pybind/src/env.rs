@@ -188,7 +188,7 @@ impl RustMahjongEnv {
 
     fn get_agent_shanten(&self) -> i32 {
         let p = &self.state.players[self.player_id];
-        calc_shanten(&p.hand, p.melds.len())
+        calc_shanten(&p.hand, p.melds.len()).into()
     }
 
     fn get_aux_labels<'py>(&self, py: Python<'py>, player_id: usize) -> PyResult<Bound<'py, PyDict>> {
