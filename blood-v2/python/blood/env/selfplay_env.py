@@ -274,6 +274,10 @@ class SelfPlayEnv(BloodMahjongEnv):
         agent_delta = scores[0] - self._prev_scores[0]
         opp_deltas = scores[1:] - self._prev_scores[1:]
 
+        # Compute terminated early so reward shaping blocks can reference it.
+        # (Final value is re-assigned below after fast-forward logic.)
+        terminated = self._env.is_done() or self._env.player_has_won(0)
+
         # Base reward: sqrt-compressed normalized score delta.
         # REWARD_NORM = 32000 = max single-player payment per hand (6-fan ron cap).
         # agent_delta can exceed 32000: 6-fan tsumo = 32000 × 3 payers = 96000.
