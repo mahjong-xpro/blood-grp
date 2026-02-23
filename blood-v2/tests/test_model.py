@@ -297,51 +297,60 @@ class TestBloodActorCriticDims:
     """Verify actor/critic head input dims adapt to core output (LSTM vs Identity)."""
 
     def _make_cfg(self, use_rnn=False):
-        class Cfg:
-            blood_obs_channels = DEFAULT_OBS_CHANNELS
-            blood_conv_channels = 64
-            blood_num_res_blocks = 2
-            blood_encoder_out_dim = 256
-            # LSTM
-            rnn_type = "lstm"
-            rnn_size = 512
-            rnn_num_layers = 1
-            # Aux / oracle
-            aux_shanten_weight = 1.0
-            aux_opp_waits_weight = 0.3
-            oracle_enabled = False
-        cfg = Cfg()
-        cfg.use_rnn = use_rnn
+        import sys
+        argv_backup = sys.argv[:]
+        sys.argv = ["train", "--env", "blood_mahjong"]
+        if not use_rnn:
+            sys.argv += ["--use_rnn", "False"]
+        from blood.training.runner import register_blood_components
+        register_blood_components()
+        from blood.cfg import add_blood_args, blood_override_defaults
+        from sample_factory.cfg.arguments import parse_full_cfg, parse_sf_args
+        parser, _ = parse_sf_args(evaluation=False)
+        add_blood_args(parser)
+        blood_override_defaults(parser)
+        cfg = parse_full_cfg(parser)
+        sys.argv = argv_backup
+        cfg.blood_conv_channels = 64
+        cfg.blood_num_res_blocks = 2
+        cfg.blood_encoder_out_dim = 256
+        cfg.oracle_enabled = False
         return cfg
 
+    def _make_obs_action_space(self):
+        from gymnasium.spaces import Box, Dict
+        from sample_factory.algo.utils.spaces.discretized import Discrete
+        import numpy as np
+        obs_space = Dict({"obs": Box(low=0, high=1, shape=(DEFAULT_OBS_CHANNELS * NUM_TILES,), dtype=np.float32)})
+        action_space = Discrete(34)
+        return obs_space, action_space
+
     def test_identity_core_head_dims(self):
-        """Without LSTM, actor/critic heads take enc_out (64*27=1728) as input."""
+        """Without LSTM, actor/critic heads take enc_out (blood_encoder_out_dim=256) as input."""
         cfg = self._make_cfg(use_rnn=False)
         from blood.model.factory import BloodActorCritic
         from sample_factory.algo.utils.context import global_model_factory
-        import gym
-        obs_space = {"obs": gym.spaces.Box(low=0, high=1, shape=(DEFAULT_OBS_CHANNELS * NUM_TILES,))}
-        action_space = gym.spaces.Discrete(34)
+        obs_space, action_space = self._make_obs_action_space()
         model = BloodActorCritic(global_model_factory(), obs_space, action_space, cfg)
-        enc_out = 64 * NUM_TILES  # 1728
-        assert model.actor_head[0].in_features == enc_out
-        assert model.critic_head[0].in_features == enc_out
-        assert model.aux_head.shared[0].in_features == enc_out
+        enc_out = 256  # blood_encoder_out_dim
+        # actor_head[0] is LayerNorm; actor_head[1] is the first Linear
+        assert model.actor_head[1].in_features == enc_out
+        assert model.critic_head[1].in_features == enc_out
+        assert model.aux_head.shared[1].in_features == enc_out
 
     def test_lstm_core_head_dims(self):
-        """With LSTM (rnn_size=512), actor/critic heads take 512 as input."""
+        """With LSTM (default rnn_size=1024), actor/critic and AuxHead all take 1024 as input."""
         cfg = self._make_cfg(use_rnn=True)
         from blood.model.factory import BloodActorCritic
         from sample_factory.algo.utils.context import global_model_factory
-        import gym
-        obs_space = {"obs": gym.spaces.Box(low=0, high=1, shape=(DEFAULT_OBS_CHANNELS * NUM_TILES,))}
-        action_space = gym.spaces.Discrete(34)
+        obs_space, action_space = self._make_obs_action_space()
         model = BloodActorCritic(global_model_factory(), obs_space, action_space, cfg)
-        enc_out = 64 * NUM_TILES  # 1728
-        assert model.actor_head[0].in_features == 512
-        assert model.critic_head[0].in_features == 512
-        # AuxHead always uses pre-LSTM enc_out
-        assert model.aux_head.shared[0].in_features == enc_out
+        rnn_out = cfg.rnn_size  # 1024 by default
+        # actor_head[0] is LayerNorm; actor_head[1] is the first Linear
+        assert model.actor_head[1].in_features == rnn_out
+        assert model.critic_head[1].in_features == rnn_out
+        # AuxHead reads post-LSTM features (core_out), same as actor/critic
+        assert model.aux_head.shared[1].in_features == rnn_out
 
 
 class TestLeagueManager:
