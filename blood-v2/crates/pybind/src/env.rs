@@ -231,9 +231,24 @@ impl RustMahjongEnv {
         if matches!(self.opponent_policy, OpponentPolicy::External) {
             return;
         }
+        let mut prev_turn = self.state.turn_count;
+        let mut stall_count = 0u32;
         for _guard in 0..500 {
             if self.state.is_done() || self.state.phase == Phase::Scoring {
                 break;
+            }
+
+            // Detect stuck state: if turn_count hasn't advanced in 8 consecutive
+            // iterations, the game is deadlocked — force scoring to unblock.
+            if self.state.turn_count == prev_turn {
+                stall_count += 1;
+                if stall_count >= 8 {
+                    self.state.phase = Phase::Scoring;
+                    break;
+                }
+            } else {
+                prev_turn = self.state.turn_count;
+                stall_count = 0;
             }
 
             match self.state.phase {

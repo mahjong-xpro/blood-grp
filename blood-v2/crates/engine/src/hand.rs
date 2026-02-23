@@ -109,6 +109,16 @@ fn scan_groups(
 ) {
     if *best == -1 { return; }
 
+    // Prune: more partial groups than we can use — cap tatsu and evaluate now.
+    // eff_tatsu = tatsu.min(target - mentsu), so extra tatsu beyond (target - mentsu) are wasted.
+    let remaining = target.saturating_sub(mentsu);
+    if tatsu > remaining {
+        let eff_tatsu = remaining;
+        let s = (remaining as i8) * 2 - (eff_tatsu as i8) - if has_jantai { 1 } else { 0 };
+        *best = (*best).min(s);
+        return;
+    }
+
     // Skip to next non-zero tile
     let mut pos = start;
     while pos < NUM_TILE_TYPES && hand[pos] == 0 {
@@ -171,14 +181,16 @@ pub fn is_complete(hand: &HandCounts, num_melds: usize) -> bool {
     calc_shanten(hand, num_melds) == -1
 }
 
-/// Get the tiles we are waiting for (only valid at tenpai i.e. shanten==0)
+/// Get the tiles we are waiting for (only valid at tenpai i.e. shanten==0).
+/// Uses the memoized shanten cache for performance.
 pub fn waiting_tiles(hand: &HandCounts, num_melds: usize) -> Vec<Tile> {
     let mut waits = Vec::new();
     let mut h = *hand;
     for t in 0..NUM_TILE_TYPES as u8 {
         if h[t as usize] < 4 {
             h[t as usize] += 1;
-            if is_complete(&h, num_melds) {
+            // Use memoized calc_shanten to avoid redundant recursive calls
+            if crate::algo::shanten::calc_shanten(&h, num_melds) == -1 {
                 waits.push(t);
             }
             h[t as usize] -= 1;
