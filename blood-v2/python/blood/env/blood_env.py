@@ -186,8 +186,38 @@ class BloodMahjongEnv(gym.Env):
             ow = np.zeros(81, dtype=np.float32)
             return {"obs": obs, "oracle_obs": oracle, "action_mask": mask, "shanten_labels": shanten, "ow_labels": ow}, 0.0, True, False, {}
 
+        global _rust_engine_ok
         engine_action = self._inverse_action(int(action))
-        obs_dict, reward, terminated, truncated, info = self._env.step(engine_action)
+        old_handler = signal.signal(signal.SIGALRM, _rust_alarm_handler)
+        signal.alarm(_RUST_TIMEOUT_SEC)
+        try:
+            obs_dict, reward, terminated, truncated, info = self._env.step(engine_action)
+            signal.alarm(0)
+        except TimeoutError as e:
+            log.error("FATAL: %s — Rust engine hung in step(). "
+                      "Check blood._engine build. Disabling for this worker.", e)
+            _rust_engine_ok = False
+            self._env = None
+            signal.alarm(0)
+            obs = np.zeros(OBS_SIZE, dtype=np.float32)
+            oracle = np.zeros(ORACLE_OBS_SIZE, dtype=np.float32)
+            mask = np.zeros(ACTION_SPACE, dtype=np.float32)
+            shanten = np.zeros(15, dtype=np.float32)
+            ow = np.zeros(81, dtype=np.float32)
+            return {"obs": obs, "oracle_obs": oracle, "action_mask": mask, "shanten_labels": shanten, "ow_labels": ow}, 0.0, True, False, {}
+        except Exception as e:
+            log.error("step() error pid=%d: %s", os.getpid(), e, exc_info=True)
+            self._env = None
+            signal.alarm(0)
+            obs = np.zeros(OBS_SIZE, dtype=np.float32)
+            oracle = np.zeros(ORACLE_OBS_SIZE, dtype=np.float32)
+            mask = np.zeros(ACTION_SPACE, dtype=np.float32)
+            shanten = np.zeros(15, dtype=np.float32)
+            ow = np.zeros(81, dtype=np.float32)
+            return {"obs": obs, "oracle_obs": oracle, "action_mask": mask, "shanten_labels": shanten, "ow_labels": ow}, 0.0, True, False, {}
+        finally:
+            signal.signal(signal.SIGALRM, old_handler)
+
         obs = np.array(obs_dict["obs"], dtype=np.float32)
         oracle = np.array(obs_dict["oracle_obs"], dtype=np.float32)
         mask = np.array(obs_dict["action_mask"], dtype=np.float32)
