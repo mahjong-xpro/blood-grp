@@ -41,6 +41,10 @@ def _inject_config_yaml():
     # that have dedicated --no_xxx counterparts (oracle_enabled, league_enabled).
     _skip = {"encoder_custom", "oracle_enabled", "league_enabled"}
 
+    # SF2 args that use type=str2bool (accept --key False to disable).
+    # store_true args cannot be set to False via CLI, so we skip them when False.
+    _str2bool_args = {"use_rnn", "normalize_input", "normalize_returns"}
+
     # Append yaml values as CLI args (only if not already in sys.argv)
     existing = set(sys.argv)
     for key, val in cfg.items():
@@ -49,10 +53,13 @@ def _inject_config_yaml():
         flag = f"--{key}"
         if flag in existing:
             continue
-        # Boolean yaml values: true → store_true flag (no value), false → skip
         if isinstance(val, bool):
             if val:
                 sys.argv.append(flag)
+            elif key in _str2bool_args:
+                # str2bool args: pass --key False to override set_defaults(key=True)
+                sys.argv.extend([flag, "False"])
+            # else: store_true arg with False value — skip (can't unset via CLI)
         else:
             sys.argv.extend([flag, str(val)])
 

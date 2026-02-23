@@ -1,10 +1,23 @@
 """Gymnasium wrapper for Bloody Battle Mahjong."""
 
+import logging
+import os
+import signal
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
 from .augment import SUIT_PERMUTATIONS, augment_obs, augment_action
+
+log = logging.getLogger(__name__)
+
+# Per-process flag: set to False if Rust engine hangs/fails in this worker
+_rust_engine_ok = True
+_RUST_TIMEOUT_SEC = 15
+
+
+def _rust_alarm_handler(signum, frame):
+    raise TimeoutError(f"RustMahjongEnv timed out after {_RUST_TIMEOUT_SEC}s (pid={os.getpid()})")
 
 NUM_TILE_TYPES = 27
 ACTION_SPACE = 34
@@ -44,10 +57,13 @@ class BloodMahjongEnv(gym.Env):
             self._opponent_mode = getattr(cfg, "opponent_mode", "rulebot")
             self._augment_prob = getattr(cfg, "suit_augment_prob", 0.5)
 
+        log.debug("BloodMahjongEnv.__init__ pid=%d", os.getpid())
         try:
             from blood._engine import RustMahjongEnv
             self._engine_cls = RustMahjongEnv
-        except ImportError:
+            log.debug("blood._engine imported OK pid=%d", os.getpid())
+        except ImportError as e:
+            log.warning("blood._engine not available: %s", e)
             self._engine_cls = None
 
         self._env = None
@@ -116,9 +132,29 @@ class BloodMahjongEnv(gym.Env):
         game_seed = int(self._rng.integers(0, 2**32))
         self._maybe_pick_augmentation()
 
-        if self._engine_cls is not None:
-            self._env = self._engine_cls(game_seed, self._opponent_mode)
-            obs_dict = self._env.reset(game_seed)
+        global _rust_engine_ok
+        if self._engine_cls is not None and _rust_engine_ok:
+            old_handler = signal.signal(signal.SIGALRM, _rust_alarm_handler)
+            signal.alarm(_RUST_TIMEOUT_SEC)
+            try:
+                log.debug("RustMahjongEnv(seed=%d, mode=%s) pid=%d", game_seed, self._opponent_mode, os.getpid())
+                self._env = self._engine_cls(game_seed, self._opponent_mode)
+                obs_dict = self._env.reset(game_seed)
+                signal.alarm(0)
+            except TimeoutError as e:
+                log.error("FATAL: %s — Rust engine is hanging. "
+                          "Check blood._engine build. Disabling for this worker.", e)
+                _rust_engine_ok = False
+                self._env = None
+                signal.alarm(0)
+            except Exception as e:
+                log.error("RustMahjongEnv error pid=%d: %s", os.getpid(), e, exc_info=True)
+                self._env = None
+                signal.alarm(0)
+            finally:
+                signal.signal(signal.SIGALRM, old_handler)
+
+        if self._env is not None:
             obs = np.array(obs_dict["obs"], dtype=np.float32)
             oracle = np.array(obs_dict["oracle_obs"], dtype=np.float32)
             mask = np.array(obs_dict["action_mask"], dtype=np.float32)
