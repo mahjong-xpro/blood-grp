@@ -28,7 +28,7 @@ experiment: blood_v2_competitive
 # 修复: blood_obs_channels 384 → 464 (Rust NUM_STUDENT_CHANNELS=464)
 blood_obs_channels: 464
 blood_conv_channels: 256
-blood_num_res_blocks: 16
+blood_num_res_blocks: 12
 blood_encoder_out_dim: 1024
 
 # Opponents: neural self-play via league
@@ -37,7 +37,7 @@ opponent_refresh_every: 20
 
 # Oracle distillation — reduce weight as student improves
 oracle_enabled: true
-oracle_num_blocks: 20
+oracle_num_blocks: 15
 oracle_distill_weight: 0.03
 oracle_distill_temperature: 2.0
 

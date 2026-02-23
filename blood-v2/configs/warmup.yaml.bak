@@ -27,7 +27,7 @@ experiment: blood_v2_warmup
 # 修复: blood_obs_channels 384 → 464 (Rust NUM_STUDENT_CHANNELS=464)
 blood_obs_channels: 464
 blood_conv_channels: 256
-blood_num_res_blocks: 16
+blood_num_res_blocks: 12
 blood_encoder_out_dim: 1024
 
 # Opponents: RuleBot during warmup
@@ -35,7 +35,7 @@ opponent_mode: rulebot
 
 # Oracle distillation — enabled from the start
 oracle_enabled: true
-oracle_num_blocks: 20
+oracle_num_blocks: 15
 oracle_distill_weight: 0.1
 oracle_distill_temperature: 3.0
 
