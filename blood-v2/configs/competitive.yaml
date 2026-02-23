@@ -4,17 +4,18 @@
 # Prerequisite: resume from warmup checkpoint
 
 # Sample Factory
-num_workers: 8
+num_workers: 16
 num_envs_per_worker: 32
-batch_size: 8192
-num_batches_per_epoch: 4
+batch_size: 16384
+num_batches_per_epoch: 8
 ppo_clip_ratio: 0.1
 max_grad_norm: 1.0
 gamma: 0.998
 gae_lambda: 0.95
 learning_rate: 3e-4
 lr_schedule: kl_adaptive_minibatch
-exploration_loss_coeff: 0.005
+exploration_loss_coeff: 0.01
+value_loss_coeff: 1.0
 train_for_env_steps: 5000000
 
 # Environment
@@ -24,8 +25,8 @@ experiment: blood_v2_competitive
 
 # Model — 与 warmup.yaml/default.yaml 保持一致 (256ch/20blocks Bottleneck)
 # 修复: 原 192ch/30blocks 为 V1 规格，无法加载 warmup 阶段的 256ch/20blocks 权重
-# 修复: blood_obs_channels 385 → 384 (Rust NUM_STUDENT_CHANNELS=384)
-blood_obs_channels: 384
+# 修复: blood_obs_channels 384 → 464 (Rust NUM_STUDENT_CHANNELS=464)
+blood_obs_channels: 464
 blood_conv_channels: 256
 blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024
@@ -52,6 +53,20 @@ warmup_reward_shaping: false
 # Data augmentation
 suit_augment_prob: 0.5
 
+# Structured reward shaping (REWARD_NORM=32000: 6-fan cap; tsumo max=+1.732, ron max=+1.0 sqrt-compressed)
+reward_tsumo_bonus: 0.1
+reward_deal_in_penalty: 0.05
+reward_shanten_progress: 0.003
+reward_shanten_regress: 0.001
+
 # Auxiliary tasks — standard weight
-aux_dingque_weight: 1.0
-aux_opp_waits_weight: 0.1
+aux_shanten_weight: 1.0
+aux_opp_waits_weight: 0.3
+
+# LSTM — temporal modeling across turns
+use_rnn: true
+rnn_type: lstm
+rnn_size: 1024
+rnn_num_layers: 1
+rollout: 32
+recurrence: 32

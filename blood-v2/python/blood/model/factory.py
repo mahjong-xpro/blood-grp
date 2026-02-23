@@ -28,25 +28,27 @@ class BloodActorCritic(ActorCriticSharedWeights):
     def __init__(self, model_factory, obs_space, action_space, cfg):
         super().__init__(model_factory, obs_space, action_space, cfg)
 
-        enc_out = self.encoder.get_out_size()
+        core_out = self.core.get_out_size()     # 1024 with LSTM, 6912 with Identity core
         head_dim = 512
 
-        # NOTE: Decoupled 2-layer heads for Actor and Critic
+        # Pre-norm 2-layer heads: LayerNorm before each Linear for training stability.
+        # Pre-norm (LN → Linear → Mish) is more stable than Post-norm (Linear → Mish → LN)
+        # because gradients are normalized before entering each linear layer.
         self.actor_head = nn.Sequential(
-            nn.Linear(enc_out, head_dim),
+            nn.LayerNorm(core_out),
+            nn.Linear(core_out, head_dim),
             nn.Mish(inplace=True),
             nn.LayerNorm(head_dim),
             nn.Linear(head_dim, head_dim),
             nn.Mish(inplace=True),
-            nn.LayerNorm(head_dim),
         )
         self.critic_head = nn.Sequential(
-            nn.Linear(enc_out, head_dim),
+            nn.LayerNorm(core_out),
+            nn.Linear(core_out, head_dim),
             nn.Mish(inplace=True),
             nn.LayerNorm(head_dim),
             nn.Linear(head_dim, head_dim),
             nn.Mish(inplace=True),
-            nn.LayerNorm(head_dim),
         )
 
         # Replace standard SF heads with our decoupled ones
@@ -58,20 +60,23 @@ class BloodActorCritic(ActorCriticSharedWeights):
         self.action_parameterization = model_factory.make_action_parameterization(cfg, head_dim, action_space)
         self.critic_linear = nn.Linear(head_dim, 1)
 
-        self.aux_head = AuxHead(in_dim=enc_out, hidden=512)
-        self._aux_enabled = getattr(cfg, "aux_dingque_weight", 1.0) > 0
-        self.dq_weight = getattr(cfg, "aux_dingque_weight", 1.0)
+        # AuxHead reads post-LSTM features (core_out) to avoid gradient conflict.
+        # Pre-LSTM placement caused the encoder to be optimized for aux tasks rather
+        # than LSTM temporal modeling. Post-LSTM placement incentivizes the LSTM to
+        # maintain opponent state in its hidden state, which is the correct inductive bias.
+        self.aux_head = AuxHead(in_dim=core_out, hidden=512)
+        self._aux_enabled = getattr(cfg, "aux_shanten_weight", 1.0) > 0
+        self.shanten_weight = getattr(cfg, "aux_shanten_weight", 1.0)
         self.ow_weight = getattr(cfg, "aux_opp_waits_weight", 0.1)
 
         self.oracle_enabled = getattr(cfg, "oracle_enabled", True)
         if self.oracle_enabled:
-            oracle_obs_ch = 430
-            oracle_blocks = getattr(cfg, "oracle_num_blocks", 20)  # Also 20 blocks for oracle
+            oracle_obs_ch = 516
+            oracle_blocks = getattr(cfg, "oracle_num_blocks", 25)  # 25 blocks for oracle (matches cfg.py default)
             self.oracle_encoder = OracleEncoder(
                 obs_channels=oracle_obs_ch,
                 conv_ch=256,         # Also 256 for oracle
                 num_blocks=oracle_blocks,
-                out_dim=enc_out,     # Match student enc_out
                 action_dim=action_space.n,
             )
             self.distill_loss_fn = DistillationLoss(
@@ -79,8 +84,11 @@ class BloodActorCritic(ActorCriticSharedWeights):
             )
             self.distill_weight = getattr(cfg, "oracle_distill_weight", 0.05)
             self.oracle_ce_weight = getattr(cfg, "oracle_ce_weight", 0.1)
+            self.oracle_value_distill_weight = getattr(cfg, "oracle_value_distill_weight", 0.5)
 
-        self._cached_encoder_out = None
+        self._cached_encoder_out = None  # post-enc_proj (1024); used as forward-pass guard in runner.py
+        self._cached_core_out = None     # post-LSTM (1024); used by AuxHead
+        self._cached_values = None       # student values; used by Oracle value distillation
         self._cached_obs = None
         self._actor_features = None
         self._critic_features = None
@@ -97,8 +105,8 @@ class BloodActorCritic(ActorCriticSharedWeights):
 
     def forward_core(self, head_output: Tensor, rnn_states):
         # Pass through base RNN core, then split into actor/critic branches.
-        # Storing both so forward_tail can use them without recomputing.
         x, new_rnn_states = self.core(head_output, rnn_states)
+        self._cached_core_out = x  # post-LSTM features for AuxHead
         self._actor_features = self.actor_head(x)
         self._critic_features = self.critic_head(x)
         return x, new_rnn_states
@@ -113,6 +121,7 @@ class BloodActorCritic(ActorCriticSharedWeights):
             c_feat = self.critic_head(core_output)
 
         values = self.critic_linear(c_feat).squeeze()
+        self._cached_values = values  # cache for Oracle value distillation in runner.py
         result = TensorDict(values=values)
         if values_only:
             return result

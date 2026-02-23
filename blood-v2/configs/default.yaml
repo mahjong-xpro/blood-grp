@@ -1,5 +1,6 @@
 # Blood-v2 Production Hyperparameters
 # Single unified configuration for superhuman-level training
+# Use phase-specific yamls (warmup/competitive/elite) for curriculum training
 
 # Sample Factory
 num_workers: 8
@@ -13,14 +14,16 @@ gae_lambda: 0.95
 learning_rate: 3e-4
 lr_schedule: kl_adaptive_minibatch
 exploration_loss_coeff: 0.005
+value_loss_coeff: 1.0
+train_for_env_steps: 5000000
 
 # Environment
 env: blood_mahjong
 encoder_custom: blood_encoder
 experiment: blood_v2
 
-# Model
-blood_obs_channels: 384
+# Model — 与 Rust consts.rs 保持一致 (NUM_STUDENT_CHANNELS=464, Bottleneck 256ch/20blocks)
+blood_obs_channels: 464
 blood_conv_channels: 256
 blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024
@@ -37,10 +40,25 @@ league_pool_dir: checkpoints/league/
 league_add_every: 50000
 league_newest_weight: 3.0
 opponent_mode: selfplay
+opponent_refresh_every: 20
 
 # Data augmentation
 suit_augment_prob: 0.5
 
+# Structured reward shaping
+reward_tsumo_bonus: 0.1
+reward_deal_in_penalty: 0.05
+reward_shanten_progress: 0.003
+reward_shanten_regress: 0.001
+
 # Auxiliary tasks
-aux_dingque_weight: 1.0
-aux_opp_waits_weight: 0.1
+aux_shanten_weight: 1.0
+aux_opp_waits_weight: 0.3
+
+# LSTM — temporal modeling across turns
+use_rnn: true
+rnn_type: lstm
+rnn_size: 1024
+rnn_num_layers: 1
+rollout: 32
+recurrence: 32

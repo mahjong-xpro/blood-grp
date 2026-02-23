@@ -31,7 +31,7 @@ impl MeldType {
 }
 
 pub fn add_tile(hand: &mut HandCounts, t: Tile) {
-    assert!(
+    debug_assert!(
         hand[t as usize] < COPIES_PER_TILE as u8,
         "add_tile: tile {} already at max count {}",
         t, hand[t as usize]
@@ -40,7 +40,7 @@ pub fn add_tile(hand: &mut HandCounts, t: Tile) {
 }
 
 pub fn remove_tile(hand: &mut HandCounts, t: Tile) {
-    assert!(hand[t as usize] > 0, "tile {} not in hand", t);
+    debug_assert!(hand[t as usize] > 0, "tile {} not in hand", t);
     hand[t as usize] -= 1;
 }
 

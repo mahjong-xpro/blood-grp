@@ -1,5 +1,6 @@
 use crate::consts::*;
 use crate::algo::shanten::{calc_shanten, waiting_tiles};
+use crate::algo::agari::calc_fan;
 use crate::state::board::BoardState;
 use super::student::encode_student_obs;
 
@@ -49,12 +50,17 @@ pub fn encode_oracle_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
         ch += 3;
     }
 
-    // Opponent true shanten (3 x 5 = 15 ch)
+    // Pre-compute opponent shanten once (reused for shanten one-hot and wait tiles)
+    let mut opp_shantens = [0i8; NUM_PLAYERS - 1];
     for opp_off in 1..NUM_PLAYERS {
         let opp_id = (player_id + opp_off) % NUM_PLAYERS;
         let opp = &board.players[opp_id];
-        let s = calc_shanten(&opp.hand, opp.melds.len());
-        let sh = s.max(0).min(4) as usize;
+        opp_shantens[opp_off - 1] = calc_shanten(&opp.hand, opp.melds.len());
+    }
+
+    // Opponent true shanten (3 x 5 = 15 ch)
+    for opp_off in 1..NUM_PLAYERS {
+        let sh = opp_shantens[opp_off - 1].max(0).min(4) as usize;
         fill_ch!(ch + sh, 1.0);
         ch += 5;
     }
@@ -63,8 +69,7 @@ pub fn encode_oracle_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
     for opp_off in 1..NUM_PLAYERS {
         let opp_id = (player_id + opp_off) % NUM_PLAYERS;
         let opp = &board.players[opp_id];
-        let s = calc_shanten(&opp.hand, opp.melds.len());
-        if s == 0 {
+        if opp_shantens[opp_off - 1] == 0 {
             let waits = waiting_tiles(&opp.hand, opp.melds.len());
             for &wt in &waits {
                 w!(ch, wt as usize, 1.0);
@@ -91,6 +96,29 @@ pub fn encode_oracle_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
     for opp_off in 1..NUM_PLAYERS {
         let opp_id = (player_id + opp_off) % NUM_PLAYERS;
         fill_ch!(ch, board.players[opp_id].ding_que_completed() as u8 as f32);
+        ch += 1;
+    }
+
+    // Opponent best fan estimate (3 ch): normalized fan if tenpai, else 0
+    for opp_off in 1..NUM_PLAYERS {
+        let opp_id = (player_id + opp_off) % NUM_PLAYERS;
+        if opp_shantens[opp_off - 1] == 0 {
+            let waits = waiting_tiles(&board.players[opp_id].hand, board.players[opp_id].melds.len());
+            let best_fan = waits.iter().filter_map(|&wt| {
+                let ctx = board.make_win_context_for_obs(opp_id, wt);
+                calc_fan(&ctx).map(|r| r.fan)
+            }).max().unwrap_or(0);
+            fill_ch!(ch, best_fan as f32 / MAX_FAN as f32);
+        }
+        ch += 1;
+    }
+
+    // Opponent last drawn tile (3 ch): hidden from student, available to oracle
+    for opp_off in 1..NUM_PLAYERS {
+        let opp_id = (player_id + opp_off) % NUM_PLAYERS;
+        if let Some(tile) = board.players[opp_id].last_drawn_tile {
+            w!(ch, tile as usize, 1.0);
+        }
         ch += 1;
     }
 

@@ -101,9 +101,9 @@ class Arena:
                 done = terminated or truncated
 
             try:
-                scores = env._env.get_scores() if env._env else [60000] * 4
+                scores = env._env.get_scores() if env._env else [100000] * 4
             except Exception:
-                scores = [60000] * 4
+                scores = [100000] * 4
 
             player_score = scores[0]
             rank = sum(1 for s in scores if s > player_score) + 1

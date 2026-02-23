@@ -214,25 +214,21 @@ impl BoardState {
         };
 
         // Ron check
+        // Blood mahjong has no furiten rule; only 过手加番 applies.
         if p.ding_que_completed() {
             let mut h = p.hand;
             add_tile(&mut h, tile);
             if is_complete(&h, p.melds.len()) {
-                let waits = waiting_tiles(&p.hand, p.melds.len());
-                let is_perm_furiten = p.is_permanent_furiten(&waits);
-
-                if !is_perm_furiten {
-                    if let Some(passed_fan) = p.furiten_passed_ron_fan {
-                        // 过手加番: even with temporary furiten, allow ron if fan increased
-                        let ctx = self.make_win_context(player_id, tile, true);
-                        if let Some(result) = calc_fan(&ctx) {
-                            if result.fan > passed_fan {
-                                candidate.can_agari = true;
-                            }
+                if let Some(passed_fan) = p.furiten_passed_ron_fan {
+                    // 过手加番: passed on this tile before; allow ron only if fan increased
+                    let ctx = self.make_win_context(player_id, tile, true);
+                    if let Some(result) = calc_fan(&ctx) {
+                        if result.fan > passed_fan {
+                            candidate.can_agari = true;
                         }
-                    } else if !p.temporary_furiten {
-                        candidate.can_agari = true;
                     }
+                } else {
+                    candidate.can_agari = true;
                 }
             }
         }
@@ -308,22 +304,23 @@ impl BoardState {
                 let p = &self.players[player_id];
                 let ankan = p.can_ankan_tiles();
                 let kakan = p.can_kakan_tiles();
-                let mut all_kan: Vec<Tile> = ankan.clone();
-                all_kan.extend(&kakan);
+                let total = ankan.len() + kakan.len();
 
-                if all_kan.len() == 1 {
-                    self.execute_kan(player_id, all_kan[0], ankan.contains(&all_kan[0]));
-                } else if all_kan.len() > 1 {
+                if total == 1 {
+                    let (tile, is_ankan) = if !ankan.is_empty() {
+                        (ankan[0], true)
+                    } else {
+                        (kakan[0], false)
+                    };
+                    self.execute_kan(player_id, tile, is_ankan);
+                } else if total > 1 {
                     self.phase = Phase::KanSelect;
                 } else {
                     self.phase = Phase::Discard;
                 }
             }
-            Action::Pass | Action::Discard(_) => {
+            Action::Pass => {
                 self.phase = Phase::Discard;
-                if let Action::Discard(t) = action {
-                    self.do_discard(player_id, t);
-                }
             }
             _ => {}
         }
@@ -332,10 +329,14 @@ impl BoardState {
     fn apply_kan_select(&mut self, player_id: usize, action: Action) {
         if let Action::Discard(tile) = action {
             let p = &self.players[player_id];
-            let ankan = p.can_ankan_tiles();
-            let kakan = p.can_kakan_tiles();
-            let is_ankan = ankan.contains(&tile);
-            let is_kakan = kakan.contains(&tile);
+            // Determine kan type directly from hand state — avoids recomputing tile lists.
+            // AnKan: 4 copies in hand (ding_que suit excluded by can_ankan_tiles logic).
+            // KaKan: has a Pon meld for this tile and ≥1 copy in hand.
+            let is_ankan = p.hand[tile as usize] >= 4
+                && p.ding_que.map_or(true, |s| crate::tile::Suit::from_tile(tile) != s);
+            let is_kakan = !is_ankan
+                && p.hand[tile as usize] >= 1
+                && p.melds.iter().any(|m| matches!(m, MeldType::Pon(t) if *t == tile));
             if is_ankan || is_kakan {
                 self.execute_kan(player_id, tile, is_ankan);
                 return;
@@ -358,9 +359,7 @@ impl BoardState {
 
             for i in 0..NUM_PLAYERS {
                 if i != player_id && !self.players[i].has_won {
-                    for _ in 0..4 {
-                        self.players[i].see_tile(tile);
-                    }
+                    self.players[i].see_tile_n(tile, 4);
                 }
             }
 
@@ -456,8 +455,7 @@ impl BoardState {
             p.is_rinshan = true;
             p.see_tile(new_tile);
 
-            // Clear temporary furiten on hand change
-            p.temporary_furiten = false;
+            // Clear 过手加番 on hand change (rinshan draw)
             p.furiten_passed_ron_fan = None;
 
             self.phase = Phase::SelfCheck;
@@ -479,7 +477,6 @@ impl BoardState {
 
         remove_tile(&mut p.hand, tile);
         p.discards.push(tile);
-        p.discard_history.push(tile);
         p.tsumogiri.push(is_tsumogiri);
         p.last_drawn_tile = None;
         p.is_rinshan = false;
@@ -523,7 +520,7 @@ impl BoardState {
         self.reactions[player_id] = Some(action);
         self.reaction_pending[player_id] = false;
 
-        // If action is Pass, set temporary furiten for this player
+        // If action is Pass, record 过手加番 fan for this player
         if action == Action::Pass {
             if let Some((_, tile)) = self.last_discard {
                 let p = &self.players[player_id];
@@ -531,8 +528,6 @@ impl BoardState {
                 if shanten == 0 {
                     let waits = waiting_tiles(&p.hand, p.melds.len());
                     if waits.contains(&tile) {
-                        // Passed on a winning tile → temporary furiten
-                        self.players[player_id].temporary_furiten = true;
                         // Record fan for 过手加番
                         let ctx = self.make_win_context(player_id, tile, true);
                         if let Some(result) = calc_fan(&ctx) {
@@ -585,10 +580,11 @@ impl BoardState {
                 .copied().unwrap();
             self.current_player = last_winner;
             self.advance_to_next_draw();
+        } else if let Some(kanner) = kan_player {
+            // MinKan takes priority over Pon (higher fan potential)
+            self.execute_minkan(kanner, discarder, tile);
         } else if let Some(ponner) = pon_player {
             self.execute_pon(ponner, discarder, tile);
-        } else if let Some(kanner) = kan_player {
-            self.execute_minkan(kanner, discarder, tile);
         } else {
             self.advance_to_next_draw();
         }
@@ -599,19 +595,16 @@ impl BoardState {
         remove_tile(&mut p.hand, tile);
         remove_tile(&mut p.hand, tile);
         p.melds.push(MeldType::Pon(tile));
-        p.temporary_furiten = false;
         p.furiten_passed_ron_fan = None;
 
-        // Remove tile from discarder's discard pile (it's been claimed)
-        if let Some(pos) = self.players[from].discards.iter().rposition(|&t| t == tile) {
-            self.players[from].discards.remove(pos);
-            self.players[from].tsumogiri.remove(pos);
-        }
+        // The claimed tile is always the most recent discard — pop() is O(1)
+        // and preserves the order of all earlier discards.
+        self.players[from].discards.pop();
+        self.players[from].tsumogiri.pop();
 
         for i in 0..NUM_PLAYERS {
             if i != player_id && !self.players[i].has_won {
-                self.players[i].see_tile(tile);
-                self.players[i].see_tile(tile);
+                self.players[i].see_tile_n(tile, 2); // 2 tiles from hand
             }
         }
 
@@ -627,17 +620,13 @@ impl BoardState {
         remove_tile(&mut p.hand, tile);
         p.melds.push(MeldType::MinKan(tile));
 
-        // Remove from discard pile
-        if let Some(pos) = self.players[from].discards.iter().rposition(|&t| t == tile) {
-            self.players[from].discards.remove(pos);
-            self.players[from].tsumogiri.remove(pos);
-        }
+        // The claimed tile is always the most recent discard — pop() is O(1).
+        self.players[from].discards.pop();
+        self.players[from].tsumogiri.pop();
 
         for i in 0..NUM_PLAYERS {
             if i != player_id && !self.players[i].has_won {
-                self.players[i].see_tile(tile);
-                self.players[i].see_tile(tile);
-                self.players[i].see_tile(tile);
+                self.players[i].see_tile_n(tile, 3); // 3 tiles from hand
             }
         }
 
@@ -659,8 +648,7 @@ impl BoardState {
             p.is_rinshan = true;
             p.see_tile(new_tile);
 
-            // Clear temporary furiten on hand change
-            p.temporary_furiten = false;
+            // Clear 过手加番 on hand change (minkan rinshan draw)
             p.furiten_passed_ron_fan = None;
 
             self.current_player = player_id;
@@ -726,7 +714,6 @@ impl BoardState {
         p.last_drawn_tile = Some(tile);
         p.is_rinshan = false;
         p.see_tile(tile);
-        p.temporary_furiten = false;
         p.furiten_passed_ron_fan = None;
 
         self.events.push(Event::Draw { player: next, tile });
@@ -759,7 +746,7 @@ impl BoardState {
             is_tianhu: !is_ron && self.dahai_count == 0 && player_id == self.dealer,
             is_dihu: is_ron && self.dahai_count == 1 && self.last_discard.map_or(false, |(d, _)| d == self.dealer),
             exclude_gen_tile: None,
-            fan_config: self.fan_config.clone(),
+            fan_config: self.fan_config,  // Copy
         }
     }
 
@@ -781,10 +768,15 @@ impl BoardState {
             }
         }
 
+        // Pre-compute max score once per tenpai player (avoids O(n²) waiting_tiles calls)
+        let max_scores: Vec<i32> = tenpai_players.iter()
+            .map(|&tp| self.calc_max_hand_score(tp))
+            .collect();
+
         // 花猪 pays max possible points to each tenpai player
         for &hz in &hua_zhu {
-            for &tp in &tenpai_players {
-                let max_score = self.calc_max_hand_score(tp);
+            for (j, &tp) in tenpai_players.iter().enumerate() {
+                let max_score = max_scores[j];
                 self.players[hz].score -= max_score;
                 self.players[tp].score += max_score;
             }
@@ -797,8 +789,8 @@ impl BoardState {
             if tenpai_players.contains(&i) { continue; }
 
             // This player is not tenpai and not hua zhu → pays tenpai
-            for &tp in &tenpai_players {
-                let max_score = self.calc_max_hand_score(tp);
+            for (j, &tp) in tenpai_players.iter().enumerate() {
+                let max_score = max_scores[j];
                 self.players[i].score -= max_score;
                 self.players[tp].score += max_score;
             }
@@ -829,7 +821,7 @@ impl BoardState {
                 is_tianhu: false,
                 is_dihu: false,
                 exclude_gen_tile: None,
-                fan_config: self.fan_config.clone(),
+                fan_config: self.fan_config,
             };
             if let Some(result) = calc_fan(&ctx) {
                 let s = calc_score(result.fan);
@@ -846,7 +838,7 @@ impl BoardState {
 
     pub fn get_rewards(&self, player_id: usize, prev_score: i32) -> f32 {
         let current = self.players[player_id].score;
-        (current - prev_score) as f32 / 16000.0
+        (current - prev_score) as f32 / REWARD_NORM as f32
     }
 
     fn check_chankan(&self, kakan_player: usize, tile: Tile) -> Vec<usize> {
@@ -860,10 +852,7 @@ impl BoardState {
             add_tile(&mut h, tile);
             if !is_complete(&h, p.melds.len()) { continue; }
 
-            let waits = waiting_tiles(&p.hand, p.melds.len());
-            let is_perm_furiten = p.is_permanent_furiten(&waits);
-            if is_perm_furiten { continue; }
-
+            // Blood mahjong has no furiten; only 过手加番 applies.
             if let Some(passed_fan) = p.furiten_passed_ron_fan {
                 let ctx = self.make_chankan_win_context(i, tile);
                 if let Some(result) = calc_fan(&ctx) {
@@ -871,7 +860,7 @@ impl BoardState {
                         winners.push(i);
                     }
                 }
-            } else if !p.temporary_furiten {
+            } else {
                 winners.push(i);
             }
         }
@@ -895,7 +884,7 @@ impl BoardState {
             is_tianhu: false,
             is_dihu: false,
             exclude_gen_tile: None,
-            fan_config: self.fan_config.clone(),
+            fan_config: self.fan_config,
         }
     }
 

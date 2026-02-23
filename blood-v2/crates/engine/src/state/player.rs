@@ -9,16 +9,13 @@ pub struct PlayerState {
     pub melds: Vec<MeldType>,
     pub discards: Vec<Tile>,
     pub tsumogiri: Vec<bool>,
-    /// Full discard history for furiten checks (not modified by pon/kan)
-    pub discard_history: Vec<Tile>,
     pub score: i32,
     pub ding_que: Option<Suit>,
     pub has_won: bool,
     pub last_drawn_tile: Option<Tile>,
     pub is_rinshan: bool,
 
-    // Furiten tracking
-    pub temporary_furiten: bool,
+    // 过手加番: set when player passes on a winning tile; cleared on next draw/meld
     pub furiten_passed_ron_fan: Option<u8>,
 
     // Derived
@@ -32,13 +29,11 @@ impl PlayerState {
             melds: Vec::new(),
             discards: Vec::new(),
             tsumogiri: Vec::new(),
-            discard_history: Vec::new(),
             score: INITIAL_SCORE,
             ding_que: None,
             has_won: false,
             last_drawn_tile: None,
             is_rinshan: false,
-            temporary_furiten: false,
             furiten_passed_ron_fan: None,
             tiles_seen: [0; NUM_TILE_TYPES],
         }
@@ -83,16 +78,6 @@ impl PlayerState {
         candidates
     }
 
-    /// Check if this player is in permanent furiten (past discards contain wait tile)
-    pub fn is_permanent_furiten(&self, waits: &[Tile]) -> bool {
-        for &w in waits {
-            if self.discard_history.contains(&w) {
-                return true;
-            }
-        }
-        false
-    }
-
     pub fn can_ankan_tiles(&self) -> Vec<Tile> {
         let mut tiles = Vec::new();
         for t in 0..NUM_TILE_TYPES as u8 {
@@ -120,6 +105,10 @@ impl PlayerState {
 
     pub fn see_tile(&mut self, t: Tile) {
         self.tiles_seen[t as usize] = self.tiles_seen[t as usize].saturating_add(1);
+    }
+
+    pub fn see_tile_n(&mut self, t: Tile, n: u8) {
+        self.tiles_seen[t as usize] = self.tiles_seen[t as usize].saturating_add(n);
     }
 
     pub fn see_tiles(&mut self, tiles: &[Tile]) {

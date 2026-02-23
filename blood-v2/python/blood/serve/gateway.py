@@ -10,7 +10,7 @@ Protocol:
 
     Server → Client:
         {"type": "state", "obs": [...], "mask": [...], "reward": 0.0,
-         "terminated": false, "scores": [60000, 60000, 60000, 60000],
+         "terminated": false, "scores": [100000, 100000, 100000, 100000],
          "phase": "discard", "legal_actions": [0, 3, 5, 30]}
         {"type": "game_over", "scores": [...], "winner": 0}
         {"type": "error", "message": "..."}
@@ -44,12 +44,14 @@ class GameSession:
         self._env = None
         self._obs = None
         self._done = False
+        self._hidden_state = None  # LSTM hidden state maintained across turns
 
     def new_game(self, seed: int = 42):
         from blood.env.blood_env import BloodMahjongEnv
         self._env = BloodMahjongEnv()
         self._obs, _ = self._env.reset(seed=seed)
         self._done = False
+        self._hidden_state = None  # reset LSTM state at episode boundary
         return self._get_state_response()
 
     def apply_action(self, action: int):
@@ -69,7 +71,7 @@ class GameSession:
         resp["reward"] = float(reward)
 
         if self._done:
-            scores = [60000] * 4
+            scores = [100000] * 4
             try:
                 if self._env._env:
                     scores = list(self._env._env.get_scores())
@@ -100,7 +102,9 @@ class GameSession:
         mask = self._obs["action_mask"]
 
         with torch.no_grad():
-            logits = self._model(obs_t).squeeze(0).numpy()
+            # PolicyModel.forward() returns (logits, new_hidden_state) — unpack tuple
+            logits_t, self._hidden_state = self._model(obs_t, self._hidden_state)
+            logits = logits_t.squeeze(0).numpy()
 
         logits[mask < 0.5] = -1e9
         return int(np.argmax(logits))
@@ -109,7 +113,7 @@ class GameSession:
         mask = self._obs["action_mask"]
         legal = [int(i) for i in range(ACTION_SPACE) if mask[i] > 0.5]
 
-        scores = [60000] * 4
+        scores = [100000] * 4
         phase = "unknown"
         try:
             if self._env._env:
@@ -190,7 +194,8 @@ async def handle_connection(websocket, session_factory, auth_token=None):
         log.info("Client disconnected")
 
 
-async def run_server(host: str = "0.0.0.0", port: int = 8765, model=None, auth_token=None):
+async def run_server(host: str = "0.0.0.0", port: int = 8765, model=None, auth_token=None,
+                     use_rtpa: bool = False, use_ismce: bool = False):
     try:
         import websockets
     except ImportError:
@@ -198,7 +203,7 @@ async def run_server(host: str = "0.0.0.0", port: int = 8765, model=None, auth_t
         return
 
     def session_factory():
-        return GameSession(model=model)
+        return GameSession(model=model, use_rtpa=use_rtpa, use_ismce=use_ismce)
 
     async with websockets.serve(
         lambda ws: handle_connection(ws, session_factory, auth_token=auth_token),
@@ -219,6 +224,8 @@ def main():
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--auth-token", type=str, default=None,
                         help="Optional token for client authentication")
+    parser.add_argument("--rtpa", action="store_true", help="Enable RTPA for AI suggestions")
+    parser.add_argument("--ismce", action="store_true", help="Enable ISMCE for AI suggestions")
     args = parser.parse_args()
 
     model = None
@@ -227,7 +234,8 @@ def main():
         model = PolicyModel.from_sf2_checkpoint(args.checkpoint)
         log.info("AI model loaded from %s", args.checkpoint)
 
-    asyncio.run(run_server(host=args.host, port=args.port, model=model, auth_token=args.auth_token))
+    asyncio.run(run_server(host=args.host, port=args.port, model=model, auth_token=args.auth_token,
+                           use_rtpa=args.rtpa, use_ismce=args.ismce))
 
 
 if __name__ == "__main__":

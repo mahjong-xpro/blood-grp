@@ -84,22 +84,33 @@ class ISMCESearcher:
         except Exception:
             return self._sample_from_logits(logits, temperature)
 
-        ismce_scores = np.full(ACTION_SPACE, -1e9)
+        ismce_scores = np.full(ACTION_SPACE, 0.0)
         for tile_idx, win_rate, tenpai_rate, improvement in results:
             combined = 2.0 * win_rate + tenpai_rate + 0.5 * improvement
             ismce_scores[tile_idx] = combined
 
-        policy_probs = self._softmax(logits / temperature)
-        ismce_probs = self._softmax(ismce_scores)
+        # Blend in log-space: final_logits = policy_logits/T + ismce_weight * ismce_logits
+        # This is more principled than probability-space blending because:
+        # 1. Avoids probability collapse when one distribution is very peaked
+        # 2. Preserves the relative ordering from both signals
+        # 3. ismce_scores are already in a comparable scale (win_rate ∈ [0,1])
+        policy_logits_t = logits / max(temperature, 1e-8)
+        # Normalize ISMCE scores to zero-mean over candidates to avoid scale mismatch
+        candidate_scores = ismce_scores[discard_candidates]
+        ismce_scores_norm = ismce_scores.copy()
+        ismce_scores_norm[discard_candidates] = candidate_scores - candidate_scores.mean()
 
-        blended = policy_probs.copy()
+        blended_logits = policy_logits_t.copy()
         for i in discard_candidates:
-            blended[i] = self.policy_weight * policy_probs[i] + self.ismce_weight * ismce_probs[i]
-        blended[action_mask < 0.5] = 0.0
+            blended_logits[i] = (self.policy_weight * policy_logits_t[i]
+                                 + self.ismce_weight * ismce_scores_norm[i])
+        blended_logits[action_mask < 0.5] = -1e9
+
+        from blood.utils import softmax
+        blended = softmax(blended_logits)
         total = blended.sum()
         if total < 1e-8:
             return self._sample_from_logits(logits, temperature)
-        blended /= total
 
         return int(np.random.choice(ACTION_SPACE, p=blended))
 

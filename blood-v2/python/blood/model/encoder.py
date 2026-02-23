@@ -14,7 +14,7 @@ from sample_factory.utils.typing import Config, ObsSpace
 
 TILES_PER_SUIT = 9
 NUM_TILES = 27
-DEFAULT_OBS_CHANNELS = 384
+DEFAULT_OBS_CHANNELS = 464
 
 
 class SuitAwareConv1d(nn.Module):
@@ -117,6 +117,10 @@ class TileAttention(nn.Module):
     Allows direct cross-suit tile interaction (e.g. Man-1 attending to Pin-1,
     or Man-5 attending to Sou-5) that the suit-isolated convolutions cannot model.
     Uses pre-norm + residual connection for training stability.
+
+    Includes a learnable position embedding over the 27 tile positions so that
+    the attention is not permutation-invariant (self-attention alone has no
+    notion of tile order without explicit positional information).
     """
 
     def __init__(self, channels: int, num_heads: int = 4, dropout: float = 0.0):
@@ -129,10 +133,14 @@ class TileAttention(nn.Module):
             dropout=dropout,
             batch_first=True,
         )
+        # Learnable position embedding: one vector per tile position (27 total)
+        self.pos_embed = nn.Parameter(torch.zeros(1, NUM_TILES, channels))
+        nn.init.trunc_normal_(self.pos_embed, std=0.02)
 
     def forward(self, x: Tensor) -> Tensor:
         # x: (B, C, 27)
         x_t = x.permute(0, 2, 1)                              # (B, 27, C)
+        x_t = x_t + self.pos_embed                            # add position embedding
         x_norm = self.norm(x_t)                                # pre-norm
         attn_out, _ = self.attn(x_norm, x_norm, x_norm)
         return (x_t + attn_out).permute(0, 2, 1)              # (B, C, 27)
@@ -173,9 +181,17 @@ class SuitAwareResNetEncoder(Encoder):
         obs (B, C*27) -> reshape (B, C, 27)
         -> stem: SuitAwareConv(C -> conv_ch) + GroupNorm + Mish
         -> pos_enc: SuitPositionalEncoding (rank-aware embeddings)
-        -> res_blocks: BottleneckBlock x num_blocks
-        -> tile_attn: TileAttention (cross-suit tile interaction)
-        -> flatten -> [B, conv_ch * 27]
+        -> res_blocks_1: BottleneckBlock x (num_blocks // 2)
+        -> tile_attn_mid: TileAttention (mid-stack global interaction)
+        -> res_blocks_2: BottleneckBlock x (num_blocks - num_blocks // 2)
+        -> tile_attn: TileAttention (final global interaction)
+        -> flatten -> enc_proj: Linear(conv_ch*27 -> enc_out_dim)
+        -> [B, enc_out_dim]
+
+    Two TileAttention layers allow global cross-suit interaction at both
+    mid-depth and final depth, rather than a single pass at the end.
+    enc_proj reduces the LSTM input from 6912 to enc_out_dim (default 1024),
+    giving a 1:1 compression ratio inside the LSTM.
     """
 
     def __init__(self, cfg: Config, obs_space: ObsSpace):
@@ -184,8 +200,10 @@ class SuitAwareResNetEncoder(Encoder):
         self.obs_channels = getattr(cfg, "blood_obs_channels", DEFAULT_OBS_CHANNELS)
         conv_ch = getattr(cfg, "blood_conv_channels", 256)
         num_blocks = getattr(cfg, "blood_num_res_blocks", 20)
+        enc_out_dim = getattr(cfg, "blood_encoder_out_dim", 1024)
 
         ng = _num_groups(conv_ch)
+        mid = num_blocks // 2
 
         self.stem = nn.Sequential(
             SuitAwareConv1d(self.obs_channels, conv_ch, kernel_size=3),
@@ -193,10 +211,21 @@ class SuitAwareResNetEncoder(Encoder):
             nn.Mish(inplace=True),
         )
         self.pos_enc = SuitPositionalEncoding(conv_ch)
-        self.res_blocks = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(num_blocks)])
+        self.res_blocks_1 = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(mid)])
+        self.tile_attn_mid = TileAttention(conv_ch, num_heads=4)
+        self.res_blocks_2 = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(num_blocks - mid)])
         self.tile_attn = TileAttention(conv_ch, num_heads=4)
 
-        self._out_size = conv_ch * NUM_TILES
+        raw_dim = conv_ch * NUM_TILES  # 6912
+        if enc_out_dim != raw_dim:
+            self.enc_proj = nn.Sequential(
+                nn.LayerNorm(raw_dim),
+                nn.Linear(raw_dim, enc_out_dim),
+            )
+            self._out_size = enc_out_dim
+        else:
+            self.enc_proj = None
+            self._out_size = raw_dim
 
     def forward(self, obs_dict):
         obs = obs_dict["obs"]
@@ -204,9 +233,14 @@ class SuitAwareResNetEncoder(Encoder):
         x = obs.view(B, self.obs_channels, NUM_TILES)
         x = self.stem(x)
         x = self.pos_enc(x)
-        x = self.res_blocks(x)
+        x = self.res_blocks_1(x)
+        x = self.tile_attn_mid(x)
+        x = self.res_blocks_2(x)
         x = self.tile_attn(x)
-        return x.reshape(B, -1)
+        flat = x.reshape(B, -1)
+        if self.enc_proj is not None:
+            flat = self.enc_proj(flat)
+        return flat
 
     def get_out_size(self) -> int:
         return self._out_size

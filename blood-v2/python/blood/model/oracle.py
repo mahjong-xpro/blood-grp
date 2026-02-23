@@ -9,9 +9,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from blood.model.encoder import SuitAwareConv1d, BottleneckBlock, NUM_TILES, _num_groups
+from blood.model.encoder import (
+    SuitAwareConv1d, BottleneckBlock, SuitPositionalEncoding, TileAttention,
+    NUM_TILES, _num_groups,
+)
 
-DEFAULT_ORACLE_CHANNELS = 430  # 384 student + 46 oracle extra
+DEFAULT_ORACLE_CHANNELS = 516  # 464 student + 52 oracle extra
 
 
 class OracleEncoder(nn.Module):
@@ -22,40 +25,67 @@ class OracleEncoder(nn.Module):
         obs_channels: int = DEFAULT_ORACLE_CHANNELS,
         conv_ch: int = 256,
         num_blocks: int = 20,
-        out_dim: int = 1024,
         action_dim: int = 34,
     ):
         super().__init__()
 
         ng = _num_groups(conv_ch)
-        layers = [
+        mid = num_blocks // 2
+        self.stem = nn.Sequential(
             SuitAwareConv1d(obs_channels, conv_ch, kernel_size=3),
             nn.GroupNorm(ng, conv_ch),
             nn.Mish(inplace=True),
-        ]
-        for _ in range(num_blocks):
-            layers.append(BottleneckBlock(conv_ch))
+        )
+        self.pos_enc = SuitPositionalEncoding(conv_ch)
+        self.res_blocks_1 = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(mid)])
+        self.tile_attn_mid = TileAttention(conv_ch, num_heads=4)
+        self.res_blocks_2 = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(num_blocks - mid)])
+        self.tile_attn = TileAttention(conv_ch, num_heads=4)
 
-        self.conv_stack = nn.Sequential(*layers)
-        
         # Output Trunk
         trunk_dim = conv_ch * NUM_TILES
-        
-        # Policy Head (Teacher has its own head)
+
+        # Policy Head — Pre-norm 2-layer MLP matching student actor_head
+        head_dim = 512
         self.policy_head = nn.Sequential(
-            nn.Linear(trunk_dim, 512),
+            nn.LayerNorm(trunk_dim),
+            nn.Linear(trunk_dim, head_dim),
             nn.Mish(inplace=True),
-            nn.Linear(512, action_dim),
+            nn.LayerNorm(head_dim),
+            nn.Linear(head_dim, head_dim),
+            nn.Mish(inplace=True),
+            nn.Linear(head_dim, action_dim),
+        )
+
+        # Value Head — Pre-norm 2-layer MLP matching student critic_head.
+        # Oracle has perfect information (all hands + wall), so its value
+        # estimate is far more accurate than the student's partial-info estimate.
+        # Oracle value distillation trains the student's critic to match this
+        # better-calibrated target, improving credit assignment throughout training.
+        self.value_head = nn.Sequential(
+            nn.LayerNorm(trunk_dim),
+            nn.Linear(trunk_dim, head_dim),
+            nn.Mish(inplace=True),
+            nn.LayerNorm(head_dim),
+            nn.Linear(head_dim, head_dim),
+            nn.Mish(inplace=True),
+            nn.Linear(head_dim, 1),
         )
 
     def forward(self, oracle_obs):
+        """Returns (logits, values) — both computed from perfect-info observation."""
         B = oracle_obs.shape[0]
-        # Reshape to (B, C, 27)
         x = oracle_obs.view(B, -1, NUM_TILES)
-        x = self.conv_stack(x)
-        x = x.reshape(B, -1)
-        logits = self.policy_head(x)
-        return logits
+        x = self.stem(x)
+        x = self.pos_enc(x)
+        x = self.res_blocks_1(x)
+        x = self.tile_attn_mid(x)
+        x = self.res_blocks_2(x)
+        x = self.tile_attn(x)
+        trunk = x.reshape(B, -1)
+        logits = self.policy_head(trunk)
+        values = self.value_head(trunk)
+        return logits, values
 
 
 class DistillationLoss(nn.Module):

@@ -3,10 +3,10 @@
 # Goal: learn dingque, basic discard, simple winning patterns
 
 # Sample Factory
-num_workers: 8
+num_workers: 16
 num_envs_per_worker: 32
-batch_size: 4096
-num_batches_per_epoch: 2
+batch_size: 8192
+num_batches_per_epoch: 4
 ppo_clip_ratio: 0.2
 max_grad_norm: 1.0
 gamma: 0.99
@@ -14,7 +14,8 @@ gae_lambda: 0.95
 learning_rate: 5e-4
 lr_schedule: kl_adaptive_minibatch
 exploration_loss_coeff: 0.01
-train_for_env_steps: 500000
+value_loss_coeff: 1.0
+train_for_env_steps: 2000000
 
 # Environment
 env: blood_mahjong
@@ -23,8 +24,8 @@ experiment: blood_v2_warmup
 
 # Model — 与 default.yaml/competitive.yaml 保持一致 (256ch/20blocks Bottleneck)
 # 修复: 原 192ch/30blocks 为 V1 规格，warmup 权重无法迁移到后续阶段
-# 修复: blood_obs_channels 385 → 384 (Rust consts.rs: NUM_STUDENT_CHANNELS=384)
-blood_obs_channels: 384
+# 修复: blood_obs_channels 384 → 464 (Rust NUM_STUDENT_CHANNELS=464)
+blood_obs_channels: 464
 blood_conv_channels: 256
 blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024
@@ -48,10 +49,23 @@ league_newest_weight: 3.0
 warmup_reward_shaping: true
 warmup_dq_bonus: 0.05
 warmup_win_bonus: 0.1
+warmup_dangerous_discard_penalty: 0.03
 
 # Data augmentation — full strength
 suit_augment_prob: 0.5
 
-# Auxiliary tasks — higher weight during warmup for faster dingque learning
-aux_dingque_weight: 2.0
-aux_opp_waits_weight: 0.2
+# Structured reward shaping — tsumo/deal-in disabled (warmup_reward_shaping covers this phase)
+reward_tsumo_bonus: 0.0
+reward_deal_in_penalty: 0.0
+reward_shanten_progress: 0.003
+reward_shanten_regress: 0.001
+
+# Auxiliary tasks — higher weight during warmup for faster shanten learning
+aux_shanten_weight: 2.0
+aux_opp_waits_weight: 0.6
+
+# LSTM — disabled during warmup: RuleBot opponents have fixed patterns that
+# don't transfer to neural opponents; enabling LSTM here wastes capacity and
+# produces noisy hidden-state weights that competitive phase must unlearn.
+# LSTM is enabled from competitive phase onward.
+use_rnn: false

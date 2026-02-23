@@ -3,11 +3,12 @@ use crate::tile::*;
 use crate::hand::*;
 use crate::algo::shanten::{calc_shanten, waiting_tiles};
 use crate::algo::sp::{SPCalculator, SPInitState};
+use crate::algo::agari::calc_gen_count;
 use crate::state::board::{BoardState, Phase};
 
 const OBS_SIZE: usize = NUM_STUDENT_CHANNELS * NUM_TILE_TYPES;
 
-/// Encode full student observation: ~438 channels x 27 tiles
+/// Encode full student observation: 464 channels x 27 tiles
 pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
     let mut obs = vec![0.0f32; OBS_SIZE];
     let mut ch = 0usize;
@@ -46,7 +47,7 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
     }
     ch += 1;
 
-    // === Section 2: GAME CONTEXT (14 ch) ===
+    // === Section 2: GAME CONTEXT (13 ch) ===
     let total_score = (INITIAL_SCORE * NUM_PLAYERS as i32) as f32;
     for pi in 0..NUM_PLAYERS {
         let idx = (player_id + pi) % NUM_PLAYERS;
@@ -70,12 +71,24 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
     fill_ch!(ch, is_dealer);
     ch += 1;
 
-    // Active player count
-    fill_ch!(ch, board.active_player_count() as f32 / NUM_PLAYERS as f32);
+    // Turn progress (1 ch)
+    fill_ch!(ch, (board.turn_count as f32 / MAX_TURNS as f32).min(1.0));
     ch += 1;
 
-    // Padding for 14 ch total
-    ch += 4; // remaining context channels (placeholder)
+    // Score gap to leader: how far behind 1st place (0 if agent is leader)
+    let max_score = board.players.iter().map(|p| p.score).max().unwrap_or(0);
+    fill_ch!(ch, (max_score - board.players[player_id].score).max(0) as f32 / total_score);
+    ch += 1;
+
+    // Score gap to last: how far ahead of last place (0 if agent is last)
+    let min_score = board.players.iter().map(|p| p.score).min().unwrap_or(0);
+    fill_ch!(ch, (board.players[player_id].score - min_score).max(0) as f32 / total_score);
+    ch += 1;
+
+    // Relative score vs mean (signed, normalized)
+    let mean_score = board.players.iter().map(|p| p.score).sum::<i32>() as f32 / NUM_PLAYERS as f32;
+    fill_ch!(ch, (board.players[player_id].score as f32 - mean_score) / total_score);
+    ch += 1;
 
     // === Section 3: DING QUE (17 ch) ===
     if let Some(suit) = p.ding_que {
@@ -124,17 +137,16 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
         Vec::new()
     };
 
-    // Forbidden tiles (furiten map)
+    // Tenpai width: number of distinct wait tiles (normalized).
+    // Blood mahjong has no furiten rule; more waits = better tenpai quality.
     if shanten == 0 {
-        if p.temporary_furiten || p.is_permanent_furiten(&waits) {
-            for &wt in &waits {
-                w!(ch, wt as usize, 1.0);
-            }
-        }
+        fill_ch!(ch, waits.len() as f32 / NUM_TILE_TYPES as f32);
     }
     ch += 1;
 
-    fill_ch!(ch, p.temporary_furiten as u8 as f32);
+    // Furiten passed ron fan (过手加番): non-zero = passed on ron, can win if fan increases
+    // This encodes the temporary furiten state more precisely than a binary flag
+    fill_ch!(ch, p.furiten_passed_ron_fan.unwrap_or(0) as f32 / MAX_FAN as f32);
     ch += 1;
 
     fill_ch!(ch, p.is_rinshan as u8 as f32);
@@ -147,11 +159,13 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
     fill_ch!(ch, total_kans as f32 / 16.0);
     ch += 1;
 
-    // === Section 5: SELF KAWA (38 ch) ===
+    // === Section 5: SELF KAWA (58 ch) ===
+    // Window = MAX_TURNS (28): covers worst-case where 2 players win early,
+    // leaving 2 players to share the remaining wall (~27 discards each).
     let self_discards = &p.discards;
     let self_tsumogiri = &p.tsumogiri;
     let n = self_discards.len();
-    let start_idx = n.saturating_sub(18);
+    let start_idx = n.saturating_sub(MAX_TURNS);
     for (pos, idx) in (start_idx..n).enumerate() {
         let tile = self_discards[idx];
         w!(ch + pos * 2, tile as usize, 1.0);
@@ -159,7 +173,7 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
             fill_ch!(ch + pos * 2 + 1, 1.0);
         }
     }
-    ch += 36; // 18 * 2
+    ch += MAX_TURNS * 2; // 28 * 2 = 56
 
     // Exponential decay overview (clamped to [0, 1])
     for (idx, &tile) in self_discards.iter().enumerate() {
@@ -178,12 +192,13 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
     }
     ch += 1;
 
-    // === Section 6: OPPONENT KAWA (111 ch) ===
+    // === Section 6: OPPONENT KAWA (174 ch) ===
+    // Window = MAX_TURNS (28): same reasoning as Section 5.
     for opp_off in 1..NUM_PLAYERS {
         let opp_id = (player_id + opp_off) % NUM_PLAYERS;
         let opp = &board.players[opp_id];
         let opp_n = opp.discards.len();
-        let opp_start = opp_n.saturating_sub(18);
+        let opp_start = opp_n.saturating_sub(MAX_TURNS);
         for (pos, idx) in (opp_start..opp_n).enumerate() {
             let tile = opp.discards[idx];
             w!(ch + pos * 2, tile as usize, 1.0);
@@ -191,7 +206,7 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
                 fill_ch!(ch + pos * 2 + 1, 1.0);
             }
         }
-        ch += 36;
+        ch += MAX_TURNS * 2; // 56
 
         // Exponential decay for this opponent (clamped to [0, 1])
         for (idx, &tile) in opp.discards.iter().enumerate() {
@@ -200,11 +215,21 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
             w!(ch, tile as usize, (prev + decay).min(1.0));
         }
         ch += 1;
+
+        // Tsumogiri decay for this opponent (mirrors self kawa structure)
+        for (idx, (&tile, &is_tg)) in opp.discards.iter().zip(opp.tsumogiri.iter()).enumerate() {
+            if is_tg {
+                let decay = 0.9f32.powi((opp_n - 1 - idx) as i32);
+                let prev = obs[ch * NUM_TILE_TYPES + tile as usize];
+                w!(ch, tile as usize, (prev + decay).min(1.0));
+            }
+        }
+        ch += 1;
     }
 
-    // === Section 7: VISIBLE TILES (53 ch) ===
-    // Kawa overview per player (4 x 4 one-hot)
-    for pi in 0..NUM_PLAYERS {
+    // === Section 7: VISIBLE TILES (48 ch) ===
+    // Kawa overview per opponent (3 x 4 one-hot); self kawa fully covered by Section 5
+    for pi in 1..NUM_PLAYERS {
         let idx = (player_id + pi) % NUM_PLAYERS;
         let mut counts = [0u8; NUM_TILE_TYPES];
         for &tile in &board.players[idx].discards {
@@ -237,7 +262,7 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
         ch += 8; // 4 melds * 2 ch
     }
 
-    // AnKan overview (4 x 1)
+    // AnKan overview (1 ch, all players combined — kans are rare, 4ch was wasteful)
     for pi in 0..NUM_PLAYERS {
         let idx = (player_id + pi) % NUM_PLAYERS;
         for meld in &board.players[idx].melds {
@@ -245,13 +270,29 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
                 w!(ch, *t as usize, 1.0);
             }
         }
-        ch += 1;
     }
+    ch += 1;
 
-    // Tiles seen ratio
-    for t in 0..NUM_TILE_TYPES {
-        w!(ch, t, p.tiles_seen[t] as f32 / COPIES_PER_TILE as f32);
-    }
+    // Dahai count (total discards made; 0 = first discard = tianhu/dihu window)
+    fill_ch!(ch, (board.dahai_count as f32 / (MAX_TURNS * NUM_PLAYERS) as f32).min(1.0));
+    ch += 1;
+
+    // Current player relative position (0 = self, 1-3 = others in turn order)
+    let rel_current = (board.current_player + NUM_PLAYERS - player_id) % NUM_PLAYERS;
+    fill_ch!(ch, rel_current as f32 / (NUM_PLAYERS - 1) as f32);
+    ch += 1;
+
+    // Game phase scalar (DingQue=0 .. Done=6, normalized)
+    let phase_val = match board.phase {
+        Phase::DingQue  => 0u8,
+        Phase::SelfCheck => 1,
+        Phase::KanSelect => 2,
+        Phase::Discard   => 3,
+        Phase::Reaction  => 4,
+        Phase::Scoring   => 5,
+        Phase::Done      => 6,
+    };
+    fill_ch!(ch, phase_val as f32 / 6.0);
     ch += 1;
 
     // === Section 8: DEFENSE (9 ch) ===
@@ -259,14 +300,18 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
         let opp_id = (player_id + opp_off) % NUM_PLAYERS;
         let opp = &board.players[opp_id];
         let total_discards = opp.discards.len().max(1) as f32;
+        // Single-pass suit count (avoids 3× O(n) filter per opponent)
+        let mut suit_counts = [0u32; NUM_SUITS];
+        for &t in &opp.discards {
+            suit_counts[t as usize / TILES_PER_SUIT] += 1;
+        }
         for suit in Suit::all() {
-            let suit_count = opp.discards.iter().filter(|&&t| Suit::from_tile(t) == suit).count();
-            fill_ch!(ch, suit_count as f32 / total_discards);
+            fill_ch!(ch, suit_counts[suit as usize] as f32 / total_discards);
             ch += 1;
         }
     }
 
-    // === Section 9: DERIVED FEATURES (8 ch) ===
+    // === Section 9: DERIVED FEATURES (11 ch) ===
     // Wall remaining per tile
     for t in 0..NUM_TILE_TYPES {
         let remaining = (COPIES_PER_TILE as u8).saturating_sub(p.tiles_seen[t]);
@@ -280,16 +325,8 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
     fill_ch!(ch, p.melds.len() as f32 / MAX_MELDS as f32);
     ch += 1;
 
-    fill_ch!(ch, (board.turn_count as f32 / MAX_TURNS as f32).min(1.0));
-    ch += 1;
-
-    // Acceptance count at tenpai (reuse cached waits)
-    if shanten == 0 && !waits.is_empty() {
-        let acceptance: u32 = waits.iter().map(|&wt| {
-            (COPIES_PER_TILE as u8).saturating_sub(p.tiles_seen[wt as usize]) as u32
-        }).sum();
-        fill_ch!(ch, acceptance as f32 / 20.0);
-    }
+    // Win count: how many players have already won (endgame pressure signal)
+    fill_ch!(ch, board.win_count as f32 / (NUM_PLAYERS - 1) as f32);
     ch += 1;
 
     // Opponent fuuro counts
@@ -299,7 +336,24 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
         ch += 1;
     }
 
-    // === Section 10: HAND ANALYSIS (7 ch) ===
+    // Opponent terminal discard ratio (3 ch): fraction of terminals in each opponent's discards;
+    // high ratio → opponent likely building tanyao (all-simples) hand
+    for opp_off in 1..NUM_PLAYERS {
+        let opp_id = (player_id + opp_off) % NUM_PLAYERS;
+        let opp = &board.players[opp_id];
+        let total = opp.discards.len().max(1) as f32;
+        let terminal_count = opp.discards.iter()
+            .filter(|&&t| { let r = Suit::rank(t); r == 1 || r == 9 })
+            .count();
+        fill_ch!(ch, terminal_count as f32 / total);
+        ch += 1;
+    }
+
+    // Self discard count (normalized): explicit scalar complementing Section 5's positional window
+    fill_ch!(ch, p.discards.len() as f32 / (MAX_TURNS as f32));
+    ch += 1;
+
+    // === Section 10: HAND ANALYSIS (6 ch) ===
     // Reuse cached waits
     if shanten == 0 {
         for &wt in &waits {
@@ -315,13 +369,10 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
     }
     ch += 5;
 
-    // At kan select
-    if board.phase == Phase::KanSelect && board.current_player == player_id {
-        fill_ch!(ch, 1.0);
-    }
-    ch += 1;
+    // At kan select — now redundant with phase scalar; replaced by opponent rinshan below
+    // (removed 1 ch, reallocated)
 
-    // === Section 11: ACTION CONTEXT (11 ch) ===
+    // === Section 11: ACTION CONTEXT (12 ch) ===
     if let Some((_, tile)) = board.last_discard {
         if board.phase == Phase::Reaction {
             w!(ch, tile as usize, 1.0);
@@ -338,8 +389,30 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
     }
     ch += 1;
 
-    // keep_shanten / improve / tenpai candidates (simplified)
-    ch += 3;
+    // Shanten-based discard classification (2 ch):
+    //   ch+0: tiles that improve shanten (progress discards) or reach tenpai
+    //   ch+1: tiles that reach tenpai after discard
+    // Only populated during Discard phase; zeros otherwise.
+    if board.phase == Phase::Discard && board.current_player == player_id {
+        for t in 0..NUM_TILE_TYPES as u8 {
+            if p.hand[t as usize] == 0 { continue; }
+            let mut h = p.hand;
+            h[t as usize] -= 1;
+            let ns = calc_shanten(&h, p.melds.len());
+            if ns < shanten  { w!(ch,     t as usize, 1.0); }
+            if ns == 0       { w!(ch + 1, t as usize, 1.0); }
+        }
+    }
+    ch += 2;
+
+    // Opponent rinshan state (2 ch): any-opponent-rinshan + rinshan count
+    let opp_rinshan_count = (1..NUM_PLAYERS)
+        .filter(|&off| board.players[(player_id + off) % NUM_PLAYERS].is_rinshan)
+        .count();
+    fill_ch!(ch, (opp_rinshan_count > 0) as u8 as f32);
+    ch += 1;
+    fill_ch!(ch, opp_rinshan_count as f32 / (NUM_PLAYERS - 1) as f32);
+    ch += 1;
 
     // Can pon/kan/agari
     if let Some(ac) = board.get_decision_request(player_id) {
@@ -374,7 +447,7 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
     }
     ch += 1;
 
-    // === Section 12: SP TABLE (100 ch) ===
+    // === Section 12: SP TABLE (99 ch) ===
     {
         let sp_init = SPInitState {
             tehai: p.hand,
@@ -385,19 +458,19 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
         };
         let mut sp_calc = SPCalculator::new(p.melds.len(), p.ding_que);
         sp_calc.melds = p.melds.clone();
-        sp_calc.fan_config = board.fan_config.clone();
+        sp_calc.fan_config = board.fan_config;
         sp_calc.is_at_rinshan = p.is_rinshan;
         sp_calc.n_active_payers = board.active_player_count().saturating_sub(1) as u8;
 
         let candidates = sp_calc.calc(&sp_init);
 
-        // ch+0: Max EV per discard tile (per-tile, normalized by 16000)
+        // ch+0: Max EV per discard tile (per-tile, normalized by REWARD_NORM=32000)
         // ch+1: Max win prob per discard tile (per-tile)
         // ch+2: Shanten-maintaining/improving discard indicator (per-tile)
         // ch+3: Best discard marker (per-tile)
         for c in &candidates {
             let ti = c.tile as usize;
-            w!(ch, ti, c.total_ev() / 48000.0);
+            w!(ch, ti, c.total_ev() / 32000.0);
             w!(ch + 1, ti, c.total_win_prob().min(1.0));
             if c.shanten_diff <= 0 {
                 w!(ch + 2, ti, 1.0);
@@ -415,14 +488,14 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
             for t in 0..MAX_TURNS {
                 fill_ch!(ch + t, best.tenpai_probs[t]);
                 fill_ch!(ch + MAX_TURNS + t, best.win_probs[t]);
-                fill_ch!(ch + 2 * MAX_TURNS + t, best.exp_values[t] / 48000.0);
+                fill_ch!(ch + 2 * MAX_TURNS + t, best.exp_values[t] / 32000.0);
             }
         }
         ch += 3 * MAX_TURNS; // 84
 
-        // ch+88..ch+99: Summary features (12 ch)
+        // ch+88..ch+98: Summary features (11 ch)
         if let Some(best) = candidates.first() {
-            fill_ch!(ch, best.total_ev() / 48000.0);
+            fill_ch!(ch, best.total_ev() / 32000.0);
             ch += 1;
             fill_ch!(ch, best.total_win_prob().min(1.0));
             ch += 1;
@@ -433,7 +506,37 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
         ch += 1;
         fill_ch!(ch, candidates.len() as f32 / NUM_TILE_TYPES as f32);
         ch += 1;
-        ch += 7; // reserved
+        // EV spread: best - worst (how decisive the discard choice is)
+        let best_ev = candidates.first().map_or(0.0, |c| c.total_ev());
+        let worst_ev = candidates.last().map_or(0.0, |c| c.total_ev());
+        fill_ch!(ch, (best_ev - worst_ev).max(0.0) / 32000.0);
+        ch += 1;
+        // Win prob spread: best - worst
+        let best_wp = candidates.first().map_or(0.0, |c| c.total_win_prob());
+        let worst_wp = candidates.last().map_or(0.0, |c| c.total_win_prob());
+        fill_ch!(ch, (best_wp - worst_wp).max(0.0).min(1.0));
+        ch += 1;
+        // Shanten-improving candidate count
+        let improve_count = candidates.iter().filter(|c| c.shanten_diff < 0).count();
+        fill_ch!(ch, improve_count as f32 / NUM_TILE_TYPES as f32);
+        ch += 1;
+        // Second-best candidate EV (for relative comparison)
+        if let Some(second) = candidates.get(1) {
+            fill_ch!(ch, second.total_ev() / 32000.0);
+        }
+        ch += 1;
+        // Best candidate peak win prob (max over turns, vs cumulative)
+        if let Some(best) = candidates.first() {
+            fill_ch!(ch, best.max_win_prob().min(1.0));
+        }
+        ch += 1;
+        // Gen count (四归一): tiles appearing 4 times across hand + melds
+        let gen = calc_gen_count(&p.hand, &p.melds, None);
+        fill_ch!(ch, gen as f32 / 4.0);
+        ch += 1;
+        // Last discard was from a kan draw (杠上炮 context)
+        fill_ch!(ch, board.last_discard_is_kan as u8 as f32);
+        ch += 1;
     }
 
     // === Section 13: FAN CONFIG (7 ch) ===

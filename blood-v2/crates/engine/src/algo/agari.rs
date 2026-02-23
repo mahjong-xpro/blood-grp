@@ -3,7 +3,7 @@ use crate::tile::{Tile, Suit, is_terminal};
 use crate::hand::{HandCounts, MeldType, has_suit_tiles};
 
 /// Configurable fan rules
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct FanConfig {
     pub menqing: bool,
     pub duanyaojiu: bool,
@@ -135,7 +135,6 @@ pub fn calc_fan(ctx: &WinContext) -> Option<FanResult> {
         if is_valid_chitoi(&ctx.tehai) {
             let chitoi_fan = calc_chitoi_fan(ctx, gen_count);
             if chitoi_fan > best_fan {
-                best_fan = chitoi_fan;
                 result.qidui = true;
                 result.toitoi = false;
                 result.jingoudiao = false;
@@ -146,7 +145,7 @@ pub fn calc_fan(ctx: &WinContext) -> Option<FanResult> {
         }
     }
 
-    if best_fan == 0 && divisions.is_empty() && !(result.qidui) {
+    if divisions.is_empty() && !result.qidui {
         return None;
     }
 
@@ -276,7 +275,7 @@ fn update_chitoi_result(result: &mut FanResult, ctx: &WinContext) {
     result.duanyaojiu = !result.daiyaojiu && ctx.fan_config.duanyaojiu && check_chitoi_duanyaojiu(&ctx.tehai);
 }
 
-fn calc_gen_count(hand: &HandCounts, melds: &[MeldType], exclude: Option<Tile>) -> u8 {
+pub fn calc_gen_count(hand: &HandCounts, melds: &[MeldType], exclude: Option<Tile>) -> u8 {
     let mut full = [0u8; NUM_TILE_TYPES];
     for (i, &c) in hand.iter().enumerate() {
         full[i] += c;
@@ -412,8 +411,11 @@ fn is_valid_chitoi(hand: &HandCounts) -> bool {
 
 /// Find all valid standard-form divisions of a hand
 fn find_divisions(hand: &HandCounts, num_melds: usize) -> Vec<Division> {
+    use std::collections::HashSet;
+
     let target_mentsu = 4 - num_melds;
     let mut results = Vec::new();
+    let mut seen: HashSet<(Tile, Vec<Tile>, Vec<Tile>)> = HashSet::new();
     let mut h = *hand;
 
     for pair_tile in 0..NUM_TILE_TYPES {
@@ -423,13 +425,13 @@ fn find_divisions(hand: &HandCounts, num_melds: usize) -> Vec<Division> {
         let mut all_divs = Vec::new();
         find_all_mentsu(&mut h, 0, target_mentsu, &mut Vec::new(), &mut Vec::new(), &mut all_divs);
         for (k, s) in all_divs {
-            let div = Division {
-                pair_tile: pair_tile as Tile,
-                kotsu: k,
-                shuntsu: s,
-            };
-            if !results.iter().any(|d: &Division| d.pair_tile == div.pair_tile && d.kotsu == div.kotsu && d.shuntsu == div.shuntsu) {
-                results.push(div);
+            let key = (pair_tile as Tile, k.clone(), s.clone());
+            if seen.insert(key) {
+                results.push(Division {
+                    pair_tile: pair_tile as Tile,
+                    kotsu: k,
+                    shuntsu: s,
+                });
             }
         }
 

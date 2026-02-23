@@ -236,19 +236,19 @@ fn test_tianhu() {
     ctx.is_tianhu = true;
     let result = calc_fan(&ctx).expect("should win");
     assert!(result.tianhu_dihu);
-    assert_eq!(result.fan, 5);
+    assert_eq!(result.fan, 6); // tianhu forces MAX_FAN cap (6)
 }
 
 #[test]
 fn test_max_fan_cap() {
-    // Any hand with tons of fan should cap at 5
+    // Any hand with tons of fan should cap at MAX_FAN (6)
     let hand = build_hand(&[
         (0, 2), (1, 2), (2, 2), (3, 2), (4, 2), (5, 2), (6, 2),
     ]);
     let mut ctx = make_ctx(hand, vec![], 6, false);
     ctx.ding_que = Some(Suit::Sou);
     let result = calc_fan(&ctx).expect("should win");
-    assert!(result.fan <= 5);
+    assert!(result.fan <= 6);
 }
 
 #[test]

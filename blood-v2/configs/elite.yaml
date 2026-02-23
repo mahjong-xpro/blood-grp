@@ -4,17 +4,18 @@
 # Prerequisite: resume from competitive checkpoint
 
 # Sample Factory
-num_workers: 8
+num_workers: 16
 num_envs_per_worker: 32
 batch_size: 16384
 num_batches_per_epoch: 8
-ppo_clip_ratio: 0.05
+ppo_clip_ratio: 0.1
 max_grad_norm: 0.5
 gamma: 0.999
 gae_lambda: 0.97
 learning_rate: 1e-4
 lr_schedule: kl_adaptive_minibatch
-exploration_loss_coeff: 0.002
+exploration_loss_coeff: 0.005
+value_loss_coeff: 1.0
 train_for_env_steps: 10000000
 
 # Environment
@@ -24,8 +25,8 @@ experiment: blood_v2_elite
 
 # Model — 与 warmup.yaml/default.yaml 保持一致 (256ch/20blocks Bottleneck)
 # 修复: 原 192ch/30blocks 为 V1 规格，无法加载 competitive 阶段的 256ch/20blocks 权重
-# 修复: blood_obs_channels 385 → 384 (Rust NUM_STUDENT_CHANNELS=384)
-blood_obs_channels: 384
+# 修复: blood_obs_channels 384 → 464 (Rust NUM_STUDENT_CHANNELS=464)
+blood_obs_channels: 464
 blood_conv_channels: 256
 blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024
@@ -44,7 +45,7 @@ oracle_distill_temperature: 1.5
 league_enabled: true
 league_pool_dir: checkpoints/league/
 league_add_every: 25000
-league_newest_weight: 5.0
+league_newest_weight: 3.0
 
 # No reward shaping
 warmup_reward_shaping: false
@@ -52,9 +53,23 @@ warmup_reward_shaping: false
 # Data augmentation
 suit_augment_prob: 0.5
 
+# Structured reward shaping — reduced shanten signal as model matures
+reward_tsumo_bonus: 0.1
+reward_deal_in_penalty: 0.05
+reward_shanten_progress: 0.001
+reward_shanten_regress: 0.0005
+
 # Auxiliary tasks — reduced weight as model matures
-aux_dingque_weight: 0.5
-aux_opp_waits_weight: 0.05
+aux_shanten_weight: 0.5
+aux_opp_waits_weight: 0.2
+
+# LSTM — temporal modeling across turns
+use_rnn: true
+rnn_type: lstm
+rnn_size: 1024
+rnn_num_layers: 1
+rollout: 32
+recurrence: 32
 
 # RTPA — enable runtime policy adaptation during evaluation
 rtpa_enabled: true

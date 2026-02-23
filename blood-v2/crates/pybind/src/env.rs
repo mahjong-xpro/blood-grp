@@ -5,8 +5,7 @@ use numpy::PyArray1;
 use engine::consts::*;
 use engine::state::board::{BoardState, Phase};
 use engine::state::action::Action;
-use engine::hand::calc_shanten;
-use engine::algo::shanten::waiting_tiles;
+use engine::algo::shanten::{calc_shanten, waiting_tiles};
 use engine::obs::{encode_student_obs, encode_oracle_obs, encode_action_mask};
 
 
@@ -56,13 +55,13 @@ impl RustMahjongEnv {
         let oracle_obs = encode_oracle_obs(&self.state, self.player_id);
         let mask = encode_action_mask(&self.state, self.player_id);
         let mask_f32: Vec<f32> = mask.iter().map(|&b| if b { 1.0 } else { 0.0 }).collect();
-        let (dq_labels, ow_labels) = self.compute_aux_labels();
+        let (shanten_labels, ow_labels) = self.compute_aux_labels();
 
         let dict = PyDict::new_bound(py);
         dict.set_item("obs", PyArray1::from_vec_bound(py, obs))?;
         dict.set_item("oracle_obs", PyArray1::from_vec_bound(py, oracle_obs))?;
         dict.set_item("action_mask", PyArray1::from_vec_bound(py, mask_f32))?;
-        dict.set_item("dq_labels", PyArray1::from_vec_bound(py, dq_labels))?;
+        dict.set_item("shanten_labels", PyArray1::from_vec_bound(py, shanten_labels))?;
         dict.set_item("ow_labels", PyArray1::from_vec_bound(py, ow_labels))?;
         Ok(dict)
     }
@@ -90,13 +89,13 @@ impl RustMahjongEnv {
         let oracle_obs = encode_oracle_obs(&self.state, self.player_id);
         let mask = encode_action_mask(&self.state, self.player_id);
         let mask_f32: Vec<f32> = mask.iter().map(|&b| if b { 1.0 } else { 0.0 }).collect();
-        let (dq_labels, ow_labels) = self.compute_aux_labels();
+        let (shanten_labels, ow_labels) = self.compute_aux_labels();
 
         let dict = PyDict::new_bound(py);
         dict.set_item("obs", PyArray1::from_vec_bound(py, obs))?;
         dict.set_item("oracle_obs", PyArray1::from_vec_bound(py, oracle_obs))?;
         dict.set_item("action_mask", PyArray1::from_vec_bound(py, mask_f32))?;
-        dict.set_item("dq_labels", PyArray1::from_vec_bound(py, dq_labels))?;
+        dict.set_item("shanten_labels", PyArray1::from_vec_bound(py, shanten_labels))?;
         dict.set_item("ow_labels", PyArray1::from_vec_bound(py, ow_labels))?;
 
         let info = PyDict::new_bound(py);
@@ -176,7 +175,7 @@ impl RustMahjongEnv {
 
     fn get_reward_for(&self, player_id: usize) -> f32 {
         let current = self.state.players[player_id].score;
-        (current - engine::consts::INITIAL_SCORE) as f32 / 16000.0
+        (current - engine::consts::INITIAL_SCORE) as f32 / engine::consts::REWARD_NORM as f32
     }
 
     fn player_has_won(&self, player_id: usize) -> bool {
@@ -187,11 +186,16 @@ impl RustMahjongEnv {
         self.state.win_count
     }
 
+    fn get_agent_shanten(&self) -> i32 {
+        let p = &self.state.players[self.player_id];
+        calc_shanten(&p.hand, p.melds.len())
+    }
+
     fn get_aux_labels<'py>(&self, py: Python<'py>, player_id: usize) -> PyResult<Bound<'py, PyDict>> {
         let _ = player_id; // always computed from self.player_id (seat 0)
-        let (dq_labels, ow_labels) = self.compute_aux_labels();
+        let (shanten_labels, ow_labels) = self.compute_aux_labels();
         let dict = PyDict::new_bound(py);
-        dict.set_item("dq_labels", PyArray1::from_vec_bound(py, dq_labels))?;
+        dict.set_item("shanten_labels", PyArray1::from_vec_bound(py, shanten_labels))?;
         dict.set_item("ow_labels", PyArray1::from_vec_bound(py, ow_labels))?;
         Ok(dict)
     }
@@ -199,18 +203,19 @@ impl RustMahjongEnv {
 
 impl RustMahjongEnv {
     fn compute_aux_labels(&self) -> (Vec<f32>, Vec<f32>) {
-        let mut dq = vec![3.0f32; 3]; // 3 = "unknown", used as ignore_index in CE
+        // shanten_labels: 3 opponents x 5 classes (0/1/2/3/4+ shanten), one-hot, shape [15]
+        let mut shanten_labels = vec![0.0f32; 15];
+        // ow_labels: 3 opponents x 27 tiles, shape [81]
         let mut ow = vec![0.0f32; 81];
 
         for opp_off in 1..NUM_PLAYERS {
             let opp_id = (self.player_id + opp_off) % NUM_PLAYERS;
             let p = &self.state.players[opp_id];
 
-            if let Some(suit) = p.ding_que {
-                dq[opp_off - 1] = suit as u8 as f32; // 0=Man, 1=Pin, 2=Sou
-            }
-
             let s = calc_shanten(&p.hand, p.melds.len());
+            let sh = s.max(0).min(4) as usize;
+            shanten_labels[(opp_off - 1) * 5 + sh] = 1.0;
+
             if s == 0 {
                 let waits = waiting_tiles(&p.hand, p.melds.len());
                 for &wt in &waits {
@@ -219,7 +224,7 @@ impl RustMahjongEnv {
             }
         }
 
-        (dq, ow)
+        (shanten_labels, ow)
     }
 
     fn advance_opponents(&mut self) {

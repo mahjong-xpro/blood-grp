@@ -1,6 +1,7 @@
 use crate::consts::*;
 use crate::tile::{Tile, Suit};
-use crate::hand::{calc_shanten, HandCounts, MeldType, remove_tile, add_tile, waiting_tiles, has_suit_tiles};
+use crate::hand::{HandCounts, MeldType, remove_tile, add_tile, waiting_tiles, has_suit_tiles};
+use crate::algo::shanten::{calc_shanten, clear_shanten_cache};
 use crate::algo::agari::{WinContext, FanConfig, calc_fan};
 use crate::algo::point::calc_score;
 use super::candidate::Candidate;
@@ -37,6 +38,8 @@ impl SPCalculator {
     /// Returns candidates sorted by total EV descending.
     pub fn calc(&self, init: &SPInitState) -> Vec<Candidate> {
         let state = SPState::from_init(init);
+        // Clear memoization cache once per SP calculation pass.
+        clear_shanten_cache();
         let shanten = calc_shanten(&state.tehai, self.num_melds);
 
         if shanten < 0 {
@@ -208,9 +211,9 @@ impl SPCalculator {
         let mut n_sampled = 0u32;
 
         /// Cap per-candidate depth-traversal to balance accuracy vs runtime.
-        /// 2 keeps SP calc under ~100µs for typical hands; raise to 4-8 for
-        /// higher fidelity at the cost of increased latency.
-        const MAX_SAMPLES: u32 = 2;
+        /// 8 samples covers most iishanten paths while keeping SP calc under ~400µs;
+        /// lower to 4 if latency is critical.
+        const MAX_SAMPLES: u32 = 8;
         for eff_t in 0..NUM_TILE_TYPES as u8 {
             let avail = state.available_count(eff_t);
             if avail == 0 || hand[eff_t as usize] >= 4 { continue; }
@@ -278,7 +281,7 @@ impl SPCalculator {
             is_tianhu: false,
             is_dihu: false,
             exclude_gen_tile: None,
-            fan_config: self.fan_config.clone(),
+            fan_config: self.fan_config,
         };
 
         match calc_fan(&ctx) {

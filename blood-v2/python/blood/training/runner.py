@@ -49,7 +49,8 @@ def _patch_learner():
         action_dist, policy_loss, exploration_loss, kl_old, kl_loss, value_loss, summaries = result
 
         ac = self.actor_critic
-        features = getattr(ac, "_cached_encoder_out", None)
+        features = getattr(ac, "_cached_encoder_out", None)  # post-enc_proj (1024); used as forward-pass guard
+        core_features = getattr(ac, "_cached_core_out", None)  # post-LSTM (1024); used by AuxHead
         obs = getattr(ac, "_cached_obs", None)
 
         if features is None or obs is None or not ac.training:
@@ -66,12 +67,12 @@ def _patch_learner():
         extra_loss = torch.zeros(1, device=device)
 
         if getattr(ac, "_aux_enabled", False):
-            dq_labels = obs.get("dq_labels")
+            shanten_labels = obs.get("shanten_labels")
             ow_labels = obs.get("ow_labels")
-            if dq_labels is not None and ow_labels is not None:
+            if shanten_labels is not None and ow_labels is not None and core_features is not None:
                 aux_loss = ac.aux_head.loss(
-                    features, dq_labels.long(), ow_labels,
-                    dq_weight=ac.dq_weight, ow_weight=ac.ow_weight,
+                    core_features, shanten_labels, ow_labels,
+                    shanten_weight=ac.shanten_weight, ow_weight=ac.ow_weight,
                 )
                 extra_loss = extra_loss + aux_loss
                 summaries["aux_loss"] = aux_loss.detach()
@@ -80,7 +81,7 @@ def _patch_learner():
             oracle_obs = obs.get("oracle_obs")
             action_mask = obs.get("action_mask")
             if oracle_obs is not None:
-                oracle_logits = ac.oracle_encoder(oracle_obs)
+                oracle_logits, oracle_values = ac.oracle_encoder(oracle_obs)
 
                 student_logits = getattr(action_dist, 'logits', None)
                 if student_logits is None:
@@ -112,7 +113,27 @@ def _patch_learner():
                 extra_loss = extra_loss + oracle_ce_weight * oracle_ce
                 summaries["oracle_ce"] = oracle_ce.detach()
 
-        policy_loss = policy_loss + extra_loss.squeeze()
+                # Oracle value distillation: train student critic to match Oracle's
+                # perfect-info value estimate. Oracle values are more accurate because
+                # the Oracle sees all hands and the wall; this improves credit assignment.
+                oracle_value_distill_weight = getattr(ac, "oracle_value_distill_weight", 0.5)
+                if oracle_value_distill_weight > 0:
+                    student_values = getattr(ac, "_cached_values", None)
+                    if student_values is not None:
+                        sv = student_values.view(-1)
+                        ov = oracle_values.squeeze().detach().view(-1)
+                        if sv.shape == ov.shape:
+                            value_distill_loss = torch.nn.functional.mse_loss(sv, ov)
+                            extra_loss = extra_loss + oracle_value_distill_weight * value_distill_loss
+                            summaries["oracle_value_distill_loss"] = value_distill_loss.detach()
+
+        # Add extra losses to value_loss so that the PPO policy_loss curve in
+        # TensorBoard remains clean (pure PPO gradient signal).
+        # summaries["ppo_policy_loss"] preserves the original for monitoring.
+        # summaries["extra_loss_total"] shows the combined auxiliary signal.
+        summaries["ppo_policy_loss"] = policy_loss.detach()
+        summaries["extra_loss_total"] = extra_loss.squeeze().detach()
+        value_loss = value_loss + extra_loss.squeeze()
         return action_dist, policy_loss, exploration_loss, kl_old, kl_loss, value_loss, summaries
 
     Learner._calculate_losses = _patched

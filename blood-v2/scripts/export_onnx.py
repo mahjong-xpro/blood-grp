@@ -21,7 +21,7 @@ import torch.nn as nn
 log = logging.getLogger(__name__)
 
 NUM_TILE_TYPES = 27
-OBS_CHANNELS = 385
+OBS_CHANNELS = 464
 OBS_SIZE = OBS_CHANNELS * NUM_TILE_TYPES
 ACTION_DIM = 34
 

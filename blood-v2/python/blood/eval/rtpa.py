@@ -12,10 +12,14 @@ import numpy as np
 NUM_TILE_TYPES = 27
 ACTION_SPACE = 34
 
-NUM_STUDENT_CHANNELS = 384
-CH_WALL_REMAINING = 22
-CH_SHANTEN_BASE = 303
-CH_OPP_MELD_BASE = 296
+NUM_STUDENT_CHANNELS = 464
+# Channel offsets derived from crates/engine/src/obs/student.rs (0-indexed)
+# Section 4 starts at ch=36: wall_remaining / 55.0
+CH_WALL_REMAINING = 36
+# Section 10 starts at ch=260: wait_tiles (1ch) then shanten one-hot (5ch) at ch=261
+CH_SHANTEN_BASE = 261
+# Section 9 starts at ch=252: derived features; opponent meld counts at ch=257 (3 opponents)
+CH_OPP_MELD_BASE = 257
 
 
 class RTPA:
@@ -54,7 +58,7 @@ class RTPA:
         # When ahead (score_diff > 0): increase temperature → conservative
         # When behind (score_diff < 0): decrease temperature → aggressive
         score_diff = my_score - avg_opponent_score
-        score_adjust = self.score_sensitivity * np.sign(score_diff) * min(abs(score_diff) / 16000.0, 0.2)
+        score_adjust = self.score_sensitivity * np.sign(score_diff) * min(abs(score_diff) / 32000.0, 0.2)
         temp += score_adjust
 
         if wall_remaining < 10:
@@ -68,8 +72,8 @@ class RTPA:
         mask: np.ndarray,
         is_tenpai: bool = False,
         opponents_likely_tenpai: int = 0,
-        my_score: int = 60000,
-        avg_opponent_score: float = 60000.0,
+        my_score: int = 100000,
+        avg_opponent_score: float = 100000.0,
         wall_remaining: int = 50,
         danger_scores: np.ndarray = None,
     ) -> np.ndarray:
@@ -103,17 +107,18 @@ class GameStateTracker:
     def reset(self):
         self.my_tenpai = False
         self.opponents_tenpai_count = 0
-        self.my_score = 60000
-        self.opponent_scores = [60000, 60000, 60000]
+        self.my_score = 100000
+        self.opponent_scores = [100000, 100000, 100000]
         self.wall_remaining = 108 - 13 * 4
 
     def update_from_obs(self, obs: np.ndarray, scores: list = None):
         """Extract game state features from the observation tensor.
 
-        Parses known channel offsets from the 385×27 student observation:
-        - Channel 22 (Section 4, ch0): wall_remaining / 55.0
-        - Channels 302-306 (Section 10, shanten one-hot): 0=tenpai
-        - Channels 296-298 (Section 8, opponent meld counts): high → likely tenpai
+        Parses known channel offsets from the 464×27 student observation
+        (derived from crates/engine/src/obs/student.rs):
+        - Channel 36 (Section 4, ch0): wall_remaining / 55.0
+        - Channels 261-265 (Section 10, shanten one-hot): ch261=tenpai
+        - Channels 257-259 (Section 9, opponent meld counts): high → likely tenpai
         """
         if scores is not None and len(scores) >= 4:
             self.my_score = scores[0]

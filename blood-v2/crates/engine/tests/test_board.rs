@@ -50,7 +50,7 @@ fn test_ding_que_phase() {
 fn test_initial_scores() {
     let board = BoardState::new(123);
     for i in 0..NUM_PLAYERS {
-        assert_eq!(board.players[i].score, 60000);
+        assert_eq!(board.players[i].score, 100000);
     }
 }
 
@@ -120,8 +120,8 @@ fn test_full_game_simulation() {
 
     // Verify game ended properly
     let total_score: i32 = board.get_scores().iter().sum();
-    // Total score should be preserved (zero-sum with initial 60000 each = 240000)
-    assert_eq!(total_score, 240000, "total score should be preserved, got {}", total_score);
+    // Total score should be preserved (zero-sum with initial 100000 each = 400000)
+    assert_eq!(total_score, 400000, "total score should be preserved, got {}", total_score);
 }
 
 #[test]

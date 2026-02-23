@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 fastrand = "2"
+rustc-hash = "2"

@@ -38,6 +38,7 @@ class NeuralAgent:
         self._rtpa = None
         self._ismce = None
         self._env_ref = None
+        self._hidden_state = None  # LSTM hidden state across turns
 
     def enable_rtpa(self, attack_temp=0.8, defend_temp=1.5):
         from blood.eval.rtpa import RTPA
@@ -50,14 +51,15 @@ class NeuralAgent:
     def set_env(self, env):
         """Allow the arena to pass the env reference for game state queries."""
         self._env_ref = env
+        self._hidden_state = None  # reset LSTM state at episode boundary
 
     def _get_game_context(self):
         """Extract game state context for RTPA/ISMCE from the Rust env."""
         ctx = {
             "is_tenpai": False,
             "opponents_likely_tenpai": 0,
-            "my_score": 60000,
-            "avg_opponent_score": 60000.0,
+            "my_score": 100000,
+            "avg_opponent_score": 100000.0,
             "wall_remaining": 50,
         }
         try:
@@ -96,7 +98,9 @@ class NeuralAgent:
         mask = obs_dict["action_mask"]
 
         obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(0)
-        logits = self.model(obs_t).squeeze(0).numpy()
+        # PolicyModel.forward() returns (logits, new_hidden_state)
+        logits_t, self._hidden_state = self.model(obs_t, self._hidden_state)
+        logits = logits_t.squeeze(0).numpy()
 
         if self._ismce is not None:
             ctx = self._get_game_context()
