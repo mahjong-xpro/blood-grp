@@ -4,6 +4,7 @@ import sys
 import logging
 
 import torch
+import yaml
 from sample_factory.cfg.arguments import parse_full_cfg, parse_sf_args
 from sample_factory.envs.env_utils import register_env
 from sample_factory.train import make_runner
@@ -15,6 +16,31 @@ from ..model.factory import register_blood_model
 from .callbacks import BloodObserver
 
 log = logging.getLogger(__name__)
+
+
+def _inject_config_yaml():
+    """Parse --config <yaml> from sys.argv, expand yaml keys into sys.argv,
+    then remove --config so SF2 never sees it."""
+    argv = sys.argv[1:]
+    if "--config" not in argv:
+        return
+    idx = argv.index("--config")
+    if idx + 1 >= len(argv):
+        return
+    yaml_path = argv[idx + 1]
+    # Remove --config <path> from sys.argv
+    sys.argv = [sys.argv[0]] + argv[:idx] + argv[idx + 2:]
+
+    with open(yaml_path) as f:
+        cfg = yaml.safe_load(f)
+    if not cfg:
+        return
+    # Append yaml values as CLI args (only if not already in sys.argv)
+    existing = set(sys.argv)
+    for key, val in cfg.items():
+        flag = f"--{key}"
+        if flag not in existing:
+            sys.argv.extend([flag, str(val)])
 
 
 def make_blood_env(full_env_name, cfg=None, env_config=None, render_mode=None):
@@ -143,9 +169,10 @@ def run_training():
     register_blood_components()
     _patch_learner()
 
+    # Expand --config <yaml> into individual SF2 CLI args before SF2 parses sys.argv.
+    _inject_config_yaml()
+
     # SF2 requires --env as a mandatory CLI argument before set_defaults can run.
-    # Inject it into sys.argv if not already present so blood_override_defaults
-    # can set the real default later.
     if "--env" not in sys.argv:
         sys.argv.extend(["--env", "blood_mahjong"])
 
