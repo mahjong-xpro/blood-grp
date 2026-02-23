@@ -7,7 +7,6 @@ and auxiliary task logging.
 import logging
 from pathlib import Path
 
-import torch
 from sample_factory.algo.runners.runner import Runner, AlgoObserver
 
 from blood.training.league import LeagueManager
@@ -44,19 +43,26 @@ class BloodObserver(AlgoObserver):
             self._last_snapshot_step = env_steps
 
     def _snapshot_to_league(self, runner: Runner, policy_id: int, env_steps: int):
+        import glob
+        import shutil
+        from os.path import join
+        from sample_factory.algo.learning.learner import Learner
+        from sample_factory.utils.utils import experiment_dir
+
+        # LearnerWorker.learner is None in the main process (it lives in the worker
+        # subprocess). Instead, copy the latest checkpoint SF2 already saved to disk.
+        ckpt_dir = join(experiment_dir(cfg=runner.cfg), f"checkpoint_p{policy_id}")
+        checkpoints = sorted(glob.glob(join(ckpt_dir, "checkpoint_*.pth")))
+        if not checkpoints:
+            log.warning("No SF2 checkpoints found in %s; skipping league snapshot", ckpt_dir)
+            return
+
+        latest = checkpoints[-1]
         self.league.pool_dir.mkdir(parents=True, exist_ok=True)
         save_path = self.league.pool_dir / f"checkpoint_{env_steps}.pth"
 
-        learner_worker = runner.learners.get(policy_id)
-        if learner_worker is None:
-            log.warning("No learner for policy %d, cannot snapshot", policy_id)
-            return
-
         try:
-            checkpoint = learner_worker.learner._get_checkpoint_dict()
-            tmp_path = str(save_path) + ".tmp"
-            torch.save(checkpoint, tmp_path)
-            Path(tmp_path).rename(save_path)
+            shutil.copy2(latest, str(save_path))
             self.league._evict_if_needed()
             log.info("Saved league checkpoint: %s (pool size: %d)",
                      save_path, self.league.pool_size())
