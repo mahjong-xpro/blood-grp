@@ -190,9 +190,7 @@ class BloodMahjongEnv(gym.Env):
             obs = np.array(obs_dict["obs"], dtype=np.float32)
             oracle = np.array(obs_dict["oracle_obs"], dtype=np.float32)
             mask = np.array(obs_dict["action_mask"], dtype=np.float32)
-            # "shanten_labels" is the current key; "dq_labels" was used in older builds
-            shanten_raw = obs_dict.get("shanten_labels", obs_dict.get("dq_labels"))
-            shanten = np.array(shanten_raw, dtype=np.float32) if shanten_raw is not None else np.zeros(15, dtype=np.float32)
+            shanten = np.array(obs_dict["shanten_labels"], dtype=np.float32)
             ow = np.array(obs_dict["ow_labels"], dtype=np.float32)
         else:
             obs, oracle, mask, shanten, ow = self._dummy_obs()
@@ -236,8 +234,7 @@ class BloodMahjongEnv(gym.Env):
         obs = np.array(obs_dict["obs"], dtype=np.float32)
         oracle = np.array(obs_dict["oracle_obs"], dtype=np.float32)
         mask = np.array(obs_dict["action_mask"], dtype=np.float32)
-        shanten_raw = obs_dict.get("shanten_labels", obs_dict.get("dq_labels"))
-        shanten = np.array(shanten_raw, dtype=np.float32) if shanten_raw is not None else np.zeros(15, dtype=np.float32)
+        shanten = np.array(obs_dict["shanten_labels"], dtype=np.float32)
         ow = np.array(obs_dict["ow_labels"], dtype=np.float32)
 
         return {
