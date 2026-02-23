@@ -6,7 +6,7 @@
 # Sample Factory
 num_workers: 16
 num_envs_per_worker: 32
-batch_size: 16384
+batch_size: 8192
 num_batches_per_epoch: 8
 ppo_clip_ratio: 0.1
 max_grad_norm: 1.0
@@ -66,7 +66,7 @@ aux_opp_waits_weight: 0.3
 # LSTM — temporal modeling across turns
 use_rnn: true
 rnn_type: lstm
-rnn_size: 1024
+rnn_size: 512
 rnn_num_layers: 1
 rollout: 32
 recurrence: 32
