@@ -155,7 +155,11 @@ pub fn calc_shanten(hand: &HandCounts, num_melds: usize) -> i8 {
     // len_div3 = number of complete groups possible from hand tiles alone.
     // hand tiles = total - melds*3; len_div3 = hand_tiles / 3.
     let hand_tiles: usize = hand.iter().map(|&c| c as usize).sum();
-    let len_div3 = hand_tiles / 3;
+    // Clamp to 4: the suhai table only encodes 0..=4 complete groups.
+    // waiting_tiles() adds a tile to a 14-tile hand → 15 tiles → 15/3=5 → panic
+    // without the clamp. Clamping is safe: a 15-tile hand is always complete
+    // if the underlying 14-tile hand was complete.
+    let len_div3 = (hand_tiles / 3).min(4);
 
     let normal = calc_normal_table(hand, len_div3);
     let chitoi = if num_melds == 0 && hand_tiles >= 13 {
