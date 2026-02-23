@@ -179,9 +179,26 @@ def _patch_learner():
     Learner._calculate_losses = _patched
 
 
+def _configure_logging():
+    """Reduce SF2 log noise: suppress model architecture dump and worker chatter."""
+    import logging
+    # SF2 prints full model architecture at INFO — suppress to WARNING
+    logging.getLogger("sample_factory").setLevel(logging.WARNING)
+    # Re-enable key SF2 loggers we do want to see
+    for name in (
+        "sample_factory.runner",
+        "sample_factory.algo.learning.learner",
+        "sample_factory.algo.runners",
+    ):
+        logging.getLogger(name).setLevel(logging.INFO)
+    # Always show blood logs
+    logging.getLogger("blood").setLevel(logging.INFO)
+
+
 def run_training():
     register_blood_components()
     _patch_learner()
+    _configure_logging()
 
     # Expand --config <yaml> into individual SF2 CLI args before SF2 parses sys.argv.
     _inject_config_yaml()
