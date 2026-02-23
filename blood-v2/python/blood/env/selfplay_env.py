@@ -1,0 +1,422 @@
+"""Self-play Gymnasium environment for Bloody Battle Mahjong.
+
+Extends BloodMahjongEnv by replacing the Rust-side RuleBot with
+a neural network opponent loaded from league checkpoints.
+
+The Rust engine runs in "external" mode — opponent decisions are
+handled entirely on the Python side using cached PolicyModel inference.
+"""
+
+import logging
+from pathlib import Path
+from typing import Optional
+
+import numpy as np
+import torch
+
+from .blood_env import (
+    BloodMahjongEnv, NUM_TILE_TYPES, ACTION_SPACE,
+    OBS_SIZE, NUM_STUDENT_CHANNELS,
+)
+from blood.model.inference import OpponentModelPool
+from blood.training.league import LeagueManager
+
+log = logging.getLogger(__name__)
+
+NUM_PLAYERS = 4
+MAX_LOOP_GUARD = 500
+
+
+def _score_delta_to_fan(delta: float) -> int:
+    """Infer fan count from a score delta using the inverse of calc_score.
+
+    calc_score(fan) = 1000 * 2^(fan-1), capped at 6 fan = 32000.
+    For tsumo, delta = score_per_player * num_payers; we use the per-payer
+    amount (delta / 3 for full tsumo) to recover fan.  Returns 0 if unclear.
+    """
+    if delta <= 0:
+        return 0
+    # Try per-payer amounts for tsumo (3 payers) and ron (1 payer)
+    for divisor in (3, 2, 1):
+        per_payer = delta / divisor
+        for fan in range(1, 7):
+            expected = 1000 * (1 << (fan - 1))
+            if abs(per_payer - expected) < 50:
+                return fan
+    return 0
+
+
+class SelfPlayEnv(BloodMahjongEnv):
+    """Env where opponents are controlled by a neural-network policy.
+
+    On each game step the flow is:
+        1. Apply the agent's action (seat 0)
+        2. Loop: advance through all opponent decisions using the
+           cached PolicyModel until it is the agent's turn again
+           or the game ends.
+        3. Return the observation for seat 0.
+    """
+
+    def __init__(self, cfg=None, **kwargs):
+        super().__init__(cfg, **kwargs)
+
+        self._opponent_mode = "external"
+
+        self._opp_pool = OpponentModelPool(device="cpu")
+        self._league: Optional[LeagueManager] = None
+        self._refresh_every = 20
+        self._episodes_since_refresh = 0
+
+        if cfg is not None:
+            pool_dir = getattr(cfg, "league_pool_dir", "checkpoints/league")
+            newest_w = getattr(cfg, "league_newest_weight", 3.0)
+            self._league = LeagueManager(pool_dir, newest_w)
+            self._refresh_every = getattr(cfg, "opponent_refresh_every", 20)
+
+        self._warmup_reward_shaping = False
+        self._warmup_dq_bonus = 0.0
+        self._warmup_win_bonus = 0.0
+        self._warmup_deal_in_penalty = 0.0
+        self._warmup_dangerous_discard_penalty = 0.0
+        if cfg is not None:
+            self._warmup_reward_shaping = getattr(cfg, "warmup_reward_shaping", False)
+            self._warmup_dq_bonus = getattr(cfg, "warmup_dq_bonus", 0.0)
+            self._warmup_win_bonus = getattr(cfg, "warmup_win_bonus", 0.0)
+            self._warmup_deal_in_penalty = getattr(cfg, "warmup_deal_in_penalty", 0.0)
+            self._warmup_dangerous_discard_penalty = getattr(cfg, "warmup_dangerous_discard_penalty", 0.03)
+
+        # Structured reward shaping (all phases)
+        self._reward_tsumo_bonus = 0.0
+        self._reward_deal_in_penalty = 0.0
+        self._reward_shanten_progress = 0.0
+        self._reward_shanten_regress = 0.0
+        self._reward_safe_discard = 0.0
+        self._reward_rank_bonus = 0.0
+        if cfg is not None:
+            self._reward_tsumo_bonus = getattr(cfg, "reward_tsumo_bonus", 0.1)
+            self._reward_deal_in_penalty = getattr(cfg, "reward_deal_in_penalty", 0.05)
+            self._reward_shanten_progress = getattr(cfg, "reward_shanten_progress", 0.003)
+            self._reward_shanten_regress = getattr(cfg, "reward_shanten_regress", 0.001)
+            self._reward_safe_discard = getattr(cfg, "reward_safe_discard", 0.0)
+            self._reward_rank_bonus = getattr(cfg, "reward_rank_bonus", 0.0)
+
+        self._max_steps = 500
+        self._step_count = 0
+        self._prev_scores = np.zeros(4, dtype=np.float32)
+        self._prev_agent_shanten: Optional[int] = None
+
+    def _try_refresh_opponent(self):
+        self._episodes_since_refresh += 1
+        if self._episodes_since_refresh < self._refresh_every:
+            return
+
+        self._episodes_since_refresh = 0
+        if self._league is None:
+            return
+
+        path = self._league.sample_opponent()
+        if path is not None:
+            try:
+                self._opp_pool.load(str(path))
+            except Exception as e:
+                log.warning("Failed to load opponent checkpoint from %s: %s", path, e)
+
+    def _opp_action(self, player_id: int) -> int:
+        """Get an opponent's action using the neural model or fallback."""
+        obs_dict = self._env.get_player_obs(player_id)
+        obs = torch.as_tensor(np.array(obs_dict["obs"], dtype=np.float32))
+        mask = torch.as_tensor(np.array(obs_dict["action_mask"], dtype=np.float32))
+        return self._opp_pool.get_action(obs, mask, opponent_id=player_id)
+
+    def _advance_external_opponents(self):
+        """Drive the game forward through all opponent decision points."""
+        agent = 0
+        for _ in range(MAX_LOOP_GUARD):
+            if self._env.is_done():
+                break
+
+            phase = self._env.get_phase()
+
+            if phase in ("scoring", "done"):
+                break
+
+            if phase == "ding_que":
+                dq_done = self._env.get_ding_que_done()
+                if not dq_done[agent]:
+                    break
+                any_applied = False
+                for pid in range(NUM_PLAYERS):
+                    if pid == agent or dq_done[pid]:
+                        continue
+                    action = self._opp_action(pid)
+                    self._env.apply_ext_action(pid, action)
+                    any_applied = True
+                if any_applied:
+                    continue
+                else:
+                    break
+
+            elif phase == "self_check":
+                cp = self._env.get_current_player()
+                if cp == agent:
+                    if self._env.has_decision(agent):
+                        break
+                    self._env.apply_ext_action(agent, 30)  # Pass
+                    continue
+                action = self._opp_action(cp)
+                self._env.apply_ext_action(cp, action)
+
+            elif phase == "kan_select":
+                cp = self._env.get_current_player()
+                if cp == agent:
+                    break
+                action = self._opp_action(cp)
+                self._env.apply_ext_action(cp, action)
+
+            elif phase == "discard":
+                cp = self._env.get_current_player()
+                if cp == agent:
+                    break
+                action = self._opp_action(cp)
+                self._env.apply_ext_action(cp, action)
+
+            elif phase == "reaction":
+                pending = self._env.get_reaction_pending()
+                if pending[agent]:
+                    break
+                for pid in range(NUM_PLAYERS):
+                    if pid == agent or not pending[pid]:
+                        continue
+                    action = self._opp_action(pid)
+                    self._env.apply_ext_action(pid, action)
+                pending = self._env.get_reaction_pending()
+                if pending[agent]:
+                    break
+
+            else:
+                break
+
+    def reset(self, *, seed=None, options=None):
+        if seed is not None:
+            self._rng = np.random.default_rng(seed)
+
+        game_seed = int(self._rng.integers(0, 2**32))
+        self._maybe_pick_augmentation()
+        self._try_refresh_opponent()
+        self._opp_pool.reset_hidden_states()  # reset LSTM state for new episode
+
+        self._step_count = 0
+        if self._engine_cls is not None:
+            self._env = self._engine_cls(game_seed, "external")
+            self._env.reset(game_seed)
+            self._advance_external_opponents()
+
+            obs_dict = self._env.get_player_obs(0)
+            obs = np.array(obs_dict["obs"], dtype=np.float32)
+            mask = np.array(obs_dict["action_mask"], dtype=np.float32)
+            oracle_obs = np.array(self._env.get_oracle_obs(), dtype=np.float32)
+            shanten, ow = self._compute_labels()
+            self._prev_scores = np.array(self._env.get_scores(), dtype=np.float32)
+            if hasattr(self._env, "get_agent_shanten"):
+                self._prev_agent_shanten = self._env.get_agent_shanten()
+            else:
+                self._prev_agent_shanten = None
+        else:
+            obs = np.zeros(OBS_SIZE, dtype=np.float32)
+            mask = np.zeros(ACTION_SPACE, dtype=np.float32)
+            mask[31:34] = 1.0
+            oracle_obs = np.zeros(self.observation_space["oracle_obs"].shape[0], dtype=np.float32)
+            shanten = np.zeros(15, dtype=np.float32)
+            ow = np.zeros(81, dtype=np.float32)
+            self._prev_scores = np.full(4, 100000.0, dtype=np.float32)
+            self._prev_agent_shanten = None
+
+        self._episode_count += 1
+        return {
+            "obs": self._apply_augment_obs(obs),
+            "oracle_obs": self._apply_augment_oracle_obs(oracle_obs),
+            "action_mask": self._apply_augment_mask(mask),
+            "shanten_labels": self._apply_augment_shanten(shanten),
+            "ow_labels": self._apply_augment_ow(ow),
+        }, {}
+
+    def step(self, action):
+        if self._env is None:
+            obs = np.zeros(OBS_SIZE, dtype=np.float32)
+            oracle = np.zeros(self.observation_space["oracle_obs"].shape[0], dtype=np.float32)
+            mask = np.zeros(ACTION_SPACE, dtype=np.float32)
+            shanten = np.zeros(15, dtype=np.float32)
+            ow = np.zeros(81, dtype=np.float32)
+            return {
+                "obs": obs, "oracle_obs": oracle, "action_mask": mask,
+                "shanten_labels": shanten, "ow_labels": ow,
+            }, 0.0, True, False, {}
+
+        engine_action = self._inverse_action(int(action))
+
+        # Capture oracle ow_labels BEFORE applying action (for defense rewards)
+        ow_before = None
+        _need_ow = (
+            (self._warmup_reward_shaping and self._warmup_dangerous_discard_penalty > 0)
+            or self._reward_safe_discard > 0
+        )
+        if _need_ow:
+            _, ow_before = self._compute_labels()
+
+        self._env.apply_ext_action(0, engine_action)
+
+        self._advance_external_opponents()
+
+        if self._env.is_done():
+            self._env.finalize_scoring()
+
+        scores = np.array(self._env.get_scores(), dtype=np.float32)
+        agent_delta = scores[0] - self._prev_scores[0]
+        opp_deltas = scores[1:] - self._prev_scores[1:]
+
+        # Base reward: sqrt-compressed normalized score delta.
+        # REWARD_NORM = 32000 = max single-player payment per hand (6-fan ron cap).
+        # agent_delta can exceed 32000: 6-fan tsumo = 32000 × 3 payers = 96000.
+        # Linear range: 6-fan ron → +1.0, 6-fan tsumo → +3.0.
+        # But 1000×2^(fan-1) creates a 32:1 ratio between 1-fan and 6-fan,
+        # causing high reward variance. Sqrt compression reduces this to ~5.6:1:
+        #   1-fan ron  → 0.177,  6-fan ron  → 1.000
+        #   1-fan tsumo→ 0.306,  6-fan tsumo→ 1.732
+        _r = float(agent_delta) / 32000.0
+        reward = float(np.sign(_r) * np.sqrt(abs(_r)))
+
+        # --- Structured reward shaping (all phases) ---
+        # Tsumo bonus: agent won and multiple opponents paid.
+        # Use >= 2 (not >= 3) so late-game tsumo (when 1 opponent already won)
+        # still triggers the bonus. Tsumo always has ≥2 payers unless 2 opponents
+        # have already won, which is a rare terminal edge case.
+        if self._reward_tsumo_bonus > 0 and self._env.player_has_won(0) and agent_delta > 0:
+            if int(np.sum(opp_deltas < -100)) >= 2:
+                reward += self._reward_tsumo_bonus
+
+        # Deal-in penalty: agent score down, at least one opponent up, no others down.
+        # Use >= 1 (not == 1) to catch multi-ron deal-ins where 2 opponents win
+        # simultaneously on the same discard.
+        elif self._reward_deal_in_penalty > 0 and agent_delta < -100:
+            if int(np.sum(opp_deltas > 100)) >= 1 and int(np.sum(opp_deltas < -100)) == 0:
+                reward -= self._reward_deal_in_penalty
+
+        # Shanten progress reward (dense signal during game).
+        # Guard against game-end: when terminated, shanten may be -1 (complete hand)
+        # which would produce a spurious large progress reward on top of the win reward.
+        if (not terminated
+                and self._prev_agent_shanten is not None
+                and hasattr(self._env, "get_agent_shanten")):
+            current_shanten = self._env.get_agent_shanten()
+            shanten_delta = current_shanten - self._prev_agent_shanten
+            if shanten_delta < 0 and self._reward_shanten_progress > 0:
+                reward += self._reward_shanten_progress * (-shanten_delta)
+            elif shanten_delta > 0 and self._reward_shanten_regress > 0:
+                reward -= self._reward_shanten_regress * shanten_delta
+            self._prev_agent_shanten = current_shanten
+
+        # Safe discard reward: agent discards a tile that no opponent is waiting for,
+        # while at least one opponent is tenpai. Rewards defensive awareness.
+        # Only applies to discard actions (0-26) and when ow_before is available.
+        if (self._reward_safe_discard > 0
+                and ow_before is not None
+                and 0 <= engine_action < 27):
+            ow_3d = ow_before.reshape(3, 27)
+            any_tenpai = bool(np.any(ow_3d.sum(axis=1) > 0.01))
+            if any_tenpai:
+                tile_dangerous = bool(np.any(ow_3d[:, engine_action] > 0.5))
+                if not tile_dangerous:
+                    reward += self._reward_safe_discard
+
+        # Rank bonus at game end: encourages maximizing relative ranking, not just
+        # absolute score. Applied once when the game fully terminates.
+        # Bonus schedule (rank_bonus=0.3): 1st=+0.3, 2nd=+0.09, 3rd=-0.09, 4th=-0.3
+        if self._reward_rank_bonus > 0 and terminated and self._env.is_done():
+            final_scores = self._env.get_scores()
+            rank = sum(1 for s in final_scores if s > final_scores[0])  # 0=1st, 3=4th
+            rank_multipliers = [1.0, 0.3, -0.3, -1.0]
+            reward += self._reward_rank_bonus * rank_multipliers[rank]
+
+        # Warmup shaping (phase 1 only)
+        if self._warmup_reward_shaping:
+            # Pass engine_action (original tile space) not action (augmented space).
+            # ow_before is from the Rust engine (unaugmented), so the tile index must
+            # match the original space. Using the augmented action would check the wrong
+            # tile when suit permutation is active (50% of warmup episodes).
+            reward += self._compute_shaping_reward(float(self._prev_scores[0]), engine_action, ow_before)
+
+        self._prev_scores = scores
+
+        self._step_count += 1
+        
+        # Fast-forward remaining game if agent 0 has won
+        if self._env.player_has_won(0):
+            for _ in range(MAX_LOOP_GUARD):
+                if self._env.is_done():
+                    break
+                self._advance_external_opponents()
+                if self._env.is_done():
+                    self._env.finalize_scoring()
+                    break
+            else:
+                log.warning("Fast-forward loop guard hit after player 0 win; game may not be fully resolved")
+
+        terminated = self._env.is_done() or self._env.player_has_won(0)
+        truncated = self._step_count >= self._max_steps and not terminated
+
+        obs_dict = self._env.get_player_obs(0)
+        obs = np.array(obs_dict["obs"], dtype=np.float32)
+        mask = np.array(obs_dict["action_mask"], dtype=np.float32)
+        oracle_obs = np.array(self._env.get_oracle_obs(), dtype=np.float32)
+        shanten, ow = self._compute_labels()
+
+        info = {
+            "win_count": self._env.get_win_count(),
+            "player_won": self._env.player_has_won(0),
+            "fan_count": _score_delta_to_fan(agent_delta) if self._env.player_has_won(0) and agent_delta > 0 else 0,
+        }
+
+        return {
+            "obs": self._apply_augment_obs(obs),
+            "oracle_obs": self._apply_augment_oracle_obs(oracle_obs),
+            "action_mask": self._apply_augment_mask(mask),
+            "shanten_labels": self._apply_augment_shanten(shanten),
+            "ow_labels": self._apply_augment_ow(ow),
+        }, float(reward), terminated, truncated, info
+
+    def _compute_labels(self):
+        """Compute auxiliary labels from the environment's Rust API.
+
+        Returns shanten_labels (3x5 one-hot, shape [15]) and ow_labels ([81]).
+        Falls back to zero labels if the API is unavailable.
+        """
+        try:
+            if self._env is not None and hasattr(self._env, "get_aux_labels"):
+                labels = self._env.get_aux_labels(0)
+                shanten = np.array(labels["shanten_labels"], dtype=np.float32)
+                ow = np.array(labels["ow_labels"], dtype=np.float32)
+                return shanten, ow
+        except Exception:
+            pass
+        shanten = np.zeros(15, dtype=np.float32)
+        ow = np.zeros(81, dtype=np.float32)
+        return shanten, ow
+
+    def _compute_shaping_reward(self, prev_score: float, action: int, ow_before) -> float:
+        """Extra reward signals during warmup phase."""
+        bonus = 0.0
+        if self._env.player_has_won(0) and self._warmup_win_bonus > 0:
+            bonus += self._warmup_win_bonus
+        current_score = float(self._env.get_scores()[0])
+        if current_score < prev_score and self._warmup_deal_in_penalty > 0:
+            bonus -= self._warmup_deal_in_penalty
+        # Oracle-guided dangerous discard penalty:
+        # penalize discarding a tile that any opponent is waiting for.
+        if (ow_before is not None
+                and self._warmup_dangerous_discard_penalty > 0
+                and 0 <= action < 27):
+            for opp in range(3):
+                if ow_before[opp * 27 + action] > 0.5:
+                    bonus -= self._warmup_dangerous_discard_penalty
+                    break  # penalize once even if multiple opponents wait on it
+        return bonus
