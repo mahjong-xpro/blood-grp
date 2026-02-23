@@ -3,6 +3,90 @@ use crate::tile::{Tile, Suit};
 
 pub type HandCounts = [u8; NUM_TILE_TYPES];
 
+// ── Lookup-table shanten (tomohxx algorithm) ─────────────────────────────────
+//
+// Ported from V1 libblood/src/algo/shanten.rs.
+// The table encodes per-suit shanten contributions for all possible tile
+// distributions within a 9-tile suit (base-5 index, max count 4 per tile).
+// Three suits are combined with add_suhai() to get the final shanten.
+//
+// Reference: https://github.com/tomohxx/shanten-number-calculator/
+
+use std::sync::LazyLock;
+use std::io::Read;
+
+const SUHAI_TABLE_SIZE: usize = 1_940_777;
+
+static SUHAI_TABLE: LazyLock<Vec<[u8; 10]>> = LazyLock::new(|| {
+    let gzipped = include_bytes!("algo/data/shanten_suhai.bin.gz");
+    let mut gz = flate2::read::GzDecoder::new(gzipped.as_ref());
+    let mut raw = Vec::new();
+    gz.read_to_end(&mut raw).expect("shanten table decompress failed");
+
+    let mut ret = Vec::with_capacity(SUHAI_TABLE_SIZE);
+    let mut entry = [0u8; 10];
+    for (i, b) in raw.into_iter().enumerate() {
+        entry[i * 2 % 10] = b & 0b1111;
+        entry[i * 2 % 10 + 1] = (b >> 4) & 0b1111;
+        if (i + 1) % 5 == 0 {
+            ret.push(entry);
+        }
+    }
+    assert_eq!(ret.len(), SUHAI_TABLE_SIZE, "shanten table size mismatch");
+    ret
+});
+
+#[inline]
+fn suit_index(tiles: &[u8]) -> usize {
+    tiles.iter().fold(0usize, |acc, &x| acc * 5 + x as usize)
+}
+
+fn add_suhai(lhs: &mut [u8; 10], index: usize, m: usize) {
+    let m = m.min(4);
+    let tab = SUHAI_TABLE.get(index).copied().unwrap_or_default();
+    for j in (5..=(5 + m)).rev() {
+        let mut sht = (lhs[j] + tab[0]).min(lhs[0] + tab[j]);
+        for k in 5..j {
+            let jk = j - k;
+            sht = sht.min(lhs[k] + tab[jk]).min(lhs[jk] + tab[k]);
+        }
+        lhs[j] = sht;
+    }
+    for j in (0..=m).rev() {
+        let mut sht = lhs[j] + tab[0];
+        for k in 0..j {
+            sht = sht.min(lhs[k] + tab[j - k]);
+        }
+        lhs[j] = sht;
+    }
+}
+
+fn calc_normal_table(hand: &HandCounts, len_div3: usize) -> i8 {
+    let mut ret = SUHAI_TABLE
+        .get(suit_index(&hand[..9]))
+        .copied()
+        .unwrap_or_default();
+    add_suhai(&mut ret, suit_index(&hand[9..18]), len_div3);
+    add_suhai(&mut ret, suit_index(&hand[18..27]), len_div3);
+    (ret[5 + len_div3] as i8) - 1
+}
+
+fn calc_chitoi_table(hand: &HandCounts) -> i8 {
+    let mut pairs: u8 = 0;
+    let mut kinds: u8 = 0;
+    let mut quads: u8 = 0;
+    for &c in hand.iter().filter(|&&c| c > 0) {
+        kinds += 1;
+        if c >= 4 { pairs += 2; quads += 1; }
+        else if c >= 2 { pairs += 1; }
+    }
+    let needed_kinds = 7u8.saturating_sub(quads);
+    let redunct = needed_kinds.saturating_sub(kinds) as i8;
+    7 - (pairs as i8) + redunct - 1
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MeldType {
     Pon(Tile),
@@ -65,116 +149,21 @@ pub fn suit_tile_count(hand: &HandCounts, suit: Suit) -> u8 {
     count
 }
 
-/// Shanten calculation (recursive).
+/// Shanten calculation via lookup table (tomohxx algorithm).
 /// Returns -1 when complete, 0 for tenpai, 1 for iishanten, etc.
 pub fn calc_shanten(hand: &HandCounts, num_melds: usize) -> i8 {
-    let target = 4 - num_melds;
-    let mut best = (target as i8) * 2; // worst case
+    // len_div3 = number of complete groups possible from hand tiles alone.
+    // hand tiles = total - melds*3; len_div3 = hand_tiles / 3.
+    let hand_tiles: usize = hand.iter().map(|&c| c as usize).sum();
+    let len_div3 = hand_tiles / 3;
 
-    // Seven pairs (only if no melds); 4-of-a-kind counts as 2 pairs (龙七对)
-    if num_melds == 0 {
-        let total: u8 = hand.iter().sum();
-        if total >= 13 {
-            let pairs: i8 = hand.iter().map(|&c| (c / 2) as i8).sum();
-            best = best.min(6 - pairs);
-        }
-    }
-
-    let mut h = *hand;
-
-    // Standard form with jantai (pair head)
-    for head in 0..NUM_TILE_TYPES {
-        if h[head] < 2 { continue; }
-        h[head] -= 2;
-        let mut local_best = best;
-        scan_groups(&mut h, 0, target, 0, 0, &mut local_best, true);
-        best = best.min(local_best);
-        h[head] += 2;
-    }
-
-    // Standard form without jantai
-    scan_groups(&mut h, 0, target, 0, 0, &mut best, false);
-
-    best
-}
-
-fn scan_groups(
-    hand: &mut HandCounts,
-    start: usize,
-    target: usize,
-    mentsu: usize,
-    tatsu: usize,
-    best: &mut i8,
-    has_jantai: bool,
-) {
-    if *best == -1 { return; }
-
-    // Prune: more partial groups than we can use — cap tatsu and evaluate now.
-    // eff_tatsu = tatsu.min(target - mentsu), so extra tatsu beyond (target - mentsu) are wasted.
-    let remaining = target.saturating_sub(mentsu);
-    if tatsu > remaining {
-        let eff_tatsu = remaining;
-        let s = (remaining as i8) * 2 - (eff_tatsu as i8) - if has_jantai { 1 } else { 0 };
-        *best = (*best).min(s);
-        return;
-    }
-
-    // Skip to next non-zero tile
-    let mut pos = start;
-    while pos < NUM_TILE_TYPES && hand[pos] == 0 {
-        pos += 1;
-    }
-
-    // All tiles consumed → compute shanten
-    if pos >= NUM_TILE_TYPES {
-        let remaining = target.saturating_sub(mentsu);
-        let eff_tatsu = tatsu.min(remaining);
-        let s = (remaining as i8) * 2 - (eff_tatsu as i8) - if has_jantai { 1 } else { 0 };
-        *best = (*best).min(s);
-        return;
-    }
-
-    let same_suit = |a: usize, b: usize| a / TILES_PER_SUIT == b / TILES_PER_SUIT;
-
-    // Kotsu (triplet)
-    if hand[pos] >= 3 {
-        hand[pos] -= 3;
-        scan_groups(hand, pos, target, mentsu + 1, tatsu, best, has_jantai);
-        hand[pos] += 3;
-    }
-
-    // Shuntsu (sequence)
-    if pos + 2 < NUM_TILE_TYPES && same_suit(pos, pos + 2) && hand[pos + 1] > 0 && hand[pos + 2] > 0 {
-        hand[pos] -= 1; hand[pos + 1] -= 1; hand[pos + 2] -= 1;
-        scan_groups(hand, pos, target, mentsu + 1, tatsu, best, has_jantai);
-        hand[pos] += 1; hand[pos + 1] += 1; hand[pos + 2] += 1;
-    }
-
-    // Toitsu (pair as tatsu)
-    if hand[pos] >= 2 {
-        hand[pos] -= 2;
-        scan_groups(hand, pos, target, mentsu, tatsu + 1, best, has_jantai);
-        hand[pos] += 2;
-    }
-
-    // Ryanmen/Penchan (consecutive pair)
-    if pos + 1 < NUM_TILE_TYPES && same_suit(pos, pos + 1) && hand[pos + 1] > 0 {
-        hand[pos] -= 1; hand[pos + 1] -= 1;
-        scan_groups(hand, pos, target, mentsu, tatsu + 1, best, has_jantai);
-        hand[pos] += 1; hand[pos + 1] += 1;
-    }
-
-    // Kanchan (skip one)
-    if pos + 2 < NUM_TILE_TYPES && same_suit(pos, pos + 2) && hand[pos + 2] > 0 {
-        hand[pos] -= 1; hand[pos + 2] -= 1;
-        scan_groups(hand, pos, target, mentsu, tatsu + 1, best, has_jantai);
-        hand[pos] += 1; hand[pos + 2] += 1;
-    }
-
-    // Isolate: leave this tile unused, move on
-    hand[pos] -= 1;
-    scan_groups(hand, pos, target, mentsu, tatsu, best, has_jantai);
-    hand[pos] += 1;
+    let normal = calc_normal_table(hand, len_div3);
+    let chitoi = if num_melds == 0 && hand_tiles >= 13 {
+        calc_chitoi_table(hand)
+    } else {
+        i8::MAX
+    };
+    normal.min(chitoi)
 }
 
 pub fn is_complete(hand: &HandCounts, num_melds: usize) -> bool {
@@ -182,15 +171,13 @@ pub fn is_complete(hand: &HandCounts, num_melds: usize) -> bool {
 }
 
 /// Get the tiles we are waiting for (only valid at tenpai i.e. shanten==0).
-/// Uses the memoized shanten cache for performance.
 pub fn waiting_tiles(hand: &HandCounts, num_melds: usize) -> Vec<Tile> {
     let mut waits = Vec::new();
     let mut h = *hand;
     for t in 0..NUM_TILE_TYPES as u8 {
         if h[t as usize] < 4 {
             h[t as usize] += 1;
-            // Use memoized calc_shanten to avoid redundant recursive calls
-            if crate::algo::shanten::calc_shanten(&h, num_melds) == -1 {
+            if calc_shanten(&h, num_melds) == -1 {
                 waits.push(t);
             }
             h[t as usize] -= 1;
