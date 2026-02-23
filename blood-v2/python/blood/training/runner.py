@@ -92,7 +92,11 @@ def _inject_config_yaml():
             continue
         if isinstance(val, bool):
             if val:
-                sys.argv.append(flag)
+                if key in _str2bool_args:
+                    # str2bool args require an explicit value (--use_rnn True)
+                    sys.argv.extend([flag, "True"])
+                else:
+                    sys.argv.append(flag)  # store_true: no value needed
             elif key in _str2bool_args:
                 # str2bool args: pass --key False to override set_defaults(key=True)
                 sys.argv.extend([flag, "False"])
