@@ -1,6 +1,9 @@
 """Main training entry point for Sample Factory v2."""
 
 import sys
+import os
+import signal
+import atexit
 import logging
 
 import torch
@@ -16,6 +19,40 @@ from ..model.factory import register_blood_model
 from .callbacks import BloodObserver
 
 log = logging.getLogger(__name__)
+
+
+def _setup_process_cleanup():
+    """Kill all SF2 worker processes when the main process exits.
+
+    SF2 spawns worker processes via multiprocessing.spawn. These are NOT
+    daemon processes and won't die automatically when the parent crashes
+    (e.g. CUDA OOM). This registers an atexit + SIGTERM handler that sends
+    SIGTERM to the entire process group, cleaning up orphaned workers.
+
+    os.setpgrp() makes this process the group leader so that all SF2
+    workers (spawned after this call) inherit the same process group.
+    """
+    try:
+        os.setpgrp()
+    except OSError:
+        pass  # Already a group leader or not permitted
+
+    _pgid = os.getpgid(0)
+    _main_pid = os.getpid()
+
+    def _cleanup(signum=None, frame=None):
+        if os.getpid() != _main_pid:
+            return
+        try:
+            os.killpg(_pgid, signal.SIGTERM)
+        except Exception:
+            pass
+
+    atexit.register(_cleanup)
+    try:
+        signal.signal(signal.SIGTERM, _cleanup)
+    except (OSError, ValueError):
+        pass  # Can't set signal in non-main thread
 
 
 def _inject_config_yaml():
@@ -203,6 +240,7 @@ def _configure_logging():
 
 
 def run_training():
+    _setup_process_cleanup()
     register_blood_components()
     _patch_learner()
     _configure_logging()
