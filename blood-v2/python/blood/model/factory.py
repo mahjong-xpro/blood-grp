@@ -86,12 +86,10 @@ class BloodActorCritic(ActorCriticSharedWeights):
             self.oracle_ce_weight = getattr(cfg, "oracle_ce_weight", 0.1)
             self.oracle_value_distill_weight = getattr(cfg, "oracle_value_distill_weight", 0.5)
 
-        self._cached_encoder_out = None  # post-enc_proj (1024); used as forward-pass guard in runner.py
-        self._cached_core_out = None     # post-LSTM (1024); used by AuxHead
+        self._cached_encoder_out = None  # post-enc_proj; used as forward-pass guard in runner.py
+        self._cached_core_out = None     # post-LSTM; used by AuxHead in runner.py
         self._cached_values = None       # student values; used by Oracle value distillation
         self._cached_obs = None
-        self._actor_features = None
-        self._critic_features = None
         self._cache_gen = 0
         self._loss_gen = -1  # -1 so first batch (cache_gen=1 > loss_gen=-1) always passes
 
@@ -104,29 +102,26 @@ class BloodActorCritic(ActorCriticSharedWeights):
         return x
 
     def forward_core(self, head_output: Tensor, rnn_states):
-        # Pass through base RNN core, then split into actor/critic branches.
+        # During BPTT training, SF2 passes head_output as a PackedSequence and
+        # expects a PackedSequence back. Do NOT apply heads here — they require
+        # a plain Tensor. SF2 unpacks the output before calling forward_tail.
         x, new_rnn_states = self.core(head_output, rnn_states)
-        self._cached_core_out = x  # post-LSTM features for AuxHead
-        self._actor_features = self.actor_head(x)
-        self._critic_features = self.critic_head(x)
         return x, new_rnn_states
 
     def forward_tail(self, core_output, values_only: bool, sample_actions: bool) -> TensorDict:
-        # Use decoupled heads stored by forward_core.
-        # Fall back to core_output if forward_core was not called (e.g. during export).
-        a_feat = getattr(self, "_actor_features", None)
-        c_feat = getattr(self, "_critic_features", None)
-        if a_feat is None or c_feat is None:
-            a_feat = self.actor_head(core_output)
-            c_feat = self.critic_head(core_output)
+        # core_output is always a plain Tensor here (SF2 unpacks before calling us).
+        self._cached_core_out = core_output  # post-LSTM features for AuxHead
 
-        values = self.critic_linear(c_feat).squeeze()
-        self._cached_values = values  # cache for Oracle value distillation in runner.py
+        actor_features = self.actor_head(core_output)
+        critic_features = self.critic_head(core_output)
+
+        values = self.critic_linear(critic_features).squeeze()
+        self._cached_values = values
         result = TensorDict(values=values)
         if values_only:
             return result
 
-        action_distribution_params, self.last_action_distribution = self.action_parameterization(a_feat)
+        action_distribution_params, self.last_action_distribution = self.action_parameterization(actor_features)
         result["action_logits"] = action_distribution_params
         self._maybe_sample_actions(sample_actions, result)
         return result
