@@ -130,7 +130,101 @@
 
 ## Competitive 阶段（Phase 2）
 
-*待填写*
+**配置**：`configs/competitive.yaml`
+**目标**：5M env steps，神经网络自对弈 + 联赛池
+**GPU**：RTX 4090 24GB
+**实验名**：`blood_v2_competitive`
+
+---
+
+### 运行记录
+
+| 日期 | 步数范围 | 备注 |
+|------|----------|------|
+| 2026-02-23 | 0 → 5M | 首次 competitive 运行，中途修复多个 bug |
+
+---
+
+### 关键指标分析（step 0 → 5M）
+
+#### 奖励 / 目标
+
+| 指标 | 初始值 | 最终值 | 评估 |
+|------|--------|--------|------|
+| `reward/reward` | 0.02 | 12.4 | ✅ 极大提升，500K steps 内从 0 跳到 12 |
+| `avg_true_objective` | 0.02 | 12.4 | ✅ 与 reward 一致 |
+| `avg_true_objective_max` | 0.87 | 22.1 | ✅ 最佳局表现优秀 |
+| `avg_true_objective_min` | -0.30 | +0.95 | ✅ 最差局转正，防守改善 |
+
+奖励在 500K steps 内迅速从 0 跳到 12，之后在 11–14 区间震荡。这是自对弈的正常现象——对手同步变强，绝对奖励不会持续上涨。
+
+#### 训练稳定性
+
+| 指标 | 初始值 | 最终值 | 评估 |
+|------|--------|--------|------|
+| `train/entropy` | 3.50 | 3.15 | ✅ 缓慢下降，探索保持充分 |
+| `train/policy_loss` | 0.025 | 0.006 | ✅ 策略收敛 |
+| `train/value_delta` | 0.34 | 0.015 | ✅ 价值函数预测误差大幅下降 |
+| `train/grad_norm` | 1.0（打满上限） | 0.07–0.19 | ✅ lr 降低后梯度平稳 |
+| `train/fraction_clipped` | 0.63 → 0.40（lr=3e-4 时期） | 0.05–0.15（lr=1e-4 后） | ✅ 降 lr 后恢复正常 |
+| `train/kl_loss` | 0 | 0 | ✅ 策略高度收敛 |
+| `train/actual_lr` | 0 | 0.01（×1e-4 = 1e-6 实际） | ✅ KL 自适应调度器正常压低 lr |
+
+#### 联赛池
+
+| 指标 | 值 | 评估 |
+|------|-----|------|
+| `blood/league_pool_size` | 0 → 50（满池） | ✅ 修复后正常填充 |
+
+#### 系统性能
+
+| 指标 | 值 | 评估 |
+|------|-----|------|
+| `perf/_fps` | ~4915–9830 FPS | ✅ 正常（selfplay 比 rulebot 慢，因为对手推理在 CPU） |
+| `len/len_max` | 500（截断） | ⚠️ 见下方分析 |
+
+---
+
+### 异常指标分析
+
+#### ⚠️ `len/len_max = 500`（episode 截断）
+
+**现象**：大量局面触发 `max_steps=500` 上限，游戏没有正常结束。
+
+**可能原因**：自对弈双方都在防守、不敢进攻，导致局面拖长。也可能是 selfplay 对手策略过于保守。
+
+**影响**：截断的局面会产生不准确的 GAE 估计，影响价值函数学习。
+
+**建议**：Elite 阶段可增加 `reward_rank_bonus` 激励进攻，或适当降低 `max_steps`。
+
+---
+
+### Competitive 阶段 Bug 修复
+
+| commit | 描述 |
+|--------|------|
+| `62124c71` | fix: `_inject_config_yaml` str2bool 参数需要显式值（`--use_rnn True`） |
+| `4b4ca54f` | fix: `selfplay_env.py` 中 `terminated` 在赋值前被引用（UnboundLocalError） |
+| `1f9ff565` | fix: competitive/elite 阶段 CUDA OOM，降低 `num_envs_per_worker` 和 `batch_size` |
+| `2d91c8a2` | fix: BPTT 训练时 `forward_core` 收到 `PackedSequence`，`LayerNorm` 报错 |
+| `1f9f6e2c` | tune: competitive `learning_rate` 3e-4 → 1e-4（`fraction_clipped` 达 40%） |
+| `4b7861bf` | fix: 联赛快照静默失败（`LearnerWorker.learner` 在主进程为 None） |
+| `777f24d4` | fix: 联赛 checkpoint 损坏（竞态条件）+ `rnn_size` 检测失败导致维度不匹配 |
+| `b773fb4a` | fix: checkpoint 验证改用 `weights_only=False`（SF2 包含 numpy 标量） |
+
+---
+
+### Competitive 阶段结论
+
+| 项目 | 结论 |
+|------|------|
+| 收敛状态 | ✅ 策略收敛，reward 稳定在 11–14 |
+| 训练稳定性 | ✅ grad_norm、fraction_clipped 均正常 |
+| 联赛池 | ✅ 满池（50 个历史模型） |
+| 吞吐量 | ✅ ~5000–9800 FPS |
+| 待关注 | episode 截断（len_max=500），Elite 阶段需处理 |
+
+**下一步**：加载 competitive checkpoint，启动 elite 阶段（`configs/elite.yaml`）。
 
 ---
 
