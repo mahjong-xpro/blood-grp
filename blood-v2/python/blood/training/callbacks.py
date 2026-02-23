@@ -63,11 +63,19 @@ class BloodObserver(AlgoObserver):
 
         try:
             shutil.copy2(latest, str(save_path))
+            # Verify the copy is a valid PyTorch checkpoint (not a partial write).
+            import torch
+            torch.load(str(save_path), map_location="cpu", weights_only=True)
             self.league._evict_if_needed()
             log.info("Saved league checkpoint: %s (pool size: %d)",
                      save_path, self.league.pool_size())
         except Exception as e:
             log.warning("Failed to save league checkpoint: %s", e)
+            # Remove corrupt file so it doesn't pollute the pool.
+            try:
+                save_path.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     def extra_summaries(self, runner: Runner, policy_id, writer, env_steps: int) -> None:
         # Write league_pool_size as a plain integer directly to the SummaryWriter,

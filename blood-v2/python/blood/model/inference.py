@@ -154,10 +154,13 @@ class PolicyModel(nn.Module):
             obs_channels = encoder_sd[first_conv_key].shape[1]
             conv_ch = encoder_sd[first_conv_key].shape[0]
 
-        # Detect rnn_size from LSTM hidden-hidden weight shape
+        # Detect rnn_size from LSTM hidden-hidden weight shape.
+        # Fallback: infer from actor_head.0 (LayerNorm weight shape = [rnn_size]).
         lstm_hh_key = "core.rnn.weight_hh_l0"
         if lstm_hh_key in model_sd:
             rnn_size = model_sd[lstm_hh_key].shape[1]
+        elif "actor_head.0.weight" in model_sd:
+            rnn_size = model_sd["actor_head.0.weight"].shape[0]
 
         # Detect enc_out_dim from enc_proj if present
         enc_proj_key = "enc_proj.1.weight"
