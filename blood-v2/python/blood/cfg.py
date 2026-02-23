@@ -86,6 +86,12 @@ def add_blood_args(parser: ArgumentParser):
     p.add_argument("--ismce_rollout_depth", type=int, default=4,
                     help="Rollout depth for ISMCE playout")
 
+    # Advantage clipping — clip advantages to [-adv_clip, adv_clip] before PPO update.
+    # Prevents extreme advantage samples (observed ±4.7 in warmup) from dominating gradients.
+    # Set to 0 to disable.
+    p.add_argument("--adv_clip", type=float, default=0.0,
+                    help="Clip advantages to [-adv_clip, adv_clip] before PPO update (0=disabled)")
+
 
 def blood_override_defaults(parser: ArgumentParser):
     """Override Sample Factory defaults for Blood Mahjong."""

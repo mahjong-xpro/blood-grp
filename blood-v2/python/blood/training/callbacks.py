@@ -64,7 +64,14 @@ class BloodObserver(AlgoObserver):
             log.warning("Failed to save league checkpoint: %s", e)
 
     def extra_summaries(self, runner: Runner, policy_id, writer, env_steps: int) -> None:
-        writer.add_scalar("blood/league_pool_size", self.league.pool_size(), env_steps)
+        # Write league_pool_size as a plain integer directly to the SummaryWriter,
+        # bypassing SF2's running-mean normalizer which would corrupt integer scalars.
+        pool_size = float(self.league.pool_size())
+        if hasattr(writer, "writer"):
+            # SF2 wraps SummaryWriter; access the underlying TB writer directly
+            writer.writer.add_scalar("blood/league_pool_size", pool_size, env_steps)
+        else:
+            writer.add_scalar("blood/league_pool_size", pool_size, env_steps)
 
         ac = None
         learner_worker = runner.learners.get(policy_id)
@@ -73,3 +80,10 @@ class BloodObserver(AlgoObserver):
 
         if ac is not None and hasattr(ac, "oracle_enabled") and ac.oracle_enabled:
             writer.add_scalar("blood/oracle_enabled", 1, env_steps)
+
+        # Log raw advantage std (pre-normalization) from the learner's last minibatch.
+        # SF2 records adv_std=0 because it logs post-normalization advantages.
+        if learner_worker is not None:
+            raw_adv_std = getattr(learner_worker.learner, "_last_raw_adv_std", None)
+            if raw_adv_std is not None:
+                writer.add_scalar("blood/raw_adv_std", float(raw_adv_std), env_steps)

@@ -129,6 +129,19 @@ def _patch_learner():
     _original = Learner._calculate_losses
 
     def _patched(self, mb, num_invalids):
+        # Record raw advantage std before SF2 normalizes advantages.
+        # SF2 normalizes advantages in-place before calling _calculate_losses,
+        # so we capture the std from the raw returns here for monitoring.
+        raw_advantages = getattr(mb, "advantages", None)
+        if raw_advantages is not None:
+            self._last_raw_adv_std = float(raw_advantages.std().item())
+
+        # Advantage clipping: clip to [-adv_clip, adv_clip] to prevent extreme
+        # advantage samples (observed ±4.7 in warmup) from dominating gradients.
+        adv_clip = getattr(self.cfg, "adv_clip", 0.0)
+        if adv_clip > 0 and raw_advantages is not None:
+            mb.advantages = torch.clamp(raw_advantages, -adv_clip, adv_clip)
+
         result = _original(self, mb, num_invalids)
         action_dist, policy_loss, exploration_loss, kl_old, kl_loss, value_loss, summaries = result
 
@@ -218,6 +231,15 @@ def _patch_learner():
         summaries["ppo_policy_loss"] = policy_loss.detach()
         summaries["extra_loss_total"] = extra_loss.squeeze().detach()
         value_loss = value_loss + extra_loss.squeeze()
+
+        # Monitor logprob extremes: if max_abs_logprob keeps growing past ~8,
+        # the policy is becoming degenerate (near-deterministic on some actions).
+        student_logits = getattr(action_dist, 'logits', None)
+        if student_logits is not None:
+            log_probs = torch.nn.functional.log_softmax(student_logits, dim=-1)
+            summaries["blood/max_abs_logprob"] = log_probs.abs().max().detach()
+            summaries["blood/mean_abs_logprob"] = log_probs.abs().mean().detach()
+
         return action_dist, policy_loss, exploration_loss, kl_old, kl_loss, value_loss, summaries
 
     Learner._calculate_losses = _patched
