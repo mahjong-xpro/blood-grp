@@ -36,8 +36,10 @@ def _inject_config_yaml():
     if not cfg:
         return
 
-    # Keys handled outside SF2 arg parsing — skip them here
-    _skip = {"encoder_custom"}
+    # Keys handled outside SF2 arg parsing — skip them here.
+    # Includes: keys not registered as SF2 args, and bool-with-value args
+    # that have dedicated --no_xxx counterparts (oracle_enabled, league_enabled).
+    _skip = {"encoder_custom", "oracle_enabled", "league_enabled"}
 
     # Append yaml values as CLI args (only if not already in sys.argv)
     existing = set(sys.argv)
