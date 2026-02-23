@@ -105,6 +105,9 @@ cmd_train() {
     local config="configs/${phase}.yaml"
     [[ -f "$config" ]] || die "配置文件不存在: $config"
 
+    # Reduce CUDA allocator fragmentation (helps when VRAM is nearly full)
+    export PYTORCH_ALLOC_CONF=expandable_segments:True
+
     info "启动训练: phase=$phase  device=$device  num_policies=$num_policies"
     [[ $resume -eq 1 ]] && info "从最新 checkpoint 恢复"
 
