@@ -64,8 +64,9 @@ class BloodObserver(AlgoObserver):
         try:
             shutil.copy2(latest, str(save_path))
             # Verify the copy is a valid PyTorch checkpoint (not a partial write).
+            # weights_only=False needed: SF2 checkpoints contain numpy scalars.
             import torch
-            torch.load(str(save_path), map_location="cpu", weights_only=True)
+            torch.load(str(save_path), map_location="cpu", weights_only=False)
             self.league._evict_if_needed()
             log.info("Saved league checkpoint: %s (pool size: %d)",
                      save_path, self.league.pool_size())
