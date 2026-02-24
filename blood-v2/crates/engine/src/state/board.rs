@@ -319,7 +319,9 @@ impl BoardState {
                     self.phase = Phase::Discard;
                 }
             }
-            Action::Pass => {
+            // Discard action in self_check phase: model chose a tile instead of Pass.
+            // Treat as Pass — the actual discard happens in the Discard phase.
+            Action::Pass | Action::Discard(_) => {
                 self.phase = Phase::Discard;
             }
             _ => {}
@@ -465,9 +467,19 @@ impl BoardState {
     }
 
     fn apply_discard(&mut self, player_id: usize, action: Action) {
-        if let Action::Discard(tile) = action {
-            self.do_discard(player_id, tile);
-        }
+        let tile = match action {
+            Action::Discard(t) => t,
+            _ => {
+                // Non-discard action in discard phase (e.g. Pass from a confused model).
+                // Force the first legal tile to keep the game moving.
+                let candidates = self.players[player_id].discard_candidates();
+                match candidates.first() {
+                    Some(&t) => t,
+                    None => return,
+                }
+            }
+        };
+        self.do_discard(player_id, tile);
     }
 
     fn do_discard(&mut self, player_id: usize, tile: Tile) {
@@ -684,7 +696,11 @@ impl BoardState {
 
         if self.win_count >= 3 {
             self.phase = Phase::Scoring;
-        } else if loser.is_none() {
+        } else {
+            // Both tsumo (loser=None) and ron (loser=Some) must advance to the
+            // next draw so the game continues for remaining players.
+            // Previously ron skipped this, leaving phase=Reaction and causing
+            // _advance_external_opponents to stall indefinitely.
             self.advance_to_next_draw();
         }
     }

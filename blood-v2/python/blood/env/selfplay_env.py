@@ -131,6 +131,7 @@ class SelfPlayEnv(BloodMahjongEnv):
     def _advance_external_opponents(self):
         """Drive the game forward through all opponent decision points."""
         agent = 0
+        prev_state = None
         for _ in range(MAX_LOOP_GUARD):
             if self._env.is_done():
                 break
@@ -139,6 +140,19 @@ class SelfPlayEnv(BloodMahjongEnv):
 
             if phase in ("scoring", "done"):
                 break
+
+            # Stall detection: if game state hasn't changed since last iteration,
+            # an action was a NO-OP and we'd loop forever. Break to avoid that.
+            cp = self._env.get_current_player()
+            pending = tuple(self._env.get_reaction_pending())
+            cur_state = (phase, cp, pending)
+            if cur_state == prev_state:
+                log.warning(
+                    "_advance_external_opponents: stall at phase=%s cp=%d; breaking",
+                    phase, cp,
+                )
+                break
+            prev_state = cur_state
 
             if phase == "ding_que":
                 dq_done = self._env.get_ding_que_done()
@@ -352,18 +366,6 @@ class SelfPlayEnv(BloodMahjongEnv):
         self._prev_scores = scores
 
         self._step_count += 1
-        
-        # Fast-forward remaining game if agent 0 has won
-        if self._env.player_has_won(0):
-            for _ in range(MAX_LOOP_GUARD):
-                if self._env.is_done():
-                    break
-                self._advance_external_opponents()
-                if self._env.is_done():
-                    self._env.finalize_scoring()
-                    break
-            else:
-                log.warning("Fast-forward loop guard hit after player 0 win; game may not be fully resolved")
 
         terminated = self._env.is_done() or self._env.player_has_won(0)
         truncated = self._step_count >= self._max_steps and not terminated
