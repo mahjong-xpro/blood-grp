@@ -188,6 +188,10 @@ class SelfPlayEnv(BloodMahjongEnv):
                     continue
                 action = self._opp_action(cp)
                 self._env.apply_ext_action(cp, action)
+                # After a Kan the engine stays in SelfCheck with the same cp
+                # (rinshan draw). Reset prev_state so the stall detector doesn't
+                # misfire on the next iteration when (phase, cp, pending) repeats.
+                prev_state = None
 
             elif phase == "kan_select":
                 cp = self._env.get_current_player()
