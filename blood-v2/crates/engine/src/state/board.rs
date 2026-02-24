@@ -336,6 +336,9 @@ impl BoardState {
     }
 
     fn apply_kan_select(&mut self, player_id: usize, action: Action) {
+        if player_id != self.current_player {
+            return;
+        }
         if let Action::Discard(tile) = action {
             let p = &self.players[player_id];
             // Determine kan type directly from hand state — avoids recomputing tile lists.
@@ -474,6 +477,9 @@ impl BoardState {
     }
 
     fn apply_discard(&mut self, player_id: usize, action: Action) {
+        if player_id != self.current_player {
+            return;
+        }
         let tile = match action {
             Action::Discard(t) => t,
             _ => {
@@ -536,6 +542,13 @@ impl BoardState {
     }
 
     fn apply_reaction(&mut self, player_id: usize, action: Action) {
+        // Guard: only apply if this player actually has a pending reaction.
+        // Without this, a spurious call (e.g. stale snapshot in Python loop) would
+        // set reaction_pending[player_id]=false and trigger resolve_reactions() a
+        // second time with stale data, advancing the game an extra turn.
+        if !self.reaction_pending[player_id] {
+            return;
+        }
         self.reactions[player_id] = Some(action);
         self.reaction_pending[player_id] = false;
 

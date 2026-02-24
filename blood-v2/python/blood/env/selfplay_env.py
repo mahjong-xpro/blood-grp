@@ -214,6 +214,15 @@ class SelfPlayEnv(BloodMahjongEnv):
                 for pid in range(NUM_PLAYERS):
                     if pid == agent or not pending[pid]:
                         continue
+                    # Re-fetch pending before each action: resolve_reactions() may
+                    # have been triggered by a previous apply_ext_action, advancing
+                    # the phase. Applying more reactions after that would call
+                    # resolve_reactions() again with stale data (double-advance bug).
+                    live_pending = self._env.get_reaction_pending()
+                    if not live_pending[pid]:
+                        continue
+                    if self._env.get_phase() != "reaction":
+                        break
                     action = self._opp_action(pid)
                     self._env.apply_ext_action(pid, action)
                 pending = self._env.get_reaction_pending()
