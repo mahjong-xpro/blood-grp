@@ -261,6 +261,12 @@ def _patch_learner():
                             value_distill_loss = torch.nn.functional.mse_loss(sv, ov)
                             extra_loss = extra_loss + oracle_value_distill_weight * value_distill_loss
                             summaries["oracle_value_distill_loss"] = value_distill_loss.detach()
+                        else:
+                            log.warning(
+                                "oracle_value_distill_loss skipped: shape mismatch "
+                                "student_values=%s oracle_values=%s",
+                                sv.shape, ov.shape,
+                            )
 
         # Add extra losses to value_loss so that the PPO policy_loss curve in
         # TensorBoard remains clean (pure PPO gradient signal).

@@ -436,8 +436,13 @@ class SelfPlayEnv(BloodMahjongEnv):
         bonus = 0.0
         if self._env.player_has_won(0) and self._warmup_win_bonus > 0:
             bonus += self._warmup_win_bonus
+        # Deal-in penalty: only apply when agent discards (action 0-26) and score drops.
+        # Kan payment (action 28) also reduces score but is NOT a deal-in — guard with
+        # action < 27 to avoid penalizing legitimate kan operations.
         current_score = float(self._env.get_scores()[0])
-        if current_score < prev_score and self._warmup_deal_in_penalty > 0:
+        if (current_score < prev_score
+                and self._warmup_deal_in_penalty > 0
+                and action < 27):
             bonus -= self._warmup_deal_in_penalty
         # Oracle-guided dangerous discard penalty:
         # penalize discarding a tile that any opponent is waiting for.
