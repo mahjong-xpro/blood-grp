@@ -21,8 +21,15 @@ def add_blood_args(parser: ArgumentParser):
     p.add_argument("--oracle_distill_temperature", type=float, default=2.0)
     p.add_argument("--oracle_ce_weight", type=float, default=0.1,
                     help="Weight for Oracle CE supervised loss")
-    p.add_argument("--oracle_value_distill_weight", type=float, default=0.5,
-                    help="Weight for Oracle value distillation (student critic → Oracle value)")
+    p.add_argument("--oracle_value_distill_weight", type=float, default=0.0,
+                    help="Weight for Oracle value distillation (student critic → Oracle value). "
+                         "Only effective after oracle_value_warmup_steps.")
+    p.add_argument("--oracle_value_head_loss_weight", type=float, default=1.0,
+                    help="Weight for oracle value head supervised loss against GAE returns. "
+                         "Trains oracle value head before distillation is enabled.")
+    p.add_argument("--oracle_value_warmup_steps", type=int, default=500_000,
+                    help="Env steps before oracle value distillation activates. "
+                         "Oracle value head must converge first.")
 
     # League / self-play
     p.add_argument("--league_enabled", default=True, action="store_true")

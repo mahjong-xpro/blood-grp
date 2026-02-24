@@ -14,7 +14,10 @@ gamma: 0.998
 gae_lambda: 0.95
 learning_rate: 1e-4
 lr_schedule: kl_adaptive_minibatch
-exploration_loss_coeff: 0.02
+lr_schedule_kl_threshold: 0.001   # Fix 3: recalibrated for masked action space (was SF2 default 0.008)
+lr_adaptive_max: 3e-4              # Fix 3: hard LR ceiling (was SF2 default 0.01)
+lr_adaptive_min: 1e-6              # explicit (same as SF2 default)
+exploration_loss_coeff: 0.05       # Fix 5: increased from 0.02 to fight degenerate fixed point
 value_loss_coeff: 1.0
 train_for_env_steps: 5000000
 
@@ -35,11 +38,21 @@ blood_encoder_out_dim: 1024
 opponent_mode: selfplay
 opponent_refresh_every: 20
 
-# Oracle distillation — reduce weight as student improves
+# Oracle distillation
+# Fix 4: oracle_distill_weight reduced (0.03→0.01) while oracle policy head warms up
+# Fix 4: oracle_ce_weight reduced (default 0.1→0.05) to limit random oracle influence early
+# Fix 1: oracle_value_distill_weight=0.0 — oracle value head has no training signal until
+#         oracle_value_head_loss trains it; re-enable after oracle_value_head_loss converges
+# Fix 1: oracle_value_head_loss_weight=1.0 — supervised loss to train oracle value head
+# Fix 1: oracle_value_warmup_steps=500000 — gate: value distillation only after 500K steps
 oracle_enabled: true
 oracle_num_blocks: 20
-oracle_distill_weight: 0.03
+oracle_distill_weight: 0.01
 oracle_distill_temperature: 2.0
+oracle_ce_weight: 0.05
+oracle_value_distill_weight: 0.0
+oracle_value_head_loss_weight: 1.0
+oracle_value_warmup_steps: 500000
 
 # League — frequent checkpointing for diverse opponent pool
 league_enabled: true
@@ -72,6 +85,6 @@ rnn_num_layers: 1
 rollout: 32
 recurrence: 32
 
-# Advantage clipping — prevent extreme advantage samples from dominating gradients
-# Warmup observed adv range ±4.7; clip at 5.0 to preserve signal while bounding extremes
-adv_clip: 5.0
+# Advantage clipping — Fix 5: tightened from 5.0 to 2.0
+# Corrupted critic can produce extreme advantages; tighter clip prevents runaway gradients
+adv_clip: 2.0

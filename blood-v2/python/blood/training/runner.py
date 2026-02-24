@@ -214,11 +214,31 @@ def _patch_learner():
                 extra_loss = extra_loss + oracle_ce_weight * oracle_ce
                 summaries["oracle_ce"] = oracle_ce.detach()
 
+                # Oracle value head supervised loss: train oracle value head to predict
+                # actual GAE returns from perfect information. Without this loss the oracle
+                # value head has zero gradient and stays at random init throughout training.
+                # This MUST run before oracle value distillation is enabled.
+                oracle_value_head_weight = getattr(ac, "oracle_value_head_loss_weight", 1.0)
+                if oracle_value_head_weight > 0:
+                    returns = getattr(mb, "returns", None)
+                    if returns is not None:
+                        ov_train = oracle_values.squeeze().view(-1)
+                        ret_flat = returns.view(-1)
+                        if ov_train.shape == ret_flat.shape:
+                            oracle_value_head_loss = torch.nn.functional.mse_loss(
+                                ov_train, ret_flat.detach()
+                            )
+                            extra_loss = extra_loss + oracle_value_head_weight * oracle_value_head_loss
+                            summaries["oracle_value_head_loss"] = oracle_value_head_loss.detach()
+
                 # Oracle value distillation: train student critic to match Oracle's
-                # perfect-info value estimate. Oracle values are more accurate because
-                # the Oracle sees all hands and the wall; this improves credit assignment.
-                oracle_value_distill_weight = getattr(ac, "oracle_value_distill_weight", 0.5)
-                if oracle_value_distill_weight > 0:
+                # perfect-info value estimate. Only enabled after oracle value head has
+                # had time to converge (oracle_value_warmup_steps). Before that, oracle
+                # values are unreliable and would corrupt the student critic.
+                oracle_value_distill_weight = getattr(ac, "oracle_value_distill_weight", 0.0)
+                oracle_value_warmup = getattr(ac, "oracle_value_warmup_steps", 500_000)
+                current_steps = getattr(self, "env_steps", 0)
+                if oracle_value_distill_weight > 0 and current_steps >= oracle_value_warmup:
                     student_values = getattr(ac, "_cached_values", None)
                     if student_values is not None:
                         sv = student_values.view(-1)
@@ -236,13 +256,22 @@ def _patch_learner():
         summaries["extra_loss_total"] = extra_loss.squeeze().detach()
         value_loss = value_loss + extra_loss.squeeze()
 
-        # Monitor logprob extremes: if max_abs_logprob keeps growing past ~8,
-        # the policy is becoming degenerate (near-deterministic on some actions).
+        # Monitor logprob extremes over LEGAL actions only.
+        # Masked actions have logit=-1e9 → log_prob≈-1e9, which would dominate
+        # abs().max() and make the metric useless. Use action_mask from obs.
         student_logits = getattr(action_dist, 'raw_logits', None)
         if student_logits is not None:
+            _obs_for_metric = getattr(ac, "_cached_obs", None)
+            _mask_for_metric = _obs_for_metric.get("action_mask") if _obs_for_metric is not None else None
             log_probs = torch.nn.functional.log_softmax(student_logits, dim=-1)
-            summaries["blood/max_abs_logprob"] = log_probs.abs().max().detach()
-            summaries["blood/mean_abs_logprob"] = log_probs.abs().mean().detach()
+            if _mask_for_metric is not None:
+                _legal = _mask_for_metric.bool()
+                _legal_lp = log_probs[_legal]
+                summaries["blood/max_abs_logprob"] = _legal_lp.abs().max().detach()
+                summaries["blood/mean_abs_logprob"] = _legal_lp.abs().mean().detach()
+            else:
+                summaries["blood/max_abs_logprob"] = log_probs.abs().max().detach()
+                summaries["blood/mean_abs_logprob"] = log_probs.abs().mean().detach()
 
         return action_dist, policy_loss, exploration_loss, kl_old, kl_loss, value_loss, summaries
 
