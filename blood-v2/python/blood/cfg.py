@@ -116,7 +116,7 @@ def blood_override_defaults(parser: ArgumentParser):
         exploration_loss_coeff=0.005,
         value_loss_coeff=1.0,
         normalize_input=True,
-        normalize_input_keys=["obs", "oracle_obs"],
+        normalize_input_keys=["obs"],
         experiment="blood_v2",
         use_rnn=True,
         rnn_type="lstm",

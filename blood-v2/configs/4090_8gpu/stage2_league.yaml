@@ -22,7 +22,7 @@ encoder_custom: blood_encoder
 experiment: blood_v2_stage2
 
 # Model — same as stage1 for weight transfer
-blood_obs_channels: 384
+blood_obs_channels: 464
 blood_conv_channels: 256
 blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024

@@ -101,7 +101,7 @@ class BloodObserver(AlgoObserver):
 
         ac = None
         learner_worker = runner.learners.get(policy_id)
-        if learner_worker is not None:
+        if learner_worker is not None and learner_worker.learner is not None:
             ac = learner_worker.learner.actor_critic
 
         if ac is not None and hasattr(ac, "oracle_enabled") and ac.oracle_enabled:
@@ -109,7 +109,7 @@ class BloodObserver(AlgoObserver):
 
         # Log raw advantage std (pre-normalization) from the learner's last minibatch.
         # SF2 records adv_std=0 because it logs post-normalization advantages.
-        if learner_worker is not None:
+        if learner_worker is not None and learner_worker.learner is not None:
             raw_adv_std = getattr(learner_worker.learner, "_last_raw_adv_std", None)
             if raw_adv_std is not None:
                 writer.add_scalar("blood/raw_adv_std", float(raw_adv_std), env_steps)

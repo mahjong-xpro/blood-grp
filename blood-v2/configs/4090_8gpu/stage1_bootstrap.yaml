@@ -25,8 +25,8 @@ env: blood_mahjong
 encoder_custom: blood_encoder
 experiment: blood_v2_stage1
 
-# Model — 256ch/20blocks Bottleneck, enc_proj 6912→1024
-blood_obs_channels: 384
+# Model — 256ch/20blocks Bottleneck, enc_proj 12528→1024
+blood_obs_channels: 464
 blood_conv_channels: 256
 blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024

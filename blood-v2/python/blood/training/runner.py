@@ -17,6 +17,7 @@ from ..cfg import add_blood_args, blood_override_defaults
 from ..env.blood_env import BloodMahjongEnv
 from ..model.factory import register_blood_model
 from .callbacks import BloodObserver
+from .losses import BloodLossComputer
 
 log = logging.getLogger(__name__)
 
@@ -109,6 +110,10 @@ def _inject_config_yaml():
                 # str2bool args: pass --key False to override set_defaults(key=True)
                 sys.argv.extend([flag, "False"])
             # else: store_true arg with False value — skip (can't unset via CLI)
+        elif isinstance(val, list):
+            # nargs="*" args (e.g. normalize_input_keys): pass each element separately
+            # --normalize_input_keys obs oracle_obs
+            sys.argv.extend([flag] + [str(v) for v in val])
         else:
             sys.argv.extend([flag, str(val)])
 
@@ -129,27 +134,20 @@ def register_blood_components():
 def _patch_learner():
     """Inject auxiliary + oracle distillation losses into the SF2 training loop.
 
-    SF2 training calls forward_head → forward_core → forward_tail (never forward()),
-    so we compute extra losses here using the encoder output cached by forward_head.
-
-    Losses injected:
-    1. AuxHead: opponent dingque + waiting tiles prediction (CE + BCE)
-    2. Oracle distillation: KL(student || oracle) using perfect-info teacher
-       - Oracle CE is weighted by advantages to avoid circular dependency
-       - Student distillation uses KL divergence against oracle (detached)
+    SF2 has no official custom-loss extension point, so we monkey-patch
+    Learner._calculate_losses.  All loss logic lives in BloodLossComputer;
+    this wrapper only handles minibatch pre-processing (adv std + adv clip).
     """
     _original = Learner._calculate_losses
+    _loss_computer = BloodLossComputer()
 
     def _patched(self, mb, num_invalids):
-        # Record raw advantage std before SF2 normalizes advantages.
-        # SF2 normalizes advantages in-place before calling _calculate_losses,
-        # so we capture the std from the raw returns here for monitoring.
+        # Record raw advantage std before SF2 normalizes advantages in-place.
         raw_advantages = getattr(mb, "advantages", None)
         if raw_advantages is not None:
             self._last_raw_adv_std = float(raw_advantages.std().item())
 
-        # Advantage clipping: clip to [-adv_clip, adv_clip] to prevent extreme
-        # advantage samples (observed ±4.7 in warmup) from dominating gradients.
+        # Advantage clipping: prevent extreme samples from dominating gradients.
         adv_clip = getattr(self.cfg, "adv_clip", 0.0)
         if adv_clip > 0 and raw_advantages is not None:
             mb.advantages = torch.clamp(raw_advantages, -adv_clip, adv_clip)
@@ -157,142 +155,15 @@ def _patch_learner():
         result = _original(self, mb, num_invalids)
         action_dist, policy_loss, exploration_loss, kl_old, kl_loss, value_loss, summaries = result
 
-        ac = self.actor_critic
-        features = getattr(ac, "_cached_encoder_out", None)  # post-enc_proj (1024); used as forward-pass guard
-        core_features = getattr(ac, "_cached_core_out", None)  # post-LSTM (1024); used by AuxHead
-        obs = getattr(ac, "_cached_obs", None)
+        extra_loss, summaries = _loss_computer.compute(
+            self.actor_critic, mb, action_dist, value_loss, summaries,
+            env_steps=getattr(self, "env_steps", 0),
+        )
 
-        if features is None or obs is None or not ac.training:
-            return result
-
-        cache_gen = getattr(ac, "_cache_gen", 0)
-        loss_gen = getattr(ac, "_loss_gen", 0)
-        if cache_gen <= loss_gen:
-            log.warning("Stale encoder cache detected (gen %d <= %d); skipping aux losses", cache_gen, loss_gen)
-            return result
-        ac._loss_gen = cache_gen
-
-        device = value_loss.device if hasattr(value_loss, 'device') else 'cpu'
-        extra_loss = torch.zeros(1, device=device)
-
-        if getattr(ac, "_aux_enabled", False):
-            shanten_labels = obs.get("shanten_labels")
-            ow_labels = obs.get("ow_labels")
-            if shanten_labels is not None and ow_labels is not None and core_features is not None:
-                aux_loss = ac.aux_head.loss(
-                    core_features, shanten_labels, ow_labels,
-                    shanten_weight=ac.shanten_weight, ow_weight=ac.ow_weight,
-                )
-                extra_loss = extra_loss + aux_loss
-                summaries["aux_loss"] = aux_loss.detach()
-
-        if getattr(ac, "oracle_enabled", False):
-            oracle_obs = obs.get("oracle_obs")
-            action_mask = obs.get("action_mask")
-            if oracle_obs is not None:
-                oracle_logits, oracle_values = ac.oracle_encoder(oracle_obs)
-
-                student_logits = getattr(action_dist, 'raw_logits', None)
-                if student_logits is None:
-                    log.warning("Cannot find 'raw_logits' attribute on action_dist; skipping distillation")
-                else:
-                    mask_bool = action_mask.bool() if action_mask is not None else None
-                    distill_loss = ac.distill_loss_fn(student_logits, oracle_logits.detach(), mask_bool)
-                    extra_loss = extra_loss + ac.distill_weight * distill_loss
-                    summaries["distill_loss"] = distill_loss.detach()
-
-                oracle_ce_weight = getattr(ac, "oracle_ce_weight", 0.1)
-                advantages = getattr(mb, "advantages", None)
-                oracle_logits_masked = oracle_logits.clone()
-                if action_mask is not None:
-                    oracle_logits_masked = oracle_logits_masked.masked_fill(
-                        ~action_mask.bool(), torch.finfo(oracle_logits.dtype).min
-                    )
-                oracle_ce_raw = torch.nn.functional.cross_entropy(
-                    oracle_logits_masked,
-                    mb.actions.long(),
-                    reduction="none",
-                )
-                if advantages is not None:
-                    adv_weights = torch.clamp(advantages.detach(), min=0.0)
-                    adv_weights = adv_weights / (adv_weights.mean() + 1e-8)
-                    oracle_ce = (oracle_ce_raw * adv_weights).mean()
-                else:
-                    oracle_ce = oracle_ce_raw.mean()
-                extra_loss = extra_loss + oracle_ce_weight * oracle_ce
-                summaries["oracle_ce"] = oracle_ce.detach()
-
-                # Oracle value head supervised loss: train oracle value head to predict
-                # actual GAE returns from perfect information. Without this loss the oracle
-                # value head has zero gradient and stays at random init throughout training.
-                # This MUST run before oracle value distillation is enabled.
-                oracle_value_head_weight = getattr(ac, "oracle_value_head_loss_weight", 1.0)
-                if oracle_value_head_weight > 0:
-                    returns = getattr(mb, "returns", None)
-                    if returns is not None:
-                        ov_train = oracle_values.squeeze().view(-1)
-                        ret_flat = returns.view(-1)
-                        if ov_train.shape == ret_flat.shape:
-                            oracle_value_head_loss = torch.nn.functional.mse_loss(
-                                ov_train, ret_flat.detach()
-                            )
-                            extra_loss = extra_loss + oracle_value_head_weight * oracle_value_head_loss
-                            summaries["oracle_value_head_loss"] = oracle_value_head_loss.detach()
-                        else:
-                            log.warning(
-                                "oracle_value_head_loss skipped: shape mismatch "
-                                "oracle_values=%s returns=%s",
-                                ov_train.shape, ret_flat.shape,
-                            )
-
-                # Oracle value distillation: train student critic to match Oracle's
-                # perfect-info value estimate. Only enabled after oracle value head has
-                # had time to converge (oracle_value_warmup_steps). Before that, oracle
-                # values are unreliable and would corrupt the student critic.
-                oracle_value_distill_weight = getattr(ac, "oracle_value_distill_weight", 0.0)
-                oracle_value_warmup = getattr(ac, "oracle_value_warmup_steps", 500_000)
-                current_steps = getattr(self, "env_steps", 0)
-                if oracle_value_distill_weight > 0 and current_steps >= oracle_value_warmup:
-                    student_values = getattr(ac, "_cached_values", None)
-                    if student_values is not None:
-                        sv = student_values.view(-1)
-                        ov = oracle_values.squeeze().detach().view(-1)
-                        if sv.shape == ov.shape:
-                            value_distill_loss = torch.nn.functional.mse_loss(sv, ov)
-                            extra_loss = extra_loss + oracle_value_distill_weight * value_distill_loss
-                            summaries["oracle_value_distill_loss"] = value_distill_loss.detach()
-                        else:
-                            log.warning(
-                                "oracle_value_distill_loss skipped: shape mismatch "
-                                "student_values=%s oracle_values=%s",
-                                sv.shape, ov.shape,
-                            )
-
-        # Add extra losses to value_loss so that the PPO policy_loss curve in
-        # TensorBoard remains clean (pure PPO gradient signal).
-        # summaries["ppo_policy_loss"] preserves the original for monitoring.
-        # summaries["extra_loss_total"] shows the combined auxiliary signal.
+        # Add extra losses to value_loss so the PPO policy_loss curve stays clean.
         summaries["ppo_policy_loss"] = policy_loss.detach()
         summaries["extra_loss_total"] = extra_loss.squeeze().detach()
         value_loss = value_loss + extra_loss.squeeze()
-
-        # Monitor logprob extremes over LEGAL actions only.
-        # Masked actions have logit=-1e9 → log_prob≈-1e9, which would dominate
-        # abs().max() and make the metric useless. Use action_mask from obs.
-        student_logits = getattr(action_dist, 'raw_logits', None)
-        if student_logits is not None:
-            _obs_for_metric = getattr(ac, "_cached_obs", None)
-            _mask_for_metric = _obs_for_metric.get("action_mask") if _obs_for_metric is not None else None
-            log_probs = torch.nn.functional.log_softmax(student_logits, dim=-1)
-            if _mask_for_metric is not None:
-                _legal = _mask_for_metric.bool()
-                _legal_lp = log_probs[_legal]
-                summaries["blood/max_abs_logprob"] = _legal_lp.abs().max().detach()
-                summaries["blood/mean_abs_logprob"] = _legal_lp.abs().mean().detach()
-            else:
-                summaries["blood/max_abs_logprob"] = log_probs.abs().max().detach()
-                summaries["blood/mean_abs_logprob"] = log_probs.abs().mean().detach()
-
         return action_dist, policy_loss, exploration_loss, kl_old, kl_loss, value_loss, summaries
 
     Learner._calculate_losses = _patched

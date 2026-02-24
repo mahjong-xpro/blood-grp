@@ -117,7 +117,7 @@ class BloodActorCritic(ActorCriticSharedWeights):
         actor_features = self.actor_head(core_output)
         critic_features = self.critic_head(core_output)
 
-        values = self.critic_linear(critic_features).squeeze()
+        values = self.critic_linear(critic_features).squeeze(-1)
         self._cached_values = values
         result = TensorDict(values=values)
         if values_only:

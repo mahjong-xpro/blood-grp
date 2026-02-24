@@ -14,12 +14,14 @@ ACTION_SPACE = 34
 
 NUM_STUDENT_CHANNELS = 464
 # Channel offsets derived from crates/engine/src/obs/student.rs (0-indexed)
-# Section 4 starts at ch=36: wall_remaining / 55.0
-CH_WALL_REMAINING = 36
-# Section 10 starts at ch=260: wait_tiles (1ch) then shanten one-hot (5ch) at ch=261
-CH_SHANTEN_BASE = 261
-# Section 9 starts at ch=252: derived features; opponent meld counts at ch=257 (3 opponents)
-CH_OPP_MELD_BASE = 257
+# Verified by tracing every ch += N in student.rs:
+#   Sections 1-3 consume 5+13+17=35 ch → Section 4 starts at ch=35
+# Section 4, ch=35: wall_remaining / 55.0
+CH_WALL_REMAINING = 35
+# Section 10: wait_tiles at ch=340 (1ch), shanten one-hot at ch=341..345 (5ch)
+CH_SHANTEN_BASE = 341
+# Section 9: opponent meld counts at ch=333, 334, 335 (3 opponents)
+CH_OPP_MELD_BASE = 333
 
 
 class RTPA:
@@ -116,9 +118,9 @@ class GameStateTracker:
 
         Parses known channel offsets from the 464×27 student observation
         (derived from crates/engine/src/obs/student.rs):
-        - Channel 36 (Section 4, ch0): wall_remaining / 55.0
-        - Channels 261-265 (Section 10, shanten one-hot): ch261=tenpai
-        - Channels 257-259 (Section 9, opponent meld counts): high → likely tenpai
+        - Channel 35 (Section 4, ch0): wall_remaining / 55.0
+        - Channels 341-345 (Section 10, shanten one-hot): ch341=tenpai
+        - Channels 333-335 (Section 9, opponent meld counts): high → likely tenpai
         """
         if scores is not None and len(scores) >= 4:
             self.my_score = scores[0]

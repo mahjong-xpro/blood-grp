@@ -31,13 +31,16 @@ def _score_delta_to_fan(delta: float) -> int:
     """Infer fan count from a score delta using the inverse of calc_score.
 
     calc_score(fan) = 1000 * 2^(fan-1), capped at 6 fan = 32000.
-    For tsumo, delta = score_per_player * num_payers; we use the per-payer
-    amount (delta / 3 for full tsumo) to recover fan.  Returns 0 if unclear.
+    Tsumo: delta = score_per_player * 3 (3 payers).
+    Ron:   delta = score_per_player * 1 (1 payer).
+    Returns 0 if unclear.
     """
     if delta <= 0:
         return 0
-    # Try per-payer amounts for tsumo (3 payers) and ron (1 payer)
-    for divisor in (3, 2, 1):
+    # Try tsumo (3 payers) first, then ron (1 payer).
+    # Divisor 2 is omitted: it has no standard payment pattern and causes
+    # 2-fan ron (delta=2000) to be misidentified as 1-fan (2000/2=1000).
+    for divisor in (3, 1):
         per_payer = delta / divisor
         for fan in range(1, 7):
             expected = 1000 * (1 << (fan - 1))
