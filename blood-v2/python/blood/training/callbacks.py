@@ -54,7 +54,9 @@ class BloodObserver(AlgoObserver):
         ckpt_dir = join(experiment_dir(cfg=runner.cfg), f"checkpoint_p{policy_id}")
         checkpoints = sorted(glob.glob(join(ckpt_dir, "checkpoint_*.pth")))
         if not checkpoints:
-            log.warning("No SF2 checkpoints found in %s; skipping league snapshot", ckpt_dir)
+            # Expected at training start: SF2 hasn't saved its first checkpoint yet.
+            # Downgraded to debug to avoid log spam during the initial warm-up period.
+            log.debug("No SF2 checkpoints found in %s; skipping league snapshot", ckpt_dir)
             return
 
         latest = checkpoints[-1]

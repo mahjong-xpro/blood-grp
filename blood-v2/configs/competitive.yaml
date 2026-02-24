@@ -46,6 +46,7 @@ league_enabled: true
 league_pool_dir: checkpoints/league/
 league_add_every: 50000
 league_newest_weight: 3.0
+save_every_sec: 30
 
 # No reward shaping — pure score-based reward
 warmup_reward_shaping: false
