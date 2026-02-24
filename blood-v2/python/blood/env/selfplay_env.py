@@ -303,7 +303,7 @@ class SelfPlayEnv(BloodMahjongEnv):
 
         self._advance_external_opponents()
 
-        if self._env.is_done():
+        if self._env.get_phase() in ("scoring", "done"):
             self._env.finalize_scoring()
 
         scores = np.array(self._env.get_scores(), dtype=np.float32)
