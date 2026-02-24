@@ -141,97 +141,97 @@
 
 | 日期 | 步数范围 | 备注 |
 |------|----------|------|
-| 2026-02-23 | 0 → 5M | 首次 competitive 运行，中途修复多个 bug |
-| 2026-02-24 | 0 → 5M（重跑） | 实际 TensorBoard 数据更新（见下方） |
+| 2026-02-23 | 0 → 5M | 首次运行，中途修复多个 bug，策略崩溃（len=500 全程截断） |
+| 2026-02-24 | 0 → 2.36M（完成） | 修复所有死锁 bug 后重跑，训练正常收敛 |
 
 ---
 
-### 关键指标分析（step 0 → 5M，实测数据）
+### 关键指标分析（第二次运行，step 0 → 2.36M，实测数据）
 
 #### 奖励 / 目标
 
-| 指标 | 初始值 | 峰值 | 最终值 | 评估 |
-|------|--------|------|--------|------|
-| `reward/reward` | 0.0 @65K | **10.22 @917K** | 0.0 @5M | ❌ 策略崩溃，见下方分析 |
-| `reward/reward_max` | 0.0 | 22.10 @1.44M | 0.0 | ❌ 同上 |
-| `reward/reward_min` | -0.59 | +0.26 @1.1M | 0.0 | ❌ 同上 |
-| `policy_stats/avg_true_objective` | 0.0 | 10.22 @917K | 0.0 | ❌ 与 reward 一致 |
-
-奖励在 ~917K steps 达到峰值 10.22，随后持续下滑，~1.87M steps 后归零并保持至训练结束（5M steps）。
+| 指标 | 初始值 | 最终值 | 峰值 | 评估 |
+|------|--------|--------|------|------|
+| `reward/reward` | 0.002 @33K | **14.42 @2.36M** | 14.93 | ✅ 持续上升，无崩溃 |
+| `reward/reward_max` | 1.14 @33K | 22.53 @2.36M | 23.64 | ✅ 单局最高奖励稳步提升 |
+| `reward/reward_min` | -0.58 @33K | -0.23 @2.36M | — | ✅ 负奖励幅度收窄 |
 
 #### 训练稳定性
 
 | 指标 | 初始值 | 最终值 | 评估 |
 |------|--------|--------|------|
-| `train/entropy` | 3.50 @16K | **0.0 @1.59M 起** | ❌ 策略熵崩溃，模型输出近似确定性动作 |
-| `train/grad_norm` | 1.0（打满上限） | 0.0008 | ❌ 梯度几乎为零，模型停止学习 |
-| `train/fraction_clipped` | 0.64 | 0.0（偶发 0.79 spike @4.01M） | ⚠️ 正常为 0 但有异常 spike |
-| `train/value_loss` | 1.01 | 0.0 | ❌ 价值函数无更新 |
-| `train/policy_loss` | 0.021 | ~0.0（spike 0.21 @4.01M） | ❌ 策略无更新 |
-| `train/kl_divergence` | 0.020 | 0.0（spike 57.2 @4.01M） | ❌ 异常 spike，见下方分析 |
-| `train/actual_lr` | — | 0.01（KL 自适应） | ✅ 调度器正常 |
+| `train/entropy` | 3.50 @16K | **1.08 @2.36M** | ✅ 正常下降，策略收敛但未崩溃 |
+| `train/grad_norm` | 1.0（打满上限） | **1.0（持续打满）** | ⚠️ 梯度持续被 clip，见下方分析 |
+| `train/fraction_clipped` | 0.42 | 0.10 | ✅ 从 42% 降至 10%，更新趋于保守 |
+| `train/value_loss` | 1.63 | 0.14 | ✅ 价值函数持续收敛 |
+| `train/policy_loss` | 0.030 | 0.001 | ✅ 策略梯度正常 |
+| `train/kl_divergence` | — | 0.0076 | ✅ KL 受控，无策略突变 |
+| `train/actual_lr` | 3e-4 | **3e-4（未衰减）** | ✅ KL 自适应调度正常 |
+| `train/adv_std` | 0.18 | 1.90 | ✅ 优势函数方差增大，探索充分 |
+| `train/adv_mean` | -0.03 | -0.43 | ⚠️ 均值偏负，见下方分析 |
+| `train/returns_running_mean` | -0.04 | 5.49 | ✅ 回报基线持续上升 |
 
 #### Episode 长度
 
 | 指标 | 初始值 | 最终值 | 评估 |
 |------|--------|--------|------|
-| `len/len` | 107.7 @65K | 500.0 @5M | ❌ 全部截断，游戏从不正常结束 |
-| `len/len_min` | 52 | 500 | ❌ 最短局也被截断 |
-| `len/len_max` | 148 | 500 | ❌ 同上 |
+| `len/len` | 43.1 @33K | **51.6 @2.36M** | ✅ 正常麻将局长度，无截断 |
+| `len/len_min` | 19 | 32 | ✅ 最短局正常 |
+| `len/len_max` | 63 | **84** | ✅ 最长局 84 步，远低于 500 上限 |
 
-`len/len` 在 **327K steps** 时首次全部达到 500（截断上限），此后再未恢复正常。
+`len/len` 全程稳定在 40–73 步，死锁问题已完全修复。
 
 #### 联赛池 / 系统性能
 
 | 指标 | 值 | 评估 |
 |------|-----|------|
-| `blood/league_pool_size` | 0 → 50（满池） | ✅ 正常填充 |
-| `perf/_fps` | 8192–9831 FPS | ✅ 吞吐量正常 |
-| `stats/gpu_mem_learner` | 5856 MB（全程不变） | ✅ 无显存泄漏 |
+| `blood/league_pool_size` | 0 → 22（持续增长） | ✅ 正常填充，每 50K steps 新增一个 checkpoint |
+| `perf/_fps` | ~6000–9831 FPS | ✅ 吞吐量正常 |
 
 ---
 
 ### 异常指标分析
 
-#### ❌ 策略崩溃（Policy Collapse）
+#### ⚠️ `train/grad_norm` 持续打满 1.0
 
-**现象**：
-- `train/entropy` 在 ~1.59M steps 降至 0，此后全程为 0
-- `reward/reward` 在 ~1.87M steps 归零，此后全程为 0
-- `len/len` 全部截断（500 steps），游戏从不结束
-- `train/grad_norm` 降至 ~0.001，模型停止更新
+**现象**：`max_grad_norm=1.0`，grad_norm 全程贴近上限。
 
-**根本原因**：自对弈中双方策略同步退化为"不打牌"（全部 Pass 或随机打牌），导致游戏永远无法结束，奖励信号消失，梯度归零，形成正反馈崩溃循环。
+**分析**：自对弈阶段对手策略持续变化，梯度天然比 warmup 阶段大。当前 `learning_rate=1e-4` 已是 warmup 的 1/3，但仍不足以让梯度低于 clip 阈值。
 
-**触发时机**：`len/len` 在 327K steps 首次全部截断，说明崩溃在早期就已开始，entropy 和 reward 的崩溃是滞后表现。
+**影响**：训练仍在正常收敛（reward 持续上升），clip 只是限制了单步更新幅度，不影响方向。
 
-**可能诱因**：
-1. `max_steps=500` 过小——正常麻将局约 92–131 步，但自对弈双方策略不成熟时局面会拖长，500 步不够
-2. 联赛池早期为空，对手是随机策略，模型学到了对抗随机策略的"不作为"均衡
-3. 缺乏足够的进攻性奖励（`reward_rank_bonus=0`），模型没有动力赢牌
+**建议**：如后续出现训练不稳定，可尝试 `max_grad_norm=2.0` 或 `learning_rate=5e-5`。
 
-#### ⚠️ 异常 Spike @4.01M steps
+#### ⚠️ `train/adv_mean` 偏负（-0.43）
 
-**现象**：在 step ~4.01M 出现单点异常：`kl_divergence=57.2`、`fraction_clipped=0.79`、`policy_loss=0.21`，前后均为 0。
+**现象**：优势函数均值为负，说明模型当前动作平均低于价值基线。
 
-**原因**：疑似加载了一个损坏的联赛 checkpoint（`checkpoint_4325376.pth`，已在 2026-02-24 修复自动删除逻辑），导致对手策略突变，产生一次大梯度更新，但随即被 PPO clip 压制，未能恢复训练。
+**分析**：自对弈中对手也在进步，模型相对优势下降是正常现象。负均值说明模型在"学会不犯错"而非"主动进攻"。
+
+**影响**：无直接负面影响，但若持续偏负可能导致策略过于保守。
 
 ---
 
-### Competitive 阶段 Bug 修复
+### Competitive 阶段 Bug 修复（全部）
 
 | commit | 描述 |
 |--------|------|
-| `62124c71` | fix: `_inject_config_yaml` str2bool 参数需要显式值（`--use_rnn True`） |
-| `4b4ca54f` | fix: `selfplay_env.py` 中 `terminated` 在赋值前被引用（UnboundLocalError） |
-| `1f9ff565` | fix: competitive/elite 阶段 CUDA OOM，降低 `num_envs_per_worker` 和 `batch_size` |
-| `2d91c8a2` | fix: BPTT 训练时 `forward_core` 收到 `PackedSequence`，`LayerNorm` 报错 |
-| `1f9f6e2c` | tune: competitive `learning_rate` 3e-4 → 1e-4（`fraction_clipped` 达 40%） |
-| `4b7861bf` | fix: 联赛快照静默失败（`LearnerWorker.learner` 在主进程为 None） |
-| `777f24d4` | fix: 联赛 checkpoint 损坏（竞态条件）+ `rnn_size` 检测失败导致维度不匹配 |
-| `b773fb4a` | fix: checkpoint 验证改用 `weights_only=False`（SF2 包含 numpy 标量） |
-| `fa57af40` | fix: `apply_self_check` tsumo panic + stall（wrong-player guard + `_ => Discard`） |
-| `95fd862c` | fix: 损坏联赛 checkpoint 自动删除（`load()` 返回 bool，失败时 unlink） |
+| `62124c71` | fix: `_inject_config_yaml` str2bool 参数需要显式值 |
+| `4b4ca54f` | fix: `selfplay_env.py` `terminated` 在赋值前被引用 |
+| `1f9ff565` | fix: CUDA OOM，降低 `num_envs_per_worker` 和 `batch_size` |
+| `2d91c8a2` | fix: BPTT `forward_core` 收到 `PackedSequence`，`LayerNorm` 报错 |
+| `1f9f6e2c` | tune: competitive `learning_rate` 3e-4 → 1e-4 |
+| `4b7861bf` | fix: 联赛快照静默失败（主进程 `learner` 为 None） |
+| `777f24d4` | fix: 联赛 checkpoint 损坏 + `rnn_size` 维度不匹配 |
+| `b773fb4a` | fix: checkpoint 验证改用 `weights_only=False` |
+| `fa57af40` | fix: `apply_self_check` tsumo panic + stall |
+| `95fd862c` | fix: 损坏联赛 checkpoint 自动删除 |
+| `e4674675` | fix: 死锁根因——`has_decision` 检查 + `process_win` 安全网 |
+| `1f7b3080` | fix: Kan 后 stall 误报（`prev_state=None` 重置） |
+| `f2c53c57` | fix: 联赛快照日志 spam（降级为 debug） |
+| `91053e9b` | fix: `apply_discard/reaction/kan_select` 缺少 wrong-player guard |
+| `c2448d6a` | fix: **`finalize_scoring` 永不被调用**（`is_done()` 循环依赖，len=500 根本原因） |
+| `0b309a4a` | fix: 联赛快照 `[Errno 2]`（`ckpt_dir` 改用 `abspath`） |
 
 ---
 
@@ -239,17 +239,14 @@
 
 | 项目 | 结论 |
 |------|------|
-| 收敛状态 | ❌ 策略崩溃，reward 峰值 10.22 @917K，之后归零 |
-| 训练稳定性 | ❌ entropy=0，grad_norm≈0，模型停止学习 |
-| 联赛池 | ✅ 满池（50 个历史模型） |
-| 吞吐量 | ✅ ~8192–9831 FPS |
-| 根本问题 | 自对弈策略崩溃，需要重跑并修复崩溃诱因 |
+| 收敛状态 | ✅ 正常收敛，reward 从 0.002 升至 14.42（2.36M steps） |
+| 训练稳定性 | ✅ entropy=1.08，KL 受控，无崩溃 |
+| Episode 长度 | ✅ 平均 51.6 步，死锁完全修复 |
+| 联赛池 | ✅ 正常填充（22 个历史模型） |
+| 吞吐量 | ✅ ~6000–9831 FPS |
+| 待观察 | `grad_norm` 持续打满；`adv_mean` 偏负 |
 
-**下一步（Competitive 重跑）**：
-1. 增大 `max_steps`（500 → 1000）防止过早截断
-2. 开启 `reward_rank_bonus`（建议 0.3）激励进攻
-3. 从 warmup checkpoint 重新启动 competitive 阶段
-4. 监控 `len/len` 和 `train/entropy`，若 327K steps 内 len 全部达到上限则立即停止调查
+**下一步**：继续运行至 5M steps，观察 reward 能否突破 15+；之后启动 Elite 阶段。
 
 ---
 
