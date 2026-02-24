@@ -1,7 +1,8 @@
-# Phase 2: Competitive — self-play against league opponents
-# Duration: ~5M env steps
-# Goal: develop advanced strategy through neural self-play
-# Prerequisite: resume from warmup checkpoint
+# Phase 2a: Competitive — self-play + oracle value head training
+# Duration: ~1M env steps
+# Goal: train oracle value head to convergence (blood/oracle_value_head_loss < 0.1)
+# Prerequisite: resume from warmup checkpoint (or hotfixed competitive checkpoint)
+# Next: switch to competitive_distill.yaml (Phase 2b) once oracle_value_head_loss converges
 
 # Sample Factory
 num_workers: 16
@@ -19,7 +20,7 @@ lr_adaptive_max: 3e-4              # Fix 3: hard LR ceiling (was SF2 default 0.0
 lr_adaptive_min: 1e-6              # explicit (same as SF2 default)
 exploration_loss_coeff: 0.05       # Fix 5: increased from 0.02 to fight degenerate fixed point
 value_loss_coeff: 1.0
-train_for_env_steps: 5000000
+train_for_env_steps: 1000000
 
 # Environment
 env: blood_mahjong

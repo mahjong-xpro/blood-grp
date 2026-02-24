@@ -35,11 +35,18 @@ blood_encoder_out_dim: 1024
 opponent_mode: selfplay
 opponent_refresh_every: 10
 
-# Oracle distillation — minimal weight; student should surpass oracle
+# Oracle distillation — minimal policy distillation; value distillation maintained
+# oracle_value_distill_weight: 0.05 — reduced from Phase 2b (student should be maturing)
+# oracle_value_head_loss_weight: 0.5 — keep oracle value head calibrated
+# oracle_value_warmup_steps: 0 — no gate needed
 oracle_enabled: true
 oracle_num_blocks: 20
 oracle_distill_weight: 0.01
 oracle_distill_temperature: 1.5
+oracle_ce_weight: 0.02
+oracle_value_distill_weight: 0.05
+oracle_value_head_loss_weight: 0.5
+oracle_value_warmup_steps: 0
 
 # League — very frequent snapshots for fine-grained progression
 league_enabled: true
