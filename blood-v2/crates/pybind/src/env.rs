@@ -168,7 +168,8 @@ impl RustMahjongEnv {
     }
 
     fn finalize_scoring(&mut self) {
-        if self.state.phase == Phase::Scoring {
+        if self.state.phase != Phase::Done {
+            self.state.phase = Phase::Scoring;
             self.state.finalize_scoring();
         }
     }

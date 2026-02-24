@@ -150,9 +150,10 @@ class SelfPlayEnv(BloodMahjongEnv):
             cur_state = (phase, cp, pending)
             if cur_state == prev_state:
                 log.warning(
-                    "_advance_external_opponents: stall at phase=%s cp=%d; breaking",
+                    "_advance_external_opponents: stall at phase=%s cp=%d; forcing scoring",
                     phase, cp,
                 )
+                self._env.finalize_scoring()
                 break
             prev_state = cur_state
 
