@@ -10,6 +10,9 @@
 #   eval    [--checkpoint <path>] [...]           运行评估
 #   export  --checkpoint <path> [--quantize]      导出 ONNX 模型
 #   status                                        显示训练状态（checkpoint 列表）
+#   build                                         编译 Rust 引擎（maturin develop）
+#   record  [--checkpoint <path>] [--games N]     录制回放文件
+#   replay  [--log-dir <dir>] [--port 5001]       启动回放查看器
 #   help                                          显示此帮助
 #
 # 示例:
@@ -20,6 +23,9 @@
 #   ./scripts/manage.sh eval --checkpoint checkpoints/blood_v2_elite/best
 #   ./scripts/manage.sh export --checkpoint checkpoints/blood_v2_elite/best --quantize
 #   ./scripts/manage.sh status
+#   ./scripts/manage.sh build
+#   ./scripts/manage.sh record --games 20
+#   ./scripts/manage.sh replay
 
 set -euo pipefail
 
@@ -62,6 +68,21 @@ Blood-v2 管理脚本
       --output <path>       输出 ONNX 路径 (默认: blood_policy.onnx)
       --quantize            同时导出 INT8 量化版本
 
+  build [选项]
+      --release             编译 release 模式 (默认)
+      --dev                 编译 debug 模式
+
+  record [选项]
+      --checkpoint <path>   checkpoint 路径 (默认: 自动选最新)
+      --games <N>           录制局数 (默认: 20)
+      --log-dir <dir>       回放文件输出目录 (默认: replays/)
+      --baseline <mode>     对手模式: rulebot | random (默认: rulebot)
+
+  replay [选项]
+      --log-dir <dir>       回放文件目录 (默认: replays/)
+      --port <port>         Web 服务端口 (默认: 5001)
+      --host <addr>         绑定地址 (默认: 0.0.0.0)
+
   status
       显示各阶段 checkpoint 状态
 
@@ -75,7 +96,9 @@ Blood-v2 管理脚本
   $(basename "$0") monitor --port 6007
   $(basename "$0") eval --checkpoint checkpoints/blood_v2_elite/best
   $(basename "$0") export --checkpoint checkpoints/blood_v2_elite/best --quantize
-  $(basename "$0") status
+  $(basename "$0") build
+  $(basename "$0") record --games 50 --log-dir replays/
+  $(basename "$0") replay --log-dir replays/ --port 5001
 EOF
 }
 
@@ -201,6 +224,107 @@ cmd_export() {
     exec "${cmd[@]}"
 }
 
+# ── build ─────────────────────────────────────────────────────────────────────
+cmd_build() {
+    local mode="--release"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dev)     mode=""; shift ;;
+            --release) mode="--release"; shift ;;
+            *)         die "build 未知参数: $1" ;;
+        esac
+    done
+
+    command -v maturin &>/dev/null || die "maturin 未安装，请运行: pip install maturin"
+
+    info "编译 Rust 引擎 (maturin develop ${mode})..."
+    # shellcheck disable=SC2086
+    maturin develop $mode
+    ok "编译完成"
+}
+
+# ── record ────────────────────────────────────────────────────────────────────
+cmd_record() {
+    local checkpoint=""
+    local games=20
+    local log_dir="replays"
+    local baseline="rulebot"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --checkpoint) checkpoint="$2"; shift 2 ;;
+            --games)      games="$2"; shift 2 ;;
+            --log-dir)    log_dir="$2"; shift 2 ;;
+            --baseline)   baseline="$2"; shift 2 ;;
+            *)            die "record 未知参数: $1" ;;
+        esac
+    done
+
+    # 自动选最新 checkpoint
+    if [[ -z "$checkpoint" ]]; then
+        for phase in elite competitive warmup; do
+            local dir="train_dir/blood_v2_${phase}/checkpoint_p0"
+            if [[ -d "$dir" ]]; then
+                # 选最新的 .pth 文件
+                checkpoint=$(find "$dir" -name "checkpoint_*.pth" | sort -V | tail -1)
+                if [[ -n "$checkpoint" ]]; then
+                    info "自动选择 checkpoint: $checkpoint"
+                    break
+                fi
+            fi
+        done
+        [[ -n "$checkpoint" ]] || die "未找到 checkpoint，请用 --checkpoint 指定路径"
+    fi
+
+    [[ -f "$checkpoint" ]] || die "checkpoint 文件不存在: $checkpoint"
+
+    mkdir -p "$log_dir"
+    info "录制 ${games} 局回放 → ${log_dir}/"
+    info "checkpoint: $checkpoint  baseline: $baseline"
+
+    exec python -m blood.eval.evaluate \
+        --checkpoint "$checkpoint" \
+        --num_games "$games" \
+        --baseline "$baseline" \
+        --save_replays "$log_dir"
+}
+
+# ── replay ────────────────────────────────────────────────────────────────────
+cmd_replay() {
+    local log_dir="replays"
+    local port=5001
+    local host="0.0.0.0"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --log-dir) log_dir="$2"; shift 2 ;;
+            --port)    port="$2"; shift 2 ;;
+            --host)    host="$2"; shift 2 ;;
+            *)         die "replay 未知参数: $1" ;;
+        esac
+    done
+
+    local viewer="$PROJECT_DIR/log-viewer/app.py"
+    [[ -f "$viewer" ]] || die "回放查看器不存在: $viewer"
+
+    if [[ ! -d "$log_dir" ]]; then
+        warn "回放目录不存在: $log_dir，将自动创建"
+        mkdir -p "$log_dir"
+    fi
+
+    local count
+    count=$(find "$log_dir" -maxdepth 2 -name "*.json" -o -name "*.json.gz" 2>/dev/null | wc -l | tr -d ' ')
+    info "回放目录: $log_dir  (${count} 个文件)"
+    info "启动回放查看器: http://${host}:${port}"
+    info "按 Ctrl+C 停止"
+
+    exec python "$viewer" \
+        --host "$host" \
+        --port "$port" \
+        --log-dir "$log_dir"
+}
+
 # ── status ────────────────────────────────────────────────────────────────────
 cmd_status() {
     echo ""
@@ -236,6 +360,16 @@ cmd_status() {
     else
         warn "  train_dir/ 不存在"
     fi
+
+    echo ""
+    echo "── 回放文件 ─────────────────────────────────────────────"
+    if [[ -d "replays" ]]; then
+        local count
+        count=$(find replays -name "*.json" -o -name "*.json.gz" 2>/dev/null | wc -l | tr -d ' ')
+        ok "  replays/  (${count} 个回放文件)"
+    else
+        warn "  replays/ 不存在 (运行 record 命令生成)"
+    fi
     echo ""
 }
 
@@ -247,6 +381,9 @@ case "$CMD" in
     monitor) cmd_monitor "$@" ;;
     eval)    cmd_eval    "$@" ;;
     export)  cmd_export  "$@" ;;
+    build)   cmd_build   "$@" ;;
+    record)  cmd_record  "$@" ;;
+    replay)  cmd_replay  "$@" ;;
     status)  cmd_status  "$@" ;;
     help|-h|--help) usage ;;
     *) die "未知命令: $CMD  (运行 $(basename "$0") help 查看帮助)" ;;

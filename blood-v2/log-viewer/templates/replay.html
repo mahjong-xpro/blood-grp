@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blood V2 Replay | 血战到底回放</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/replay.css">
+</head>
+<body class="dark-theme">
+    {% raw %}
+    <div id="app" v-cloak>
+        <!-- Sidebar: Log List -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2><span class="logo-icon">🀄</span> V2 Replay</h2>
+                <button class="btn-icon" @click="refreshLogs" title="刷新列表">
+                    <span class="material-icons">refresh</span>
+                </button>
+            </div>
+
+            <div class="search-box">
+                <span class="material-icons">search</span>
+                <input type="text" v-model="searchQuery" placeholder="搜索回放...">
+            </div>
+
+            <div class="upload-area" @click="triggerUpload" @drop.prevent="handleDrop" @dragover.prevent>
+                <input type="file" ref="fileInput" @change="handleFileUpload" hidden accept=".json,.json.gz">
+                <span class="material-icons">cloud_upload</span>
+                <span>点击或拖拽上传</span>
+            </div>
+
+            <div class="log-list">
+                <div v-if="loadingLogs" class="loading-spinner">加载中...</div>
+                <div v-else-if="filteredLogs.length === 0" class="empty-state">无回放文件</div>
+
+                <div v-else v-for="log in filteredLogs" :key="log.path" class="log-item"
+                    :class="{ active: currentLogPath === (log.path || log.name) }"
+                    @click="loadLog(log.path || log.name)">
+                    <div class="log-title" style="display:flex;justify-content:space-between;align-items:center;">
+                        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:5px;" :title="log.name">
+                            {{ log.name }}
+                        </span>
+                        <div v-if="log.ordered_counts" style="display:flex;gap:3px;">
+                            <span v-for="entry in log.ordered_counts" :key="entry.idx"
+                                style="display:inline-block;font-size:10px;padding:1px 5px;border-radius:3px;font-weight:bold;min-width:14px;text-align:center;"
+                                :style="entry.is_hero
+                                    ? (entry.count > 0 ? 'background:#ff9800;color:#000;border:1px solid #ffb74d;' : 'background:#5d4037;color:#ffcc80;border:1px solid #8d6e63;')
+                                    : (entry.count > 0 ? 'background:#2196f3;color:#fff;' : 'background:#424242;color:#757575;')">
+                                {{ entry.count }}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="log-meta">
+                        <span>{{ log.mtime_str ? log.mtime_str.split(' ')[1] : '' }}</span>
+                        <span>{{ formatSize(log.size) }}</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="game-header" v-if="gameLoaded">
+                <div class="wall-display">
+                    <span class="material-icons">layers</span>
+                    <span>剩余: {{ tilesLeft }}</span>
+                </div>
+                <div class="event-info">
+                    Step: {{ currentEventIndex }} / {{ totalEvents }}
+                </div>
+            </header>
+
+            <!-- Game Board -->
+            <div class="game-board-container" v-if="gameLoaded">
+                <div class="game-board">
+                    <!-- Center -->
+                    <div class="center-info">
+                        <div class="turn-arrow-container" v-if="currentPlayer !== null"
+                            :style="{ transform: 'rotate(' + arrowRotation + 'deg)' }">
+                            <span class="material-icons turn-arrow-icon">navigation</span>
+                        </div>
+                        <div v-else class="center-logo">🀄</div>
+                    </div>
+
+                    <!-- Players -->
+                    <div v-for="(player, idx) in players" :key="idx" class="player-area"
+                        :class="['player-' + getVisualPosition(idx), { 'is-turn': currentPlayer === idx, 'is-agari': player.agari }]">
+
+                        <div class="player-info-card">
+                            <div class="name">{{ player.name }}</div>
+                            <div class="score" :class="{ positive: player.score >= 100000, negative: player.score < 100000 }">
+                                {{ player.score }}
+                            </div>
+                            <div class="player-status-row">
+                                <span v-if="player.dingque" class="badge dingque" :class="player.dingque_suit">{{ player.dingque_char }}</span>
+                                <span v-if="player.agari" class="badge agari">胡</span>
+                            </div>
+                        </div>
+
+                        <!-- Kawa (Discards) -->
+                        <div class="kawa-area">
+                            <div v-for="(tile, tIdx) in player.kawa" :key="'kawa-'+tIdx" class="tile-wrapper discarded"
+                                :class="{ 'last-discard': lastDiscard && lastDiscard.actor === idx && tIdx === player.kawa.length - 1 }">
+                                <div class="tile" :class="getTileClass(tile)">
+                                    <img :src="getTileImage(tile)" class="tile-img">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Hand & Melds -->
+                        <div class="hand-row">
+                            <div class="tehai-area">
+                                <div v-for="(tile, hIdx) in player.tehai" :key="'hand-'+hIdx" class="tile"
+                                    :class="[getTileClass(tile), { 'tsumo-tile': hIdx === player.tehai.length - 1 && player.lastAction === 'draw' }]">
+                                    <img :src="getTileImage(tile)" class="tile-img">
+                                </div>
+                            </div>
+                            <div class="fuuro-area">
+                                <div v-for="(meld, mIdx) in player.fuuro" :key="'meld-'+mIdx" class="meld-group" :class="meld.type">
+                                    <div v-for="(tile, fIdx) in meld" :key="'f-'+fIdx" class="tile small"
+                                        :class="[getTileClass(tile), { 'facedown': meld.type === 'ankan' && (fIdx === 0 || fIdx === 3) }]">
+                                        <img v-if="meld.type === 'ankan' && (fIdx === 0 || fIdx === 3)"
+                                            src="/static/images/tiles/Back.png" class="tile-img">
+                                        <img v-else :src="getTileImage(tile)" class="tile-img">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Welcome -->
+            <div v-else class="welcome-screen">
+                <div class="welcome-content">
+                    <h1>Blood V2 Replay</h1>
+                    <p>从左侧选择回放文件开始播放。</p>
+                    <p style="font-size:12px;color:#666;">使用 <code>--save_replays</code> 参数运行 evaluate.py 生成回放文件。</p>
+                </div>
+            </div>
+
+            <!-- Footer Controls -->
+            <footer class="controls-bar" :class="{ disabled: !gameLoaded }">
+                <div class="slider-container">
+                    <input type="range" min="0" :max="totalEvents - 1" :value="currentEventIndex"
+                        class="timeline-slider" @input="seekTo(+$event.target.value)">
+                    <div class="slider-tooltip" :style="{ left: (currentEventIndex / Math.max(totalEvents - 1, 1) * 100) + '%' }">
+                        {{ currentEventIndex }}
+                    </div>
+                </div>
+
+                <div class="control-buttons">
+                    <button class="ctrl-btn" @click="firstEvent" title="开始"><span class="material-icons">skip_previous</span></button>
+                    <button class="ctrl-btn" @click="prevEvent" title="上一步"><span class="material-icons">fast_rewind</span></button>
+                    <button class="ctrl-btn main-play" @click="togglePlay">
+                        <span class="material-icons">{{ isPlaying ? 'pause' : 'play_arrow' }}</span>
+                    </button>
+                    <button class="ctrl-btn" @click="nextEvent" title="下一步"><span class="material-icons">fast_forward</span></button>
+                    <button class="ctrl-btn" @click="lastEvent" title="结束"><span class="material-icons">skip_next</span></button>
+                </div>
+
+                <div class="speed-control">
+                    <button class="btn-icon small" @click="testAudio" title="测试音效" style="margin-right:5px;">
+                        <span class="material-icons" style="font-size:16px;">volume_up</span>
+                    </button>
+                    <span class="material-icons" style="font-size:16px;">speed</span>
+                    <select v-model.number="playbackSpeed">
+                        <option value="0.5">0.5x</option>
+                        <option value="1">1.0x</option>
+                        <option value="2">2.0x</option>
+                        <option value="5">5.0x</option>
+                        <option value="10">10x</option>
+                    </select>
+                </div>
+            </footer>
+        </main>
+
+        <!-- Right Panel: Event Log -->
+        <aside class="right-panel" :class="{ collapsed: !showRightPanel }">
+            <div class="panel-header">
+                <h3>事件日志</h3>
+                <button class="btn-icon small" @click="showRightPanel = !showRightPanel">
+                    <span class="material-icons">{{ showRightPanel ? 'chevron_right' : 'chevron_left' }}</span>
+                </button>
+            </div>
+            <div class="event-list" ref="eventListRef">
+                <div v-for="event in visibleEvents" :key="event.index" class="event-item"
+                    :class="{ current: event.index === currentEventIndex - 1 }"
+                    @click="seekTo(event.index + 1)">
+                    <div class="event-idx">{{ event.index }}</div>
+                    <div class="event-content">
+                        <span class="event-type">{{ event.type }}</span>
+                        <span class="event-actor" v-if="event.actor !== undefined">P{{ event.actor }}</span>
+                        <span class="event-detail" v-if="event.detail">{{ event.detail }}</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </div>
+    {% endraw %}
+    <script type="module" src="/static/js/replay.js"></script>
+</body>
+</html>

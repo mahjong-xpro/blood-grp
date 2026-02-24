@@ -5,8 +5,39 @@ use numpy::PyArray1;
 use engine::consts::*;
 use engine::state::board::{BoardState, Phase};
 use engine::state::action::Action;
+use engine::state::event::Event;
+use engine::tile::Suit;
 use engine::algo::shanten::{calc_shanten, waiting_tiles};
 use engine::obs::{encode_student_obs, encode_oracle_obs, encode_action_mask};
+
+fn event_to_json(e: &Event) -> String {
+    match e {
+        Event::DingQue { player, suit } => {
+            let s = match suit { Suit::Man => "man", Suit::Pin => "pin", Suit::Sou => "sou" };
+            format!(r#"{{"type":"ding_que","player":{},"suit":"{}"}}"#, player, s)
+        }
+        Event::Draw { player, tile } =>
+            format!(r#"{{"type":"draw","player":{},"tile":{}}}"#, player, tile),
+        Event::Discard { player, tile, is_tsumogiri } =>
+            format!(r#"{{"type":"discard","player":{},"tile":{},"is_tsumogiri":{}}}"#, player, tile, is_tsumogiri),
+        Event::Pon { player, from, tile } =>
+            format!(r#"{{"type":"pon","player":{},"from":{},"tile":{}}}"#, player, from, tile),
+        Event::MinKan { player, from, tile } =>
+            format!(r#"{{"type":"min_kan","player":{},"from":{},"tile":{}}}"#, player, from, tile),
+        Event::AnKan { player, tile } =>
+            format!(r#"{{"type":"an_kan","player":{},"tile":{}}}"#, player, tile),
+        Event::KaKan { player, tile, is_jishiyu } =>
+            format!(r#"{{"type":"ka_kan","player":{},"tile":{},"is_jishiyu":{}}}"#, player, tile, is_jishiyu),
+        Event::Tsumo { player, tile } =>
+            format!(r#"{{"type":"tsumo","player":{},"tile":{}}}"#, player, tile),
+        Event::Ron { player, from, tile } =>
+            format!(r#"{{"type":"ron","player":{},"from":{},"tile":{}}}"#, player, from, tile),
+        Event::KanPayment { payer, receiver, amount } =>
+            format!(r#"{{"type":"kan_payment","payer":{},"receiver":{},"amount":{}}}"#, payer, receiver, amount),
+        Event::GameEnd =>
+            r#"{"type":"game_end"}"#.to_string(),
+    }
+}
 
 
 use crate::opponent::OpponentPolicy;
@@ -190,6 +221,30 @@ impl RustMahjongEnv {
     fn get_agent_shanten(&self) -> i32 {
         let p = &self.state.players[self.player_id];
         calc_shanten(&p.hand, p.melds.len()).into()
+    }
+
+    /// Returns all recorded events as a JSONL string (one JSON object per line).
+    /// Call after finalize_scoring() to get the complete game log.
+    fn get_events_jsonl(&self) -> String {
+        self.state.events.iter()
+            .map(|e| event_to_json(e))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Returns the game header JSON string for the replay file.
+    fn get_game_header_json(&self, names: Vec<String>) -> String {
+        format!(
+            r#"{{"type":"game_start","seed":{},"names":[{}],"initial_scores":[100000,100000,100000,100000],"dealer":{}}}"#,
+            self.seed,
+            names.iter().map(|n| format!("\"{}\"", n)).collect::<Vec<_>>().join(","),
+            self.state.dealer,
+        )
+    }
+
+    /// Returns the final scores for all players.
+    fn get_final_scores(&self) -> [i32; NUM_PLAYERS] {
+        self.state.get_scores()
     }
 
     fn get_aux_labels<'py>(&self, py: Python<'py>, player_id: usize) -> PyResult<Bound<'py, PyDict>> {

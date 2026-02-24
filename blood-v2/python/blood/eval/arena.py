@@ -68,20 +68,25 @@ class ArenaResult:
 class Arena:
     """Run 1v3 evaluation: agent vs 3 baselines."""
 
-    def __init__(self, env_cls, agent_fn, baseline_mode="rulebot"):
+    def __init__(self, env_cls, agent_fn, baseline_mode="rulebot", recorder=None):
         """
         env_cls: environment class
         agent_fn: callable(obs) -> action
         baseline_mode: opponent mode for baselines
+        recorder: optional ReplayRecorder instance
         """
         self.env_cls = env_cls
         self.agent_fn = agent_fn
         self.baseline_mode = baseline_mode
+        self.recorder = recorder
 
-    def evaluate(self, num_games: int = 1000, seed: int = 0) -> ArenaResult:
+    def evaluate(self, num_games: int = 1000, seed: int = 0,
+                 names: list | None = None) -> ArenaResult:
         """Run arena evaluation."""
         result = ArenaResult()
         rng = np.random.default_rng(seed)
+        if names is None:
+            names = ["Agent", "RuleBot", "RuleBot", "RuleBot"]
 
         class _EvalCfg:
             suit_augment_prob = 0.0
@@ -104,6 +109,12 @@ class Arena:
                 scores = env._env.get_scores() if env._env else [100000] * 4
             except Exception:
                 scores = [100000] * 4
+
+            if self.recorder is not None and env._env is not None:
+                try:
+                    self.recorder.save(env._env, names=names)
+                except Exception as e:
+                    log.warning("Recorder save failed for game %d: %s", game_idx, e)
 
             player_score = scores[0]
             rank = sum(1 for s in scores if s > player_score) + 1

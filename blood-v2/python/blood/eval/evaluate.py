@@ -174,6 +174,7 @@ def run_evaluation(
     temperature: float = 0.1,
     seed: int = 0,
     output_json: str = None,
+    save_replays: str = None,
 ) -> ArenaResult:
     """Run standardized evaluation and return results."""
 
@@ -192,7 +193,13 @@ def run_evaluation(
 
     log.info("Evaluating %s vs %s (%d games, seed=%d)", agent_name, baseline, num_games, seed)
 
-    arena = Arena(BloodMahjongEnv, agent_fn, baseline_mode=baseline)
+    recorder = None
+    if save_replays:
+        from blood.replay.recorder import ReplayRecorder
+        recorder = ReplayRecorder(save_replays, compress=False, max_files=500)
+        log.info("Replay recording enabled → %s", save_replays)
+
+    arena = Arena(BloodMahjongEnv, agent_fn, baseline_mode=baseline, recorder=recorder)
     t0 = time.time()
     result = arena.evaluate(num_games=num_games, seed=seed)
     elapsed = time.time() - t0
@@ -242,6 +249,8 @@ def main():
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--output", type=str, default=None,
                         help="Output JSON file for results")
+    parser.add_argument("--save_replays", type=str, default=None,
+                        help="Directory to save JSONL replay files (one per game)")
     args = parser.parse_args()
 
     result = run_evaluation(
@@ -253,6 +262,7 @@ def main():
         temperature=args.temperature,
         seed=args.seed,
         output_json=args.output,
+        save_replays=args.save_replays,
     )
 
     sys.exit(0 if result.win_rate > 0.0 else 1)

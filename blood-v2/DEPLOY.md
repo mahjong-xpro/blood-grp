@@ -110,6 +110,9 @@ cd ~/Mahjong/blood/blood-v2
 # release 模式编译（128 核并行，速度快）
 maturin develop --release
 
+# 或通过 manage.sh 编译（等价）
+./scripts/manage.sh build
+
 # 将 Python 包安装到 conda 环境（editable 模式，代码修改即时生效）
 pip install -e python/
 
@@ -126,6 +129,11 @@ pip install "sample-factory>=2.0" "gymnasium>=0.29" "numpy>=1.24" "pyyaml>=6.0"
 
 # 可选：开发工具
 pip install pytest ruff tensorboard
+
+# 安装回放查看器依赖
+pip install "Flask>=2.3.0" "flask-cors>=4.0.0"
+# 或直接从 requirements.txt 安装
+pip install -r log-viewer/requirements.txt
 
 # 完整导入验证（需先设置 PYTHONPATH）
 export PYTHONPATH="$(pwd)/python:${PYTHONPATH:-}"
@@ -215,11 +223,80 @@ tmux 操作：`Ctrl+B D` 脱离会话，`tmux attach -t blood_train` 重新连�
 
 ```bash
 ./scripts/manage.sh status
+# 输出示例：
+# ── Checkpoint 状态 ──────────────────────────────────────
+#   warmup: checkpoints/blood_v2_warmup  (3 个权重文件)
+#   competitive: checkpoints/blood_v2_competitive  (5 个权重文件)
+# ── 回放文件 ─────────────────────────────────────────────
+#   replays/  (20 个回放文件)
 ```
 
 ---
 
-## 十、监控训练
+## 十、对局回放
+
+录制 AI 对局并在浏览器中回放，无需训练进程，独立运行。
+
+### 录制回放文件
+
+```bash
+# 自动选最新 checkpoint，录制 20 局（默认）
+./scripts/manage.sh record
+
+# 指定局数
+./scripts/manage.sh record --games 50
+
+# 指定 checkpoint 和输出目录
+./scripts/manage.sh record \
+    --checkpoint train_dir/blood_v2_competitive/checkpoint_p0/checkpoint_000000520_1064960.pth \
+    --games 100 \
+    --log-dir replays/competitive/
+
+# 对阵随机对手（用于调试）
+./scripts/manage.sh record --games 10 --baseline random
+```
+
+录制完成后，`replays/` 目录下会生成 `.json` 格式的回放文件，每局一个文件。
+
+### 启动回放查看器
+
+```bash
+# 启动（默认端口 5001，读取 replays/ 目录）
+./scripts/manage.sh replay
+
+# 自定义端口和目录
+./scripts/manage.sh replay --log-dir replays/competitive/ --port 5002
+
+# 浏览器访问
+# http://localhost:5001
+# 或远程服务器：http://<服务器IP>:5001
+```
+
+回放查看器功能：
+- 左侧列表：显示所有回放文件，标注每局各玩家胡牌次数
+- 棋盘区域：4 名玩家视角，实时显示手牌、河牌、副露
+- 播放控制：play/pause、逐步、时间轴拖拽、0.5x–10x 速度
+- 右侧事件日志：点击任意事件跳转到对应步骤
+- 音效：摸牌、打牌、碰、杠、自摸、荣和
+
+> 回放查看器与训练进程完全独立，可在训练的同时另开终端运行。
+
+### 典型工作流
+
+```bash
+# tmux 窗口 1：训练
+tmux new -s blood_train
+./scripts/manage.sh train competitive --resume
+
+# tmux 窗口 2：录制最新 checkpoint 的回放
+tmux new -s blood_replay
+./scripts/manage.sh record --games 20
+./scripts/manage.sh replay
+```
+
+---
+
+## 十一、监控训练
 
 ```bash
 # 另开一个 tmux 窗口启动 TensorBoard
@@ -245,7 +322,7 @@ htop
 
 ---
 
-## 十一、运行测试
+## 十二、运行测试
 
 ```bash
 cd ~/Mahjong/blood/blood-v2
@@ -270,7 +347,7 @@ print('System ready.')
 
 ---
 
-## 十二、目录结构
+## 十三、目录结构
 
 ```
 ~/Mahjong/blood/blood-v2/
@@ -279,13 +356,18 @@ print('System ready.')
 │   ├── blood_v2_competitive/   # competitive checkpoint
 │   ├── blood_v2_elite/         # elite checkpoint
 │   └── league/                 # 联赛池（最多 50 个历史模型）
+├── replays/                    # 对局回放文件（JSONL 格式）
 ├── train_dir/                  # TensorBoard logs
 ├── configs/
 │   ├── warmup.yaml
 │   ├── competitive.yaml
 │   └── elite.yaml
+├── log-viewer/                 # 回放查看器（Flask + Vue3）
+│   ├── app.py
+│   ├── templates/replay.html
+│   └── static/js/replay.js
 ├── scripts/
-│   ├── manage.sh           # 统一管理入口（训练/监控/评估/导出）
+│   ├── manage.sh           # 统一管理入口（训练/监控/评估/导出/录制/回放）
 │   ├── train.sh            # 原始训练脚本
 │   ├── eval.sh             # 原始评估脚本
 │   └── export_onnx.py      # ONNX 导出
@@ -294,7 +376,7 @@ print('System ready.')
 
 ---
 
-## 十三、常见问题
+## 十四、常见问题
 
 **`maturin develop` 报 linker error**
 ```bash
@@ -328,3 +410,18 @@ source ~/.bashrc
 **训练中断后恢复**
 
 SF2 会自动保存 checkpoint，直接重新运行相同命令即可从最新 checkpoint 恢复。
+
+**回放查看器端口被占用**
+
+```bash
+./scripts/manage.sh replay --port 5002
+```
+
+**回放文件列表为空**
+
+先运行 `record` 命令生成回放文件，或通过浏览器界面左侧上传区手动上传 `.json` 文件。
+
+**回放中牌面图片显示为空白**
+
+回放查看器会自动 fallback 到 v1 的静态资源目录（`../log-viewer/static/`）。
+若 v1 目录不存在，需手动将 tile 图片放入 `log-viewer/static/images/tiles/`。
