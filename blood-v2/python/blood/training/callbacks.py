@@ -77,6 +77,10 @@ class BloodObserver(AlgoObserver):
             self.league._evict_if_needed()
             log.info("Saved league checkpoint: %s (pool size: %d)",
                      save_path, self.league.pool_size())
+        except FileNotFoundError:
+            # SF2 rotated the checkpoint between our glob and copy — benign race.
+            log.debug("SF2 checkpoint disappeared during league copy: %s", latest)
+            save_path.unlink(missing_ok=True)
         except Exception as e:
             log.warning("Failed to save league checkpoint: %s", e)
             # Remove corrupt file so it doesn't pollute the pool.
