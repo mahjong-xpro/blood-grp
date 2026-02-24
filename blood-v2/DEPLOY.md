@@ -193,6 +193,14 @@ cd ~/Mahjong/blood/blood-v2
 ./scripts/manage.sh help
 ```
 
+### 训练阶段状态
+
+| 阶段 | 状态 | 步数 | 最终 reward |
+|------|------|------|-------------|
+| Phase 1: Warmup | ✅ 完成 | 2M | 6.35 |
+| Phase 2: Competitive | ✅ 完成 | 5M | 14.24（峰值 15.375） |
+| Phase 3: Elite | ⏳ 待启动 | 目标 10M+ | — |
+
 ### 启动三阶段训练
 
 训练是**前台运行**，SSH 断线会中断。使用 tmux 保持会话：
@@ -201,13 +209,13 @@ cd ~/Mahjong/blood/blood-v2
 # 新建 tmux 会话
 tmux new -s blood_train
 
-# Phase 1: Warmup（~2M 步，RuleBot 对手）
+# Phase 1: Warmup（~2M 步，RuleBot 对手）✅ 已完成
 ./scripts/manage.sh train warmup
 
-# Phase 2: Competitive（~5M 步，联赛自博弈）—— warmup 完成后执行
+# Phase 2: Competitive（~5M 步，联赛自博弈）✅ 已完成
 ./scripts/manage.sh train competitive --resume
 
-# Phase 3: Elite（~10M+ 步，精调）—— competitive 完成后执行
+# Phase 3: Elite（~10M+ 步，精调）—— 当前阶段，从 competitive checkpoint 恢复
 ./scripts/manage.sh train elite --resume
 ```
 
