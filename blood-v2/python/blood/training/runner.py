@@ -184,9 +184,9 @@ def _patch_learner():
             if oracle_obs is not None:
                 oracle_logits, oracle_values = ac.oracle_encoder(oracle_obs)
 
-                student_logits = getattr(action_dist, 'logits', None)
+                student_logits = getattr(action_dist, 'raw_logits', None)
                 if student_logits is None:
-                    log.warning("Cannot find 'logits' attribute on action_dist; skipping distillation")
+                    log.warning("Cannot find 'raw_logits' attribute on action_dist; skipping distillation")
                 else:
                     mask_bool = action_mask.bool() if action_mask is not None else None
                     distill_loss = ac.distill_loss_fn(student_logits, oracle_logits.detach(), mask_bool)
@@ -238,7 +238,7 @@ def _patch_learner():
 
         # Monitor logprob extremes: if max_abs_logprob keeps growing past ~8,
         # the policy is becoming degenerate (near-deterministic on some actions).
-        student_logits = getattr(action_dist, 'logits', None)
+        student_logits = getattr(action_dist, 'raw_logits', None)
         if student_logits is not None:
             log_probs = torch.nn.functional.log_softmax(student_logits, dim=-1)
             summaries["blood/max_abs_logprob"] = log_probs.abs().max().detach()

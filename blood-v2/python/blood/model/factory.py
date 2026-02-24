@@ -122,6 +122,18 @@ class BloodActorCritic(ActorCriticSharedWeights):
             return result
 
         action_distribution_params, self.last_action_distribution = self.action_parameterization(actor_features)
+
+        # Apply action mask: illegal actions get -1e9 so they are never sampled
+        # and contribute near-zero probability to log_prob during PPO loss.
+        # _cached_obs is set in forward_head() for the current minibatch.
+        if self._cached_obs is not None:
+            mask = self._cached_obs.get("action_mask")
+            if mask is not None:
+                illegal = ~mask.bool()
+                action_distribution_params = action_distribution_params.masked_fill(illegal, -1e9)
+                # Sync raw_logits so SF2's entropy/log_prob use the masked distribution.
+                self.last_action_distribution.raw_logits = action_distribution_params
+
         result["action_logits"] = action_distribution_params
         self._maybe_sample_actions(sample_actions, result)
         return result
