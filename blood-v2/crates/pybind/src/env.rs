@@ -12,6 +12,10 @@ use engine::obs::{encode_student_obs, encode_oracle_obs, encode_action_mask};
 
 fn event_to_json(e: &Event) -> String {
     match e {
+        Event::Deal { player, tiles } => {
+            let arr = tiles.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(",");
+            format!(r#"{{"type":"deal","player":{},"tiles":[{}]}}"#, player, arr)
+        }
         Event::DingQue { player, suit } => {
             let s = match suit { Suit::Man => "man", Suit::Pin => "pin", Suit::Sou => "sou" };
             format!(r#"{{"type":"ding_que","player":{},"suit":"{}"}}"#, player, s)

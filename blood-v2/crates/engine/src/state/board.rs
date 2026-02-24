@@ -91,6 +91,14 @@ impl BoardState {
         state.players[dealer].last_drawn_tile = Some(extra);
         state.players[dealer].see_tile(extra);
 
+        // Record initial hands as Deal events (for replay)
+        for p in 0..NUM_PLAYERS {
+            let tiles: Vec<Tile> = state.players[p].hand.iter().enumerate()
+                .flat_map(|(tile, &count)| std::iter::repeat(tile as Tile).take(count as usize))
+                .collect();
+            state.events.push(Event::Deal { player: p, tiles });
+        }
+
         state.wall_back_idx = state.wall.len();
 
         state

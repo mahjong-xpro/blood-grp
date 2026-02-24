@@ -3,6 +3,7 @@ use crate::tile::{Tile, Suit};
 /// Game events that drive state transitions
 #[derive(Debug, Clone)]
 pub enum Event {
+    Deal { player: usize, tiles: Vec<Tile> },
     DingQue { player: usize, suit: Suit },
     Draw { player: usize, tile: Tile },
     Discard { player: usize, tile: Tile, is_tsumogiri: bool },

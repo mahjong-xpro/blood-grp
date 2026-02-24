@@ -155,6 +155,12 @@ const App = {
                     if (event.initial_scores) event.initial_scores.forEach((s, i) => players.value[i].score = s);
                     break;
 
+                case 'deal':
+                    if (!p) break;
+                    p.tehai = [...event.tiles];
+                    sortHand(p);
+                    break;
+
                 case 'ding_que': {
                     if (!p) break;
                     const suitMap = { man: '萬', pin: '筒', sou: '条' };
@@ -356,6 +362,7 @@ const App = {
 
         const getEventDetail = (e) => {
             const t = e.type;
+            if (t === 'deal') return `发牌 ${e.tiles ? e.tiles.length : 0}张`;
             if (t === 'draw') return `摸 ${tileToText(e.tile)}`;
             if (t === 'discard') return `打 ${tileToText(e.tile)}`;
             if (t === 'pon') return `碰 ${tileToText(e.tile)}`;
