@@ -84,7 +84,9 @@ class BloodActorCritic(ActorCriticSharedWeights):
             )
             self.distill_weight = getattr(cfg, "oracle_distill_weight", 0.05)
             self.oracle_ce_weight = getattr(cfg, "oracle_ce_weight", 0.1)
-            self.oracle_value_distill_weight = getattr(cfg, "oracle_value_distill_weight", 0.5)
+            self.oracle_value_distill_weight = getattr(cfg, "oracle_value_distill_weight", 0.0)
+            self.oracle_value_warmup_steps = getattr(cfg, "oracle_value_warmup_steps", 500_000)
+            self.oracle_value_head_loss_weight = getattr(cfg, "oracle_value_head_loss_weight", 1.0)
 
         self._cached_encoder_out = None  # post-enc_proj; used as forward-pass guard in runner.py
         self._cached_core_out = None     # post-LSTM; used by AuxHead in runner.py
