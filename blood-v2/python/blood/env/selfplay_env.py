@@ -179,6 +179,13 @@ class SelfPlayEnv(BloodMahjongEnv):
                         break
                     self._env.apply_ext_action(agent, 30)  # Pass
                     continue
+                # If opponent has no decision (mask all-zeros), apply Pass directly.
+                # Calling the model with an all-zeros mask causes uniform sampling,
+                # which can output Agari on a non-complete hand, triggering a
+                # process_win early-return that leaves phase=SelfCheck and deadlocks.
+                if not self._env.has_decision(cp):
+                    self._env.apply_ext_action(cp, 30)  # Pass → Phase::Discard
+                    continue
                 action = self._opp_action(cp)
                 self._env.apply_ext_action(cp, action)
 

@@ -680,7 +680,18 @@ impl BoardState {
     fn process_win(&mut self, winner: usize, loser: Option<usize>, winning_tile: Tile) {
         let ctx = self.make_win_context(winner, winning_tile, loser.is_some());
 
-        let Some(result) = calc_fan(&ctx) else { return; };
+        // Safety net: if calc_fan returns None (invalid win — hand not complete,
+        // ding-que tiles remain, or wrong tile count), advance the game instead of
+        // returning early. An early return leaves phase=SelfCheck/Reaction with no
+        // state change, causing _advance_external_opponents to stall indefinitely.
+        let Some(result) = calc_fan(&ctx) else {
+            if self.win_count < 3 {
+                self.advance_to_next_draw();
+            } else {
+                self.phase = Phase::Scoring;
+            }
+            return;
+        };
         let score = calc_score(result.fan);
 
         match loser {
