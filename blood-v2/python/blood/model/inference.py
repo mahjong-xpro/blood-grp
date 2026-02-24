@@ -251,15 +251,17 @@ class OpponentModelPool:
     def ready(self) -> bool:
         return self._model is not None
 
-    def load(self, path: str) -> None:
+    def load(self, path: str) -> bool:
+        """Load a checkpoint. Returns True on success, False on failure."""
         path_str = str(path)
         if path_str == self._current_path:
-            return
+            return True
         try:
             self._model = PolicyModel.from_sf2_checkpoint(path_str, self._device)
             self._current_path = path_str
             self._hidden_states.clear()
             log.info("Loaded opponent model: %s", path_str)
+            return True
         except Exception as e:
             log.warning(
                 "Failed to load opponent model from %s: %s. "
@@ -267,6 +269,7 @@ class OpponentModelPool:
                 path, e,
                 "previous model" if self._model is not None else "random policy",
             )
+            return False
 
     def reset_hidden_states(self) -> None:
         """Reset all opponent hidden states at episode boundaries."""

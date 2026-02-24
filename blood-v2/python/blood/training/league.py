@@ -79,3 +79,11 @@ class LeagueManager:
 
     def pool_size(self) -> int:
         return len(self.get_checkpoints())
+
+    def remove_checkpoint(self, path) -> None:
+        """Delete a checkpoint from the pool (e.g. corrupted file)."""
+        try:
+            Path(path).unlink(missing_ok=True)
+            log.warning("Removed corrupted checkpoint from league pool: %s", path)
+        except Exception as e:
+            log.warning("Failed to remove checkpoint %s: %s", path, e)

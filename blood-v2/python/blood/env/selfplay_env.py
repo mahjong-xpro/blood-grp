@@ -117,7 +117,9 @@ class SelfPlayEnv(BloodMahjongEnv):
         path = self._league.sample_opponent()
         if path is not None:
             try:
-                self._opp_pool.load(str(path))
+                ok = self._opp_pool.load(str(path))
+                if not ok:
+                    self._league.remove_checkpoint(path)
             except Exception as e:
                 log.warning("Failed to load opponent checkpoint from %s: %s", path, e)
 
