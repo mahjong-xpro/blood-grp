@@ -155,10 +155,14 @@ class PolicyModel(nn.Module):
             conv_ch = encoder_sd[first_conv_key].shape[0]
 
         # Detect rnn_size from LSTM hidden-hidden weight shape.
+        # SF2 ModelCoreRNN stores the LSTM as self.core, so keys are core.core.*
+        # (not core.rnn.* as one might expect).
         # Fallback: infer from actor_head.0 (LayerNorm weight shape = [rnn_size]).
-        lstm_hh_key = "core.rnn.weight_hh_l0"
+        lstm_hh_key = "core.core.weight_hh_l0"
         if lstm_hh_key in model_sd:
             rnn_size = model_sd[lstm_hh_key].shape[1]
+        elif "core.rnn.weight_hh_l0" in model_sd:  # legacy fallback
+            rnn_size = model_sd["core.rnn.weight_hh_l0"].shape[1]
         elif "actor_head.0.weight" in model_sd:
             rnn_size = model_sd["actor_head.0.weight"].shape[0]
 
@@ -202,9 +206,14 @@ class PolicyModel(nn.Module):
             if k in model.state_dict():
                 partial_sd[k] = v
 
-        # Map core.rnn.* → lstm.*
+        # Map core.core.* → lstm.*  (SF2 ModelCoreRNN stores LSTM as self.core)
+        # Also handle legacy core.rnn.* prefix for older checkpoints.
         for k, v in model_sd.items():
-            if k.startswith("core.rnn."):
+            if k.startswith("core.core."):
+                new_key = "lstm." + k[len("core.core."):]
+                if new_key in model.state_dict():
+                    partial_sd[new_key] = v
+            elif k.startswith("core.rnn."):
                 new_key = "lstm." + k[len("core.rnn."):]
                 if new_key in model.state_dict():
                     partial_sd[new_key] = v
