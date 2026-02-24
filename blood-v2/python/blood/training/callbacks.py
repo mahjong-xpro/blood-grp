@@ -44,14 +44,16 @@ class BloodObserver(AlgoObserver):
 
     def _snapshot_to_league(self, runner: Runner, policy_id: int, env_steps: int):
         import glob
+        import os
         import shutil
         from os.path import join
-        from sample_factory.algo.learning.learner import Learner
         from sample_factory.utils.utils import experiment_dir
 
         # LearnerWorker.learner is None in the main process (it lives in the worker
         # subprocess). Instead, copy the latest checkpoint SF2 already saved to disk.
-        ckpt_dir = join(experiment_dir(cfg=runner.cfg), f"checkpoint_p{policy_id}")
+        # Use abspath so that `latest` is always an absolute path — a relative path
+        # would break if the working directory differs between the glob and the copy.
+        ckpt_dir = os.path.abspath(join(experiment_dir(cfg=runner.cfg), f"checkpoint_p{policy_id}"))
         checkpoints = sorted(glob.glob(join(ckpt_dir, "checkpoint_*.pth")))
         if not checkpoints:
             # Expected at training start: SF2 hasn't saved its first checkpoint yet.
@@ -60,6 +62,9 @@ class BloodObserver(AlgoObserver):
             return
 
         latest = checkpoints[-1]
+        if not os.path.exists(latest):
+            log.debug("SF2 checkpoint disappeared before league copy: %s", latest)
+            return
         self.league.pool_dir.mkdir(parents=True, exist_ok=True)
         save_path = self.league.pool_dir / f"checkpoint_{env_steps}.pth"
 
