@@ -466,7 +466,7 @@ impl BoardState {
             }
         }
 
-        // Draw from back of wall
+        // Draw from back of wall (rinshan)
         if self.wall_remaining() > 0 {
             let new_tile = self.draw_from_back();
             let p = &mut self.players[player_id];
@@ -478,6 +478,10 @@ impl BoardState {
             // Clear 过手加番 on hand change (rinshan draw)
             p.furiten_passed_ron_fan = None;
 
+            // Emit Draw event so the replay viewer shows the rinshan tile
+            self.events.push(Event::Draw { player: player_id, tile: new_tile });
+
+            self.current_player = player_id;
             self.phase = Phase::SelfCheck;
         } else {
             self.phase = Phase::Scoring;
@@ -735,13 +739,13 @@ impl BoardState {
 
         if self.win_count >= 3 {
             self.phase = Phase::Scoring;
-        } else {
-            // Both tsumo (loser=None) and ron (loser=Some) must advance to the
-            // next draw so the game continues for remaining players.
-            // Previously ron skipped this, leaving phase=Reaction and causing
-            // _advance_external_opponents to stall indefinitely.
+        } else if loser.is_none() {
+            // Tsumo: advance immediately (no second caller will do it).
             self.advance_to_next_draw();
         }
+        // Ron (loser.is_some()): resolve_reactions() calls advance_to_next_draw()
+        // after all winners are collected, so we must NOT call it here — doing so
+        // would cause a double-draw (the next player gets two tiles).
     }
 
     fn advance_to_next_draw(&mut self) {
