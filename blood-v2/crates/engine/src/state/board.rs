@@ -293,6 +293,12 @@ impl BoardState {
     }
 
     fn apply_self_check(&mut self, player_id: usize, action: Action) {
+        // Guard: only the current player can act in SelfCheck.
+        // Applying another player's action here (e.g. after a stall break) would
+        // read last_drawn_tile for the wrong player and panic on Agari.
+        if player_id != self.current_player {
+            return;
+        }
         match action {
             Action::Agari => {
                 let tile = self.players[player_id].last_drawn_tile
@@ -321,10 +327,11 @@ impl BoardState {
             }
             // Discard action in self_check phase: model chose a tile instead of Pass.
             // Treat as Pass — the actual discard happens in the Discard phase.
-            Action::Pass | Action::Discard(_) => {
+            // Any other unrecognised action (e.g. Pon output by a confused model)
+            // is also treated as Pass to avoid a no-op stall.
+            _ => {
                 self.phase = Phase::Discard;
             }
-            _ => {}
         }
     }
 
