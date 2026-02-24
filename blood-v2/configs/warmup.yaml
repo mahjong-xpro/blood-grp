@@ -1,5 +1,5 @@
 # Phase 1: Warmup — learn basic mahjong from RuleBot opponents
-# Duration: ~500K env steps
+# Duration: ~2M env steps
 # Goal: learn dingque, basic discard, simple winning patterns
 
 # Sample Factory
@@ -33,11 +33,17 @@ blood_encoder_out_dim: 1024
 # Opponents: RuleBot during warmup
 opponent_mode: rulebot
 
-# Oracle distillation — enabled from the start
+# Oracle distillation — policy distillation enabled from the start
+# oracle_value_distill_weight: 0.0 — disabled; oracle value head trains here as a head start
+# oracle_value_head_loss_weight: 1.0 — oracle value head trains on GAE returns during warmup
+# oracle_value_warmup_steps: 0 — no gate needed (distill_weight=0.0 means it never fires)
 oracle_enabled: true
 oracle_num_blocks: 20
 oracle_distill_weight: 0.1
 oracle_distill_temperature: 3.0
+oracle_value_distill_weight: 0.0
+oracle_value_head_loss_weight: 1.0
+oracle_value_warmup_steps: 0
 
 # League — collect snapshots but don't use them yet
 league_enabled: true

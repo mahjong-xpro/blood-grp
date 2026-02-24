@@ -74,13 +74,21 @@ def _inject_config_yaml():
         return
 
     # Keys handled outside SF2 arg parsing — skip them here.
-    # Includes: keys not registered as SF2 args, and bool-with-value args
-    # that have dedicated --no_xxx counterparts (oracle_enabled, league_enabled).
+    # encoder_custom: not a registered SF2 arg.
+    # oracle_enabled / league_enabled: have dedicated --no_xxx counterparts;
+    #   handled below via explicit --no_oracle / --no_league injection.
     _skip = {"encoder_custom", "oracle_enabled", "league_enabled"}
 
     # SF2 args that use type=str2bool (accept --key False to disable).
     # store_true args cannot be set to False via CLI, so we skip them when False.
     _str2bool_args = {"use_rnn", "normalize_input", "normalize_returns"}
+
+    # Inject --no_oracle / --no_league if yaml explicitly disables them.
+    # (Default is True for both; only inject the negation flag when False.)
+    if cfg.get("oracle_enabled") is False and "--no_oracle" not in sys.argv:
+        sys.argv.append("--no_oracle")
+    if cfg.get("league_enabled") is False and "--no_league" not in sys.argv:
+        sys.argv.append("--no_league")
 
     # Append yaml values as CLI args (only if not already in sys.argv)
     existing = set(sys.argv)
@@ -230,6 +238,12 @@ def _patch_learner():
                             )
                             extra_loss = extra_loss + oracle_value_head_weight * oracle_value_head_loss
                             summaries["oracle_value_head_loss"] = oracle_value_head_loss.detach()
+                        else:
+                            log.warning(
+                                "oracle_value_head_loss skipped: shape mismatch "
+                                "oracle_values=%s returns=%s",
+                                ov_train.shape, ret_flat.shape,
+                            )
 
                 # Oracle value distillation: train student critic to match Oracle's
                 # perfect-info value estimate. Only enabled after oracle value head has

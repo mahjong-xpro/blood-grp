@@ -14,6 +14,9 @@ gamma: 0.999
 gae_lambda: 0.97
 learning_rate: 1e-4
 lr_schedule: kl_adaptive_minibatch
+lr_schedule_kl_threshold: 0.001   # same fix as competitive: masked action space KL is much smaller
+lr_adaptive_max: 3e-4              # hard LR ceiling — elite policy is fragile, prevent LR spikes
+lr_adaptive_min: 1e-6
 exploration_loss_coeff: 0.01
 value_loss_coeff: 1.0
 train_for_env_steps: 10000000

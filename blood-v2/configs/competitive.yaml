@@ -40,12 +40,12 @@ opponent_mode: selfplay
 opponent_refresh_every: 20
 
 # Oracle distillation
-# Fix 4: oracle_distill_weight reduced (0.03→0.01) while oracle policy head warms up
-# Fix 4: oracle_ce_weight reduced (default 0.1→0.05) to limit random oracle influence early
-# Fix 1: oracle_value_distill_weight=0.0 — oracle value head has no training signal until
-#         oracle_value_head_loss trains it; re-enable after oracle_value_head_loss converges
-# Fix 1: oracle_value_head_loss_weight=1.0 — supervised loss to train oracle value head
-# Fix 1: oracle_value_warmup_steps=500000 — gate: value distillation only after 500K steps
+# oracle_distill_weight: 0.01 — reduced while oracle policy head warms up
+# oracle_ce_weight: 0.05 — reduced to limit random oracle influence early
+# oracle_value_distill_weight: 0.0 — DISABLED in Phase 2a; oracle value head must
+#   converge first (blood/oracle_value_head_loss < 0.1). Enable in Phase 2b.
+# oracle_value_head_loss_weight: 1.0 — supervised MSE loss trains oracle value head
+# oracle_value_warmup_steps: not used (distill_weight=0.0 means gate never fires)
 oracle_enabled: true
 oracle_num_blocks: 20
 oracle_distill_weight: 0.01
@@ -53,7 +53,6 @@ oracle_distill_temperature: 2.0
 oracle_ce_weight: 0.05
 oracle_value_distill_weight: 0.0
 oracle_value_head_loss_weight: 1.0
-oracle_value_warmup_steps: 500000
 
 # League — frequent checkpointing for diverse opponent pool
 league_enabled: true
