@@ -22,8 +22,8 @@
 
 # Sample Factory
 num_workers: 16
-num_envs_per_worker: 32
-batch_size: 4096                    # 保持与 warmup 一致，不在此阶段缩小
+num_envs_per_worker: 16
+batch_size: 2048                    # 保持与 warmup 一致，不在此阶段缩小
 num_batches_per_epoch: 4
 ppo_clip_ratio: 0.2                 # 保持与 warmup 一致
 max_grad_norm: 1.0

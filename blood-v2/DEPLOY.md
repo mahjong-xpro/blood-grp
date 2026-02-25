@@ -156,27 +156,28 @@ print('All imports OK')
 **configs/warmup.yaml**（当前值已合理，可选提升）
 ```yaml
 num_workers: 16          # 128核 CPU 可支持更多 worker
-num_envs_per_worker: 32  # 共 512 并行环境
-batch_size: 8192         # warmup 阶段保守
+num_envs_per_worker: 16  # 共 256 并行环境
+batch_size: 2048         # warmup 阶段（模型含 Oracle ~37M 参数，24GB 显存需保守）
 ```
 
 **configs/competitive.yaml**
 ```yaml
 num_workers: 16
-num_envs_per_worker: 32
-batch_size: 16384        # 4090 24GB 显存充足
+num_envs_per_worker: 16
+batch_size: 1024         # Oracle 双编码器 + LSTM 2层，显存占用大
 num_batches_per_epoch: 8
 ```
 
 **configs/elite.yaml**
 ```yaml
 num_workers: 16
-num_envs_per_worker: 32
-batch_size: 16384
+num_envs_per_worker: 16
+batch_size: 1024
 num_batches_per_epoch: 8
 ```
 
-> SF2 默认单 GPU 训练。单张 4090（24GB）可容纳 batch_size=16384 的完整模型（~20M 参数）。
+> ⚠️ 架构重构后模型约 37M 参数（含 Oracle 双编码器），单张 4090（24GB）需要 batch_size ≤ 1024~2048。
+> 如 OOM，优先减小 batch_size（1024→512），其次减少 num_envs_per_worker（16→8）。
 > 多 GPU 并行需要 SF2 分布式模式或手动 torchrun，当前配置单 GPU 已足够。
 
 ---
