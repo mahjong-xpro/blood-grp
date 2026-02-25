@@ -265,3 +265,54 @@
 | 2026-02-23 | `4bc7df8c` | config: batch_size 8192→4096 修复 CUDA OOM |
 | 2026-02-23 | `4f62ce45` | config: 恢复 block 数量至 16+20（利用释放的显存空间） |
 | 2026-02-23 | `64bfd4a5` | engine: 修复 15 tile 手牌导致的 calc_shanten OOB panic |
+
+
+---
+
+## 第三轮训练（2026-02-25）— 新五阶段流水线
+
+> 重新设计训练流水线，增加 warmup_transition 过渡阶段，分离 LSTM 启用和自博弈切换。
+
+---
+
+### Phase 1: Warmup（已完成 ✅）
+
+> 采集时间: 2026-02-25 15:55 CST | 运行名: `blood_v2_warmup/.summary/0` | 进度: 2.01M / 2M
+
+| 指标 | 起始值 | 最终值 (2M) | 状态 |
+|------|--------|-------------|------|
+| `train/loss` | ~0.97 | 0.73 | ✅ 下降 |
+| `train/entropy` | 1.02 | 0.51 | ✅ 持续下降 |
+| `train/kl_divergence` | 0.030 | 0.003 | ✅ 下降 |
+| `reward/reward` | -0.07 | -0.20 | ⚠️ 略降，可接受 |
+| `train/fraction_clipped` | 39% | 3% | ✅ 下降 |
+| `perf/_fps` | — | ~4900-5700 | ✅ 稳定 |
+
+**分析**: 策略 loss/entropy 持续下降，KL 控制良好。`kl_divergence_max` 在 ~1.06M 处出现 82.75 尖峰，平均 KL 不受影响。
+
+---
+
+### Phase 1.5: Warmup Transition（已完成 ✅）
+
+> 采集时间: 2026-02-25 16:14 CST | 运行名: `blood_v2_warmup_transition/.summary/0` | 进度: ~516K / 500K
+> 核心变化: 启用 LSTM (512x2) + gamma 0.99->0.995 + lr 5e-4->2e-4
+
+| 指标 | Warmup 结束 | Transition 起始 | Transition 最新 | 状态 |
+|------|------------|----------------|----------------|------|
+| `train/loss` | 0.73 | 0.70 | 0.72 | ✅ 稳定 |
+| `train/entropy` | 0.51 | 1.02 | 0.99 | ✅ 回升后缓降 |
+| `train/kl_divergence` | 0.003 | 0.041 | 0.008 | ✅ 下降 |
+| `reward/reward` | -0.20 | -0.17 | -0.18 | ✅ 稳定 |
+| `train/value_loss` | ~1.0 | 0.70 | 0.72 | ✅ 改善 |
+| `train/fraction_clipped` | 3% | 41% | 16% | ✅ 收敛中 |
+
+**分析**: 过渡非常平稳，LSTM 启用没有导致训练崩溃。Entropy 回升到 1.02 后缓降（LSTM 新参数预期行为）。Value loss 从 ~1.0 改善到 0.72。`kl_divergence_max` 最大仅 0.36。
+
+---
+
+### ⚠️ 事件: manage.sh checkpoint 路径 bug (2026-02-25 16:24)
+
+Competitive 阶段启动时输出 "未找到 warmup_transition 的 checkpoint，从头开始训练"。
+
+**根因**: `find_best_checkpoint()` 在 `checkpoints/` 查找，但 SF2 存储在 `train_dir/<exp>/checkpoint_p0/`。
+**修复**: 更新函数优先查找 `train_dir/` 路径。需停止错误训练后重新启动。

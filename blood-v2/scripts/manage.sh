@@ -66,21 +66,32 @@ normalize_phase() {
 find_best_checkpoint() {
     local phase="$1"
     local exp_name="blood_v2_${phase}"
-    local ckpt_dir="checkpoints/${exp_name}"
 
-    if [[ ! -d "$ckpt_dir" ]]; then
-        echo ""
-        return
-    fi
+    # SF2 stores checkpoints in train_dir/<experiment>/checkpoint_p0/
+    local sf2_dir="train_dir/${exp_name}/checkpoint_p0"
+    # Also check legacy path checkpoints/<experiment>/
+    local legacy_dir="checkpoints/${exp_name}"
 
-    # Look for best checkpoint (SF2 convention)
     local best_ckpt=""
-    if [[ -f "${ckpt_dir}/checkpoint_best.pth" ]]; then
-        best_ckpt="${ckpt_dir}/checkpoint_best.pth"
-    else
-        # Find latest by filename (checkpoint_NNNNNN.pth)
-        best_ckpt=$(ls -1 "${ckpt_dir}"/checkpoint_*.pth 2>/dev/null | sort -t_ -k2 -n | tail -1)
+
+    # Try SF2 directory first (primary)
+    if [[ -d "$sf2_dir" ]]; then
+        if [[ -f "${sf2_dir}/checkpoint_best.pth" ]]; then
+            best_ckpt="${sf2_dir}/checkpoint_best.pth"
+        else
+            best_ckpt=$(find "$sf2_dir" -name "checkpoint_*.pth" 2>/dev/null | sort -V | tail -1)
+        fi
     fi
+
+    # Fallback to legacy checkpoints/ directory
+    if [[ -z "$best_ckpt" && -d "$legacy_dir" ]]; then
+        if [[ -f "${legacy_dir}/checkpoint_best.pth" ]]; then
+            best_ckpt="${legacy_dir}/checkpoint_best.pth"
+        else
+            best_ckpt=$(find "$legacy_dir" -name "checkpoint_*.pth" 2>/dev/null | sort -V | tail -1)
+        fi
+    fi
+
     echo "$best_ckpt"
 }
 
