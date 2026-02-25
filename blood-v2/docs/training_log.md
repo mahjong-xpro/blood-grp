@@ -272,41 +272,132 @@
 ## 第三轮训练（2026-02-25）— 新五阶段流水线
 
 > 重新设计训练流水线，增加 warmup_transition 过渡阶段，分离 LSTM 启用和自博弈切换。
+> 五阶段: warmup → warmup_transition → competitive → competitive_distill → elite
 
 ---
 
 ### Phase 1: Warmup（已完成 ✅）
 
-> 采集时间: 2026-02-25 15:55 CST | 运行名: `blood_v2_warmup/.summary/0` | 进度: 2.01M / 2M
+> 采集时间: 2026-02-25 17:14 CST | 运行名: `blood_v2_warmup/.summary/0`
+> 配置: `configs/warmup.yaml` | 目标: 2M steps | 实际: ~2.01M steps
+> 关键设置: `use_rnn: false`, `opponent_mode: rulebot`, `lr: 5e-4`, `gamma: 0.99`
 
-| 指标 | 起始值 | 最终值 (2M) | 状态 |
-|------|--------|-------------|------|
-| `train/loss` | ~0.97 | 0.73 | ✅ 下降 |
-| `train/entropy` | 1.02 | 0.51 | ✅ 持续下降 |
-| `train/kl_divergence` | 0.030 | 0.003 | ✅ 下降 |
-| `reward/reward` | -0.07 | -0.20 | ⚠️ 略降，可接受 |
-| `train/fraction_clipped` | 39% | 3% | ✅ 下降 |
-| `perf/_fps` | — | ~4900-5700 | ✅ 稳定 |
+#### 奖励 / 目标
 
-**分析**: 策略 loss/entropy 持续下降，KL 控制良好。`kl_divergence_max` 在 ~1.06M 处出现 82.75 尖峰，平均 KL 不受影响。
+| 指标 | 初始值 | 中间值 (~1M) | 最终值 (2M) | 评估 |
+|------|--------|-------------|-------------|------|
+| `reward/reward` | +0.06 @0 | -0.13 @1.04M | **-0.14** @1.99M | ⚠️ 负值区间震荡，见分析 |
+| `reward/reward_max` | +2.31 @0 | +0.56 @1.25M | **+3.19** @1.99M | ✅ 末段出现高奖励局 |
+| `reward/reward_min` | -1.75 @0 | -1.19 @1.25M | **-1.16** @1.99M | ⚠️ 仍有亏损局 |
+
+#### 损失
+
+| 指标 | 初始值 | 最终值 | 评估 |
+|------|--------|--------|------|
+| `train/loss` | 3.14 @8K | **0.61** @2.01M | ✅ 下降 80.6% |
+| `train/value_loss` | 3.13 @8K | **0.61** @2.01M | ✅ 价值函数收敛 |
+| `train/policy_loss` | 0.023 @8K | **0.001** @2.01M | ✅ 策略梯度正常 |
+
+#### 训练稳定性
+
+| 指标 | 初始值 | 最终值 | 评估 |
+|------|--------|--------|------|
+| `train/entropy` | 1.05 @8K | **0.48** @2.01M | ✅ 持续下降，策略收敛 |
+| `train/kl_divergence` | 0.014 @24K | **0.006** @2.01M | ✅ KL 受控 |
+| `train/fraction_clipped` | 17.5% @24K | **9.7%** @2.01M | ✅ 下降 |
+| `train/grad_norm` | 1.000 @8K | **0.32** @2.01M | ✅ 末段梯度自然下降 |
+| `train/actual_lr` | 5e-4 @8K | **0.010** @2.01M | ⚠️ LR 攀升至上限，见分析 |
+| `train/adv_std` | 0.29 @8K | **0.12** @2.01M | ✅ 优势函数方差稳定 |
+| `train/value_delta` | 0.21 @24K | **0.09** @2.01M | ✅ 价值预测误差下降 |
+| `train/returns_running_mean` | — | **-0.157** @2.01M | ⚠️ 负值，与 reward 一致 |
+
+#### 系统性能
+
+| 指标 | 值 | 评估 |
+|------|-----|------|
+| `perf/_fps` | 4096–5734 FPS | ✅ 吞吐量稳定 |
+| `len/len` | 23 → 19.8 步 | ✅ 正常麻将局长度 |
+| `blood/league_pool_size` | 0 → **15** | ✅ 正常递增 |
+| `blood/elo_current` | 1500（不变） | ✅ warmup 对手为 RuleBot，Elo 不更新 |
+
+#### ⚠️ 异常分析: reward 持续为负
+
+**现象**: reward 从 +0.06 快速下降到 -0.26，之后在 -0.13 ~ -0.24 区间震荡，2M 步后仍为 -0.14。
+
+**分析**:
+1. **本轮 `use_rnn: false`**: 第二轮 warmup 使用了 LSTM，本轮明确禁用。无 LSTM 的模型对 RuleBot 时序模式建模能力有限。
+2. **奖励尺度差异**: 本轮使用 sqrt-compressed 奖励（REWARD_NORM=32000），范围约 [-1.75, +3.19]。reward=-0.14 在此尺度下对应轻微亏损，并非严重问题。
+3. **策略确实在学习**: entropy 1.05→0.48, policy_loss 0.023→0.001, grad_norm 1.0→0.32，收敛指标全部正常。
+
+**结论**: 策略收敛正常，reward 负值是奖励尺度 + 无 LSTM 的综合结果。warmup 主要目标是学习基础打牌模式，后续阶段会进一步优化。
+
+#### ⚠️ 异常分析: LR 攀升至上限 (0.01)
+
+**现象**: `actual_lr` 从 5e-4 持续攀升，~1.5M 步后达到 0.01 上限。
+
+**分析**: `kl_adaptive_minibatch` 在 KL < 阈值时提升 LR。本轮 KL 从 0.014 降至 0.003-0.006，远低于默认阈值 0.008，调度器持续提升 LR。grad_norm 反而下降（0.32），说明模型已接近局部最优。
 
 ---
 
 ### Phase 1.5: Warmup Transition（已完成 ✅）
 
-> 采集时间: 2026-02-25 16:14 CST | 运行名: `blood_v2_warmup_transition/.summary/0` | 进度: ~516K / 500K
-> 核心变化: 启用 LSTM (512x2) + gamma 0.99->0.995 + lr 5e-4->2e-4
+> 采集时间: 2026-02-25 17:16 CST | 运行名: `blood_v2_warmup_transition/.summary/0`
+> 配置: `configs/warmup_transition.yaml` | 目标: 500K steps | 实际: ~516K steps
+> 核心变化: `use_rnn: true` (LSTM 512×2), `gamma: 0.995`, `lr: 2e-4`
+> 前置 checkpoint: warmup 最佳 checkpoint（通过 `--init_checkpoint_path` 链式加载）
 
-| 指标 | Warmup 结束 | Transition 起始 | Transition 最新 | 状态 |
-|------|------------|----------------|----------------|------|
-| `train/loss` | 0.73 | 0.70 | 0.72 | ✅ 稳定 |
-| `train/entropy` | 0.51 | 1.02 | 0.99 | ✅ 回升后缓降 |
-| `train/kl_divergence` | 0.003 | 0.041 | 0.008 | ✅ 下降 |
-| `reward/reward` | -0.20 | -0.17 | -0.18 | ✅ 稳定 |
-| `train/value_loss` | ~1.0 | 0.70 | 0.72 | ✅ 改善 |
-| `train/fraction_clipped` | 3% | 41% | 16% | ✅ 收敛中 |
+#### 奖励 / 目标
 
-**分析**: 过渡非常平稳，LSTM 启用没有导致训练崩溃。Entropy 回升到 1.02 后缓降（LSTM 新参数预期行为）。Value loss 从 ~1.0 改善到 0.72。`kl_divergence_max` 最大仅 0.36。
+| 指标 | Warmup 结束 | Transition 起始 | Transition 最终 (~500K) | 评估 |
+|------|------------|----------------|------------------------|------|
+| `reward/reward` | -0.14 | +0.04 @0 | **-0.15** @483K | ✅ 与 warmup 持平 |
+| `reward/reward_max` | +3.19 | +2.44 @0 | **+2.13** @336K | ✅ 正常范围 |
+| `reward/reward_min` | -1.16 | -1.31 @0 | **-1.25** @278K | ✅ 与 warmup 一致 |
+
+#### 损失
+
+| 指标 | Transition 起始 | Transition 最终 | 评估 |
+|------|----------------|----------------|------|
+| `train/loss` | 0.72 @8K | **1.01** @516K | ⚠️ 略有上升，LSTM 适应期 |
+| `train/value_loss` | 0.73 @8K | **1.01** @516K | ⚠️ 同上 |
+| `train/policy_loss` | 0.003 @8K | **0.001** @516K | ✅ 策略梯度正常 |
+
+#### 训练稳定性
+
+| 指标 | Transition 起始 | Transition 最终 | 评估 |
+|------|----------------|----------------|------|
+| `train/entropy` | 1.06 @8K | **0.94** @516K | ✅ 缓慢下降，LSTM 逐步适应 |
+| `train/kl_divergence` | 0.021 @8K | **0.011** @516K | ✅ KL 受控 |
+| `train/fraction_clipped` | 34% @8K | **23%** @516K | ✅ 下降趋势 |
+| `train/grad_norm` | 1.000 @8K | **0.63** @516K | ✅ 末段下降 |
+| `train/actual_lr` | 8.9e-5 @8K | **0.010** @516K | ⚠️ LR 再次攀升至上限 |
+| `train/adv_std` | 0.30 @8K | **0.14** @516K | ✅ 稳定 |
+| `train/value_delta` | 0.24 @8K | **0.10** @385K | ✅ 价值预测误差下降 |
+| `train/returns_running_mean` | — | **-0.174** @516K | ⚠️ 负值，与 warmup 一致 |
+| `train/adam_max_second_moment` | — | **0.003** @516K | ✅ 远低于 warmup 末段 (0.057) |
+
+#### 系统性能
+
+| 指标 | 值 | 评估 |
+|------|-----|------|
+| `perf/_fps` | 3277–5734 FPS | ✅ 吞吐量稳定 |
+| `len/len` | 22 → 19.3 步 | ✅ 正常 |
+| `blood/league_pool_size` | 15 → **18** | ✅ 继承 warmup 池，继续递增 |
+| `blood/elo_current` | 1500（不变） | ✅ 对手仍为 RuleBot |
+
+#### 过渡质量评估
+
+| 检查项 | 结果 |
+|--------|------|
+| LSTM 启用是否导致崩溃？ | ✅ 否，entropy 从 1.06 缓降至 0.94 |
+| reward 是否大幅下降？ | ✅ 否，与 warmup 末段持平 (-0.14 → -0.15) |
+| KL 是否失控？ | ✅ 否，从 0.021 降至 0.011 |
+| value_loss 是否爆炸？ | ⚠️ 略有上升 (0.73 → 1.01)，LSTM 适应期正常现象 |
+| grad_norm 是否全程贴满？ | ✅ 否，末段降至 0.63 |
+
+**分析**: 过渡阶段表现平稳。LSTM 启用后 entropy 从 warmup 末段 0.48 回升至 1.06（LSTM 新增参数需要探索），在 500K 步内降至 0.94，说明 LSTM 正在学习时序表示。value_loss 略有上升（0.73→1.01），是 LSTM 改变特征表示后价值函数重新适应的正常现象。
+
+**关键发现**: `adam_max_second_moment` 从 warmup 末段 0.057 降至 transition 的 0.003，确认 optimizer 状态被正确重置（`_seed_init_checkpoint` 剥离了 optimizer state），新阶段从干净的 Adam 状态开始。
 
 ---
 
@@ -315,4 +406,34 @@
 Competitive 阶段启动时输出 "未找到 warmup_transition 的 checkpoint，从头开始训练"。
 
 **根因**: `find_best_checkpoint()` 在 `checkpoints/` 查找，但 SF2 存储在 `train_dir/<exp>/checkpoint_p0/`。
-**修复**: 更新函数优先查找 `train_dir/` 路径。需停止错误训练后重新启动。
+**修复**: 更新函数优先查找 `train_dir/` 路径。
+
+---
+
+### ⚠️ 事件: --init_checkpoint_path 未注册 bug (2026-02-25 16:54)
+
+`manage.sh train warmup_transition` 报错: `runner.py: error: unrecognized arguments: --init_checkpoint_path`
+
+**根因**: `manage.sh` 的 `do_train()` 在非 resume 模式下自动查找前一阶段 checkpoint 并通过 `--init_checkpoint_path` 传给 runner，但该参数从未在 `cfg.py` 注册。
+
+**修复** (commit `21c0a1d8`):
+1. `cfg.py`: 注册 `--init_checkpoint_path` 参数
+2. `runner.py`: 新增 `_seed_init_checkpoint()` — 在 `runner.init()` 前将前一阶段 checkpoint 复制到新实验的 `checkpoint_p0/` 目录，剥离 optimizer 状态并重置 env_steps=0
+
+---
+
+### Phase 2a: Competitive
+
+*待启动 — warmup_transition checkpoint 已就绪*
+
+---
+
+### Phase 2b: Competitive Distill
+
+*待启动*
+
+---
+
+### Phase 3: Elite
+
+*待启动*
