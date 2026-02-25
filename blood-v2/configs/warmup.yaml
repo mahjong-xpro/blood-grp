@@ -84,12 +84,16 @@ shanten_fan_bonus_scale: 0.0
 aux_shanten_weight: 2.0
 aux_opp_waits_weight: 0.6
 
-# LSTM — disabled during warmup: RuleBot opponents have fixed patterns that
-# don't transfer to neural opponents; enabling LSTM here wastes capacity and
-# produces noisy hidden-state weights that competitive phase must unlearn.
-# LSTM is enabled from competitive phase onward.
-# Architecture defined here so checkpoint structure matches all stages.
-use_rnn: false
+# LSTM — enabled during warmup to ensure checkpoint architecture matches all stages.
+# Although RuleBot opponents have fixed patterns, enabling LSTM here means:
+#   1. Checkpoint weights (including LSTM) transfer cleanly to warmup_transition
+#   2. Head dimensions (actor/critic/aux) match across all phases (rnn_size=512)
+#   3. warmup_transition can fine-tune existing LSTM weights instead of random init
+# The warmup_transition phase further adapts LSTM for temporal modeling before
+# switching to self-play in the competitive phase.
+use_rnn: true
 rnn_type: lstm
 rnn_size: 512
 rnn_num_layers: 2
+rollout: 32
+recurrence: 32
