@@ -233,65 +233,58 @@ Elo 停留在 1500 是因为训练循环中从未调用 `EloTracker.update_from_
 
 ---
 
-### Phase 2b: Competitive Distill（进行中 🔄 ~303K/4M）
+### Phase 2b: Competitive Distill（进行中 🔄 ~197K/4M — LR 修复后重跑）
 
 > 运行名: `blood_v2_competitive_distill/.summary/0`
-> 配置: `configs/competitive_distill.yaml` | 目标: 4M steps | 当前: ~303K steps
+> 配置: `configs/competitive_distill.yaml` | 目标: 4M steps | 当前: ~197K steps
 > 核心变化: `oracle_value_distill_weight: 0.1`（启用 oracle value 蒸馏）
-> 修复: `lr_schedule_kl_threshold: 0.0005`, `lr_adaptive_max: 2e-4`, `max_grad_norm: 2.0`
+> LR 修复: `lr_adaptive_min: 2e-5`, `lr_schedule_kl_threshold: 0.0002`, `lr_adaptive_max: 2e-4`, `max_grad_norm: 2.0`
 > entropy schedule: `cosine,0.05,0.02,0,4000000`
 
 #### 奖励 / 目标
 
-| 指标 | @0 | @100K | @200K | @300K | 评估 |
-|------|-----|-------|-------|-------|------|
-| `reward/reward` | +2.26 | +0.01 | -0.10 | **-0.06** | ✅ 零和收敛（同 competitive） |
-| `reward/reward_max` | +11.41 | +2.55 | +1.44 | **+1.46** | ✅ 稳定 |
-| `reward/reward_min` | -0.71 | -1.12 | -1.63 | **-1.14** | ✅ 正常 |
+| 指标 | @0 | @50K | @100K | @200K | 评估 |
+|------|-----|------|-------|-------|------|
+| `reward/reward` | +1.13 | +0.12 | +0.01 | **+0.01** | ✅ 零和收敛 |
+| `reward/reward_max` | +14.88 | +2.20 | +1.94 | **+1.40** | ✅ 稳定 |
+| `reward/reward_min` | -0.96 | -1.15 | -1.41 | **-1.59** | ✅ 正常 |
 
 #### 损失
 
-| 指标 | @8K | @100K | @200K | @300K | 评估 |
-|------|-----|-------|-------|-------|------|
-| `train/loss` | 0.91 | 0.75 | 0.51 | **1.17** | ⚠️ 波动，但整体低于 competitive |
-| `train/value_loss` | 0.93 | 0.79 | 0.56 | **1.21** | ⚠️ 同上 |
-| `train/policy_loss` | 0.002 | -0.001 | -0.000 | **0.001** | ✅ 正常 |
+| 指标 | @8K | @50K | @100K | @200K | 评估 |
+|------|-----|------|-------|-------|------|
+| `train/loss` | 1.02 | 0.85 | 0.96 | **1.06** | ✅ 正常波动 |
+| `train/value_loss` | 1.04 | 0.89 | 1.01 | **1.10** | ✅ 正常波动 |
+| `train/policy_loss` | 0.003 | -0.000 | 0.000 | **0.001** | ✅ 正常 |
 
 #### 训练稳定性
 
-| 指标 | @8K | @100K | @200K | @300K | 评估 |
-|------|-----|-------|-------|-------|------|
-| `train/entropy` | 0.58 | 0.91 | 0.98 | **0.94** | ✅ 快速上升后稳定 |
-| `train/kl_divergence` | — | 0.000 | 0.000 | **0.002** | ✅ 极低 |
-| `train/fraction_clipped` | — | 0.5% | 0.9% | **13.7%** | ⚠️ 最新跳升 |
-| `train/grad_norm` | 2.000 | 2.000 | 1.34 | **2.000** | ⚠️ 多数时间贴满 max_grad_norm=2.0 |
-| `train/actual_lr` | 1e-4 | ~0 | ~0 | **~0** | 🔴 LR 极低，见分析 |
+| 指标 | @8K | @50K | @100K | @200K | 评估 |
+|------|-----|------|-------|-------|------|
+| `train/entropy` | 0.49 | 0.79 | 0.91 | **0.89** | ✅ 快速上升后稳定 |
+| `train/kl_divergence` | 0.003 | 0.001 | 0.001 | **0.001** | ✅ 低且稳定 |
+| `train/fraction_clipped` | 8.7% | 2.7% | 1.2% | **1.3%** | ✅ 低 |
+| `train/grad_norm` | 2.000 | 1.036 | 1.626 | **1.264** | ✅ 不再全程贴满（改善） |
+| `train/actual_lr` | **2.6e-5** | **2e-5** | **2e-5** | **2e-5** | ✅ 稳定在 lr_adaptive_min（修复生效） |
+| `train/adv_max` | 7.36 | 1.05 | 1.73 | **0.97** | ✅ 优势值正常 |
 
-#### Arena 评估
+#### LR 修复验证
 
-| 指标 | 值 | 评估 |
-|------|-----|------|
-| `blood/arena_avg_rank` | **2.49** | ⚠️ 接近随机（2.5），见分析 |
-| `blood/arena_avg_score` | **99400** | ⚠️ 略低于初始 100000 |
-| `blood/arena_win_rate` | **0.50** | ⚠️ 50% 胜率 vs RuleBot |
-| `blood/elo_current` | **1471.7** | ⚠️ 低于初始 1500 |
-| `blood/elo_games` | **50** | ✅ 评估已运行 |
+| 对比项 | 修复前（第一次运行） | 修复后（当前运行） |
+|--------|---------------------|-------------------|
+| `actual_lr` @100K | ~1e-6（接近零） | **2e-5**（20x 提升） |
+| `actual_lr` 全程 | 1e-6 地板 | **2e-5 ~ 3e-5** |
+| `grad_norm` @200K | 2.0（贴满） | **1.26**（不再贴满） |
+| `fraction_clipped` @200K | 13.7% | **1.3%** |
+| `kl_divergence` @200K | 0.000 | **0.001** |
 
-#### 🔴 关键问题: actual_lr 接近零（已修复）
+修复效果显著：LR 从 ~1e-6 提升到 2e-5（20x），grad_norm 不再全程贴满，fraction_clipped 大幅下降。模型在正常学习。
 
-**现象**: `actual_lr` 在 ~100K 步后降到接近 0（约 1e-6 量级），几乎停止学习。
+#### 分析
 
-**根因**: `kl_adaptive_minibatch` 在 KL 极低（0.0002~0.0003）时持续降低 LR。`lr_schedule_kl_threshold: 0.0005` 仍高于实际 KL，导致 LR 被持续压低到 `lr_adaptive_min: 1e-6` 地板。
+训练早期（~197K/4M），各项指标健康。LR 稳定在 2e-5（`lr_adaptive_min` 地板），说明 KL 仍然低于 `lr_schedule_kl_threshold: 0.0002`。这是因为模型从 competitive 阶段继承了充分收敛的策略，KL 自然很低。2e-5 的 LR 虽然不高，但足以维持学习（对比修复前的 1e-6）。
 
-**已修复**:
-1. `lr_adaptive_min`: 1e-6 → **2e-5**（所有自博弈阶段: competitive/distill/elite）
-2. `lr_schedule_kl_threshold`: 0.0005 → **0.0002**（distill/elite，匹配实际 KL 范围）
-
-需要重跑 competitive_distill 阶段使修复生效。
-
-#### ⚠️ Arena 表现分析
-
-arena_avg_rank=2.49（接近随机的 2.5）和 win_rate=0.50，Elo 从 1500 降到 1471.7。主要因为 LR 接近零导致模型在 distill 阶段几乎没有改善。修复 LR 后预期 arena 指标会改善。
+需要持续监控：arena 评估指标（尚未触发，需等到 200K 步）、value_loss 趋势、Elo 变化。
 
 ---
 
