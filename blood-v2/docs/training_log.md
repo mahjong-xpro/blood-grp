@@ -119,37 +119,55 @@
 ### Phase 2a: Competitive（进行中 🔄）
 
 > 运行名: `blood_v2_competitive/.summary/0`
-> 配置: `configs/competitive.yaml` | 目标: 1M steps | 当前: ~90K steps
+> 配置: `configs/competitive.yaml` | 目标: 1M steps | 当前: ~647K steps
 > 核心变化: `opponent_mode: selfplay`, `gamma: 0.998`, `lr: 1e-4`, `lr_adaptive_max: 3e-4`, `batch_size: 1024`
 > 新增: `reward_rank_bonus: 0.15`, `reward_safe_discard: 0.015`, `shanten_fan_bonus_scale: 0.15`, `adv_clip: 2.0`
 
-#### 早期指标 (~90K steps)
+#### 奖励 / 目标
 
-| 指标 | 起始值 | 当前值 (~90K) | 评估 |
-|------|--------|-------------|------|
-| `reward/reward` | +3.08 @0 | **+0.07** @90K | ⚠️ 快速下降，见分析 |
-| `reward/reward_max` | +17.48 @0 | **+1.91** @90K | ⚠️ 初始异常高 |
-| `reward/reward_min` | -0.75 @0 | **-0.97** @90K | ✅ 正常范围 |
-| `train/loss` | 1.86 @8K | **2.31** @90K | ⚠️ 上升中 |
-| `train/value_loss` | 1.88 @8K | **2.33** @90K | ⚠️ 上升中，见分析 |
-| `train/policy_loss` | 0.004 @8K | **0.002** @90K | ✅ 正常 |
-| `train/entropy` | 0.41 @8K | **0.50** @90K | ✅ 略有回升（entropy schedule 生效） |
-| `train/kl_divergence` | 0.008 @8K | **0.002** @90K | ✅ 快速降低 |
-| `train/fraction_clipped` | 5.1% @8K | **9.2%** @90K | ⚠️ 上升中 |
-| `train/grad_norm` | 1.000 @8K | **1.000** @90K | ⚠️ 全程贴满 |
-| `train/actual_lr` | 2e-4 @8K | **1.3e-4** @90K | ✅ 自适应下降（KL 正常） |
-| `len/len` | 22.7 @0 | **17.6** @74K | ✅ 正常 |
-| `blood/league_pool_size` | 18 @0 | **19** @90K | ✅ 继续递增 |
+| 指标 | 起始值 | 中间值 (~250K) | 当前值 (~647K) | 评估 |
+|------|--------|---------------|---------------|------|
+| `reward/reward` | +3.08 @0 | -0.07 @205K | **-0.12** @647K | ✅ 自博弈收敛到零和，见分析 |
+| `reward/reward_max` | +17.48 @0 | +1.69 @205K | **+1.47** @647K | ✅ 稳定 |
+| `reward/reward_min` | -0.75 @0 | -1.37 @205K | **-0.93** @647K | ✅ 正常范围 |
 
-#### ⚠️ 早期分析
+#### 损失
 
-**reward 初始异常高 (+3.08)**: 从 RuleBot 对手切换到自博弈，初始对手池全是 warmup/transition 阶段的弱模型。当前策略轻松碾压旧对手，导致 reward 虚高。随着 league pool 更新和自博弈对手变强，reward 快速回落到 +0.07，这是正常的自博弈适应过程。
+| 指标 | 起始值 | 中间值 (~250K) | 当前值 (~647K) | 评估 |
+|------|--------|---------------|---------------|------|
+| `train/loss` | 1.86 @8K | 1.25 @205K | **2.02** @647K | ⚠️ V 形走势，见分析 |
+| `train/value_loss` | 1.88 @8K | 1.27 @205K | **2.05** @647K | ⚠️ 同上 |
+| `train/policy_loss` | 0.004 @8K | 0.002 @205K | **0.003** @647K | ✅ 正常 |
 
-**value_loss 上升 (1.88→2.33)**: 自博弈环境的 reward 分布与 RuleBot 环境完全不同（新增 rank_bonus, safe_discard, fan_bonus 等奖励信号），价值函数需要重新学习。加上 gamma 从 0.995→0.998 进一步改变了 returns 尺度。预计在 200-300K 步后 value_loss 开始下降。
+#### 训练稳定性
 
-**fraction_clipped 上升 (5.1%→9.2%)**: 自博弈环境变化剧烈，策略更新幅度增大。`ppo_clip_ratio: 0.1`（比 warmup 的 0.2 更紧）+ `adv_clip: 2.0` 应该能控制住。如果持续上升超过 20%，需要关注。
+| 指标 | 起始值 | 中间值 (~250K) | 当前值 (~647K) | 评估 |
+|------|--------|---------------|---------------|------|
+| `train/entropy` | 0.41 @8K | 0.62 @205K | **0.69** @647K | ✅ entropy schedule 生效（0.01→0.05 线性） |
+| `train/kl_divergence` | 0.008 @8K | 0.002 @205K | **0.002** @647K | ✅ 稳定 |
+| `train/fraction_clipped` | 5.1% @8K | 4.0% @205K | **7.9%** @647K | ✅ 可控范围 |
+| `train/grad_norm` | 1.000 @8K | 1.000 @205K | **1.000** @647K | ⚠️ 全程贴满 |
+| `train/actual_lr` | 2e-4 @8K | 2.6e-5 @205K | **8.9e-5** @647K | ⚠️ 先降后升，见分析 |
 
-**需要持续监控**: value_loss 是否在 300K 步后开始下降；grad_norm 是否一直贴满；fraction_clipped 是否稳定在 10% 以下。
+#### 系统性能
+
+| 指标 | 值 | 评估 |
+|------|-----|------|
+| `len/len` | 22.7 → 17.7 步 | ✅ 正常 |
+| `blood/league_pool_size` | 18 → **29** | ✅ 持续递增 |
+
+#### 分析
+
+**reward 收敛到零和**: reward 从 +3.08（碾压旧对手）快速回落到 -0.07@250K → -0.12@647K。在自博弈中 reward 趋近零是正常的——对手和自己同步变强，零和博弈的期望 reward 就是 0。轻微负值（-0.12）可能因为 rank_bonus/safe_discard 等额外惩罚信号。
+
+**value_loss V 形走势 (1.88→1.27→2.05)**: 前 250K 步 value_loss 下降（适应自博弈环境），之后反弹上升。可能原因：
+1. entropy schedule 从 0.01→0.05 持续提升探索系数，策略变化加大，价值函数追不上
+2. league pool 从 18→29，对手多样性增加，returns 方差增大
+3. actual_lr 先降到 2.6e-5（过低），后回升到 8.9e-5，LR 波动影响收敛
+
+**actual_lr 先降后升**: KL 在初期较高（0.008），`kl_adaptive_minibatch` 降低 LR 到 2.6e-5。KL 稳定后 LR 回升到 8.9e-5。这个范围（2.6e-5 ~ 2e-4）在 `lr_adaptive_max: 3e-4` 限制内，属于正常自适应行为。但 LR 最低点 2.6e-5 可能过低，导致 250K 后学习速度不足。
+
+**需要关注**: value_loss 是否在剩余 350K 步内开始下降。如果持续上升到 1M 步，可能需要调整 entropy schedule 或 lr_schedule_kl_threshold。
 
 ---
 
