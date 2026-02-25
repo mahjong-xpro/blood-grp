@@ -60,6 +60,11 @@ oracle_value_distill_weight: 0.1
 oracle_value_head_loss_weight: 0.5
 oracle_value_warmup_steps: 0
 
+# Arena evaluation — periodic strength measurement via RuleBot games
+blood_arena_eval_every: 200000         # evaluate every 200k steps (distill is 4M total)
+blood_arena_eval_games: 50
+blood_arena_eval_temperature: 0.1
+
 # League — same cadence as Phase 2a
 league_enabled: true
 league_pool_dir: checkpoints/league/

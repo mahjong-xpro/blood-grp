@@ -3,10 +3,15 @@
 BloodObserver: unified AlgoObserver for league snapshots, oracle metrics,
 and auxiliary task logging.  Also drives dynamic hyperparameter scheduling
 via HyperparamScheduler.
+
+Includes periodic arena evaluation to update Elo ratings during training.
 """
 
+import glob
 import logging
 import os
+import threading
+import time
 from pathlib import Path
 
 from sample_factory.algo.runners.runner import Runner, AlgoObserver
@@ -72,6 +77,22 @@ class BloodObserver(AlgoObserver):
                 ", ".join(s.param_name for s in self._scheduler.schedules),
             )
 
+        # --- Arena evaluation for Elo updates ---
+        self._arena_eval_every = getattr(cfg, "blood_arena_eval_every", 0)
+        self._arena_eval_games = getattr(cfg, "blood_arena_eval_games", 50)
+        self._arena_eval_temperature = getattr(cfg, "blood_arena_eval_temperature", 0.1)
+        self._last_arena_eval_step = 0
+        self._arena_eval_running = False  # guard against concurrent evals
+        self._arena_eval_lock = threading.Lock()
+        # Latest arena result (written by bg thread, read by extra_summaries)
+        self._arena_result = None
+        self._arena_result_step = 0
+        if self._arena_eval_every > 0 and self.elo_tracker is not None:
+            log.info(
+                "[Arena] Periodic evaluation enabled: every %d steps, %d games, temp=%.2f",
+                self._arena_eval_every, self._arena_eval_games, self._arena_eval_temperature,
+            )
+
     def on_init(self, runner: Runner) -> None:
         self._runner = runner
 
@@ -81,6 +102,15 @@ class BloodObserver(AlgoObserver):
 
         # Apply dynamic hyperparameter schedules
         self._apply_schedules(runner, policy_id, env_steps)
+
+        # Periodic arena evaluation for Elo updates
+        if (
+            self._arena_eval_every > 0
+            and self.elo_tracker is not None
+            and env_steps - self._last_arena_eval_step >= self._arena_eval_every
+        ):
+            self._maybe_start_arena_eval(runner, policy_id, env_steps)
+            self._last_arena_eval_step = env_steps
 
         if not self.league_enabled:
             return
@@ -107,9 +137,84 @@ class BloodObserver(AlgoObserver):
                     setattr(learner.cfg, param, value)
             log.info("[Scheduler] %s = %.6f at step %d", param, value, env_steps)
 
+    def _find_latest_checkpoint(self, runner: Runner, policy_id: int) -> str | None:
+        """Find the latest SF2 checkpoint on disk. Returns path or None."""
+        from sample_factory.utils.utils import experiment_dir
+        ckpt_dir = os.path.abspath(
+            os.path.join(experiment_dir(cfg=runner.cfg), f"checkpoint_p{policy_id}")
+        )
+        checkpoints = sorted(glob.glob(os.path.join(ckpt_dir, "checkpoint_*.pth")))
+        if not checkpoints:
+            return None
+        latest = checkpoints[-1]
+        return latest if os.path.exists(latest) else None
+
+    def _maybe_start_arena_eval(self, runner: Runner, policy_id: int, env_steps: int) -> None:
+        """Launch a background arena evaluation if one isn't already running."""
+        with self._arena_eval_lock:
+            if self._arena_eval_running:
+                log.debug("[Arena] Skipping eval at step %d — previous eval still running", env_steps)
+                return
+            self._arena_eval_running = True
+
+        ckpt_path = self._find_latest_checkpoint(runner, policy_id)
+        if ckpt_path is None:
+            log.debug("[Arena] No checkpoint available yet; skipping eval at step %d", env_steps)
+            with self._arena_eval_lock:
+                self._arena_eval_running = False
+            return
+
+        log.info("[Arena] Starting evaluation at step %d (%d games vs RuleBot)", env_steps, self._arena_eval_games)
+        t = threading.Thread(
+            target=self._run_arena_eval,
+            args=(ckpt_path, env_steps),
+            daemon=True,
+            name=f"arena-eval-{env_steps}",
+        )
+        t.start()
+
+    def _run_arena_eval(self, ckpt_path: str, env_steps: int) -> None:
+        """Run arena evaluation in a background thread. Updates EloTracker."""
+        try:
+            from blood.env.blood_env import BloodMahjongEnv
+            from blood.eval.arena import Arena
+            from blood.model.inference import PolicyModel
+            from blood.eval.evaluate import NeuralAgent
+
+            t0 = time.time()
+            model = PolicyModel.from_sf2_checkpoint(ckpt_path, device="cpu")
+            agent = NeuralAgent(model, device="cpu", temperature=self._arena_eval_temperature)
+
+            arena = Arena(
+                BloodMahjongEnv,
+                agent,
+                baseline_mode="rulebot",
+                elo_tracker=self.elo_tracker,
+            )
+            result = arena.evaluate(
+                num_games=self._arena_eval_games,
+                seed=env_steps,  # deterministic per step
+                agent_name="current_policy",
+            )
+            elapsed = time.time() - t0
+
+            # Store result for TensorBoard logging in extra_summaries
+            self._arena_result = result
+            self._arena_result_step = env_steps
+
+            log.info(
+                "[Arena] Step %d: win_rate=%.3f, avg_rank=%.2f, avg_score=%.0f, "
+                "elo=%.1f (%d games in %.1fs)",
+                env_steps, result.win_rate, result.avg_rank, result.avg_score,
+                result.agent_elo, result.num_games, elapsed,
+            )
+        except Exception:
+            log.exception("[Arena] Evaluation failed at step %d", env_steps)
+        finally:
+            with self._arena_eval_lock:
+                self._arena_eval_running = False
+
     def _snapshot_to_league(self, runner: Runner, policy_id: int, env_steps: int):
-        import glob
-        import os
         import shutil
         from os.path import join
         from sample_factory.utils.utils import experiment_dir
@@ -195,9 +300,14 @@ class BloodObserver(AlgoObserver):
         # Resolve the underlying TB writer (SF2 wraps it)
         tb = writer.writer if hasattr(writer, "writer") else writer
 
-        # Current policy Elo
+        # Current policy Elo (updated by arena evaluation)
         current_elo = self.elo_tracker.get_rating("current_policy")
         tb.add_scalar("blood/elo_current", current_elo, env_steps)
+
+        # Current policy game count (shows arena eval is working)
+        current_stats = self.elo_tracker.get_stats("current_policy")
+        if current_stats is not None:
+            tb.add_scalar("blood/elo_games", float(current_stats.games), env_steps)
 
         # Pool stats: best and mean Elo across league checkpoints
         leaderboard = self.elo_tracker.get_leaderboard(top_n=0)  # 0 → all
@@ -212,3 +322,10 @@ class BloodObserver(AlgoObserver):
                 mean_elo = sum(s.elo for _, s in pool_entries) / len(pool_entries)
                 tb.add_scalar("blood/elo_best", best_elo, env_steps)
                 tb.add_scalar("blood/elo_pool_mean", mean_elo, env_steps)
+
+        # Arena evaluation metrics (from latest background eval)
+        result = self._arena_result
+        if result is not None and result.num_games > 0:
+            tb.add_scalar("blood/arena_win_rate", result.win_rate, env_steps)
+            tb.add_scalar("blood/arena_avg_rank", result.avg_rank, env_steps)
+            tb.add_scalar("blood/arena_avg_score", result.avg_score, env_steps)

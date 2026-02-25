@@ -64,6 +64,11 @@ oracle_value_distill_weight: 0.0
 oracle_value_head_loss_weight: 1.0
 oracle_value_warmup_steps: 0
 
+# Arena evaluation — 过渡阶段也需要跟踪 Elo 变化
+blood_arena_eval_every: 200000         # evaluate every 200k steps (transition is 500K total)
+blood_arena_eval_games: 50
+blood_arena_eval_temperature: 0.1
+
 # League — 继续收集快照
 league_enabled: true
 league_pool_dir: checkpoints/league/

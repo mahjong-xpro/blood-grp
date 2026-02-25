@@ -81,6 +81,15 @@ def add_blood_args(parser: ArgumentParser):
     p.add_argument("--blood_elo_sampling_sigma", default=200.0, type=float,
                     help="Gaussian sigma for Elo-weighted opponent sampling (Elo spread)")
 
+    # Arena evaluation during training — periodic strength measurement
+    p.add_argument("--blood_arena_eval_every", default=0, type=int,
+                    help="Run arena evaluation every N env steps (0=disabled). "
+                         "Evaluates current policy vs RuleBot and updates Elo ratings.")
+    p.add_argument("--blood_arena_eval_games", default=50, type=int,
+                    help="Number of games per arena evaluation round")
+    p.add_argument("--blood_arena_eval_temperature", default=0.1, type=float,
+                    help="Sampling temperature for arena evaluation agent")
+
     # Augmentation
     p.add_argument("--suit_augment_prob", type=float, default=0.5)
 

@@ -44,6 +44,11 @@ oracle_tile_attn_heads: 4
 oracle_distill_weight: 0.05
 oracle_distill_temperature: 2.0
 
+# Arena evaluation — periodic strength measurement via RuleBot games
+blood_arena_eval_every: 100000         # evaluate every 100k steps
+blood_arena_eval_games: 50
+blood_arena_eval_temperature: 0.1
+
 # League — 多项式衰减 α=2.0 + uniform_floor 保底，提高有效多样性
 league_enabled: true
 league_pool_dir: checkpoints/league/

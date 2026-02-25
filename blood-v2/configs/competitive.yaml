@@ -63,6 +63,12 @@ oracle_ce_weight: 0.05
 oracle_value_distill_weight: 0.0
 oracle_value_head_loss_weight: 1.0
 
+# Arena evaluation — periodic strength measurement via RuleBot games
+# Updates Elo ratings during training so TensorBoard shows real progress
+blood_arena_eval_every: 100000         # evaluate every 100k steps (competitive is 1M total)
+blood_arena_eval_games: 50             # 50 games per eval (fast, ~30s on CPU)
+blood_arena_eval_temperature: 0.1
+
 # League — frequent checkpointing for diverse opponent pool
 league_enabled: true
 league_pool_dir: checkpoints/league/
