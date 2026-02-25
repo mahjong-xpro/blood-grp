@@ -244,6 +244,53 @@ def _convert_numpy_scalars(obj, _memo=None):
     return obj
 
 
+def _patch_learner_load_state():
+    """Monkey-patch Learner._load_state to use strict=False for cross-phase loading.
+
+    When use_rnn changes between phases (e.g. warmup: false → warmup_transition: true),
+    the model architecture changes (core output 1024 → 512, missing LSTM keys).
+    SF2's default strict=True loading will fail.  This patch uses strict=False and
+    logs which keys were missing or unexpected.
+
+    The patch is applied in the main process before make_runner(), and since SF2
+    uses multiprocessing.spawn (which re-imports modules), the Learner class is
+    patched at import time via the module-level code path.
+    """
+    _original_load_state = Learner._load_state
+
+    def _patched_load_state(self, checkpoint_dict, load_progress=True):
+        # Check if this is a cross-phase checkpoint (has init_checkpoint marker)
+        init_ckpt = getattr(self.cfg, "init_checkpoint_path", "")
+        if init_ckpt:
+            # Use strict=False for cross-phase loading
+            model_sd = checkpoint_dict.get("model", {})
+            if model_sd:
+                missing, unexpected = self.actor_critic.load_state_dict(model_sd, strict=False)
+                if missing:
+                    log.info("Cross-phase load: %d missing keys (new layers, randomly initialized)", len(missing))
+                    for k in missing[:5]:
+                        log.info("  missing: %s", k)
+                    if len(missing) > 5:
+                        log.info("  ... and %d more", len(missing) - 5)
+                if unexpected:
+                    log.info("Cross-phase load: %d unexpected keys (skipped)", len(unexpected))
+                    for k in unexpected[:5]:
+                        log.info("  unexpected: %s", k)
+                loaded = len(model_sd) - len(unexpected)
+                log.info("Cross-phase load: transferred %d/%d weights", loaded, len(model_sd))
+
+                # Load non-model state (env_steps, etc.) if present
+                if load_progress:
+                    if "env_steps" in checkpoint_dict:
+                        self.train_step = checkpoint_dict.get("train_steps", 0)
+                        log.info("Loaded training progress: env_steps=%s", checkpoint_dict.get("env_steps", 0))
+                return
+        # Default: use original strict loading
+        return _original_load_state(self, checkpoint_dict, load_progress)
+
+    Learner._load_state = _patched_load_state
+
+
 def _seed_init_checkpoint(cfg):
     """Seed a previous phase's model weights into the new experiment directory.
 
@@ -312,6 +359,7 @@ def run_training():
     _setup_process_cleanup()
     register_blood_components()
     _patch_learner()
+    _patch_learner_load_state()
     _configure_logging()
 
     # Expand --config <yaml> into individual SF2 CLI args before SF2 parses sys.argv.
