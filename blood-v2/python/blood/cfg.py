@@ -154,6 +154,12 @@ def add_blood_args(parser: ArgumentParser):
     p.add_argument("--blood_metrics_interval", default=100, type=int,
                     help="Compute expensive monitoring metrics every N minibatches")
 
+    # Cross-phase checkpoint chaining
+    p.add_argument("--init_checkpoint_path", type=str, default="",
+                    help="Path to a checkpoint from a previous training phase. "
+                         "Model weights are seeded into the new experiment directory; "
+                         "optimizer state is reset so the new phase trains from scratch.")
+
     # Dynamic hyperparameter schedules (within a training stage)
     p.add_argument("--blood_schedule_entropy", default="", type=str,
                     help="Entropy coeff schedule: 'type,start,end,start_step,end_step'")

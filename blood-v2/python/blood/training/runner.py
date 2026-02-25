@@ -5,6 +5,7 @@ import os
 import signal
 import atexit
 import logging
+from pathlib import Path
 
 import torch
 import yaml
@@ -211,6 +212,65 @@ def _configure_logging():
     logging.getLogger("blood").setLevel(logging.INFO)
 
 
+def _seed_init_checkpoint(cfg):
+    """Seed a previous phase's model weights into the new experiment directory.
+
+    SF2's learner runs in a subprocess, so we can't load weights directly from
+    the main process.  Instead, we create a minimal checkpoint containing only
+    the model weights in the target experiment's checkpoint_p0/ directory
+    *before* runner.init().  SF2 will then discover and load it via its
+    built-in checkpoint restoration logic.
+
+    We strip optimizer state and reset env_steps to 0 so the new phase starts
+    fresh training with the previous phase's model weights.
+
+    If the target directory already contains checkpoints (e.g. from a previous
+    run), we skip to avoid overwriting real training progress.
+    """
+    import glob
+    from sample_factory.utils.utils import experiment_dir
+
+    init_path = getattr(cfg, "init_checkpoint_path", "")
+    if not init_path:
+        return
+
+    init_path = Path(init_path)
+    if not init_path.exists():
+        log.warning("init_checkpoint_path does not exist: %s — skipping", init_path)
+        return
+
+    # Determine target directory
+    exp_dir = Path(experiment_dir(cfg=cfg))
+    ckpt_dir = exp_dir / "checkpoint_p0"
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+
+    # If target already has checkpoints, don't overwrite — user should use --resume
+    existing = glob.glob(str(ckpt_dir / "checkpoint_*.pth"))
+    if existing:
+        log.info("Target checkpoint dir already has %d checkpoint(s); "
+                 "skipping init_checkpoint_path copy (use --resume to continue)",
+                 len(existing))
+        return
+
+    log.info("Loading init checkpoint from previous phase: %s", init_path)
+    source_ckpt = torch.load(str(init_path), map_location="cpu", weights_only=False)
+
+    # Build a new checkpoint with only model weights, resetting training state.
+    # SF2 checkpoint keys: model, optimizer, env_steps, stats, cfg, ...
+    seed_ckpt = dict(source_ckpt)  # shallow copy
+    # Reset training counters so the new phase starts from step 0
+    seed_ckpt["env_steps"] = 0
+    seed_ckpt["train_steps"] = 0
+    # Remove optimizer state — new phase may have different LR / schedule
+    seed_ckpt.pop("optimizer", None)
+    seed_ckpt.pop("scheduler", None)
+
+    dest = ckpt_dir / "checkpoint_000000000_0.pth"
+    log.info("Seeding init checkpoint: %s → %s", init_path, dest)
+    torch.save(seed_ckpt, str(dest))
+    log.info("Init checkpoint seeded successfully (model weights only, training state reset)")
+
+
 def run_training():
     _setup_process_cleanup()
     register_blood_components()
@@ -245,7 +305,11 @@ def run_training():
     observer = BloodObserver(cfg)
     runner.register_observer(observer)
 
+    # Cross-phase checkpoint chaining: seed previous phase's weights before SF2 init
+    _seed_init_checkpoint(cfg)
+
     runner.init()
+
     status = runner.run()
     return status
 
