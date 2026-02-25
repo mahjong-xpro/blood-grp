@@ -241,8 +241,17 @@ Elo 停留在 1500 是因为训练循环中从未调用 `EloTracker.update_from_
 | `lr_schedule_kl_threshold` | 0.0002 | **0.0005** | 旧值低于实际 KL 均值(0.0004)，导致 LR 被持续压低 |
 | `blood_arena_eval_games` | 50 | **100** | 50 局方差过大（95% CI ±14%），提升到 100 局（±10%） |
 
-> 文件: `configs/competitive_distill.yaml`
+> 文件: `configs/competitive_distill.yaml` | commit: `25319630`
 > 生效方式: `./scripts/manage.sh train distill --resume`
+
+**⚠️ Resume 副作用**: SF2 `--resume` 重置了 `env_steps` 计数器到 0，导致:
+1. TensorBoard 历史被覆盖（旧的 2.2M 步数据丢失，仅保留本文档记录）
+2. entropy schedule 从 0.05 重新开始（之前已衰减到 0.034）
+3. `train_for_env_steps=4M` 将从 0 重新计数，实际总训练量 ~6.2M steps
+
+模型权重和 optimizer 状态已正确恢复（value_loss 起始 ~0.46 与之前最佳值一致，未回到随机水平）。entropy 回升到 0.05 实际上有利于在新 LR 下增加探索。
+
+**优化生效确认**: `actual_lr` 稳定在 **5e-5**（旧值 2e-5），提升 2.5x ✅
 
 ---
 
