@@ -20,9 +20,10 @@ gamma: 0.998
 gae_lambda: 0.95
 learning_rate: 1e-4
 lr_schedule: kl_adaptive_minibatch
-lr_schedule_kl_threshold: 0.0002       # Fix: 从 0.0005 降到 0.0002，匹配实际 KL 范围（0.0002~0.002）
-lr_adaptive_max: 2e-4                  # Fix: 从 3e-4 收紧到 2e-4，防止 KL 低谷时 LR 跳升过高
-lr_adaptive_min: 2e-5                  # Fix: 从 1e-6 提升到 2e-5，防止 LR 降到接近零导致学习停滞
+lr_schedule_kl_threshold: 0.0005       # Fix @2.2M: 从 0.0002 提升到 0.0005，匹配实际 KL 均值（0.0004）
+                                       # 旧值 0.0002 导致 KL>threshold 的时间过多，LR 被持续压低
+lr_adaptive_max: 2e-4                  # 保持不变
+lr_adaptive_min: 5e-5                  # Fix @2.2M: 从 2e-5 提升到 5e-5，旧值导致 LR 76.6% 时间锁死在下限
 exploration_loss_coeff: 0.05
 value_loss_coeff: 1.0
 train_for_env_steps: 4000000
@@ -62,7 +63,7 @@ oracle_value_warmup_steps: 0
 
 # Arena evaluation — periodic strength measurement via RuleBot games
 blood_arena_eval_every: 200000         # evaluate every 200k steps (distill is 4M total)
-blood_arena_eval_games: 50
+blood_arena_eval_games: 100            # Fix @2.2M: 从 50 提升到 100，减少单次评估方差（95% CI 从 ±14% 缩小到 ±10%）
 blood_arena_eval_temperature: 0.1
 
 # League — same cadence as Phase 2a
