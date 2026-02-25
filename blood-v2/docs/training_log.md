@@ -116,46 +116,46 @@
 
 ---
 
-### Phase 2a: Competitive（接近完成 🔄 ~926K/1M）
+### Phase 2a: Competitive（已完成 ✅）
 
 > 运行名: `blood_v2_competitive/.summary/0`
-> 配置: `configs/competitive.yaml` | 目标: 1M steps | 当前: ~926K steps
+> 配置: `configs/competitive.yaml` | 目标: 1M steps | 实际: ~1.016M steps
 > 核心变化: `opponent_mode: selfplay`, `gamma: 0.998`, `lr: 1e-4`, `lr_adaptive_max: 3e-4`, `batch_size: 1024`
 > 新增: `reward_rank_bonus: 0.15`, `reward_safe_discard: 0.015`, `shanten_fan_bonus_scale: 0.15`, `adv_clip: 2.0`
 > entropy schedule: `linear,0.01,0.05,0,500000` — 已在 500K 步达到 0.05 上限
 
 #### 奖励 / 目标
 
-| 指标 | @0 | @100K | @300K | @500K | @700K | @900K | 评估 |
+| 指标 | @0 | @100K | @300K | @500K | @700K | @900K | @1M | 评估 |
 |------|-----|-------|-------|-------|-------|-------|------|
-| `reward/reward` | +3.08 | -0.05 | -0.06 | -0.10 | -0.14 | **-0.14** | ✅ 零和收敛 |
-| `reward/reward_max` | +17.48 | +1.90 | +1.65 | +1.89 | +2.02 | **+1.57** | ✅ 稳定 |
-| `reward/reward_min` | -0.75 | -1.88 | -1.35 | -1.08 | -1.56 | **-1.49** | ✅ 正常 |
+| `reward/reward` | +3.08 | -0.05 | -0.06 | -0.10 | -0.14 | -0.14 | **-0.12** @1M | ✅ 零和收敛 |
+| `reward/reward_max` | +17.48 | +1.90 | +1.65 | +1.89 | +2.02 | +1.57 | **+2.24** @1M | ✅ 稳定 |
+| `reward/reward_min` | -0.75 | -1.88 | -1.35 | -1.08 | -1.56 | -1.49 | **-1.92** @1M | ✅ 正常 |
 
 #### 损失
 
-| 指标 | @8K | @100K | @300K | @500K | @700K | @900K | 评估 |
-|------|-----|-------|-------|-------|-------|-------|------|
-| `train/loss` | 1.86 | 2.15 | 1.39 | 1.46 | 1.22 | **1.69** | ⚠️ 高波动，见分析 |
-| `train/value_loss` | 1.88 | 2.18 | 1.42 | 1.49 | 1.26 | **1.73** | ⚠️ 同上 |
-| `train/policy_loss` | 0.004 | 0.003 | 0.002 | 0.003 | 0.002 | **-0.000** | ⚠️ 偶尔为负 |
+| 指标 | @8K | @100K | @300K | @500K | @700K | @900K | @1M | 评估 |
+|------|-----|-------|-------|-------|-------|-------|-----|------|
+| `train/loss` | 1.86 | 2.15 | 1.39 | 1.46 | 1.22 | 1.69 | **1.29** | ⚠️ 高波动但末段回落 |
+| `train/value_loss` | 1.88 | 2.18 | 1.42 | 1.49 | 1.26 | 1.73 | **1.34** | ⚠️ 同上 |
+| `train/policy_loss` | 0.004 | 0.003 | 0.002 | 0.003 | 0.002 | -0.000 | **0.001** | ✅ 正常 |
 
 #### 训练稳定性
 
-| 指标 | @8K | @100K | @300K | @500K | @700K | @900K | 评估 |
-|------|-----|-------|-------|-------|-------|-------|------|
-| `train/entropy` | 0.41 | 0.53 | 0.65 | 0.71 | 0.76 | **0.81** | ✅ schedule 生效 |
-| `train/kl_divergence` | 0.008 | 0.002 | 0.001 | 0.000 | 0.004 | **0.001** | ✅ 低且稳定 |
-| `train/fraction_clipped` | 5.1% | 13.8% | 4.2% | 0.8% | 13.3% | **5.6%** | ⚠️ 高波动 |
-| `train/grad_norm` | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | **1.000** | ⚠️ 全程贴满 |
-| `train/actual_lr` | 2.0e-4 | 1.3e-4 | 1.3e-4 | 5.9e-5 | 1.3e-4 | **5.9e-5** | ⚠️ 大幅波动 |
+| 指标 | @8K | @100K | @300K | @500K | @700K | @900K | @1M | 评估 |
+|------|-----|-------|-------|-------|-------|-------|-----|------|
+| `train/entropy` | 0.41 | 0.53 | 0.65 | 0.71 | 0.76 | 0.81 | **0.85** | ✅ schedule 生效 |
+| `train/kl_divergence` | 0.008 | 0.002 | 0.001 | 0.000 | 0.004 | 0.001 | **0.003** | ✅ 低且稳定 |
+| `train/fraction_clipped` | 5.1% | 13.8% | 4.2% | 0.8% | 13.3% | 5.6% | **8.1%** | ⚠️ 高波动 |
+| `train/grad_norm` | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | **1.000** | ⚠️ 全程贴满 |
+| `train/actual_lr` | 2.0e-4 | 1.3e-4 | 1.3e-4 | 5.9e-5 | 1.3e-4 | 5.9e-5 | **2.0e-4** | ⚠️ 大幅波动 |
 
 #### 系统性能
 
 | 指标 | 值 | 评估 |
 |------|-----|------|
-| `len/len` | 22.7 → 17.8 步 | ✅ 正常 |
-| `blood/league_pool_size` | 18 → **32** | ✅ 持续递增 |
+| `len/len` | 22.7 → 17.9 步 | ✅ 正常 |
+| `blood/league_pool_size` | 18 → **34** | ✅ 持续递增 |
 | `blood/sched_exploration_loss_coeff` | 0.012 → **0.050** | ✅ entropy schedule 完成 |
 | `blood/elo_current` | 1500 → **1500** | ⚠️ 未变化，见分析 |
 
@@ -201,9 +201,7 @@ Elo 停留在 1500 是因为训练循环中从未调用 `EloTracker.update_from_
 
 ##### 7. 结论与建议
 
-**当前状态**: 训练在正常运行，策略在学习，但 value_loss 波动和 LR 不稳定是隐患。
-
-**进入 Phase 2b 的条件**: competitive 阶段即将完成（~926K/1M）。虽然 value_loss 没有完全收敛，但这在自博弈中是可接受的。关键指标（reward 零和、entropy 上升、KL 受控）都正常。可以进入 Phase 2b。
+**最终状态**: competitive 阶段已完成（1.016M steps）。value_loss 末段回落到 1.34（从 900K 的 1.73 下降），显示价值函数在最后阶段开始收敛。策略在学习，可以进入 Phase 2b。
 
 **Phase 2b 已应用的修复**:
 - `lr_schedule_kl_threshold`: 0.001 → 0.0005（减少 masked action space 下的 LR 振荡幅度）
@@ -235,9 +233,73 @@ Elo 停留在 1500 是因为训练循环中从未调用 `EloTracker.update_from_
 
 ---
 
-### Phase 2b: Competitive Distill
+### Phase 2b: Competitive Distill（进行中 🔄 ~303K/4M）
 
-*待启动*
+> 运行名: `blood_v2_competitive_distill/.summary/0`
+> 配置: `configs/competitive_distill.yaml` | 目标: 4M steps | 当前: ~303K steps
+> 核心变化: `oracle_value_distill_weight: 0.1`（启用 oracle value 蒸馏）
+> 修复: `lr_schedule_kl_threshold: 0.0005`, `lr_adaptive_max: 2e-4`, `max_grad_norm: 2.0`
+> entropy schedule: `cosine,0.05,0.02,0,4000000`
+
+#### 奖励 / 目标
+
+| 指标 | @0 | @100K | @200K | @300K | 评估 |
+|------|-----|-------|-------|-------|------|
+| `reward/reward` | +2.26 | +0.01 | -0.10 | **-0.06** | ✅ 零和收敛（同 competitive） |
+| `reward/reward_max` | +11.41 | +2.55 | +1.44 | **+1.46** | ✅ 稳定 |
+| `reward/reward_min` | -0.71 | -1.12 | -1.63 | **-1.14** | ✅ 正常 |
+
+#### 损失
+
+| 指标 | @8K | @100K | @200K | @300K | 评估 |
+|------|-----|-------|-------|-------|------|
+| `train/loss` | 0.91 | 0.75 | 0.51 | **1.17** | ⚠️ 波动，但整体低于 competitive |
+| `train/value_loss` | 0.93 | 0.79 | 0.56 | **1.21** | ⚠️ 同上 |
+| `train/policy_loss` | 0.002 | -0.001 | -0.000 | **0.001** | ✅ 正常 |
+
+#### 训练稳定性
+
+| 指标 | @8K | @100K | @200K | @300K | 评估 |
+|------|-----|-------|-------|-------|------|
+| `train/entropy` | 0.58 | 0.91 | 0.98 | **0.94** | ✅ 快速上升后稳定 |
+| `train/kl_divergence` | — | 0.000 | 0.000 | **0.002** | ✅ 极低 |
+| `train/fraction_clipped` | — | 0.5% | 0.9% | **13.7%** | ⚠️ 最新跳升 |
+| `train/grad_norm` | 2.000 | 2.000 | 1.34 | **2.000** | ⚠️ 多数时间贴满 max_grad_norm=2.0 |
+| `train/actual_lr` | 1e-4 | ~0 | ~0 | **~0** | 🔴 LR 极低，见分析 |
+
+#### Arena 评估
+
+| 指标 | 值 | 评估 |
+|------|-----|------|
+| `blood/arena_avg_rank` | **2.49** | ⚠️ 接近随机（2.5），见分析 |
+| `blood/arena_avg_score` | **99400** | ⚠️ 略低于初始 100000 |
+| `blood/arena_win_rate` | **0.50** | ⚠️ 50% 胜率 vs RuleBot |
+| `blood/elo_current` | **1471.7** | ⚠️ 低于初始 1500 |
+| `blood/elo_games` | **50** | ✅ 评估已运行 |
+
+#### 🔴 关键问题: actual_lr 接近零
+
+**现象**: `actual_lr` 在 ~100K 步后降到接近 0（约 1e-6 ~ 1e-7 量级），几乎停止学习。
+
+**根因分析**: `kl_adaptive_minibatch` 在 KL 极低（0.0002~0.0003）时持续降低 LR。虽然 `lr_schedule_kl_threshold` 已从 0.001 降到 0.0005，但 KL 仍然远低于阈值，导致 LR 被持续压低。`lr_adaptive_min: 1e-6` 是 SF2 默认下限，LR 可能已经触底。
+
+**影响**: 模型几乎停止学习。value_loss 在 200K 降到 0.56 后反弹到 1.21，说明 oracle value distillation 的新 loss 信号在推动变化，但 LR 太低无法有效优化。
+
+**建议修复**:
+1. 提高 `lr_adaptive_min` 从 1e-6 到 1e-5（确保最低 LR 仍有学习能力）
+2. 或将 `lr_schedule_kl_threshold` 进一步降到 0.0002
+3. 或切换到固定 LR schedule（如 cosine decay 1e-4 → 1e-5 over 4M steps）
+
+#### ⚠️ Arena 表现分析
+
+arena_avg_rank=2.49（接近随机的 2.5）和 win_rate=0.50 说明当前模型 vs RuleBot 表现一般。Elo 从 1500 降到 1471.7。
+
+**可能原因**:
+1. LR 接近零导致模型在 distill 阶段几乎没有改善
+2. competitive 阶段的自博弈训练可能导致模型过度适应自博弈对手，对 RuleBot 的泛化能力不足
+3. arena 评估只运行了 50 局，样本量较小，结果可能有噪声
+
+**需要关注**: 修复 LR 问题后，arena 指标是否改善。
 
 ---
 
