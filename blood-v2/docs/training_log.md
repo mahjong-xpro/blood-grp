@@ -277,29 +277,21 @@ Elo 停留在 1500 是因为训练循环中从未调用 `EloTracker.update_from_
 | `blood/elo_current` | **1471.7** | ⚠️ 低于初始 1500 |
 | `blood/elo_games` | **50** | ✅ 评估已运行 |
 
-#### 🔴 关键问题: actual_lr 接近零
+#### 🔴 关键问题: actual_lr 接近零（已修复）
 
-**现象**: `actual_lr` 在 ~100K 步后降到接近 0（约 1e-6 ~ 1e-7 量级），几乎停止学习。
+**现象**: `actual_lr` 在 ~100K 步后降到接近 0（约 1e-6 量级），几乎停止学习。
 
-**根因分析**: `kl_adaptive_minibatch` 在 KL 极低（0.0002~0.0003）时持续降低 LR。虽然 `lr_schedule_kl_threshold` 已从 0.001 降到 0.0005，但 KL 仍然远低于阈值，导致 LR 被持续压低。`lr_adaptive_min: 1e-6` 是 SF2 默认下限，LR 可能已经触底。
+**根因**: `kl_adaptive_minibatch` 在 KL 极低（0.0002~0.0003）时持续降低 LR。`lr_schedule_kl_threshold: 0.0005` 仍高于实际 KL，导致 LR 被持续压低到 `lr_adaptive_min: 1e-6` 地板。
 
-**影响**: 模型几乎停止学习。value_loss 在 200K 降到 0.56 后反弹到 1.21，说明 oracle value distillation 的新 loss 信号在推动变化，但 LR 太低无法有效优化。
+**已修复**:
+1. `lr_adaptive_min`: 1e-6 → **2e-5**（所有自博弈阶段: competitive/distill/elite）
+2. `lr_schedule_kl_threshold`: 0.0005 → **0.0002**（distill/elite，匹配实际 KL 范围）
 
-**建议修复**:
-1. 提高 `lr_adaptive_min` 从 1e-6 到 1e-5（确保最低 LR 仍有学习能力）
-2. 或将 `lr_schedule_kl_threshold` 进一步降到 0.0002
-3. 或切换到固定 LR schedule（如 cosine decay 1e-4 → 1e-5 over 4M steps）
+需要重跑 competitive_distill 阶段使修复生效。
 
 #### ⚠️ Arena 表现分析
 
-arena_avg_rank=2.49（接近随机的 2.5）和 win_rate=0.50 说明当前模型 vs RuleBot 表现一般。Elo 从 1500 降到 1471.7。
-
-**可能原因**:
-1. LR 接近零导致模型在 distill 阶段几乎没有改善
-2. competitive 阶段的自博弈训练可能导致模型过度适应自博弈对手，对 RuleBot 的泛化能力不足
-3. arena 评估只运行了 50 局，样本量较小，结果可能有噪声
-
-**需要关注**: 修复 LR 问题后，arena 指标是否改善。
+arena_avg_rank=2.49（接近随机的 2.5）和 win_rate=0.50，Elo 从 1500 降到 1471.7。主要因为 LR 接近零导致模型在 distill 阶段几乎没有改善。修复 LR 后预期 arena 指标会改善。
 
 ---
 
