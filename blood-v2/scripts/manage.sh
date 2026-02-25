@@ -7,6 +7,7 @@
 # 命令:
 #   train   <phase> [--device cuda] [--resume]   启动五阶段训练
 #   train   pipeline [--device gpu] [--num-policies 1]  运行完整五阶段流水线
+#   stop    [phase]                               停止训练进程
 #   monitor [--port 6006]                         启动 TensorBoard 监控
 #   eval    [--checkpoint <path>] [...]           运行评估
 #   export  --checkpoint <path> [--quantize]      导出 ONNX 模型
@@ -29,6 +30,8 @@
 #   ./scripts/manage.sh train competitive --device cuda
 #   ./scripts/manage.sh train distill
 #   ./scripts/manage.sh train pipeline
+#   ./scripts/manage.sh stop                    # 停止所有训练
+#   ./scripts/manage.sh stop competitive        # 停止指定阶段
 #   ./scripts/manage.sh monitor
 #   ./scripts/manage.sh eval --checkpoint checkpoints/blood_v2_elite/best
 #   ./scripts/manage.sh export --checkpoint checkpoints/blood_v2_elite/best --quantize
@@ -574,11 +577,79 @@ cmd_status() {
     echo ""
 }
 
+# ── stop ──────────────────────────────────────────────────────────────────────
+cmd_stop() {
+    local phase="${1:-}"
+
+    if [[ -n "$phase" ]]; then
+        # Stop a specific phase
+        local normalized
+        normalized=$(normalize_phase "$phase")
+        if [[ -z "$normalized" ]]; then
+            # Try matching any blood.training.runner process
+            normalized="$phase"
+        fi
+        info "停止 ${normalized} 训练进程..."
+        local pids
+        pids=$(pgrep -f "blood.training.runner.*${normalized}" 2>/dev/null || true)
+        if [[ -z "$pids" ]]; then
+            # Also try matching by experiment name
+            pids=$(pgrep -f "blood_v2_${normalized}" 2>/dev/null || true)
+        fi
+        if [[ -z "$pids" ]]; then
+            warn "未找到 ${normalized} 的训练进程"
+            return 0
+        fi
+    else
+        # Stop all blood training processes
+        info "停止所有 Blood 训练进程..."
+        local pids
+        pids=$(pgrep -f "blood.training.runner" 2>/dev/null || true)
+        if [[ -z "$pids" ]]; then
+            pids=$(pgrep -f "blood_v2_" 2>/dev/null || true)
+        fi
+        if [[ -z "$pids" ]]; then
+            warn "未找到任何训练进程"
+            return 0
+        fi
+    fi
+
+    # First try SIGTERM (graceful shutdown)
+    info "发送 SIGTERM..."
+    echo "$pids" | xargs kill -TERM 2>/dev/null || true
+    sleep 2
+
+    # Check if any are still alive, then SIGKILL
+    local remaining=""
+    for pid in $pids; do
+        if kill -0 "$pid" 2>/dev/null; then
+            remaining="$remaining $pid"
+        fi
+    done
+
+    if [[ -n "$remaining" ]]; then
+        warn "进程未响应 SIGTERM，发送 SIGKILL..."
+        echo "$remaining" | xargs kill -9 2>/dev/null || true
+        sleep 1
+    fi
+
+    # Also kill any orphaned SF2 worker processes
+    local orphans
+    orphans=$(pgrep -f "sample_factory" 2>/dev/null || true)
+    if [[ -n "$orphans" ]]; then
+        info "清理 ${#orphans[@]} 个 SF2 worker 子进程..."
+        echo "$orphans" | xargs kill -9 2>/dev/null || true
+    fi
+
+    ok "训练进程已停止"
+}
+
 # ── 主入口 ────────────────────────────────────────────────────────────────────
 CMD="${1:-help}"; shift || true
 
 case "$CMD" in
     train)   cmd_train   "$@" ;;
+    stop)    cmd_stop    "$@" ;;
     monitor) cmd_monitor "$@" ;;
     eval)    cmd_eval    "$@" ;;
     export)  cmd_export  "$@" ;;
