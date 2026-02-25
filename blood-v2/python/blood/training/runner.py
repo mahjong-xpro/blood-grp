@@ -334,15 +334,15 @@ def _seed_init_checkpoint(cfg):
     log.info("Loading init checkpoint from previous phase: %s", init_path)
     source_ckpt = torch.load(str(init_path), map_location="cpu", weights_only=False)
 
-    # Build a new checkpoint with only model weights, resetting training state.
+    # Build a new checkpoint preserving model + optimizer state.
     # SF2 checkpoint keys: model, optimizer, env_steps, stats, cfg, ...
+    # We keep the optimizer state because SF2's _load_state unconditionally
+    # loads it (KeyError if missing). The new phase's LR schedule will
+    # override the optimizer's LR from the first training step.
     seed_ckpt = dict(source_ckpt)  # shallow copy
     # Reset training counters so the new phase starts from step 0
     seed_ckpt["env_steps"] = 0
     seed_ckpt["train_steps"] = 0
-    # Remove optimizer state — new phase may have different LR / schedule
-    seed_ckpt.pop("optimizer", None)
-    seed_ckpt.pop("scheduler", None)
 
     # Convert numpy scalars to Python native types so that torch.load with
     # weights_only=True (PyTorch 2.6+ default) can deserialize the checkpoint.
