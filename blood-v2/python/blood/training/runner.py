@@ -212,6 +212,38 @@ def _configure_logging():
     logging.getLogger("blood").setLevel(logging.INFO)
 
 
+def _convert_numpy_scalars(obj, _memo=None):
+    """Recursively convert numpy scalars to Python native types in-place.
+
+    PyTorch 2.6+ defaults to weights_only=True in torch.load, which rejects
+    numpy scalars (numpy.core.multiarray.scalar).  This converts them to
+    int/float so the checkpoint can be loaded safely.
+    """
+    import numpy as np
+    if _memo is None:
+        _memo = set()
+    obj_id = id(obj)
+    if obj_id in _memo:
+        return obj
+    _memo.add(obj_id)
+
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            obj[k] = _convert_numpy_scalars(v, _memo)
+    elif isinstance(obj, (list, tuple)):
+        converted = [_convert_numpy_scalars(item, _memo) for item in obj]
+        if isinstance(obj, tuple):
+            return tuple(converted)
+        obj[:] = converted
+    elif isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray) and obj.ndim == 0:
+        return obj.item()
+    return obj
+
+
 def _seed_init_checkpoint(cfg):
     """Seed a previous phase's model weights into the new experiment directory.
 
@@ -264,6 +296,11 @@ def _seed_init_checkpoint(cfg):
     # Remove optimizer state — new phase may have different LR / schedule
     seed_ckpt.pop("optimizer", None)
     seed_ckpt.pop("scheduler", None)
+
+    # Convert numpy scalars to Python native types so that torch.load with
+    # weights_only=True (PyTorch 2.6+ default) can deserialize the checkpoint.
+    # SF2 stores numpy scalars in stats/cfg which fail safe unpickling.
+    _convert_numpy_scalars(seed_ckpt)
 
     dest = ckpt_dir / "checkpoint_000000000_0.pth"
     log.info("Seeding init checkpoint: %s → %s", init_path, dest)
