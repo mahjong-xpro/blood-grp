@@ -116,58 +116,99 @@
 
 ---
 
-### Phase 2a: Competitive（进行中 🔄）
+### Phase 2a: Competitive（接近完成 🔄 ~926K/1M）
 
 > 运行名: `blood_v2_competitive/.summary/0`
-> 配置: `configs/competitive.yaml` | 目标: 1M steps | 当前: ~647K steps
+> 配置: `configs/competitive.yaml` | 目标: 1M steps | 当前: ~926K steps
 > 核心变化: `opponent_mode: selfplay`, `gamma: 0.998`, `lr: 1e-4`, `lr_adaptive_max: 3e-4`, `batch_size: 1024`
 > 新增: `reward_rank_bonus: 0.15`, `reward_safe_discard: 0.015`, `shanten_fan_bonus_scale: 0.15`, `adv_clip: 2.0`
+> entropy schedule: `linear,0.01,0.05,0,500000` — 已在 500K 步达到 0.05 上限
 
 #### 奖励 / 目标
 
-| 指标 | 起始值 | 中间值 (~250K) | 当前值 (~647K) | 评估 |
-|------|--------|---------------|---------------|------|
-| `reward/reward` | +3.08 @0 | -0.07 @205K | **-0.12** @647K | ✅ 自博弈收敛到零和，见分析 |
-| `reward/reward_max` | +17.48 @0 | +1.69 @205K | **+1.47** @647K | ✅ 稳定 |
-| `reward/reward_min` | -0.75 @0 | -1.37 @205K | **-0.93** @647K | ✅ 正常范围 |
+| 指标 | @0 | @100K | @300K | @500K | @700K | @900K | 评估 |
+|------|-----|-------|-------|-------|-------|-------|------|
+| `reward/reward` | +3.08 | -0.05 | -0.06 | -0.10 | -0.14 | **-0.14** | ✅ 零和收敛 |
+| `reward/reward_max` | +17.48 | +1.90 | +1.65 | +1.89 | +2.02 | **+1.57** | ✅ 稳定 |
+| `reward/reward_min` | -0.75 | -1.88 | -1.35 | -1.08 | -1.56 | **-1.49** | ✅ 正常 |
 
 #### 损失
 
-| 指标 | 起始值 | 中间值 (~250K) | 当前值 (~647K) | 评估 |
-|------|--------|---------------|---------------|------|
-| `train/loss` | 1.86 @8K | 1.25 @205K | **2.02** @647K | ⚠️ V 形走势，见分析 |
-| `train/value_loss` | 1.88 @8K | 1.27 @205K | **2.05** @647K | ⚠️ 同上 |
-| `train/policy_loss` | 0.004 @8K | 0.002 @205K | **0.003** @647K | ✅ 正常 |
+| 指标 | @8K | @100K | @300K | @500K | @700K | @900K | 评估 |
+|------|-----|-------|-------|-------|-------|-------|------|
+| `train/loss` | 1.86 | 2.15 | 1.39 | 1.46 | 1.22 | **1.69** | ⚠️ 高波动，见分析 |
+| `train/value_loss` | 1.88 | 2.18 | 1.42 | 1.49 | 1.26 | **1.73** | ⚠️ 同上 |
+| `train/policy_loss` | 0.004 | 0.003 | 0.002 | 0.003 | 0.002 | **-0.000** | ⚠️ 偶尔为负 |
 
 #### 训练稳定性
 
-| 指标 | 起始值 | 中间值 (~250K) | 当前值 (~647K) | 评估 |
-|------|--------|---------------|---------------|------|
-| `train/entropy` | 0.41 @8K | 0.62 @205K | **0.69** @647K | ✅ entropy schedule 生效（0.01→0.05 线性） |
-| `train/kl_divergence` | 0.008 @8K | 0.002 @205K | **0.002** @647K | ✅ 稳定 |
-| `train/fraction_clipped` | 5.1% @8K | 4.0% @205K | **7.9%** @647K | ✅ 可控范围 |
-| `train/grad_norm` | 1.000 @8K | 1.000 @205K | **1.000** @647K | ⚠️ 全程贴满 |
-| `train/actual_lr` | 2e-4 @8K | 2.6e-5 @205K | **8.9e-5** @647K | ⚠️ 先降后升，见分析 |
+| 指标 | @8K | @100K | @300K | @500K | @700K | @900K | 评估 |
+|------|-----|-------|-------|-------|-------|-------|------|
+| `train/entropy` | 0.41 | 0.53 | 0.65 | 0.71 | 0.76 | **0.81** | ✅ schedule 生效 |
+| `train/kl_divergence` | 0.008 | 0.002 | 0.001 | 0.000 | 0.004 | **0.001** | ✅ 低且稳定 |
+| `train/fraction_clipped` | 5.1% | 13.8% | 4.2% | 0.8% | 13.3% | **5.6%** | ⚠️ 高波动 |
+| `train/grad_norm` | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | **1.000** | ⚠️ 全程贴满 |
+| `train/actual_lr` | 2.0e-4 | 1.3e-4 | 1.3e-4 | 5.9e-5 | 1.3e-4 | **5.9e-5** | ⚠️ 大幅波动 |
 
 #### 系统性能
 
 | 指标 | 值 | 评估 |
 |------|-----|------|
-| `len/len` | 22.7 → 17.7 步 | ✅ 正常 |
-| `blood/league_pool_size` | 18 → **29** | ✅ 持续递增 |
+| `len/len` | 22.7 → 17.8 步 | ✅ 正常 |
+| `blood/league_pool_size` | 18 → **32** | ✅ 持续递增 |
+| `blood/sched_exploration_loss_coeff` | 0.012 → **0.050** | ✅ entropy schedule 完成 |
+| `blood/elo_current` | 1500 → **1500** | ⚠️ 未变化，见分析 |
 
-#### 分析
+#### 🔍 深度分析
 
-**reward 收敛到零和**: reward 从 +3.08（碾压旧对手）快速回落到 -0.07@250K → -0.12@647K。在自博弈中 reward 趋近零是正常的——对手和自己同步变强，零和博弈的期望 reward 就是 0。轻微负值（-0.12）可能因为 rank_bonus/safe_discard 等额外惩罚信号。
+##### 1. 训练健康度总评: ⚠️ 有隐患但可接受
 
-**value_loss V 形走势 (1.88→1.27→2.05)**: 前 250K 步 value_loss 下降（适应自博弈环境），之后反弹上升。可能原因：
-1. entropy schedule 从 0.01→0.05 持续提升探索系数，策略变化加大，价值函数追不上
-2. league pool 从 18→29，对手多样性增加，returns 方差增大
-3. actual_lr 先降到 2.6e-5（过低），后回升到 8.9e-5，LR 波动影响收敛
+整体训练在运行，策略在学习（entropy 上升、reward 零和收敛、league pool 增长），但存在显著的不稳定性。
 
-**actual_lr 先降后升**: KL 在初期较高（0.008），`kl_adaptive_minibatch` 降低 LR 到 2.6e-5。KL 稳定后 LR 回升到 8.9e-5。这个范围（2.6e-5 ~ 2e-4）在 `lr_adaptive_max: 3e-4` 限制内，属于正常自适应行为。但 LR 最低点 2.6e-5 可能过低，导致 250K 后学习速度不足。
+##### 2. value_loss 高波动（1.88 → 2.18 → 1.42 → 1.49 → 1.26 → 1.73）
 
-**需要关注**: value_loss 是否在剩余 350K 步内开始下降。如果持续上升到 1M 步，可能需要调整 entropy schedule 或 lr_schedule_kl_threshold。
+value_loss 没有单调下降，而是在 0.91~2.18 之间大幅震荡。这是 competitive 阶段最大的隐患。
+
+**原因分析**:
+- 自博弈环境本身就是非平稳的（对手持续变化），value function 需要不断适应
+- league pool 从 18→32，对手多样性持续增加，returns 分布不断变化
+- entropy schedule 在前 500K 步从 0.01→0.05 线性提升，策略探索性增大，value 预测更难
+- `kl_adaptive_minibatch` 导致 LR 在 1.8e-5 ~ 2.0e-4 之间大幅波动（10x 范围），加剧不稳定
+
+**是否正常**: 在自博弈 RL 中，value_loss 波动是常见的。关键看 policy 是否在改善。reward 稳定在 ~0 附近（零和），entropy 持续上升（策略多样性增加），这些都是正面信号。value_loss 的绝对值（0.91~2.18）在 sqrt-compressed reward 尺度下也不算极端。
+
+##### 3. actual_lr 大幅波动（1.8e-5 ~ 2.0e-4）
+
+`kl_adaptive_minibatch` 根据 KL 散度动态调整 LR。KL 在 0.0002~0.008 之间波动，导致 LR 跟着大幅调整。
+
+**问题**: `lr_schedule_kl_threshold: 0.001` 对于 masked action space 的麻将来说可能仍然偏高。当 KL 偶尔跳到 0.004~0.008 时，LR 被大幅降低到 1.8e-5，学习几乎停滞。当 KL 回落到 0.0002 时，LR 又被推高到 2.0e-4。
+
+**建议**: 考虑将 `lr_schedule_kl_threshold` 从 0.001 降到 0.0005，或使用固定 LR schedule（如 cosine decay）替代 `kl_adaptive_minibatch`。
+
+##### 4. policy_loss 偶尔为负
+
+policy_loss 在 @200K (-0.0013)、@400K (-0.0007)、@800K (-0.0009)、@900K (-0.0004) 出现负值。PPO 的 policy_loss 为负意味着 clipped surrogate objective 为正（策略更新方向正确但被 clip 限制）。这在 `ppo_clip_ratio: 0.1`（较紧的 clip）下是正常的。
+
+##### 5. grad_norm 全程 1.0
+
+`max_grad_norm: 1.0` 全程触发 gradient clipping。说明梯度范数始终 > 1.0。这在大模型（256ch/20blocks + LSTM 512×2）+ 多个 loss 项（PPO + aux + oracle distill + oracle CE）的情况下是预期的。不影响训练，但说明模型容量和 loss 复杂度较高。
+
+##### 6. Elo 未变化（1500）
+
+Elo 停留在 1500 是因为 warmup/transition 阶段使用 RuleBot 对手，没有 league 对局来更新 Elo。competitive 阶段虽然使用自博弈，但 EloTracker 需要 league 对局结果来更新评分。当前实现中 `_log_elo_summaries` 只读取已有评分，不主动触发对局评估。
+
+**建议**: 这是一个功能缺失，不影响训练质量。后续可在 `BloodObserver.on_training_step` 中添加定期 arena 评估来更新 Elo。
+
+##### 7. 结论与建议
+
+**当前状态**: 训练在正常运行，策略在学习，但 value_loss 波动和 LR 不稳定是隐患。
+
+**进入 Phase 2b 的条件**: competitive 阶段即将完成（~926K/1M）。虽然 value_loss 没有完全收敛，但这在自博弈中是可接受的。关键指标（reward 零和、entropy 上升、KL 受控）都正常。可以进入 Phase 2b。
+
+**Phase 2b 建议**:
+- 监控 oracle_value_head_loss 是否收敛到 < 0.1
+- 考虑将 `lr_schedule_kl_threshold` 从 0.001 降到 0.0005 以减少 LR 波动
+- 如果 value_loss 在 Phase 2b 仍然高波动，考虑增加 `value_loss_coeff` 或降低 `exploration_loss_coeff`
 
 ---
 
