@@ -14,8 +14,8 @@ num_workers: 16
 num_envs_per_worker: 16
 batch_size: 1024
 num_batches_per_epoch: 8
-ppo_clip_ratio: 0.1
-max_grad_norm: 2.0                     # Fix: 从 1.0 提升到 2.0，给 oracle value distill 新增 loss 项留出梯度空间
+ppo_clip_ratio: 0.15                   # Fix @688K: 从 0.1 提升到 0.15，旧值导致 fraction_clipped 均值 10.2%（峰值 39.7%）
+max_grad_norm: 3.0                     # Fix @688K: 从 2.0 提升到 3.0，旧值导致 70.2% 步骤梯度被截断
 gamma: 0.998
 gae_lambda: 0.95
 learning_rate: 1e-4
