@@ -12,15 +12,15 @@ num_workers: 16
 num_envs_per_worker: 16
 batch_size: 1024
 num_batches_per_epoch: 8
-ppo_clip_ratio: 0.1
-max_grad_norm: 0.5
+ppo_clip_ratio: 0.15                   # Fix @Phase2b: 0.1 导致 fraction_clipped 9.5%，0.15 降到 4.1%
+max_grad_norm: 3.0                     # Fix @Phase2b: 0.5 会导致 >90% 梯度截断；2.0 时 69%，3.0 时 37%
 gamma: 0.999
 gae_lambda: 0.97
 learning_rate: 1e-4
 lr_schedule: kl_adaptive_minibatch
-lr_schedule_kl_threshold: 0.0002   # Fix: 从 0.0005 降到 0.0002，匹配实际 KL 范围
-lr_adaptive_max: 2e-4              # Fix: 从 3e-4 收紧到 2e-4，elite 策略脆弱，防止 LR 跳升
-lr_adaptive_min: 2e-5              # Fix: 从 1e-6 提升到 2e-5，防止 LR 降到接近零
+lr_schedule_kl_threshold: 0.002    # Fix @Phase2b: 0.0002 远低于实际 KL(0.0015~0.002)，LR 100% 锁死下限
+lr_adaptive_max: 2e-4              # 保持不变
+lr_adaptive_min: 5e-5              # Fix @Phase2b: 2e-5 导致学习停滞（Phase 2b 旧 run 76.6% 锁死）
 exploration_loss_coeff: 0.01
 value_loss_coeff: 1.0
 train_for_env_steps: 50000000       # 从10M提升到50M — 原规模严重不足

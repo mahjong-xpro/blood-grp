@@ -500,206 +500,215 @@ Phase 2b 已完成 2.2M/4M steps（55%），oracle distillation 的 value_loss �
 
 ---
 
-### 待应用优化 #2（已写入配置，⚠️ 尚未 resume 生效）
+### 优化记录 #2（2026-02-26 01:25 CST — @688K 新计数时写入配置）
 
 | 修改 | 旧值 | 新值 | 原因 |
 |------|------|------|------|
 | `ppo_clip_ratio` | 0.1 | **0.15** | fraction_clipped 均值 9.5%（峰值 39.7%），过多更新被丢弃 |
 | `max_grad_norm` | 2.0 | **3.0** | 69.2% 步骤梯度被截断，模型无法充分利用梯度方向 |
 
-> 文件: `configs/competitive_distill.yaml` | 已写入配置
-> ⚠️ **尚未生效**: 需要执行 `./scripts/manage.sh train distill --resume` 才能加载新参数
-> 验证方法: `grad_norm` 出现 > 2.0 的值即表示 `max_grad_norm=3.0` 已生效
+> 文件: `configs/competitive_distill.yaml`
+> 生效确认: `grad_norm` 在 ~1.07M 步后出现 > 2.0 的值 ✅（SF2 热加载了新配置）
+
+**实际效果（@1.07M~1.36M，34 个数据点）**:
+- `grad_norm` clipping@3.0: **29.4%**（从 69.2%@2.0 大幅下降）✅
+- `fraction_clipped`: **5.1%**（从 9.5% 下降近半）✅
+- `value_loss`: **0.77**（从 0.93 下降 17%）✅
+- `KL`: **0.0019**（从 0.0015 上升，策略更新更积极）✅
+- **Elo: 1552**（从 1500 跳升 +52，训练历史新高！）🎉
 
 ---
 
-### Phase 2b-续: Competitive Distill — 实时数据更新（🔄 ~1.06M/4M 新计数）
+### Phase 2b-续: Competitive Distill — 实时数据更新（🔄 ~2.16M/4M 新计数）
 
 > 运行名: `blood_v2_competitive_distill/.summary/0`（step counter 已重置）
-> 配置: `configs/competitive_distill.yaml` | 实际总训练量: ~2.2M(旧) + 1.06M(新) ≈ 3.3M steps
-> 关键变更: `lr_adaptive_min: 5e-5`, `lr_schedule_kl_threshold: 0.0005`, `arena_eval_games: 100`
-> Elo tracker 状态已继承（起始 elo_games=550，当前 1050）
-> 数据来源: TensorBoard API `http://localhost:6006` @ 2026-02-26 01:34 CST
+> 配置: `configs/competitive_distill.yaml` | 实际总训练量: ~2.2M(旧) + 2.16M(新) ≈ 4.4M steps
+> 关键变更: 优化#1 `lr_adaptive_min: 5e-5` + 优化#2 `max_grad_norm: 3.0, ppo_clip_ratio: 0.15`
+> Elo tracker 状态已继承（起始 elo_games=550，当前 1650）
+> 数据来源: TensorBoard API `http://localhost:6006` @ 2026-02-26 03:01 CST
 
-#### 优化 #1 效果对比（LR 提升，完整 1.06M 数据）
+#### 两次优化综合效果对比
 
-| 指标 | 优化前 (旧 2.2M 均值) | 优化后全程均值 | 后半段 (688K~1.06M) | 评估 |
-|------|----------------------|---------------|---------------------|------|
-| `train/actual_lr` | 2e-5 (76.6% 锁死) | **5e-5** (100%) | **5e-5** (100%) | ⚠️ 仍锁死下限 |
-| `train/kl_divergence` | 0.0004 | **0.0015** | **0.0014** | ✅ 策略更新 3.5x |
-| `train/fraction_clipped` | 1.1% | **9.5%** (峰值 39.7%) | **8.3%** | ⚠️ 偏高 |
-| `train/grad_norm` | 1.50 | **1.85** (69.2% 贴满 2.0) | **1.88** (66.7%) | ❌ 严重 clipping |
-| `train/value_loss` | 0.89 | **0.93** | **0.94** | ⚠️ 略升 |
-| `train/entropy` | 0.92 | **1.01** | **0.99** | ✅ schedule 衰减中 |
-| `blood/elo_current` | 1441 (末值) | — | **1500.2** (最新) | ✅ 回升! |
+| 指标 | 旧 run (2.2M) | 优化#1 only (0~1.06M) | 优化#1+#2 (1.07M~2.16M) | 评估 |
+|------|--------------|----------------------|------------------------|------|
+| `train/actual_lr` | 2e-5 (76.6% 锁死) | 5e-5 (100% 锁死) | **5e-5** (100% 锁死) | ⚠️ 仍锁死 |
+| `train/kl_divergence` | 0.0004 | 0.0015 | **0.0018** | ✅ 策略更新活跃 |
+| `train/fraction_clipped` | 1.1% | 9.5% | **4.1%** | ✅ 达标 |
+| `train/grad_norm` | 1.50 (29% clip@2.0) | 1.85 (69% clip@2.0) | **2.50** (41% clip@3.0) | ⚠️ clipping 上升中 |
+| `train/value_loss` | 0.89 | 0.93 | **0.81** | ✅ 下降 13% |
+| `train/entropy` | 0.92 | 1.01 | **0.86** | ✅ cosine 衰减中 |
+| `blood/elo_current` | 1441 | 1500 | **1549** (最新) | ✅ 回升! |
 
 #### 奖励 / 目标
 
-| 指标 | @8K | @200K | @400K | @688K | @800K | @1M | @1.06M | 评估 |
-|------|-----|-------|-------|-------|-------|------|--------|------|
-| `reward/reward` | +0.62 | -0.21 | -0.06 | -0.15 | -0.10 | -0.10 | **-0.20** | ✅ 零和收敛 |
+| 指标 | @8K | @200K | @688K | @1M | @1.72M | @2.16M | 评估 |
+|------|-----|-------|-------|------|--------|--------|------|
+| `reward/reward` | +0.62 | -0.21 | -0.15 | -0.10 | +0.06 | **-0.03** | ✅ 零和 |
 
 #### 损失
 
-| 指标 | @8K | @200K | @400K | @688K | @800K | @1M | @1.06M | 评估 |
-|------|-----|-------|-------|-------|-------|------|--------|------|
-| `train/value_loss` | 0.46 | 0.88 | 1.07 | 1.32 | 0.78 | 1.01 | **0.96** | ⚠️ 高波动 0.29~1.56 |
-| `train/loss` | 0.42 | 0.83 | 1.03 | 1.27 | 0.73 | 0.97 | **0.83** | ⚠️ 同上 |
-| `train/policy_loss` | — | — | — | — | — | — | **+0.000** | ✅ 正常 |
+| 指标 | @8K | @200K | @688K | @1M | @1.72M | @2.16M | 评估 |
+|------|-----|-------|-------|------|--------|--------|------|
+| `train/value_loss` | 0.46 | 0.88 | 1.32 | 1.01 | 0.54 | **0.90** | ✅ 波动正常 |
+| `train/loss` | 0.42 | 0.83 | 1.27 | 0.97 | 0.50 | **0.86** | ✅ 同上 |
 
-#### Arena 评估 📊（每次 ~50-62 局 vs RuleBot，Elo 累积）
+#### Arena 评估 📊（Elo 累积，每次 ~50 局 vs RuleBot）
 
 | # | Step (新) | Elo | Elo Games | Win Rate | Avg Rank | Avg Score | 评估 |
 |---|-----------|-----|-----------|----------|----------|-----------|------|
 | 1 | 213K | 1498 | 596 | 0.60 | 2.44 | 99440 | ✅ |
 | 2 | 221K | 1517 | 650 | 0.52 | 2.43 | 100380 | ✅ |
-| 3 | 418K | 1567 | 697 | — | — | — | ✅ 峰值 |
-| 4 | 426K | 1484 | 750 | 0.54 | 2.36 | 101650 | ⚠️ 回落 |
+| 3 | 418K | 1567 | 697 | — | — | — | ✅ |
+| 4 | 426K | 1484 | 750 | 0.54 | 2.36 | 101650 | ⚠️ |
 | 5 | 623K | 1532 | 812 | — | — | — | ✅ |
-| 6 | 631K | 1446 | 850 | 0.43 | 2.59 | 100080 | ❌ 低谷 |
-| 7 | 827K | 1505 | 912 | — | — | — | ✅ 回升 |
+| 6 | 631K | 1446 | 850 | 0.43 | 2.59 | 100080 | ❌ |
+| 7 | 827K | 1505 | 912 | — | — | — | ✅ |
 | 8 | 836K | 1457 | 950 | 0.43 | 2.63 | 98800 | ⚠️ |
 | 9 | 1032K | 1482 | 1003 | — | — | — | ⚠️ |
-| 10 | 1040K | **1500** | 1050 | **0.52** | **2.49** | **99820** | ✅ 回到基线! |
+| 10 | 1040K | 1500 | 1050 | 0.52 | 2.49 | 99820 | ✅ |
+| — | 1122K~1163K | 1451~1508 | 1058~1150 | — | — | — | ⚠️ 过渡期 |
+| 11 | 1311K | 1554 | 1204 | — | — | — | 🎉 |
+| 12 | 1319K | 1552 | 1250 | 0.52 | 2.45 | 100880 | 🎉 |
+| 13 | 1516K | 1527 | 1309 | — | — | — | ⚠️ |
+| 14 | 1524K | 1492 | 1350 | 0.47 | 2.48 | 100340 | ⚠️ |
+| 15 | 1720K | 1477 | 1383 | — | — | — | ❌ 低谷 |
+| 16 | 1729K | 1467 | — | — | — | — | ❌ |
+| 17 | 1925K | 1525 | — | — | — | — | ✅ 回升 |
+| 18 | 1933K | 1474 | — | — | — | — | ⚠️ |
+| 19 | 2130K | 1520 | — | — | — | — | ✅ |
+| 20 | 2138K | **1549** | 1650 | **0.60** | **2.32** | **101160** | 🎉 回升! |
 
-#### 🔍 深度分析（2026-02-26 01:34 CST — 基于 TensorBoard 实时数据）
+#### 🔍 深度分析（2026-02-26 03:01 CST — 基于 TensorBoard 实时数据）
 
-##### 1. 训练健康度总评: ⚠️ 有改善信号，但瓶颈未解除
+##### 1. 训练健康度总评: ✅ Elo 回升确认，之前的回落是正常波动
 
-Elo 从低谷 1446 回升到 1500，回到了初始基线。这说明优化 #1（LR 提升）确实在起作用，但速度缓慢。两个瓶颈（grad_norm clipping 69%、fraction_clipped 9.5%）仍在限制学习效率。
+Elo 从低谷 1467（@1.73M）回升到 1549（@2.14M），确认了之前的回落只是自博弈环境中的正常波动。最新 eval (#20) 的 win_rate=0.60、avg_rank=2.32 是**整个训练历史中最好的 arena 表现**。
 
-##### 2. ✅ 积极信号: Elo 回升趋势
+##### 2. Elo 轨迹分析 — "锯齿上升"模式确认
 
 ```
-Elo 轨迹（新 run）:
-1507→1498→1517→1567→1484→1532→1446→1505→1457→1482→1500
-                  ↑ 峰值                ↑ 低谷              ↑ 回升!
+Elo 轨迹（关键节点）:
+1507→...→1446(低谷)→...→1554(峰值1)→...→1467(低谷2)→...→1549(当前) 🎉
 ```
 
-Elo 呈现"锯齿上升"模式 — 每次 arena eval 分两步记录（中间值→最终值），最终值总是低于中间值。但整体趋势从 1446 低谷回升到 1500。最新 eval (#10) 的 win_rate=0.52、avg_rank=2.49 是近 4 次评估中最好的。
+Elo 呈现明显的"锯齿上升"模式:
+- 低谷 1: 1446 (@631K)
+- 峰值 1: 1554 (@1.31M) — 上升 +108
+- 低谷 2: 1467 (@1.73M) — 回落 -87
+- 当前: 1549 (@2.14M) — 回升 +82
 
-##### 3. ❌ LR 100% 锁死在 5e-5
+**关键洞察**: 低谷在抬升（1446→1467 +21），峰值也在维持（1554→1549 -5）。整体趋势向上。
 
-`actual_lr` 在整个 1.06M 步中从未偏离 5e-5。`kl_adaptive_minibatch` 机制完全失效 — KL 均值 0.0015 始终高于 `kl_threshold=0.0005`，导致 LR 持续被压到下限。
+##### 3. 最新 Arena 表现突出
 
-**根因**: `kl_schedule_kl_threshold=0.0005` 对于当前模型仍然偏低。实际 KL 均值 0.0015 是 threshold 的 3x，LR 永远不会上升。
+Eval #20: win_rate=**0.60**, avg_rank=**2.32**, avg_score=**101160**
+- win_rate 0.60 追平了 Eval #1（训练初期对弱对手的表现）
+- avg_rank 2.32 是历史最佳（之前最好是 2.36）
+- avg_score 101160 > 100000 基线，说明模型在得分上也有优势
 
-**但这不一定是坏事**: LR=5e-5 下 Elo 在回升，说明学习在发生。问题是效率不够高。
+##### 4. ⚠️ grad_norm clipping 继续上升
 
-##### 4. ❌ grad_norm clipping 仍然严重（69.2%）
+| 时段 | clip@3.0 比例 |
+|------|--------------|
+| 优化#2 初期 (1.07M~1.36M) | 29.4% |
+| 全程 (1.07M~2.16M) | **40.9%** |
 
-`max_grad_norm=2.0` 在 69.2% 的步骤触发 clipping。配置已改为 3.0 但**尚未 resume 生效**。
+clipping 从 29% 上升到 41%，接近 50% 警戒线。但 Elo 仍在上升，说明当前 clipping 水平尚可接受。
 
-##### 5. value_loss 波动大但均值稳定
+##### 5. entropy 持续衰减
 
-value_loss 在 0.29~1.56 之间大幅波动，均值 0.93。这在自博弈环境中是正常的（对手持续变化），但说明价值函数还没有很好地泛化。
-
-##### 6. entropy schedule 正常衰减
-
-`sched_exploration_loss_coeff` 从 0.05 衰减到 0.045（cosine schedule），entropy 从 1.05 降到 1.00。策略在逐步收敛。
+`sched_exploration_loss_coeff` 从 0.05 衰减到 0.033，entropy 从 1.01 降到 0.86。策略在收敛，但仍在合理范围（> 0.7）。
 
 ---
 
-### 🔬 当前应该做什么（2026-02-26 01:34 CST）
+### 🔬 当前应该做什么（2026-02-26 03:01 CST）
 
 #### 训练时间线总览
 
 ```
 Phase 1: Warmup (2M) → Phase 1.5: Transition (500K) → Phase 2a: Competitive (1M)
-    → Phase 2b: Distill 旧run (2.2M) → [优化#1: LR] → Phase 2b-续 (1.06M)
-    → 当前位置 ⬅️ (优化#2 已写入配置，未 resume)
+    → Phase 2b: Distill 旧run (2.2M) → [优化#1: LR] → [优化#2: grad/clip]
+    → Phase 2b-续 (2.16M) → 当前位置 ⬅️
     
-总训练量: ~6.7M env steps | Phase 2b 实际: ~3.3M steps
+总训练量: ~7.9M env steps | Phase 2b 实际: ~4.4M steps（已超过原定 4M 目标）
+Elo: 1549 @2.14M（回升确认，"锯齿上升"模式）
 ```
 
-#### ⚡ 立即行动（按优先级）
+#### 当前状态: ✅ 训练健康，Elo 回升，接近 Phase 3 进入时机
 
-##### 🔴 P0: Resume 使优化 #2 生效
+Elo 从低谷 1467 回升到 1549，确认了"锯齿上升"模式。Phase 2b 已超过原定 4M 目标（实际 4.4M），是进入 Phase 3 的好时机。
 
-配置中的 `max_grad_norm: 3.0` 和 `ppo_clip_ratio: 0.15` 已写入但未加载。执行:
+#### ⚡ 你现在应该做什么
+
+##### 🟡 P0: 决策 — 继续 Phase 2b 还是进入 Phase 3?
+
+Phase 2b 已完成 4.4M steps（超过原定 4M 目标）。当前状态:
+
+| 条件 | 状态 | 评估 |
+|------|------|------|
+| 训练步数 ≥ 4M | ✅ 4.4M | 已达标 |
+| Elo 趋势 | ✅ 锯齿上升 | 低谷抬升 1446→1467，峰值维持 1554→1549 |
+| value_loss | ✅ 0.81 | 低于旧 run 的 0.89 |
+| 最新 arena | 🎉 wr=0.60, rank=2.32 | 历史最佳 |
+| grad_norm clip | ⚠️ 41% | 上升趋势，接近 50% 警戒 |
+| entropy | ⚠️ 0.86 | 持续衰减中 |
+
+**建议: 可以进入 Phase 3**。理由:
+1. Phase 2b 已超过目标步数，边际收益递减
+2. Elo 在 1470~1554 区间震荡，没有突破性上升
+3. grad_norm clipping 上升趋势说明当前配置接近极限
+4. Phase 3 的 RTPA+ISMCE 搜索增强 + gamma=0.999 可能打破瓶颈
+5. elite.yaml 已修复，前置条件就绪
+
+**如果选择继续 Phase 2b**: 可以再跑 ~800K steps 到 3M 新计数，但预期 Elo 仍在 1470~1560 区间震荡。
+
+##### 🟢 P1: 进入 Phase 3 的步骤
 
 ```bash
+# 1. 停止当前训练
 ./scripts/manage.sh stop distill
-./scripts/manage.sh train distill --resume
+
+# 2. 启动 Phase 3（自动从 competitive_distill 的最佳 checkpoint 加载）
+./scripts/manage.sh train elite
 ```
 
-**验证**: resume 后在 TensorBoard 中检查 `train/grad_norm` 是否出现 > 2.0 的值。
+**Phase 3 关键配置**（已修复）:
+- `max_grad_norm: 3.0`（从 0.5 修复）
+- `ppo_clip_ratio: 0.15`（从 0.1 修复）
+- `lr_schedule_kl_threshold: 0.002`（从 0.0002 修复）
+- `lr_adaptive_min: 5e-5`（从 2e-5 修复）
+- `gamma: 0.999`（比 Phase 2b 的 0.998 更长视野）
+- `rtpa_enabled: true`（运行时策略适应）
+- `ismce_enabled: true`（信息集蒙特卡洛搜索）
 
-**⚠️ Resume 副作用预警**: 上次 resume 重置了 `env_steps` 到 0。如果再次发生:
-- entropy schedule 会再次从 0.05 重启（当前已衰减到 0.045）
-- `train_for_env_steps=4M` 会重新计数
-- TensorBoard 历史可能被覆盖
+**Phase 3 监控重点**:
 
-**建议**: resume 前先备份当前 TensorBoard 日志:
-```bash
-cp -r train_dir/blood_v2_competitive_distill train_dir/blood_v2_competitive_distill_backup_1.06M
-```
+| 指标 | 期望值 | 警报阈值 |
+|------|--------|----------|
+| `blood/elo_current` | 持续上升，目标 > 1600 | < 1450 连续 3 次 |
+| `train/actual_lr` | 不再 100% 锁死（kl_threshold=0.002 应该有效） | 100% 锁死 |
+| `train/grad_norm` clip@3.0 | < 40% | > 60% |
+| `train/entropy` | 0.02→0.005 cosine 衰减 | < 0.003 |
+| `train/value_loss` | < 0.8 | > 1.5 持续 |
 
-##### 🟡 P1: 观察优化 #2 效果（~400K steps ≈ 2 次 arena eval）
+##### 🔵 P2: 备选 — 如果决定继续 Phase 2b
 
-Resume 后监控:
-
-| 指标 | 当前值 | 期望值（优化 #2 后） | 如果不满足 |
-|------|--------|---------------------|-----------|
-| `train/grad_norm` | 1.85 (69% clip@2.0) | 均值 < 2.5, clip@3.0 < 40% | loss 权重过大 |
-| `train/fraction_clipped` | 9.5% | < 5% | 考虑 clip_ratio=0.2 |
-| `blood/elo_current` | 1500 | ≥ 1520 | 见决策树 |
-| `train/value_loss` | 0.93 | < 0.85 | oracle distill 效果有限 |
-
-##### 🟢 P2: 考虑提升 KL threshold（如果 LR 仍锁死）
-
-如果 resume 后 `actual_lr` 仍然 100% 锁死在 5e-5:
-
-```yaml
-lr_schedule_kl_threshold: 0.002    # 从 0.0005 提升到 0.002，匹配实际 KL 均值 0.0015
-```
-
-或者更激进地放弃 KL adaptive，改用固定 cosine decay:
-
-```yaml
-lr_schedule: linear_decay          # 替代 kl_adaptive_minibatch
-learning_rate: 1e-4                # 起始 LR
-# cosine 从 1e-4 衰减到 2e-5 over 4M steps
-```
-
-#### 决策树（@~1.5M 新计数时评估，即 resume 后 ~400K steps）
-
-```
-Resume 优化 #2 后观察 2 次 arena eval:
-│
-├─ Elo ≥ 1520 且 grad_norm clipping < 40%
-│   └─ ✅ 优化有效，继续 Phase 2b 到 4M 新计数
-│       然后进入 Phase 3
-│
-├─ Elo 1480~1520，grad_norm 改善但 Elo 缓慢
-│   └─ ⚠️ 实施 P2（提升 KL threshold 或固定 LR）
-│       再观察 2 次 eval
-│
-├─ Elo < 1480，优化 #2 无效
-│   └─ ❌ Phase 2b 已到极限，进入 Phase 3
-│       Phase 3 的 RTPA+ISMCE 可能更有效
-│
-└─ 训练崩溃（value_loss > 2.0 或 KL > 0.01）
-    └─ 🔴 回滚到 resume 前的 checkpoint
-```
-
-#### Phase 3 准备（可并行进行）
-
-[`elite.yaml`](blood-v2/configs/elite.yaml) 当前存在与 Phase 2b 旧 run 相同的问题，需要修复:
-
-| 参数 | elite.yaml 当前值 | 建议值 | 原因 |
-|------|-------------------|--------|------|
-| `max_grad_norm` | **0.5** | 3.0 | Phase 2b 在 2.0 时 69% clipping，0.5 会更严重 |
-| `lr_adaptive_min` | **2e-5** | 5e-5 | Phase 2b 旧 run 证明 2e-5 导致学习停滞 |
-| `lr_schedule_kl_threshold` | **0.0002** | 0.002 | 远低于实际 KL，LR 会锁死 |
-| `ppo_clip_ratio` | **0.1** | 0.15 | Phase 2b 证明 0.1 过紧 |
-
-⚠️ **如果不修复这些参数就进入 Phase 3，会重蹈 Phase 2b 旧 run 的覆辙（LR 锁死 + 梯度截断 → Elo 停滞）**。
+如果想再观察:
+- 提升 `lr_schedule_kl_threshold` 到 0.002（让 LR 有上升空间，当前 100% 锁死）
+- 或者放慢 entropy 衰减（当前 cosine 0.05→0.02 over 4M，已到 0.033）
 
 ---
 
 ### Phase 3: Elite
 
-*待启动 — 先 resume Phase 2b 使优化 #2 生效，观察 2 次 arena eval*
-*进入条件: Elo ≥ 1520 连续 3 次不降，或 Phase 2b 确认无法继续提升*
-*前置修复: elite.yaml 的 max_grad_norm/lr_adaptive_min/ppo_clip_ratio/kl_threshold 需要更新*
+*建议启动 — Phase 2b 已完成 4.4M steps（超过 4M 目标），Elo 1549，arena 表现历史最佳*
+*启动命令: `./scripts/manage.sh stop distill && ./scripts/manage.sh train elite`*
+
+**前置修复已完成 ✅** (`configs/elite.yaml`):
+
+| 参数 | 旧值 | 新值 | 原因 |
+|------|------|------|------|
+| `max_grad_norm` | 0.5 | **3.0** | Phase 2b: 2.0 时 69% clipping，3.0 时 41% |
+| `ppo_clip_ratio` | 0.1 | **0.15** | Phase 2b: 0.1 时 9.5% clipped，0.15 时 4.1% |
+| `lr_schedule_kl_threshold` | 0.0002 | **0.002** | Phase 2b: 0.0005 时 LR 100% 锁死，实际 KL ~0.002 |
+| `lr_adaptive_min` | 2e-5 | **5e-5** | Phase 2b: 2e-5 导致 76.6% 时间学习停滞 |
