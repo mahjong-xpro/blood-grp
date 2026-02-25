@@ -4,14 +4,22 @@
 - 使用文件名中的 env_steps 数字排序（而非 st_mtime，避免 NFS/容器环境不可靠）
 - 多项式衰减 α=2.0 + uniform_floor 保底，提高有效多样性
 - self_play_prob 支持当前策略 vs 自身对战
+- 可选 Elo-weighted 采样：Gaussian 权重偏好 Elo 接近的对手
 """
 
+from __future__ import annotations
+
+import math
 import re
 import shutil
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from blood.eval.elo import EloTracker
 
 log = logging.getLogger(__name__)
 
@@ -32,12 +40,23 @@ def _extract_env_steps(path: Path) -> int:
     return 0
 
 
+def _ckpt_name(path: Path) -> str:
+    """Derive a stable Elo player name from a checkpoint path."""
+    m = _CKPT_STEP_RE.search(path.name)
+    if m:
+        return f"league_ckpt_{m.group(1)}"
+    return f"league_ckpt_{path.stem}"
+
+
 class LeagueManager:
     """管理历史模型 checkpoint 池，用于自博弈对手采样。
 
     采样策略：多项式衰减 (rank^-alpha) + uniform_floor 保底概率，
     平衡新近偏好与多样性。支持 self_play_prob 概率返回 None
     表示使用当前最新策略自博弈。
+
+    可选 Elo-weighted 采样：当 use_elo_sampling=True 且提供了 elo_tracker 时，
+    使用 Gaussian 权重偏好 Elo 接近当前策略的对手，形成自然课程学习。
     """
 
     def __init__(
@@ -47,12 +66,18 @@ class LeagueManager:
         max_pool_size: int = 50,
         uniform_floor: float = 0.1,       # 最低采样概率下限，确保旧 checkpoint 也能被采样
         self_play_prob: float = 0.2,      # 20% 概率使用当前策略自博弈
+        elo_tracker: Optional[EloTracker] = None,
+        use_elo_sampling: bool = False,
+        elo_sampling_sigma: float = 200.0,
     ):
         self.pool_dir = Path(pool_dir)
         self.newest_weight = newest_weight
         self.max_pool_size = max_pool_size
         self.uniform_floor = uniform_floor
         self.self_play_prob = self_play_prob
+        self._elo_tracker = elo_tracker
+        self._use_elo_sampling = use_elo_sampling
+        self._elo_sigma = elo_sampling_sigma
         self._rng = np.random.default_rng()
 
     def get_checkpoints(self):
@@ -69,14 +94,30 @@ class LeagueManager:
         )
         return checkpoints
 
-    def sample_opponent(self):
+    def _elo_weights(self, current_elo: float, checkpoints: list[Path]) -> list[float]:
+        """Compute Elo-based sampling weights (Gaussian around current rating).
+
+        Prefers opponents within ±sigma Elo of the current policy, creating a
+        natural curriculum: as the agent improves, it faces stronger opponents.
+        """
+        sigma = self._elo_sigma
+        weights = []
+        for ckpt in checkpoints:
+            opp_elo = self._elo_tracker.get_rating(_ckpt_name(ckpt))
+            diff = abs(current_elo - opp_elo)
+            w = math.exp(-0.5 * (diff / sigma) ** 2)
+            weights.append(max(w, 0.01))  # floor to ensure exploration
+        return weights
+
+    def sample_opponent(self, current_elo: Optional[float] = None):
         """采样一个对手 checkpoint。
 
         采样策略：
         1. 以 self_play_prob 概率返回 None（表示使用当前最新策略自博弈）
-        2. 否则从历史池中按多项式衰减 + uniform_floor 采样
+        2. 若 use_elo_sampling=True 且有 elo_tracker，使用 Elo-based Gaussian 权重
+        3. 否则从历史池中按多项式衰减 + uniform_floor 采样
 
-        权重公式: w(r) = (1 - floor) * [(1+r)^(-α) / Z] + floor * (1/n)
+        权重公式 (poly): w(r) = (1 - floor) * [(1+r)^(-α) / Z] + floor * (1/n)
         其中 r=0 为最新，α=newest_weight，floor=uniform_floor。
         """
         # 自博弈：以 self_play_prob 概率使用当前策略
@@ -89,6 +130,20 @@ class LeagueManager:
             return None
 
         n = len(checkpoints)
+
+        # Elo-weighted sampling when enabled and tracker is available
+        if (
+            self._use_elo_sampling
+            and self._elo_tracker is not None
+            and current_elo is not None
+        ):
+            elo_w = self._elo_weights(current_elo, checkpoints)
+            total = sum(elo_w)
+            weights = np.array([w / total for w in elo_w], dtype=np.float64)
+            idx = self._rng.choice(n, p=weights)
+            return checkpoints[idx]
+
+        # Fallback: polynomial decay sampling
         alpha = self.newest_weight
 
         # 多项式衰减权重

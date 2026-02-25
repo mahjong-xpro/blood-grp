@@ -1,9 +1,36 @@
+use rustc_hash::FxHashMap;
+
 use crate::consts::*;
 use crate::algo::shanten::{calc_shanten, waiting_tiles};
 use crate::algo::agari::calc_fan;
 use crate::algo::sp::{SPCalculator, SPInitState};
 use crate::state::board::BoardState;
 use super::student::encode_student_obs;
+
+/// Cache key for opponent SP results.
+/// Keyed on hand state + meld count + tiles_left.
+/// Intentionally omits `tiles_seen` — it changes on every discard but has
+/// minimal impact on SP results (±1 tile visibility). `tiles_left` captures
+/// the most impactful change. This is a deliberate trade-off: slightly stale
+/// SP results in exchange for ~50% reduction in SP computation.
+#[derive(Hash, Eq, PartialEq, Clone)]
+pub struct OppSpCacheKey {
+    pub tehai: [u8; NUM_TILE_TYPES],
+    pub num_melds: usize,
+    pub tiles_left: usize,
+}
+
+/// Cached SP result for one opponent.
+#[derive(Clone)]
+pub struct OppSpCacheEntry {
+    pub best_ev: f32,
+    pub best_win_prob: f32,
+    pub best_peak_win_prob: f32,
+}
+
+/// Type alias for the oracle SP cache.
+/// Keyed on `(opponent_id, OppSpCacheKey)`.
+pub type OracleSpCache = FxHashMap<(usize, OppSpCacheKey), OppSpCacheEntry>;
 
 /// 编码 Oracle 观测：学生观测 + 额外的完美信息通道
 ///
@@ -16,7 +43,11 @@ use super::student::encode_student_obs;
 ///   - 对手危险度评分（3 ch）
 ///   - 对手最佳番数（3 ch）
 ///   - 对手最后摸牌（3 ch）
-pub fn encode_oracle_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
+pub fn encode_oracle_obs(
+    board: &BoardState,
+    player_id: usize,
+    mut sp_cache: Option<&mut OracleSpCache>,
+) -> Vec<f32> {
     let mut obs = encode_student_obs(board, player_id);
     obs.resize(NUM_ORACLE_CHANNELS * NUM_TILE_TYPES, 0.0);
 
@@ -57,29 +88,58 @@ pub fn encode_oracle_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
         let opp_id = (player_id + opp_off) % NUM_PLAYERS;
         let opp = &board.players[opp_id];
 
-        // 为对手构建 SP 计算上下文
-        let sp_init = SPInitState {
+        let cache_key = OppSpCacheKey {
             tehai: opp.hand,
-            tiles_seen: opp.tiles_seen,
-            tiles_left: board.wall_remaining() as u8,
             num_melds: opp.melds.len(),
-            ding_que: opp.ding_que,
+            tiles_left: board.wall_remaining(),
         };
-        let mut sp_calc = SPCalculator::new(opp.melds.len(), opp.ding_que);
-        sp_calc.melds = opp.melds.clone();
-        sp_calc.fan_config = board.fan_config;
-        sp_calc.is_at_rinshan = opp.is_rinshan;
-        sp_calc.n_active_payers = board.active_player_count().saturating_sub(1) as u8;
 
-        let candidates = sp_calc.calc(&sp_init);
+        // Check cache first
+        let cached = sp_cache.as_ref().and_then(|c| c.get(&(opp_id, cache_key.clone())).cloned());
 
-        if let Some(best) = candidates.first() {
-            // 最佳弃牌 EV（归一化到 REWARD_NORM=32000）
-            fill_ch!(ch, best.total_ev() / 32000.0);
-            // 最佳弃牌听牌概率
-            fill_ch!(ch + 1, best.total_win_prob().min(1.0));
-            // 最佳弃牌胜率（峰值胜率）
-            fill_ch!(ch + 2, best.max_win_prob().min(1.0));
+        if let Some(entry) = cached {
+            fill_ch!(ch, entry.best_ev);
+            fill_ch!(ch + 1, entry.best_win_prob);
+            fill_ch!(ch + 2, entry.best_peak_win_prob);
+        } else {
+            // 为对手构建 SP 计算上下文
+            let sp_init = SPInitState {
+                tehai: opp.hand,
+                tiles_seen: opp.tiles_seen,
+                tiles_left: board.wall_remaining() as u8,
+                num_melds: opp.melds.len(),
+                ding_que: opp.ding_que,
+            };
+            let mut sp_calc = SPCalculator::new(opp.melds.len(), opp.ding_que);
+            sp_calc.melds = opp.melds.clone();
+            sp_calc.fan_config = board.fan_config;
+            sp_calc.is_at_rinshan = opp.is_rinshan;
+            sp_calc.n_active_payers = board.active_player_count().saturating_sub(1) as u8;
+
+            let candidates = sp_calc.calc(&sp_init);
+
+            let (best_ev, best_win_prob, best_peak_win_prob) = if let Some(best) = candidates.first() {
+                (
+                    best.total_ev() / 32000.0,
+                    best.total_win_prob().min(1.0),
+                    best.max_win_prob().min(1.0),
+                )
+            } else {
+                (0.0, 0.0, 0.0)
+            };
+
+            fill_ch!(ch, best_ev);
+            fill_ch!(ch + 1, best_win_prob);
+            fill_ch!(ch + 2, best_peak_win_prob);
+
+            // Store in cache
+            if let Some(ref mut cache) = sp_cache {
+                cache.insert((opp_id, cache_key), OppSpCacheEntry {
+                    best_ev,
+                    best_win_prob,
+                    best_peak_win_prob,
+                });
+            }
         }
         ch += 3;
     }
@@ -179,7 +239,7 @@ pub fn encode_oracle_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
         ch += 1;
     }
 
-    debug_assert!(ch == NUM_ORACLE_CHANNELS, "oracle 使用了 {} 通道，期望 {}", ch, NUM_ORACLE_CHANNELS);
+    assert_eq!(ch, NUM_ORACLE_CHANNELS, "oracle channel count mismatch: got {}, expected {}", ch, NUM_ORACLE_CHANNELS);
 
     obs
 }

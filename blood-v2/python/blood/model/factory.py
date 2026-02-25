@@ -73,12 +73,16 @@ class BloodActorCritic(ActorCriticSharedWeights):
         self.oracle_enabled = getattr(cfg, "oracle_enabled", True)
         if self.oracle_enabled:
             oracle_obs_ch = NUM_ORACLE_CHANNELS
-            oracle_blocks = getattr(cfg, "oracle_num_blocks", 20)  # 20 blocks for oracle (matches cfg.py default and all yaml configs)
+            oracle_blocks = getattr(cfg, "oracle_num_blocks", 20)
+            oracle_attn_layers = getattr(cfg, "oracle_num_tile_attn_layers", 2)
+            oracle_attn_heads = getattr(cfg, "oracle_tile_attn_heads", 4)
             self.oracle_encoder = OracleEncoder(
                 obs_channels=oracle_obs_ch,
-                conv_ch=256,         # Also 256 for oracle
+                conv_ch=256,
                 num_blocks=oracle_blocks,
                 action_dim=action_space.n,
+                num_tile_attn_layers=oracle_attn_layers,
+                tile_attn_heads=oracle_attn_heads,
             )
             self.distill_loss_fn = DistillationLoss(
                 temperature=getattr(cfg, "oracle_distill_temperature", 2.0),
@@ -95,6 +99,11 @@ class BloodActorCritic(ActorCriticSharedWeights):
         self._cached_obs = None
         self._cache_gen = 0
         self._loss_gen = -1  # -1 so first batch (cache_gen=1 > loss_gen=-1) always passes
+
+    def reset_cache_counters(self):
+        """Reset cache generation counters after checkpoint reload (Issue #39)."""
+        self._cache_gen = 0
+        self._loss_gen = -1
 
     def forward_head(self, normalized_obs_dict: Dict[str, Tensor]) -> Tensor:
         # trunk features

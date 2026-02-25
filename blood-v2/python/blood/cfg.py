@@ -19,9 +19,10 @@ def add_blood_args(parser: ArgumentParser):
     p.add_argument("--blood_enc_proj_layers", type=int, default=1,
                     help="enc_proj 层数: 1=单层Linear(旧行为), 2=渐进压缩MLP(缓解信息瓶颈)")
 
-    # TileAttention 增强参数
+    # TileAttention — architecture params (must be identical across ALL training stages)
     p.add_argument("--blood_num_tile_attn_layers", type=int, default=2,
-                    help="TileAttention 层数: 2=中层+末层(旧行为), 3=中层+后中层+末层(增强跨花色推理)")
+                    help="TileAttention segment count (2-6). Residual blocks are evenly "
+                         "distributed across segments, each followed by a TileAttention layer.")
     p.add_argument("--blood_tile_attn_heads", type=int, default=4,
                     help="TileAttention 注意力头数: 4=旧行为, 8=增强多模式跨花色交互")
 
@@ -30,6 +31,10 @@ def add_blood_args(parser: ArgumentParser):
     p.add_argument("--no_oracle", dest="oracle_enabled", action="store_false")
     # 修复: 默认值从 25 改为 20，与所有阶段 yaml 配置保持一致
     p.add_argument("--oracle_num_blocks", type=int, default=20)
+    p.add_argument("--oracle_num_tile_attn_layers", type=int, default=2,
+                    help="Oracle TileAttention segment count (default 2, must match across stages)")
+    p.add_argument("--oracle_tile_attn_heads", type=int, default=4,
+                    help="Oracle TileAttention attention heads (default 4)")
     p.add_argument("--oracle_distill_weight", type=float, default=0.05)
     p.add_argument("--oracle_distill_temperature", type=float, default=2.0)
     p.add_argument("--oracle_ce_weight", type=float, default=0.1,
@@ -59,6 +64,22 @@ def add_blood_args(parser: ArgumentParser):
                     choices=["rulebot", "selfplay", "random"])
     p.add_argument("--opponent_refresh_every", type=int, default=20,
                     help="Reload opponent model every N episodes")
+
+    # Elo rating system
+    p.add_argument("--blood_elo_enabled", default=True,
+                    type=lambda x: str(x).lower() != "false",
+                    help="Enable persistent Elo rating tracking across training")
+    p.add_argument("--blood_elo_k_base", default=32.0, type=float,
+                    help="Base K-factor for established players (>=new_threshold games)")
+    p.add_argument("--blood_elo_k_new", default=64.0, type=float,
+                    help="K-factor for new players (<new_threshold games)")
+    p.add_argument("--blood_elo_new_threshold", default=30, type=int,
+                    help="Game count below which a player is considered 'new' (higher K)")
+    p.add_argument("--blood_elo_sampling", default=False,
+                    type=lambda x: str(x).lower() != "false",
+                    help="Use Elo-weighted Gaussian opponent sampling in league")
+    p.add_argument("--blood_elo_sampling_sigma", default=200.0, type=float,
+                    help="Gaussian sigma for Elo-weighted opponent sampling (Elo spread)")
 
     # Augmentation
     p.add_argument("--suit_augment_prob", type=float, default=0.5)
@@ -129,6 +150,18 @@ def add_blood_args(parser: ArgumentParser):
     p.add_argument("--adv_clip", type=float, default=0.0,
                     help="Clip advantages to [-adv_clip, adv_clip] before PPO update (0=disabled)")
 
+    # Monitoring throttle
+    p.add_argument("--blood_metrics_interval", default=100, type=int,
+                    help="Compute expensive monitoring metrics every N minibatches")
+
+    # Dynamic hyperparameter schedules (within a training stage)
+    p.add_argument("--blood_schedule_entropy", default="", type=str,
+                    help="Entropy coeff schedule: 'type,start,end,start_step,end_step'")
+    p.add_argument("--blood_schedule_adv_clip", default="", type=str,
+                    help="Advantage clip schedule: 'type,start,end,start_step,end_step'")
+    p.add_argument("--blood_schedule_extra", default="", type=str,
+                    help="Extra schedules: 'param:type,args;param:type,args'")
+
 
 def blood_override_defaults(parser: ArgumentParser):
     """Override Sample Factory defaults for Blood Mahjong."""
@@ -152,9 +185,8 @@ def blood_override_defaults(parser: ArgumentParser):
         experiment="blood_v2",
         use_rnn=True,
         rnn_type="lstm",
-        # 注意: 基础默认值 1024，competitive/elite 阶段覆盖为 512
-        rnn_size=1024,
-        rnn_num_layers=1,
+        rnn_size=512,
+        rnn_num_layers=2,
         rollout=32,
         recurrence=32,
     )

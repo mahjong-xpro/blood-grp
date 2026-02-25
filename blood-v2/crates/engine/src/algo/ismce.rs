@@ -161,10 +161,12 @@ fn sample_world(info: &PlayerInfo, rng_seed: u64) -> Vec<Tile> {
     pool
 }
 
-/// 使用 ISMCE 评估所有候选弃牌
+/// 使用 ISMCE 评估所有候选弃牌（基础版本，无约束采样，无防守）
 ///
 /// 对每个弃牌候选，采样 `num_worlds` 个随机一致世界，
 /// 模拟 `rollout_depth` 次摸牌来估计胜率和听牌率。
+///
+/// 推荐使用 [`evaluate_discards_full`] 获得完整的约束采样+防守评估。
 pub fn evaluate_discards(
     info: &PlayerInfo,
     candidates: &[Tile],
@@ -214,10 +216,12 @@ pub fn evaluate_discards(
         .collect()
 }
 
-/// 使用约束采样的 ISMCE 评估（考虑对手定缺信息）
+/// 使用约束采样的 ISMCE 评估（考虑对手定缺信息，无防守）
 ///
 /// 与 evaluate_discards 相同，但采样时考虑对手的定缺花色约束，
 /// 生成更真实的对手手牌分布。
+///
+/// 推荐使用 [`evaluate_discards_full`] 获得完整的约束采样+防守评估。
 pub fn evaluate_discards_constrained(
     info: &PlayerInfo,
     candidates: &[Tile],
@@ -250,6 +254,95 @@ pub fn evaluate_discards_constrained(
 
                 let (won, is_tenpai) =
                     simulate_draws(&hand_after, info.melds_count, info.ding_que, &wall, config.rollout_depth);
+
+                if won {
+                    wins += 1;
+                }
+                if is_tenpai {
+                    tenpais += 1;
+                }
+            }
+
+            let n = config.num_worlds as f64;
+            IsmceScore {
+                tile: discard,
+                win_rate: wins as f64 / n,
+                tenpai_rate: tenpais as f64 / n,
+                avg_shanten_improvement: improvement,
+            }
+        })
+        .collect()
+}
+
+/// Full ISMCE evaluation with constrained sampling and defense-aware rollouts.
+///
+/// This is the recommended entry point that combines all three capabilities:
+/// 1. Constrained world sampling (respects opponent ding-que)
+/// 2. Enhanced danger score computation
+/// 3. Defense-aware rollout (uses danger as tiebreaker among equal-shanten discards)
+///
+/// When `opponents` is empty, falls back to unconstrained sampling.
+/// When `opponent_danger_info` is empty, rollouts run without defense awareness.
+pub fn evaluate_discards_full(
+    info: &PlayerInfo,
+    candidates: &[Tile],
+    opponents: &[OpponentInfo],
+    opponent_discards: &[Vec<Tile>; 3],
+    opponent_danger_info: &[OpponentDangerInfo; 3],
+    config: &IsmceConfig,
+) -> Vec<IsmceScore> {
+    let base_shanten = calc_shanten(&info.hand, info.melds_count);
+
+    // 1. Compute danger scores once using enhanced method
+    let has_danger_info = opponent_danger_info.iter().any(|o| o.ding_que.is_some() || o.melds_count > 0 || o.discard_count > 0);
+    let danger = if has_danger_info {
+        Some(danger_scores_enhanced(
+            &info.tiles_seen,
+            opponent_discards,
+            info.wall_remaining,
+            opponent_danger_info,
+        ))
+    } else {
+        None
+    };
+
+    // 2. For each candidate discard, evaluate across sampled worlds
+    candidates
+        .iter()
+        .map(|&discard| {
+            let mut hand_after = info.hand;
+            remove_tile(&mut hand_after, discard);
+
+            let shanten_after = calc_shanten(&hand_after, info.melds_count);
+            let improvement = (base_shanten as f64 - shanten_after as f64)
+                .max(-5.0)
+                .min(5.0);
+
+            let mut wins = 0u64;
+            let mut tenpais = 0u64;
+
+            for world_idx in 0..config.num_worlds {
+                let seed = config.base_seed
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add((discard as u64) * 100_000 + world_idx as u64);
+
+                // Use constrained sampling if opponent info available
+                let wall = if !opponents.is_empty() {
+                    let (_opp_hands, wall) = sample_world_constrained(info, opponents, seed);
+                    wall
+                } else {
+                    sample_world(info, seed)
+                };
+
+                // Use defense-aware rollout
+                let (won, is_tenpai) = simulate_draws_with_defense(
+                    &hand_after,
+                    info.melds_count,
+                    info.ding_que,
+                    &wall,
+                    config.rollout_depth,
+                    danger.as_ref(),
+                );
 
                 if won {
                     wins += 1;

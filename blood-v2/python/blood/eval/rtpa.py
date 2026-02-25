@@ -14,13 +14,9 @@ from blood.consts import (
     INITIAL_SCORE, REWARD_NORM, MAX_TURNS,
     CH_WALL_REMAINING, CH_OPP_MELD_BASE, CH_SHANTEN_BASE,
     CH_TURN_PROGRESS, CH_OPP_AGARI_BASE,
-    CH_OPP_KAWA_BASE, CH_OPP_SUIT_RATIO_BASE,
+    CH_OPP_KAWA_BASE, CH_OPP_KAWA_STRIDE, CH_OPP_SUIT_RATIO_BASE,
     CH_OPP_TERMINAL_RATIO_BASE, CH_SELF_DISCARD_COUNT,
 )
-
-# ── 对手牌河通道布局常量 ──────────────────────────────────────────────────────
-# Section 6 中每个对手占 58 个通道：28×2(位置编码) + 1(衰减) + 1(摸切衰减)
-_OPP_KAWA_STRIDE = MAX_TURNS * 2 + 2  # 58
 
 
 class RTPA:
@@ -204,7 +200,7 @@ class GameStateTracker:
         # ── 信号2：摸切率（权重 0.25）──
         # 从对手牌河的摸切衰减通道提取近期摸切比例
         # 听牌后玩家倾向于摸切（不需要的牌直接打出）
-        opp_kawa_start = CH_OPP_KAWA_BASE + opp_idx * _OPP_KAWA_STRIDE
+        opp_kawa_start = CH_OPP_KAWA_BASE + opp_idx * CH_OPP_KAWA_STRIDE
         tsumogiri_decay_ch = opp_kawa_start + MAX_TURNS * 2 + 1  # 摸切衰减通道
         discard_decay_ch = opp_kawa_start + MAX_TURNS * 2        # 打牌衰减通道
         if obs_2d.shape[0] > tsumogiri_decay_ch:

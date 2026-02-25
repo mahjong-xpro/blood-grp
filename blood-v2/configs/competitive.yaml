@@ -1,3 +1,7 @@
+# ⚠️ Architecture params (blood_num_tile_attn_layers, oracle_num_tile_attn_layers,
+#    rnn_num_layers) MUST be identical across ALL training stages.
+#    Changing them between stages will cause checkpoint weight shape mismatches.
+
 # Phase 2a: Competitive — self-play + oracle value head training
 # Duration: ~1M env steps
 # Goal: train oracle value head to convergence (blood/oracle_value_head_loss < 0.1)
@@ -35,6 +39,8 @@ blood_obs_channels: 470
 blood_conv_channels: 256
 blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024
+blood_num_tile_attn_layers: 4
+blood_tile_attn_heads: 4
 
 # Opponents: neural self-play via league
 opponent_mode: selfplay
@@ -49,6 +55,8 @@ opponent_refresh_every: 20
 # oracle_value_warmup_steps: not used (distill_weight=0.0 means gate never fires)
 oracle_enabled: true
 oracle_num_blocks: 20
+oracle_num_tile_attn_layers: 4
+oracle_tile_attn_heads: 4
 oracle_distill_weight: 0.01
 oracle_distill_temperature: 2.0
 oracle_ce_weight: 0.05
@@ -96,10 +104,14 @@ aux_opp_waits_weight: 0.3
 use_rnn: true
 rnn_type: lstm
 rnn_size: 512
-rnn_num_layers: 1
+rnn_num_layers: 2
 rollout: 32
 recurrence: 32
 
 # Advantage clipping — Fix 5: tightened from 5.0 to 2.0
 # Corrupted critic can produce extreme advantages; tighter clip prevents runaway gradients
 adv_clip: 2.0
+
+# Dynamic hyperparameter schedules (within this stage)
+# Entropy: linear warmup from 0.01 → 0.05 over first 500k steps
+blood_schedule_entropy: "linear,0.01,0.05,0,500000"

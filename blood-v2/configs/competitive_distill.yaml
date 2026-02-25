@@ -1,3 +1,7 @@
+# ⚠️ Architecture params (blood_num_tile_attn_layers, oracle_num_tile_attn_layers,
+#    rnn_num_layers) MUST be identical across ALL training stages.
+#    Changing them between stages will cause checkpoint weight shape mismatches.
+
 # Phase 2b: Competitive Distill — oracle value distillation enabled
 # Duration: ~4M env steps
 # Goal: student critic learns from oracle's perfect-info value estimates
@@ -34,6 +38,8 @@ blood_obs_channels: 470
 blood_conv_channels: 256
 blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024
+blood_num_tile_attn_layers: 4
+blood_tile_attn_heads: 4
 
 # Opponents: neural self-play via league
 opponent_mode: selfplay
@@ -45,6 +51,8 @@ opponent_refresh_every: 20
 # oracle_value_warmup_steps: 0 — no gate needed; we're already past warmup
 oracle_enabled: true
 oracle_num_blocks: 20
+oracle_num_tile_attn_layers: 4
+oracle_tile_attn_heads: 4
 oracle_distill_weight: 0.01
 oracle_distill_temperature: 2.0
 oracle_ce_weight: 0.05
@@ -93,7 +101,7 @@ aux_opp_waits_weight: 0.3
 use_rnn: true
 rnn_type: lstm
 rnn_size: 512
-rnn_num_layers: 1
+rnn_num_layers: 2
 rollout: 32
 recurrence: 32
 

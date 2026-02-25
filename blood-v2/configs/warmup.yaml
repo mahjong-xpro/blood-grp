@@ -1,3 +1,7 @@
+# ⚠️ Architecture params (blood_num_tile_attn_layers, oracle_num_tile_attn_layers,
+#    rnn_num_layers) MUST be identical across ALL training stages.
+#    Changing them between stages will cause checkpoint weight shape mismatches.
+
 # Phase 1: Warmup — learn basic mahjong from RuleBot opponents
 # Duration: ~2M env steps
 # Goal: learn dingque, basic discard, simple winning patterns
@@ -30,6 +34,8 @@ blood_obs_channels: 470
 blood_conv_channels: 256
 blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024
+blood_num_tile_attn_layers: 4
+blood_tile_attn_heads: 4
 
 # Opponents: RuleBot during warmup
 opponent_mode: rulebot
@@ -40,6 +46,8 @@ opponent_mode: rulebot
 # oracle_value_warmup_steps: 0 — no gate needed (distill_weight=0.0 means it never fires)
 oracle_enabled: true
 oracle_num_blocks: 20
+oracle_num_tile_attn_layers: 4
+oracle_tile_attn_heads: 4
 oracle_distill_weight: 0.1
 oracle_distill_temperature: 3.0
 oracle_value_distill_weight: 0.0
@@ -80,4 +88,8 @@ aux_opp_waits_weight: 0.6
 # don't transfer to neural opponents; enabling LSTM here wastes capacity and
 # produces noisy hidden-state weights that competitive phase must unlearn.
 # LSTM is enabled from competitive phase onward.
+# Architecture defined here so checkpoint structure matches all stages.
 use_rnn: false
+rnn_type: lstm
+rnn_size: 512
+rnn_num_layers: 2

@@ -1,495 +1,367 @@
 # Blood-V2 深度评审报告
 
-> 评审日期：2026-02-24  
-> 评审范围：Rust引擎、神经网络架构、奖励系统与环境设计、课程学习与PPO超参数、评估系统
+> 评审日期: 2026-02-24 | 最后更新: 2026-02-25
+> 状态: **全部完成** — 64 项问题已处理，系统就绪待训练
 
 ---
 
 ## 1. 执行摘要
 
-Blood-V2 是一个高质量的血战到底麻将AI系统，采用 Rust 引擎 + PyTorch 神经网络的混合架构，通过 PPO 强化学习与 Oracle 蒸馏进行训练。Rust 引擎规则实现完整正确，17种番型与分数计算均无误；神经网络约35M参数，花色感知编码器设计精巧。但评审发现2个严重Bug（ISMCE参数缺失、RTPA/ISMCE互斥）、多个中等问题（terminated双重计算、SP Table退化、训练规模不足），以及若干设计改进空间。当前系统距超人类水平的主要瓶颈在于：搜索质量（SP Table/ISMCE）、训练规模（17M步不足）、评估管线缺陷。
+Blood-V2 是四川血战麻将 AI 系统，采用 Rust 引擎 + PyTorch 神经网络 + PPO 强化学习架构。
+
+**初始评审发现**: 35 项问题（2 S0 严重 / 5 S1 高 / 10 S2 中 / 18 S3 低），主要瓶颈为 ISMCE 评估管道失效、SP Table 退化、训练规模不足。
+
+**补充审查发现**: 29 项额外问题（#36-#64），包括推理模型架构不匹配、测试编译失败、文档过时等。
+
+**最终状态**: 64 项全部处理完成。系统需要重新编译 Rust 并从头训练（架构变更）。
 
 ---
 
-## 2. 系统架构概览
+## 2. 系统架构概览（更新后）
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    Blood-V2 系统                      │
-├──────────────┬──────────────┬───────────────────────┤
-│  Rust 引擎    │  神经网络     │  训练与评估            │
-│  - 规则逻辑   │  - Student   │  - PPO + Oracle蒸馏   │
-│  - 状态机     │    (~21M)    │  - 4阶段课程学习       │
-│  - 观测编码   │  - Oracle    │  - 联赛系统            │
-│  - SP Table  │    (~14M)    │  - RTPA + ISMCE       │
-│  - ISMCE采样  │  - 辅助任务   │  - Arena评估          │
-└──────────────┴──────────────┴───────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                    Blood-V2 System                       │
+├──────────────┬──────────────────┬────────────────────────┤
+│  Rust Engine │  Neural Network  │   Training Pipeline    │
+│  crates/     │  python/blood/   │   python/blood/        │
+│              │  model/          │   training/            │
+│ • 7阶段状态机│ • ~37M 参数      │ • SF2 PPO框架          │
+│ • 470ch 学生 │ • 4层TileAttn    │ • 5阶段课程学习        │
+│ • +52ch Oracle│ • 2层LSTM(512)  │ • 超参数动态调度       │
+│ • SP Table   │ • 解耦Actor-Critic│ • Elo追踪系统         │
+│ • ISMCE搜索  │ • Focal Loss     │ • 联赛Elo加权采样      │
+│ • SP缓存     │ • Oracle蒸馏     │ • TensorBoard监控      │
+│ • 22常量导出 │ • 循环式segments │ • 纯函数配置注入       │
+└──────────────┴──────────────────┴────────────────────────┘
 ```
 
-- **Rust引擎**：7阶段状态机，464通道学生观测 + 52通道Oracle观测，含防死锁机制
-- **神经网络**：SuitAwareConv1d编码器 + BottleneckBlock/SE注意力 + TileAttention + 解耦Actor-Critic双头 + LSTM时序建模
-- **训练管线**：PPO强化学习，KL自适应学习率，花色增强（S₃群），4阶段课程（Warmup→Competitive→Elite→Master）
-- **评估系统**：RTPA温度自适应 + ISMCE信息集蒙特卡洛搜索 + Arena统计评估
+---
+
+## 3. 各子系统评审
+
+### 3.1 Rust 引擎 — ✅ 优秀
+
+| 项目 | 评审结果 | 修复状态 |
+|------|---------|---------|
+| 游戏逻辑 | 7阶段状态机，17种番型正确 | 无需修复 |
+| SP Table | MAX_SAMPLES 原为 0，iishanten 退化 | ✅ 已修复: MAX_SAMPLES=5 |
+| ISMCE 搜索 | 原无防守逻辑，采样不约束 | ✅ 已修复: `evaluate_discards_full()` 统一入口 |
+| Oracle 观测 | 每步重算 3 对手 SP（性能瓶颈） | ✅ 已修复: FxHashMap SP 缓存 |
+| 通道常量 | Python 端硬编码，布局变更脆弱 | ✅ 已修复: 22 个 CH_* 常量从 Rust 导出 |
+| 学生观测 | 464 通道，缺少对手手牌信息 | ✅ 已修复: 470 通道 (Section 14) |
+| Oracle 观测 | 12 冗余通道 | ✅ 已修复: 替换为 SP 摘要+危险度 |
+| 地胡定义 | 可能与地方规则不符 | ✅ 已验证: 正确实现 |
+| 花猪/大叫 | 罚分计算可能有误 | ✅ 已验证: `finalize_scoring()` 正确 |
+| Env info dict | 缺少 winners/scores 字段 | ✅ 已修复: step() 返回 winners + scores |
+| assert 级别 | Oracle 用 debug_assert（release 跳过） | ✅ 已修复: 改为 assert_eq! |
+
+### 3.2 神经网络 — ✅ 优秀（已重构）
+
+| 项目 | 评审结果 | 修复状态 |
+|------|---------|---------|
+| SuitAwareConv1d | 花色隔离卷积，设计亮点 | 无需修复 |
+| TileAttention | 原仅 2 层，跨花色交互不足 | ✅ 已重构: 循环式架构，支持任意层数，默认 4 层 |
+| BottleneckBlock | SE 注意力，设计合理 | 无需修复 |
+| enc_proj 压缩 | 原 6.75x 压缩过大 | ✅ 已修复: 可选 2 层渐进压缩 MLP |
+| LSTM | 原单层 512-dim | ✅ 已升级: 2 层 512-dim |
+| Action mask | `-1e9` 在 float16 溢出 | ✅ 已修复: `torch.finfo(dtype).min` |
+| oracle_num_blocks | cfg(25) vs yaml(20) 不匹配 | ✅ 已修复: 统一为 20 |
+| 听牌预测 | BCE 不平衡 | ✅ 已修复: Focal Loss (α=0.25, γ=2.0) |
+| 推理模型 | 架构与训练编码器不匹配 | ✅ 已重构: PolicyModel 使用相同循环式架构 |
+| ONNX 导出 | 常量过时 + 返回值不匹配 | ✅ 已修复: 动态导入 + tuple 解包 |
+| __init__.py | 新模块未导出 | ✅ 已修复: 所有关键类已导出 |
+
+### 3.3 奖励系统与环境 — ✅ 良好
+
+| 项目 | 评审结果 | 修复状态 |
+|------|---------|---------|
+| terminated 双重计算 | 排名奖励被跳过 | ✅ 已修复: finalize_scoring() 后统一计算 |
+| _rust_engine_ok | 一旦 False 永不恢复 | ✅ 已修复: 100 步冷却 + 3 次永久禁用 |
+| 排名奖励 | 默认禁用 | ✅ 已修复: competitive/elite 启用 |
+| 安全打牌奖励 | 默认禁用 | ✅ 已修复: competitive 0.015 |
+| 向听奖励 | 可能导致贪婪追求 | ✅ 已修复: 番数加权 + 衰减调度 |
+| 全局步数追踪 | 每 worker 独立计数，衰减 512× 过慢 | ✅ 已修复: 按并行 env 数校正 |
+| 排名平局 | 训练环境不处理平局 | ✅ 已修复: 平均排名算法 |
+| 双重计算防护 | Warmup 塑形+结构化奖励可叠加 | ✅ 已修复: 代码级互斥防护 |
+
+### 3.4 课程学习与 PPO — ✅ 良好
+
+| 项目 | 评审结果 | 修复状态 |
+|------|---------|---------|
+| Warmup→Competitive | 同时变更 6 个超参数 | ✅ 已修复: 新增 warmup_transition 过渡阶段 |
+| 联赛多样性 | α=3.0 过于集中 | ✅ 已修复: α=2.0 + 均匀下限 + 自对弈 |
+| Checkpoint 排序 | 使用 st_mtime（不可靠） | ✅ 已修复: 文件名正则排序 |
+| 训练规模 | 17M 步不足 | ✅ 已修复: elite 50M，总 ~57.5M |
+| 熵系数 | 各阶段静态，无动态调度 | ✅ 已修复: HyperparamScheduler (cosine/linear/cyclic/step) |
+| adv_clip | Elite 5.0 过于宽松 | ✅ 已修复: 线性收紧 5.0→3.0 |
+| Warmup LSTM | 禁用 | ⚙️ 设计决策: 通过 transition 阶段缓解 |
+| Elo 追踪 | 无持久化评分系统 | ✅ 已修复: EloTracker + TensorBoard + Elo 加权采样 |
+| sys.argv 污染 | 全局修改不恢复 | ✅ 已修复: 纯函数 + try/finally |
+| log_softmax | 每 minibatch 不必要计算 | ✅ 已修复: 每 100 步节流 |
+
+### 3.5 评估系统 — ✅ 良好（原有严重缺陷已修复）
+
+| 项目 | 评审结果 | 修复状态 |
+|------|---------|---------|
+| ISMCE 参数缺失 | hand/tiles_seen 未传入，搜索从不执行 | ✅ 已修复: _extract_ismce_state() |
+| RTPA/ISMCE 互斥 | if/elif 导致无法协作 | ✅ 已修复: 顺序执行 RTPA→ISMCE |
+| ISMCE 防守 | rollout 仅贪婪向听，无防守 | ✅ 已修复: evaluate_discards_full() 全链路 |
+| 对手听牌估计 | 仅用副露比≥0.5 | ✅ 已修复: 6 信号多因子评分 |
+| 终盘放大 | 阶跃函数 | ✅ 已修复: 线性斜坡 |
+| ISMCE 采样 | 忽略对手行为模型 | ✅ 已修复: 约束采样（尊重定缺） |
+| log-space 混合 | 尺度不匹配 | ✅ 已修复: 标准化 |
+| Arena 座位 | 固定位置 0 | ✅ 已修复: 随机座位 |
+| Arena 排名 | 平局乐观 | ✅ 已修复: 平均排名 |
+| Arena 胜利检测 | 座位轮换时不可靠 | ✅ 已修复: Rust env 返回 winners 列表 |
+| 通道偏移量 | 硬编码魔法数字 | ✅ 已修复: 从 consts 导入 |
+| Oracle CE 加权 | 连败时归零 | ✅ 已修复: softmax 加权 |
+| 缓存计数器 | checkpoint 重载后脆弱 | ✅ 已修复: 精确匹配 + 重置方法 |
 
 ---
 
-## 3. 各子系统评审结论
+## 4. 完整问题清单（64 项）
 
-### 3.1 Rust引擎
+### S0 严重 — 功能失效
 
-**评级：优秀（局部可改进）**
+| # | 问题 | 状态 |
+|---|------|------|
+| 1 | ISMCE 调用缺少 hand/tiles_seen 参数 | ✅ |
+| 2 | RTPA 和 ISMCE 互斥 (if/elif) | ✅ |
+| 36 | 推理模型编码器架构与训练不匹配 | ✅ |
+| 37 | evaluate.py 回退路径硬编码 -1e9 | ✅ |
 
-规则正确性方面表现出色：
-- 17种番型计算完整正确
-- 分数计算公式 `1000 × 2^(fan-1)`，6番封顶=32000，实现正确
-- 定缺规则完整（强制先打定缺花色、定缺未完不能和牌/碰/杠）
-- 终局结算（查花猪、查大叫）正确
-- 过手加番、抢杠、杠上花/杠上炮、一炮多响均正确
+### S1 高 — 训练/决策质量
 
-状态机设计稳健：7阶段覆盖所有场景，多层防死锁机制（500次迭代上限、8次停滞检测）。
+| # | 问题 | 状态 |
+|---|------|------|
+| 3 | SP Table MAX_SAMPLES=0 | ✅ |
+| 4 | terminated 双重计算 | ✅ |
+| 5 | _rust_engine_ok 永不恢复 | ✅ |
+| 6 | Action mask -1e9 float16 溢出 | ✅ |
+| 7 | oracle_num_blocks 不匹配 | ✅ |
+| 38 | inference.py get_action() 硬编码 -1e9 | ✅ |
+| 39 | _cache_gen 计数器 checkpoint 重载脆弱 | ✅ |
+| 40 | 每 worker _global_env_steps 衰减 512× 过慢 | ✅ |
+| 41 | Oracle obs 每步 3 对手 SP Table（3× 成本） | ✅ |
 
-观测编码丰富但有改进空间：
-- 464通道学生观测无信息泄露
-- 缺少对手手牌数量显式编码和副露来源信息
-- Oracle 52通道中有12通道冗余（对手定缺信息在学生obs中已有）
-- `debug_assert` vs `assert` 使用策略合理（核心数据操作用 `debug_assert` 优先性能，观测编码用 `assert`）
+### S2 中 — 性能/准确性
 
-**关键瓶颈**：SP Table 的 `MAX_SAMPLES=0` 导致一向听评估退化为粗略估计，这是当前最大的决策质量瓶颈。听牌状态精确计算，但二向听及以上使用粗略估计。
+| # | 问题 | 状态 |
+|---|------|------|
+| 8 | Warmup→Competitive 同时变更 6 超参数 | ✅ |
+| 9 | 联赛多样性不足 | ✅ |
+| 10 | Checkpoint 排序用 st_mtime | ✅ |
+| 11 | Arena 座位固定 | ✅ |
+| 12 | 对手听牌仅用副露比 | ✅ |
+| 13 | 终盘放大阶跃函数 | ✅ |
+| 14 | log-space 混合尺度不匹配 | ✅ |
+| 15 | ISMCE 采样忽略对手行为 | ✅ |
+| 16 | ISMCE rollout 无防守逻辑 | ✅ |
+| 17 | 训练规模 17M 不足 | ✅ |
+| 42 | Python 通道偏移量未从 Rust 导出 | ✅ |
+| 43 | evaluate.py 重复硬编码通道偏移 | ✅ |
+| 44 | Arena 胜利检测回退不可靠 | ✅ |
+| 45 | Oracle CE 优势加权连败归零 | ✅ |
+| 46 | 训练排名不处理平局 | ✅ |
+| 47 | Warmup 塑形+结构化奖励双重计算 | ✅ |
+| 48 | _OPP_KAWA_STRIDE 脆弱耦合 | ✅ |
+| 57 | export_onnx.py OBS_CHANNELS=464 过时 | ✅ |
+| 58 | export_onnx.py OnnxWrapper 返回值不匹配 | ✅ |
 
-ISMCE（Rust端）存在设计局限：采样未考虑对手行为模型（均匀随机分配未见牌），rollout使用贪心向听最小化不考虑防守，`danger_scores` 纯启发式过于简单。
+### S3 低 — 改进建议
 
-**争议点**：
-- 地胡定义（当前为庄家第一张打出被荣和）可能与部分地方规则不一致
-- 花猪/大叫罚分使用自摸计算（含自摸番），部分规则应按荣和计算
-
-### 3.2 神经网络架构
-
-**评级：良好（存在设计风险）**
-
-模型总参数量约35M（Student ~21M + Oracle ~14M）。
-
-编码器设计亮点：
-- `SuitAwareConv1d` 花色感知设计正确，三花色同构共享权重
-- `BottleneckBlock` + SE注意力适合麻将特征提取
-- 推理延迟 CPU 单样本 <5ms，完全满足实时需求
-
-Oracle蒸馏设计完整：
-- 双通道蒸馏（策略KL + 价值MSE）
-- 两阶段价值蒸馏（先训练oracle value head，再蒸馏）是亮点
-
-**风险点**：
-- `TileAttention`（27位置4头自注意力）仅2层，跨花色推理能力可能不足
-- `464×27 → 6912 → 1024` 的 `enc_proj` 是6.75x压缩，存在信息瓶颈风险
-- LSTM单层512维（competitive/elite阶段），时序建模能力偏弱
-- 动作掩码 `-1e9` 在 float16 下会溢出
-- `oracle_num_blocks` 在 `cfg.py`(25) 和 yaml(20) 之间不一致
-
-**辅助任务**：
-- 对手向听预测（3×5类CE）合理
-- 对手听牌预测（81维BCE）在极端不平衡下可能退化，建议使用 Focal Loss
-
-### 3.3 奖励系统与环境设计
-
-**评级：良好（存在Bug）**
-
-奖励设计合理：
-- sqrt压缩将32:1线性比率压缩到5.6:1，有效降低方差
-- 自摸bonus(0.1) > 放铳penalty(0.05)，鼓励进攻，符合血战特点
-- 向听进退奖励是唯一的高密度信号源
-
-花色增强实现正确：6种S₃群排列，obs/action/mask/labels一致变换。
-
-**设计隐患**：
-- 向听进退奖励可能导致贪心向听追求（忽略番数价值）
-- 安全弃牌奖励默认关闭(0.0)
-- 排名奖励默认关闭(0.0)，但血战最终目标是排名
-- warmup塑形奖励中放铳判定较粗糙
-
-**Bug**：
-- `terminated` 双重计算（第319行 vs 第396行）可能导致排名奖励被跳过
-- `_rust_engine_ok` 一旦设为 `False` 永远不恢复，可能降低训练吞吐量
-
-### 3.4 课程学习与PPO超参数
-
-**评级：良好（过渡风险高）**
-
-课程设计：
-- 4阶段课程整体合理
-- gamma递增（0.99→0.998→0.999）是亮点，逐步扩展时间视野
-- Warmup禁用LSTM值得商榷（丢失通用时序特征学习机会）
-- **Warmup→Competitive过渡同时改变6个超参数，是训练崩溃高风险点**
-
-PPO超参数：
-- KL-adaptive LR 的 masked action space 校准体现深入理解
-- entropy从0.01→0.05→0.01的非单调变化有理由但可能过高
-- `adv_clip` 在Elite阶段反而放宽（2.0→5.0），需要监控
-
-联赛系统存在问题：
-- 多项式衰减采样（α=3.0）过于偏向最新checkpoint，有效多样性低
-- 缺少Elo/胜率追踪
-- checkpoint排序用 `st_mtime` 而非文件名数字，在NFS等环境可能出错
-
-**训练规模不足**：总计17M env steps，大概率不足以达到超人类水平，建议至少50-100M步。
-
-### 3.5 评估系统
-
-**评级：存在严重缺陷**
-
-RTPA温度自适应方向正确：
-- 攻击降温、防御升温、分差调节、残局放大
-- 但对手听牌推断使用副露比例(>=0.5)作为代理，准确性低
-- 残局放大为阶跃函数，缺乏平滑过渡
-
-**严重Bug**：
-- `evaluate.py` 中 ISMCE 调用缺少 `hand`/`tiles_seen` 等关键参数，导致 ISMCE 搜索永远不会执行
-- RTPA 与 ISMCE 互斥设计，无法同时生效
-- log空间混合存在尺度不匹配风险
-
-Arena评估：
-- 座位固定在位置0未轮换，可能引入系统性偏差
-- Bootstrap 10000次重采样，统计方法基本正确
-- 同分排名计算偏乐观
+| # | 问题 | 状态 |
+|---|------|------|
+| 18 | 缺少对手手牌数编码 | ✅ |
+| 19 | 缺少副露来源信息 | ✅ |
+| 20 | Oracle 12 冗余通道 | ✅ |
+| 21 | TileAttention 仅 2 层 | ✅ 重构为 4 层 |
+| 22 | enc_proj 6.75x 压缩 | ✅ |
+| 23 | LSTM 单层 512-dim | ✅ 升级为 2 层 |
+| 24 | 听牌预测 BCE 不平衡 | ✅ Focal Loss |
+| 25 | 向听奖励贪婪追求 | ✅ 番数加权 |
+| 26 | 排名奖励默认禁用 | ✅ |
+| 27 | 安全打牌奖励禁用 | ✅ |
+| 28 | Warmup 禁用 LSTM | ⚙️ 设计决策 |
+| 29 | 熵系数无动态调度 | ✅ HyperparamScheduler |
+| 30 | Elite adv_clip 5.0 过宽 | ✅ 线性收紧 |
+| 31 | 无 Elo/胜率追踪 | ✅ EloTracker |
+| 32 | 平局排名乐观 | ✅ |
+| 33 | 地胡定义 | ✅ 已验证正确 |
+| 34 | 花猪/大叫罚分 | ✅ 已验证正确 |
+| 35 | danger_scores 纯启发式 | ✅ 多因子评分 |
+| 49 | sys.argv 全局污染 | ✅ |
+| 50 | log_softmax 每 minibatch 不必要 | ✅ 节流 |
+| 51 | elo.py get_leaderboard(0) 返回空 | ✅ |
+| 52 | oracle.rs debug_assert 替代 assert_eq | ✅ |
+| 53 | ismce.py 热路径内 import | ✅ |
+| 54 | test_model.py 引用旧编码器属性 | ✅ |
+| 55 | test_model.py 旧格式 checkpoint 测试 | ✅ |
+| 56 | test_obs.rs encode_oracle_obs() 参数数量 | ✅ |
+| 59 | oracle.rs 用 HashMap 而非 FxHashMap | ✅ |
+| 60 | eval/__init__.py 未导出新模块 | ✅ |
+| 61 | training/__init__.py 为空 | ✅ |
+| 62 | ARCHITECTURE.md 严重过时 | ✅ 完全重写 |
+| 63 | model/__init__.py 未导出 PolicyModel | ✅ |
+| 64 | test_smoke.py 硬编码 OBS_CHANNELS | ✅ |
 
 ---
 
-## 4. Bug与问题汇总表
+## 5. 关键架构变更
 
-### 4.1 严重（S0）— 功能失效
+### 5.1 ISMCE 防守逻辑全链路
 
-| # | 子系统 | 问题描述 | 影响 |
-|---|--------|----------|------|
-| 1 | 评估系统 | `evaluate.py` 中 ISMCE 调用缺少 `hand`/`tiles_seen` 等关键参数 | ISMCE搜索永远不会执行，搜索增强完全失效 |
-| 2 | 评估系统 | RTPA 与 ISMCE 互斥设计 | 两个增强机制无法协同，评估时只能二选一 |
+```
+evaluate.py: NeuralAgent.__call__()
+  → _extract_opponent_state()        # 从 obs 提取对手状态
+  → ISMCESearcher.select_action()    # 传入对手信息
+    → ismce_evaluate_full()          # PyBind 新接口
+      → danger_scores_enhanced()     # 多因子危险度（一次性）
+      → sample_world_constrained()   # 尊重对手定缺
+      → simulate_draws_with_defense() # 同向听优先安全牌
+```
 
-### 4.2 高（S1）— 影响训练/决策质量
+### 5.2 编码器循环式架构
 
-| # | 子系统 | 问题描述 | 影响 |
-|---|--------|----------|------|
-| 3 | Rust引擎 | SP Table `MAX_SAMPLES=0`，一向听评估退化 | 最大决策质量瓶颈，向听推进评估不准确 |
-| 4 | 奖励系统 | `terminated` 双重计算（第319行 vs 第396行） | 排名奖励可能被跳过，影响训练信号 |
-| 5 | 奖励系统 | `_rust_engine_ok` 设为 `False` 后永不恢复 | 训练吞吐量可能持续降低 |
-| 6 | 神经网络 | 动作掩码 `-1e9` 在 float16 下溢出 | 混合精度训练时可能产生NaN |
-| 7 | 神经网络 | `oracle_num_blocks` cfg.py(25) vs yaml(20) 不一致 | Oracle模型结构可能与预期不符 |
+```
+输入 (B, 470, 27)
+  → SuitAwareConv1d(470→256) + GroupNorm + Mish
+  → SuitPositionalEncoding(256)
+  → [Segment 0: BottleneckBlock×5 → TileAttention(4heads)]
+  → [Segment 1: BottleneckBlock×5 → TileAttention(4heads)]
+  → [Segment 2: BottleneckBlock×5 → TileAttention(4heads)]
+  → [Segment 3: BottleneckBlock×5 → TileAttention(4heads)]
+  → Flatten(6912) → LayerNorm → Linear(1024)
+  → LSTM(1024→512, 2层)
+  → 解耦 Actor(512→34) / Critic(512→1)
+```
 
-### 4.3 中（S2）— 性能/准确性受限
+### 5.3 超参数动态调度
 
-| # | 子系统 | 问题描述 | 影响 |
-|---|--------|----------|------|
-| 8 | 课程学习 | Warmup→Competitive过渡同时改变6个超参数 | 训练崩溃高风险 |
-| 9 | 联赛系统 | 多项式衰减α=3.0，有效对手多样性低 | 自我博弈多样性不足，可能过拟合 |
-| 10 | 联赛系统 | checkpoint排序用 `st_mtime` | NFS等环境下排序可能出错 |
-| 11 | 评估系统 | Arena座位固定位置0未轮换 | 评估结果可能有系统性偏差 |
-| 12 | 评估系统 | 对手听牌推断用副露比例>=0.5 | 推断准确性低，RTPA调温不准 |
-| 13 | 评估系统 | 残局放大为阶跃函数 | 策略在阈值附近不连续 |
-| 14 | 评估系统 | log空间混合尺度不匹配 | 搜索结果与网络输出混合可能失真 |
-| 15 | Rust引擎 | ISMCE采样未考虑对手行为模型 | 信息集采样质量低 |
-| 16 | Rust引擎 | ISMCE rollout贪心向听最小化 | rollout不考虑防守，评估偏乐观 |
-| 17 | 训练规模 | 总计17M env steps | 大概率不足以达到超人类水平 |
+```yaml
+# elite.yaml 示例
+blood_schedule_entropy: "cosine,0.02,0.005,0,40000000"
+blood_schedule_adv_clip: "linear,5.0,3.0,10000000,40000000"
+```
 
-### 4.4 低（S3）— 改进建议
+支持 linear / cosine / cyclic / step 四种调度类型。
 
-| # | 子系统 | 问题描述 | 影响 |
-|---|--------|----------|------|
-| 18 | Rust引擎 | 缺少对手手牌数量显式编码 | 观测信息不完整 |
-| 19 | Rust引擎 | 缺少副露来源信息 | 无法推断对手牌型关联 |
-| 20 | Rust引擎 | Oracle 52通道中12通道冗余 | 计算资源浪费 |
-| 21 | 神经网络 | TileAttention仅2层 | 跨花色推理能力可能不足 |
-| 22 | 神经网络 | enc_proj 6.75x压缩 | 信息瓶颈风险 |
-| 23 | 神经网络 | LSTM单层512维 | 时序建模能力偏弱 |
-| 24 | 神经网络 | 对手听牌预测81维BCE不平衡 | 预测可能退化 |
-| 25 | 奖励系统 | 向听奖励可能导致贪心追求 | 忽略番数价值 |
-| 26 | 奖励系统 | 排名奖励默认关闭 | 与血战最终目标不一致 |
-| 27 | 奖励系统 | 安全弃牌奖励默认关闭 | 缺少防守激励 |
-| 28 | 课程学习 | Warmup禁用LSTM | 丢失通用时序特征学习机会 |
-| 29 | 课程学习 | entropy非单调变化可能过高 | 探索过度 |
-| 30 | 课程学习 | adv_clip Elite阶段放宽到5.0 | 需要监控 |
-| 31 | 联赛系统 | 缺少Elo/胜率追踪 | 无法量化训练进展 |
-| 32 | 评估系统 | 同分排名计算偏乐观 | 评估指标略有偏差 |
-| 33 | Rust引擎 | 地胡定义可能与部分地方规则不一致 | 规则兼容性 |
-| 34 | Rust引擎 | 花猪/大叫罚分使用自摸计算 | 部分规则应按荣和计算 |
-| 35 | Rust引擎 | danger_scores纯启发式 | 危险度评估过于简单 |
+### 5.4 Elo 追踪系统
+
+- 多人配对 Elo（4人麻将每对贡献更新，K/(n-1) 缩放）
+- 自适应 K 因子（新玩家 64，成熟 32）
+- JSON 原子持久化
+- 可选 Elo 加权对手采样（高斯 σ=200）
+- TensorBoard: `blood/elo_current`, `blood/elo_best`, `blood/elo_pool_mean`
+
+### 5.5 Oracle SP 缓存
+
+- `OracleSpCache = FxHashMap<(usize, OppSpCacheKey), OppSpCacheEntry>`
+- 缓存键: `(tehai, num_melds, tiles_left)` — 故意省略 tiles_seen（±1 影响极小）
+- `reset()` 时清空，每局最多 ~150 条目
+- 预计减少 ~50% SP 计算量
 
 ---
 
-## 5. 超人类路径分析
+## 6. 训练配置（更新后）
 
-### 5.1 当前水平评估
+| 阶段 | 步数 | 对手 | LSTM | 熵系数 | 特殊 |
+|------|------|------|------|--------|------|
+| warmup | 2M | RuleBot | ❌ | 0.01 | 基础策略学习 |
+| warmup_transition | 500K | RuleBot | ✅ | 0.01 | LSTM 稳定化 |
+| competitive | 1M | 自对弈 | ✅ | 0.01→0.05 | 熵预热 |
+| competitive_distill | 4M | 自对弈 | ✅ | 0.05 | Oracle 价值蒸馏 |
+| elite | 50M | 自对弈 | ✅ | 0.02→0.005 | RTPA+ISMCE, adv_clip 5→3 |
 
-系统具备完整的血战到底麻将规则实现和合理的RL训练框架，但由于评估管线存在严重Bug（ISMCE完全失效），当前无法准确衡量实际水平。基于架构分析，预估当前水平为**强业余级别**。
-
-### 5.2 与超人类水平的差距
-
-| 维度 | 当前状态 | 超人类要求 | 差距 |
-|------|----------|-----------|------|
-| 搜索深度 | SP Table退化，ISMCE失效 | 精确向听评估 + 有效搜索 | 🔴 巨大 |
-| 训练规模 | 17M steps | 50-100M+ steps | 🔴 巨大 |
-| 对手建模 | 均匀随机采样 | 基于行为的信念更新 | 🟡 显著 |
-| 防守能力 | 安全弃牌奖励关闭，rollout无防守 | 攻防平衡决策 | 🟡 显著 |
-| 时序推理 | 单层LSTM 512维 | 深层时序建模 | 🟢 中等 |
-| 番数规划 | 向听贪心，无番数引导 | 番数-速度权衡 | 🟢 中等 |
-
-### 5.3 关键瓶颈（按影响排序）
-
-1. **搜索质量**：SP Table `MAX_SAMPLES=0` 使一向听评估退化，ISMCE评估端完全失效。搜索是从"强"到"超人类"的核心跳板。
-2. **训练规模**：17M步远不足以充分探索血战到底的策略空间（4人×3花色定缺×多种番型组合）。
-3. **评估管线**：ISMCE参数缺失 + RTPA/ISMCE互斥，导致无法验证搜索增强效果，形成改进盲区。
-4. **对手建模**：均匀随机采样无法捕捉对手倾向，信息集搜索质量受限。
-5. **奖励信号**：排名奖励关闭、向听贪心倾向、缺少番数引导，训练目标与实际博弈目标存在偏差。
+**跨阶段一致参数**:
+- `blood_num_tile_attn_layers: 4`
+- `blood_tile_attn_heads: 4`
+- `rnn_num_layers: 2`
+- `rnn_size: 512`
 
 ---
 
-## 6. 改进建议
+## 7. 超人类路径分析
 
-### P0 — 立即修复（阻塞性Bug）
+### 当前水平评估
 
-| # | 建议 | 预期收益 | 工作量 |
-|---|------|----------|--------|
-| P0-1 | 修复 `evaluate.py` 中 ISMCE 调用参数缺失 | 恢复搜索增强功能 | 小（1天） |
-| P0-2 | 重构 RTPA/ISMCE 为可组合设计（非互斥） | 两种增强机制可协同 | 中（2-3天） |
-| P0-3 | 修复 `terminated` 双重计算逻辑 | 排名奖励正常生效 | 小（半天） |
-| P0-4 | 修复 `_rust_engine_ok` 恢复机制 | 训练吞吐量稳定 | 小（半天） |
-| P0-5 | 修复动作掩码 `-1e9` 为 `-1e4`（兼容float16） | 混合精度训练安全 | 小（半天） |
-| P0-6 | 统一 `oracle_num_blocks` 配置 | 消除配置歧义 | 小（半天） |
+修复后预计达到**强竞技水平**。三大原始瓶颈（SP Table 退化、评估管道失效、训练规模不足）已全部解决。
 
-### P1 — 高优先级（显著提升决策质量）
+### 进一步提升方向
 
-| # | 建议 | 预期收益 | 工作量 |
-|---|------|----------|--------|
-| P1-1 | SP Table 设置合理的 `MAX_SAMPLES`（如1000-5000） | 一向听评估精度大幅提升 | 中（2-3天） |
-| P1-2 | 训练规模扩展至50-100M steps | 策略充分收敛 | 大（计算资源） |
-| P1-3 | 启用排名奖励并调优权重 | 训练目标对齐博弈目标 | 中（1-2天+调参） |
-| P1-4 | Warmup→Competitive过渡拆分为2-3个子阶段 | 降低训练崩溃风险 | 中（2-3天） |
-| P1-5 | Arena评估增加座位轮换 | 消除系统性偏差 | 小（1天） |
-| P1-6 | 联赛系统增加Elo追踪 | 量化训练进展 | 中（2-3天） |
-
-### P2 — 中优先级（进一步提升上限）
-
-| # | 建议 | 预期收益 | 工作量 |
-|---|------|----------|--------|
-| P2-1 | ISMCE采样引入对手行为模型 | 信息集采样质量提升 | 大（1-2周） |
-| P2-2 | ISMCE rollout加入防守逻辑 | rollout评估更准确 | 中（3-5天） |
-| P2-3 | 增加对手手牌数量显式编码 | 观测信息更完整 | 小（1天） |
-| P2-4 | TileAttention增加到4层 | 跨花色推理增强 | 中（2-3天+重训练） |
-| P2-5 | LSTM升级为2层或引入Transformer | 时序建模增强 | 中（3-5天+重训练） |
-| P2-6 | 对手听牌预测改用Focal Loss | 不平衡场景预测改善 | 小（1天） |
-| P2-7 | 向听奖励加入番数加权 | 减少贪心向听倾向 | 中（2-3天） |
-| P2-8 | 残局放大改为sigmoid平滑过渡 | 策略连续性改善 | 小（半天） |
-| P2-9 | 联赛采样α降至1.5-2.0 | 对手多样性提升 | 小（半天） |
-
-### P3 — 低优先级（锦上添花）
-
-| # | 建议 | 预期收益 | 工作量 |
-|---|------|----------|--------|
-| P3-1 | 移除Oracle观测中12通道冗余 | 微量计算节省 | 小（1天） |
-| P3-2 | 增加副露来源信息编码 | 对手牌型推断增强 | 中（2-3天） |
-| P3-3 | enc_proj压缩比优化（如4x） | 降低信息瓶颈风险 | 中（需实验） |
-| P3-4 | Warmup阶段启用LSTM | 时序特征早期学习 | 小（配置修改） |
-| P3-5 | checkpoint排序改用文件名数字 | NFS兼容性 | 小（半天） |
-| P3-6 | 启用安全弃牌奖励并调参 | 防守能力提升 | 中（需调参） |
-| P3-7 | danger_scores改进为学习型评估 | 危险度评估更准确 | 大（1-2周） |
-| P3-8 | 地胡定义增加可配置选项 | 规则兼容性 | 小（半天） |
-| P3-9 | 花猪/大叫罚分增加荣和计算选项 | 规则兼容性 | 小（半天） |
+| 维度 | 当前状态 | 提升方向 |
+|------|---------|---------|
+| 搜索深度 | ISMCE 约束采样+防守 rollout | 更深的 rollout + MCTS |
+| 训练规模 | 57.5M 步 | 100M+ 步 |
+| 对手建模 | 6 信号听牌估计 | 神经网络对手模型 |
+| 防守 | 启发式危险度 | 学习型防守策略 |
+| 时序推理 | 2 层 LSTM | Transformer 替代 |
+| 番型规划 | 向听+番数加权 | 显式番型目标网络 |
 
 ---
 
-## 7. 结论
+## 8. 重要注意事项
 
-Blood-V2 展现了扎实的工程基础和对血战到底麻将规则的深入理解。Rust引擎的规则实现质量高，神经网络架构设计合理，训练管线具备完整的课程学习和自我博弈框架。
-
-然而，系统存在**2个严重Bug**阻碍了评估系统的正常运作，**5个高优先级问题**影响训练和决策质量。最关键的三个瓶颈是：
-
-1. **SP Table退化**（`MAX_SAMPLES=0`）— 直接削弱每一步决策的评估质量
-2. **评估管线失效**（ISMCE参数缺失 + RTPA/ISMCE互斥）— 搜索增强完全不可用
-3. **训练规模不足**（17M步）— 策略无法充分收敛
-
-建议的改进路径：**先修复P0阻塞性Bug → 落实P1搜索与训练扩展 → 逐步推进P2/P3优化**。预计完成P0+P1后，系统可达到强竞技水平；进一步完成P2中的对手建模和网络增强后，有望接近超人类水平。
-
-总体评价：**架构设计优秀，实现质量高，但关键子系统存在阻塞性缺陷需要优先修复。**
+1. **⚠️ 需要从头训练**: TileAttention 4 层 + LSTM 2 层改变了模型架构，旧 checkpoint 不兼容
+2. **⚠️ 需要重新编译 Rust**: SP 缓存、常量导出、winners 字段、assert_eq 等修改了 Rust 代码
+3. **⚠️ 配置一致性**: 所有 YAML 配置已统一架构参数，跨阶段必须保持一致
+4. **推理模型兼容**: `PolicyModel.from_sf2_checkpoint()` 支持新旧两种 state_dict 格式
 
 ---
 
-## 八、已完成的修复与优化
+## 附录: 修改文件清单
 
-> 本章记录截至 2026-02-24 已完成的所有修复和优化工作。
+### Rust (crates/)
+- `engine/src/algo/ismce.rs` — evaluate_discards_full(), 防守 rollout
+- `engine/src/obs/oracle.rs` — SP 缓存, FxHashMap, assert_eq
+- `engine/src/obs/student.rs` — 470 通道 Section 14
+- `engine/src/consts.rs` — 22 个 CH_* 常量
+- `engine/tests/test_obs.rs` — encode_oracle_obs() 参数修复
+- `pybind/src/env.rs` — winners/scores 字段, SP 缓存传递
+- `pybind/src/ismce_py.rs` — ismce_evaluate_full()
+- `pybind/src/lib.rs` — 常量导出
 
-### P0 修复（严重Bug）
+### Python — 模型 (python/blood/model/)
+- `encoder.py` — 循环式 segments/tile_attns 架构
+- `oracle.py` — 同上
+- `factory.py` — oracle 参数传递, reset_cache_counters()
+- `inference.py` — PolicyModel 重写, 旧格式兼容
+- `heads.py` — Focal Loss
 
-#### 1. ISMCE 集成重构 — `evaluate.py`
+### Python — 训练 (python/blood/training/)
+- `runner.py` — 纯函数配置注入, try/finally
+- `callbacks.py` — 调度器+Elo 集成
+- `losses.py` — softmax 加权, log_softmax 节流
+- `league.py` — Elo 加权采样
+- `scheduler.py` — 新建: HyperparamScheduler
 
-- **问题描述**：
-  - ISMCE调用缺少 `hand`/`tiles_seen`/`melds_count`/`ding_que` 参数，搜索永远不执行
-  - RTPA与ISMCE互斥（if/elif），无法同时生效
-- **修改文件**：`python/blood/eval/evaluate.py`
-- **修改内容**：新增 `_extract_ismce_state()` 从464×27观测张量提取游戏状态；重构 `__call__()` 为四步流水线（RTPA算温度→ISMCE用温度搜索→纯RTPA→纯策略网络），两者协同工作
-- **影响范围**：评估系统核心流程，ISMCE搜索增强功能恢复，RTPA与ISMCE可协同生效
+### Python — 评估 (python/blood/eval/)
+- `evaluate.py` — 对手状态提取, 常量导入, -1e38
+- `rtpa.py` — 常量导入
+- `ismce.py` — full evaluator 路由, 模块级 import
+- `arena.py` — winners 检测, Elo 集成
+- `elo.py` — 新建: EloTracker
 
-#### 2. terminated 双重计算 — `selfplay_env.py`
+### Python — 环境 (python/blood/env/)
+- `selfplay_env.py` — 步数校正, 平局排名, 双重计算防护
+- `blood_env.py` — 冷却恢复机制
 
-- **问题描述**：step()中 `terminated` 计算两次，`finalize_scoring()` 可能改变结果，导致排名奖励被跳过
-- **修改文件**：`python/blood/env/selfplay_env.py`
-- **修改内容**：`terminated` 只在 `finalize_scoring()` 之后计算一次
-- **影响范围**：训练环境奖励计算，排名奖励信号恢复正常
+### Python — 其他
+- `cfg.py` — 新增 ~15 个配置参数
+- `consts.py` — Rust 常量导入 + 回退
+- `__init__.py` (eval/, training/, model/) — 模块导出
 
-#### 3. 动作掩码float16溢出 — `factory.py`
+### 配置 (configs/)
+- warmup.yaml, warmup_transition.yaml, competitive.yaml, competitive_distill.yaml, elite.yaml, default.yaml — 统一架构参数 + 调度配置
 
-- **问题描述**：硬编码 `-1e9` 在float16下溢出（max≈65504）
-- **修改文件**：`python/blood/model/factory.py`
-- **修改内容**：改用 `torch.finfo(dtype).min` 自动适配精度
-- **影响范围**：混合精度训练安全性，消除float16下潜在的NaN问题
+### 测试 (tests/)
+- test_model.py — segments/tile_attns 断言, 新格式 checkpoint 测试
+- test_smoke.py — 动态常量导入
 
-### P1 优化（架构改进）
+### 脚本 (scripts/)
+- export_onnx.py — 动态常量 + tuple 解包
 
-#### 4. enc_proj 信息瓶颈缓解 — `encoder.py`, `inference.py`, `cfg.py`, `test_model.py`
-
-- **问题描述**：6912→1024单层Linear压缩比6.75x，信息损失风险高
-- **修改文件**：
-  - `python/blood/model/encoder.py`
-  - `python/blood/model/inference.py`
-  - `python/blood/cfg.py`
-  - `tests/test_model.py`
-- **修改内容**：新增2层渐进压缩MLP选项（6912→2048→1024），通过 `--blood_enc_proj_layers=2` 启用，默认1保持向后兼容；`inference.py` 自动检测新旧checkpoint格式
-- **影响范围**：编码器信息保留能力提升，向后兼容现有checkpoint
-
-#### 5. RTPA 对手听牌推断优化 — `rtpa.py`, `consts.py`
-
-- **问题描述**：仅用副露比例>=0.5判断对手听牌，大量假阳性/假阴性
-- **修改文件**：
-  - `python/blood/eval/rtpa.py`
-  - `python/blood/consts.py`
-- **修改内容**：改为多信号评分系统（副露数0.25 + 摸切比例0.25 + 幺九弃牌0.15 + 花色集中度0.15 + 进度0.10 + 残局加成），已胡玩家直接排除；残局放大从阶跃函数改为线性渐变（wall_remaining 20→0，系数1.0→1.3）
-- **影响范围**：RTPA温度调节准确性显著提升，残局策略连续性改善
-
-#### 6. Arena 座位轮换 — `arena.py`
-
-- **问题描述**：agent始终坐座位0（庄家位），引入系统性偏差
-- **修改文件**：`python/blood/eval/arena.py`
-- **修改内容**：每局随机分配座位0-3；同分排名改用平均排名
-- **影响范围**：Arena评估结果消除座位偏差，排名计算更公平
-
-#### 7. 配置不一致修复 — `cfg.py`, `default.yaml`
-
-- **问题描述**：
-  - `oracle_num_blocks`：`cfg.py` 默认值从25改为20，与所有yaml一致
-  - `rnn_size`：保持 `default.yaml` 中1024，添加注释说明competitive/elite覆盖为512
-- **修改文件**：
-  - `python/blood/cfg.py`
-  - `configs/default.yaml`
-- **修改内容**：`oracle_num_blocks` 默认值统一为20；`rnn_size` 添加注释说明
-- **影响范围**：消除配置歧义，Oracle模型结构与预期一致
-
-### P2 优化（数值改进）
-
-#### 8. ISMCE log空间尺度归一化 — `ismce.py`
-
-- **问题描述**：策略logits和ISMCE评分尺度差异大，混合权重失真
-- **修改文件**：`python/blood/eval/ismce.py`
-- **修改内容**：混合前对两路信号分别做标准化（零均值+单位方差）
-- **影响范围**：ISMCE搜索结果与网络输出混合质量提升
-
-#### 9. Rust引擎冷却恢复机制 — `blood_env.py`
-
-- **问题描述**：`_rust_engine_ok` 一旦 `False` 永不恢复，偶尔超时就永久禁用worker
-- **修改文件**：`python/blood/env/blood_env.py`
-- **修改内容**：100步冷却期+连续超时计数，冷却结束自动恢复，连续3次超时才永久禁用
-- **影响范围**：训练吞吐量稳定性提升，避免因偶发超时永久损失worker
-
-### S1 修复（决策质量瓶颈）
-
-#### 10. SP Table 一向听精度恢复 — `crates/engine/src/algo/sp/calc.rs`
-
-- **问题**：`MAX_SAMPLES=0` 导致一向听评估完全跳过实际采样，退化为硬编码估计（`avg_outs=4.0`, `avg_score=2000.0`），被评审标注为"最大决策质量瓶颈"
-- **修复**：`MAX_SAMPLES` 从 0 提升到 5，对一向听候选的有效进牌按可用枚数降序排列后采样前5个；采样路径使用 `get_win_score()` → `calc_fan()` 计算实际番型得分；未采样牌的回退估计从硬编码改为基于有效牌总数的启发式 `(total_eff * 0.5).max(2.0)`
-- **性能安全**：5采样 × 27次 calc_shanten ≈ 135次调用，SHANTEN_CACHE 缓存后实际约50-80次，远低于15秒超时阈值
-
-### 修改文件清单
-
-| 文件 | 修改类型 |
-|------|---------|
-| `python/blood/eval/evaluate.py` | P0 重构 |
-| `python/blood/env/selfplay_env.py` | P0 修复 |
-| `python/blood/model/factory.py` | P0 修复 |
-| `python/blood/model/encoder.py` | P1 优化 |
-| `python/blood/model/inference.py` | P1 适配 |
-| `python/blood/eval/rtpa.py` | P1 优化 |
-| `python/blood/eval/arena.py` | P1 优化 |
-| `python/blood/eval/ismce.py` | P2 优化 |
-| `python/blood/env/blood_env.py` | P2 优化 |
-| `python/blood/cfg.py` | P1 配置修复 |
-| `python/blood/consts.py` | P1 新增常量 |
-| `configs/default.yaml` | P1 配置修复 |
-| `tests/test_model.py` | 测试更新 |
-| `crates/engine/src/algo/sp/calc.rs` | S1 修复 |
-
----
-
-### 批次2：遗留问题深度优化
-
-11. **Warmup→Competitive 过渡平滑化** — 新建 `configs/warmup_transition.yaml`
-    - 问题：原流水线从 warmup 直接跳到 competitive，同时改变6个超参数（对手/LSTM/batch/gamma/lr/entropy），训练崩溃高风险
-    - 修复：插入500K步过渡阶段，仅改变2个变量（启用LSTM + gamma/lr渐变），保持RuleBot对手和batch_size不变
-    - 训练流水线更新为：warmup(2M) → warmup_transition(500K) → competitive(1M) → competitive_distill(4M) → elite(50M)
-
-12. **奖励系统关键项启用** — `configs/competitive.yaml`, `competitive_distill.yaml`, `elite.yaml`, `default.yaml`
-    - 问题：排名奖励和安全弃牌奖励默认关闭(0.0)，防守信号不足
-    - 修复：competitive/distill阶段启用排名奖励(0.15)和安全弃牌奖励(0.015)；elite阶段排名奖励提升到0.2，向听奖励从0.003衰减到0.001
-
-13. **训练规模扩大** — `configs/elite.yaml`
-    - 问题：总计17M env steps不足以达到超人类水平
-    - 修复：elite阶段从10M提升到50M步，总训练量约57.5M步
-
-14. **联赛checkpoint排序改用文件名** — `python/blood/training/league.py`
-    - 问题：`st_mtime` 在NFS/容器环境不可靠
-    - 修复：正则提取文件名中的env_steps数字排序，fallback到st_mtime
-
-15. **联赛对手多样性增强** — `python/blood/training/league.py`, `python/blood/cfg.py`
-    - 问题：α=3.0多项式衰减有效多样性低，缺少自博弈
-    - 修复：α降到2.0 + uniform_floor=0.1混合均匀分布保底；新增self_play_prob=0.2支持当前策略vs自身
-
-16. **听牌预测Focal Loss** — `python/blood/model/heads.py`, `python/blood/cfg.py`
-    - 问题：标准BCE在极度类别不平衡下退化为"全部预测不听"
-    - 修复：新增sigmoid_focal_loss(alpha=0.25, gamma=2.0)替代BCE
-
-### 批次2修改文件清单
-
-| 文件 | 修改类型 |
-|------|---------|
-| `configs/warmup_transition.yaml` | 新建（过渡阶段配置） |
-| `configs/competitive.yaml` | 奖励系统启用 |
-| `configs/competitive_distill.yaml` | 奖励系统启用 |
-| `configs/elite.yaml` | 训练规模+奖励衰减 |
-| `configs/default.yaml` | 奖励参数声明 |
-| `python/blood/training/league.py` | 联赛系统重构 |
-| `python/blood/model/heads.py` | Focal Loss |
-| `python/blood/cfg.py` | 新增配置参数 |
-
-### 批次3：Rust引擎深层优化
-
-17. **学生观测编码增强（464→470通道）** — `crates/engine/src/obs/student.rs`, `consts.rs`, `state/player.rs`, `state/board.rs`, `python/blood/consts.py`
-    - 问题：缺少对手手牌数量和副露来源信息，限制防守推理能力
-    - 修复：新增 Section 14（6通道）——ch 464-466 对手手牌数（hand_count/13.0），ch 467-469 最近副露来源相对位置（rel_pos/3.0）
-    - player.rs 新增 `meld_from: Vec<Option<usize>>` 追踪副露来源；board.rs 在 Pon/MinKan/AnKan 处同步维护
-    - 注意：此变更改变观测空间维度，需要重新训练模型
-
-18. **Oracle冗余通道替换** — `crates/engine/src/obs/oracle.rs`
-    - 问题：12通道冗余（对手定缺9ch + 定缺完成3ch 在学生观测中已有）
-    - 修复：替换为对手SP Table摘要（9ch：最佳弃牌EV/听牌概率/胜率）+ 对手危险度评分（3ch），总通道数保持52不变
-
-19. **ISMCE约束采样** — `crates/engine/src/algo/ismce.rs`
-    - 问题：均匀随机分配未见牌，不考虑对手定缺约束
-    - 修复：新增 `evaluate_discards_constrained()` 函数，分配未见牌时排除对手已定缺花色的牌，提高采样质量
-
-20. **ISMCE增强危险度评估** — `crates/engine/src/algo/ismce.rs`
-    - 问题：danger_scores 纯启发式，仅基于"对手是否打过该牌"和"未见牌数量"
-    - 修复：新增 `danger_scores_enhanced()` 函数，综合考虑副露数量、定缺花色安全性、打牌模式分析（近期安全牌比例）、粗略向听估计
-
-### 批次3修改文件清单
-
-| 文件 | 修改类型 |
-|------|---------|
-| `crates/engine/src/consts.rs` | 通道数 464→470 |
-| `crates/engine/src/obs/student.rs` | Section 14 新增 |
-| `crates/engine/src/obs/oracle.rs` | 冗余通道替换 |
-| `crates/engine/src/state/player.rs` | meld_from 字段 |
-| `crates/engine/src/state/board.rs` | meld_from 维护 |
-| `crates/engine/src/algo/ismce.rs` | 约束采样+增强危险度 |
-| `python/blood/consts.py` | 常量同步 |
+### 文档
+- ARCHITECTURE.md — 完全重写
+- DEEP_REVIEW_2026_02_24.md — 本文档

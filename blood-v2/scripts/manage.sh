@@ -5,7 +5,8 @@
 #   ./scripts/manage.sh <命令> [选项]
 #
 # 命令:
-#   train   <phase> [--device cuda] [--resume]   启动三阶段训练
+#   train   <phase> [--device cuda] [--resume]   启动五阶段训练
+#   train   pipeline [--device gpu] [--num-policies 1]  运行完整五阶段流水线
 #   monitor [--port 6006]                         启动 TensorBoard 监控
 #   eval    [--checkpoint <path>] [...]           运行评估
 #   export  --checkpoint <path> [--quantize]      导出 ONNX 模型
@@ -15,10 +16,19 @@
 #   replay  [--log-dir <dir>] [--port 5001]       启动回放查看器
 #   help                                          显示此帮助
 #
+# 五阶段训练流水线:
+#   1. warmup              — RuleBot 对手, 无 LSTM (2.5M steps)
+#   2. warmup_transition   — RuleBot 对手, LSTM 开启 (2.5M steps)
+#   3. competitive         — Self-play (2.5M steps)
+#   4. competitive_distill — Oracle Value 蒸馏 (2.5M steps)
+#   5. elite               — RTPA+ISMCE 精英训练 (50M steps)
+#
 # 示例:
 #   ./scripts/manage.sh train warmup
-#   ./scripts/manage.sh train competitive --resume
-#   ./scripts/manage.sh train elite --device cuda
+#   ./scripts/manage.sh train warmup_transition --resume
+#   ./scripts/manage.sh train competitive --device cuda
+#   ./scripts/manage.sh train distill
+#   ./scripts/manage.sh train pipeline
 #   ./scripts/manage.sh monitor
 #   ./scripts/manage.sh eval --checkpoint checkpoints/blood_v2_elite/best
 #   ./scripts/manage.sh export --checkpoint checkpoints/blood_v2_elite/best --quantize
@@ -41,6 +51,51 @@ ok()    { echo -e "${GREEN}[blood]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[blood]${NC} $*"; }
 die()   { echo -e "${RED}[blood] ERROR:${NC} $*" >&2; exit 1; }
 
+# ── 阶段名称规范化 ────────────────────────────────────────────────────────────
+normalize_phase() {
+    case "$1" in
+        transition|warmup_transition|warmup-transition) echo "warmup_transition" ;;
+        distill|competitive_distill|competitive-distill) echo "competitive_distill" ;;
+        warmup|competitive|elite) echo "$1" ;;
+        *) echo "" ;;
+    esac
+}
+
+# ── Checkpoint 链式查找 ───────────────────────────────────────────────────────
+# 从前一阶段查找最佳 checkpoint
+find_best_checkpoint() {
+    local phase="$1"
+    local exp_name="blood_v2_${phase}"
+    local ckpt_dir="checkpoints/${exp_name}"
+
+    if [[ ! -d "$ckpt_dir" ]]; then
+        echo ""
+        return
+    fi
+
+    # Look for best checkpoint (SF2 convention)
+    local best_ckpt=""
+    if [[ -f "${ckpt_dir}/checkpoint_best.pth" ]]; then
+        best_ckpt="${ckpt_dir}/checkpoint_best.pth"
+    else
+        # Find latest by filename (checkpoint_NNNNNN.pth)
+        best_ckpt=$(ls -1 "${ckpt_dir}"/checkpoint_*.pth 2>/dev/null | sort -t_ -k2 -n | tail -1)
+    fi
+    echo "$best_ckpt"
+}
+
+# 获取前一阶段名称（用于 checkpoint 链式传递）
+get_prev_phase() {
+    case "$1" in
+        warmup) echo "" ;;
+        warmup_transition) echo "warmup" ;;
+        competitive) echo "warmup_transition" ;;
+        competitive_distill) echo "competitive" ;;
+        elite) echo "competitive_distill" ;;
+        *) echo "" ;;
+    esac
+}
+
 # ── 帮助 ──────────────────────────────────────────────────────────────────────
 usage() {
 cat <<EOF
@@ -50,7 +105,9 @@ Blood-v2 管理脚本
 
 命令:
   train <phase> [选项]
-      phase: warmup | competitive | elite
+      phase: warmup | warmup_transition (transition)
+             competitive | competitive_distill (distill) | elite
+             pipeline  — 运行完整五阶段流水线
       --device <gpu|cpu>    训练设备 (默认: gpu)
       --resume              从最新 checkpoint 恢复
       --num-policies <N>    多 GPU 策略数 (默认: 1, 每个 policy 占一张 GPU)
@@ -89,10 +146,23 @@ Blood-v2 管理脚本
   help
       显示此帮助
 
+五阶段训练流水线:
+  1. warmup              — RuleBot 对手, 无 LSTM (2.5M steps)
+  2. warmup_transition   — RuleBot 对手, LSTM 开启 (2.5M steps)
+  3. competitive         — Self-play (2.5M steps)
+  4. competitive_distill — Oracle Value 蒸馏 (2.5M steps)
+  5. elite               — RTPA+ISMCE 精英训练 (50M steps)
+
+  阶段别名:
+    transition  → warmup_transition
+    distill     → competitive_distill
+
 示例:
   $(basename "$0") train warmup
-  $(basename "$0") train competitive --resume
-  $(basename "$0") train elite --device cuda --num-policies 8
+  $(basename "$0") train transition --resume
+  $(basename "$0") train competitive --device cuda --num-policies 8
+  $(basename "$0") train distill
+  $(basename "$0") train pipeline
   $(basename "$0") monitor --port 6007
   $(basename "$0") eval --checkpoint checkpoints/blood_v2_elite/best
   $(basename "$0") export --checkpoint checkpoints/blood_v2_elite/best --quantize
@@ -102,18 +172,76 @@ Blood-v2 管理脚本
 EOF
 }
 
+# ── do_train (核心训练逻辑，供 cmd_train 和 train_pipeline 调用) ──────────────
+do_train() {
+    local phase="$1"
+    local device="$2"
+    local num_policies="$3"
+    local resume="$4"
+    shift 4
+    local extra_args=("$@")
+
+    local config="configs/${phase}.yaml"
+    [[ -f "$config" ]] || die "配置文件不存在: $config"
+
+    # Reduce CUDA allocator fragmentation (helps when VRAM is nearly full)
+    export PYTORCH_ALLOC_CONF=expandable_segments:True
+
+    info "启动训练: phase=$phase  device=$device  num_policies=$num_policies"
+
+    local cmd=(python -m blood.training.runner
+        --config "$config"
+        --device "$device"
+        --num_policies "$num_policies"
+    )
+
+    # Checkpoint chaining: if not resuming, find previous phase's best checkpoint
+    if [[ "$resume" -ne 1 ]]; then
+        local prev_phase
+        prev_phase=$(get_prev_phase "$phase")
+        if [[ -n "$prev_phase" ]]; then
+            local init_ckpt
+            init_ckpt=$(find_best_checkpoint "$prev_phase")
+            if [[ -n "$init_ckpt" ]]; then
+                info "链式加载 ${prev_phase} checkpoint: ${init_ckpt}"
+                cmd+=(--init_checkpoint_path "$init_ckpt")
+            else
+                warn "未找到 ${prev_phase} 的 checkpoint，从头开始训练"
+            fi
+        fi
+    else
+        info "从最新 checkpoint 恢复"
+        cmd+=(--load_checkpoint_kind best)
+    fi
+
+    cmd+=("${extra_args[@]+"${extra_args[@]}"}")
+
+    info "命令: ${cmd[*]}"
+    "${cmd[@]}"
+    return $?
+}
+
 # ── train ─────────────────────────────────────────────────────────────────────
 cmd_train() {
     local phase="${1:-}"; shift || true
+
+    # Handle pipeline subcommand
+    if [[ "$phase" == "pipeline" ]]; then
+        train_pipeline "$@"
+        return $?
+    fi
+
     local device="gpu"
     local resume=0
     local num_policies=1
     local extra_args=()
 
-    case "$phase" in
-        warmup|competitive|elite) ;;
-        "") die "train 需要指定阶段: warmup | competitive | elite" ;;
-        *)  die "未知阶段: $phase (可选: warmup | competitive | elite)" ;;
+    # Normalize phase name
+    local normalized
+    normalized=$(normalize_phase "$phase")
+    case "$normalized" in
+        warmup|warmup_transition|competitive|competitive_distill|elite) phase="$normalized" ;;
+        "") die "未知阶段: ${phase:-<空>} (可选: warmup | warmup_transition/transition | competitive | competitive_distill/distill | elite | pipeline)" ;;
     esac
 
     while [[ $# -gt 0 ]]; do
@@ -125,25 +253,68 @@ cmd_train() {
         esac
     done
 
-    local config="configs/${phase}.yaml"
-    [[ -f "$config" ]] || die "配置文件不存在: $config"
+    do_train "$phase" "$device" "$num_policies" "$resume" "${extra_args[@]+"${extra_args[@]}"}"
+    # do_train is the last command; use exec-like behavior for single phase
+    exit $?
+}
 
-    # Reduce CUDA allocator fragmentation (helps when VRAM is nearly full)
-    export PYTORCH_ALLOC_CONF=expandable_segments:True
+# ── train pipeline ────────────────────────────────────────────────────────────
+train_pipeline() {
+    local device="gpu"
+    local num_policies=1
 
-    info "启动训练: phase=$phase  device=$device  num_policies=$num_policies"
-    [[ $resume -eq 1 ]] && info "从最新 checkpoint 恢复"
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --device)       device="$2"; shift 2 ;;
+            --num-policies) num_policies="$2"; shift 2 ;;
+            *)              die "pipeline 未知参数: $1" ;;
+        esac
+    done
 
-    local cmd=(python -m blood.training.runner
-        --config "$config"
-        --device "$device"
-        --num_policies "$num_policies"
+    local PHASES=("warmup" "warmup_transition" "competitive" "competitive_distill" "elite")
+    local PHASE_NAMES=(
+        "Phase 1: Warmup (RuleBot, no LSTM)"
+        "Phase 1.5: Warmup Transition (RuleBot, LSTM ON)"
+        "Phase 2a: Competitive (Self-play)"
+        "Phase 2b: Competitive Distill (Oracle Value)"
+        "Phase 3: Elite (RTPA+ISMCE, 50M steps)"
     )
-    [[ $resume -eq 1 ]] && cmd+=(--load_checkpoint_kind best)
-    cmd+=("${extra_args[@]+"${extra_args[@]}"}")
 
-    info "命令: ${cmd[*]}"
-    exec "${cmd[@]}"
+    info "=========================================="
+    info "  Blood-V2 Full Training Pipeline"
+    info "  5 stages, ~57.5M total env steps"
+    info "=========================================="
+
+    for i in "${!PHASES[@]}"; do
+        local phase="${PHASES[$i]}"
+        local name="${PHASE_NAMES[$i]}"
+
+        info ""
+        info ">>> Starting ${name}"
+        info "    Config: configs/${phase}.yaml"
+
+        # Run training for this phase (never --resume in pipeline; chaining is automatic)
+        do_train "$phase" "$device" "$num_policies" 0
+        local exit_code=$?
+
+        if [[ $exit_code -ne 0 ]]; then
+            die "Phase ${phase} failed with exit code ${exit_code}\nPipeline stopped. Fix the issue and resume with:\n  ./scripts/manage.sh train ${phase} --resume"
+        fi
+
+        ok ">>> Completed ${name}"
+
+        # Brief pause between stages
+        if [[ $i -lt $((${#PHASES[@]} - 1)) ]]; then
+            info "    Waiting 10s before next stage..."
+            sleep 10
+        fi
+    done
+
+    info ""
+    info "=========================================="
+    ok   "  Pipeline Complete!"
+    info "  Best model: checkpoints/blood_v2_elite/"
+    info "=========================================="
 }
 
 # ── monitor ───────────────────────────────────────────────────────────────────
@@ -178,9 +349,9 @@ cmd_eval() {
         esac
     done
 
-    # 自动选最新 elite checkpoint
+    # 自动选最新 checkpoint (按五阶段优先级)
     if [[ -z "$checkpoint" ]]; then
-        for phase in elite competitive warmup; do
+        for phase in elite competitive_distill competitive warmup_transition warmup; do
             local candidate="checkpoints/blood_v2_${phase}"
             if [[ -d "$candidate" ]]; then
                 checkpoint="$candidate"
@@ -261,9 +432,9 @@ cmd_record() {
         esac
     done
 
-    # 自动选最新 checkpoint
+    # 自动选最新 checkpoint (按五阶段优先级)
     if [[ -z "$checkpoint" ]]; then
-        for phase in elite competitive warmup; do
+        for phase in elite competitive_distill competitive warmup_transition warmup; do
             local dir="train_dir/blood_v2_${phase}/checkpoint_p0"
             if [[ -d "$dir" ]]; then
                 # 选最新的 .pth 文件
@@ -329,16 +500,35 @@ cmd_replay() {
 cmd_status() {
     echo ""
     echo "── Checkpoint 状态 ──────────────────────────────────────"
-    for phase in warmup competitive elite; do
+    for phase in warmup warmup_transition competitive competitive_distill elite; do
         local dir="checkpoints/blood_v2_${phase}"
         if [[ -d "$dir" ]]; then
-            local count
+            local count latest_step
             count=$(find "$dir" -name "*.pth" -o -name "*.pt" 2>/dev/null | wc -l | tr -d ' ')
-            ok "  ${phase}: $dir  (${count} 个权重文件)"
+            # Extract latest step number from checkpoint filenames
+            latest_step=$(ls -1 "${dir}"/checkpoint_*.pth 2>/dev/null | sed 's/.*checkpoint_//' | sed 's/\.pth//' | sort -n | tail -1)
+            if [[ -n "$latest_step" && "$latest_step" != "best" ]]; then
+                ok "  ${phase}: $dir  (${count} 个权重文件, latest step: ${latest_step})"
+            else
+                ok "  ${phase}: $dir  (${count} 个权重文件)"
+            fi
         else
             warn "  ${phase}: 未找到 ($dir)"
         fi
     done
+
+    echo ""
+    echo "── 训练进程 ─────────────────────────────────────────────"
+    local found_running=0
+    for phase in warmup warmup_transition competitive competitive_distill elite; do
+        if pgrep -f "blood.training.runner.*${phase}" &>/dev/null; then
+            ok "  ${phase}: 运行中"
+            found_running=1
+        fi
+    done
+    if [[ $found_running -eq 0 ]]; then
+        warn "  无训练进程运行"
+    fi
 
     echo ""
     echo "── 联赛池 ───────────────────────────────────────────────"

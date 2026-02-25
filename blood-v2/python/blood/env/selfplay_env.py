@@ -114,8 +114,12 @@ class SelfPlayEnv(BloodMahjongEnv):
         self._shanten_decay_steps = 0
         self._shanten_min_ratio = 0.3
         if cfg is not None:
-            self._shanten_decay_steps = getattr(cfg, "shanten_reward_decay_steps", 0)
+            raw_decay_steps = getattr(cfg, "shanten_reward_decay_steps", 0)
             self._shanten_min_ratio = getattr(cfg, "shanten_reward_min_ratio", 0.3)
+            # Adjust decay steps for parallel envs so per-env counter reaches
+            # the target at the correct wall-clock point (Issue #40).
+            num_envs = getattr(cfg, 'num_workers', 1) * getattr(cfg, 'num_envs_per_worker', 1)
+            self._shanten_decay_steps = max(1, raw_decay_steps // max(num_envs, 1)) if raw_decay_steps > 0 else 0
         # 全局环境步数计数器，用于衰减调度
         self._global_env_steps = 0
 
@@ -392,20 +396,23 @@ class SelfPlayEnv(BloodMahjongEnv):
         reward = float(np.sign(_r) * np.sqrt(abs(_r)))
 
         # --- Structured reward shaping (all phases) ---
-        # Tsumo bonus: agent won and multiple opponents paid.
-        # Use >= 2 (not >= 3) so late-game tsumo (when 1 opponent already won)
-        # still triggers the bonus. Tsumo always has ≥2 payers unless 2 opponents
-        # have already won, which is a rare terminal edge case.
-        if self._reward_tsumo_bonus > 0 and self._env.player_has_won(0) and agent_delta > 0:
-            if int(np.sum(opp_deltas < -100)) >= 2:
-                reward += self._reward_tsumo_bonus
+        # When warmup shaping is active, skip structured tsumo/deal-in bonuses
+        # to prevent double-counting with warmup win/deal-in rewards (Issue #47).
+        if not self._warmup_reward_shaping:
+            # Tsumo bonus: agent won and multiple opponents paid.
+            # Use >= 2 (not >= 3) so late-game tsumo (when 1 opponent already won)
+            # still triggers the bonus. Tsumo always has ≥2 payers unless 2 opponents
+            # have already won, which is a rare terminal edge case.
+            if self._reward_tsumo_bonus > 0 and self._env.player_has_won(0) and agent_delta > 0:
+                if int(np.sum(opp_deltas < -100)) >= 2:
+                    reward += self._reward_tsumo_bonus
 
-        # Deal-in penalty: agent score down, at least one opponent up, no others down.
-        # Use >= 1 (not == 1) to catch multi-ron deal-ins where 2 opponents win
-        # simultaneously on the same discard.
-        elif self._reward_deal_in_penalty > 0 and agent_delta < -100:
-            if int(np.sum(opp_deltas > 100)) >= 1 and int(np.sum(opp_deltas < -100)) == 0:
-                reward -= self._reward_deal_in_penalty
+            # Deal-in penalty: agent score down, at least one opponent up, no others down.
+            # Use >= 1 (not == 1) to catch multi-ron deal-ins where 2 opponents win
+            # simultaneously on the same discard.
+            elif self._reward_deal_in_penalty > 0 and agent_delta < -100:
+                if int(np.sum(opp_deltas > 100)) >= 1 and int(np.sum(opp_deltas < -100)) == 0:
+                    reward -= self._reward_deal_in_penalty
 
         # 向听进退奖励（带衰减调度 + 番数加权）
         # Guard against game-end: when terminated, shanten may be -1 (complete hand)
@@ -444,9 +451,14 @@ class SelfPlayEnv(BloodMahjongEnv):
         # Bonus schedule (rank_bonus=0.3): 1st=+0.3, 2nd=+0.09, 3rd=-0.09, 4th=-0.3
         if self._reward_rank_bonus > 0 and terminated and self._env.is_done():
             final_scores = self._env.get_scores()
-            rank = sum(1 for s in final_scores if s > final_scores[0])  # 0=1st, 3=4th
+            # Tie-aware ranking: average rank for tied players (Issue #46)
+            player_score = final_scores[0]
+            above = sum(1 for s in final_scores if s > player_score)
+            equal = sum(1 for s in final_scores if s == player_score)
+            avg_rank = above + (equal + 1) / 2.0  # 1-indexed average rank
+            rank_idx = min(int(avg_rank - 0.5), 3)  # Map 1.0→0, 1.5→1, 2.0→1, etc.
             rank_multipliers = [1.0, 0.3, -0.3, -1.0]
-            reward += self._reward_rank_bonus * rank_multipliers[rank]
+            reward += self._reward_rank_bonus * rank_multipliers[rank_idx]
 
         # Warmup shaping (phase 1 only)
         if self._warmup_reward_shaping:

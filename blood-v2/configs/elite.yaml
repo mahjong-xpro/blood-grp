@@ -1,3 +1,7 @@
+# ⚠️ Architecture params (blood_num_tile_attn_layers, oracle_num_tile_attn_layers,
+#    rnn_num_layers) MUST be identical across ALL training stages.
+#    Changing them between stages will cause checkpoint weight shape mismatches.
+
 # Phase 3: Elite — fine-tuning for superhuman play
 # Duration: ~50M env steps (从10M大幅提升，确保充分训练)
 # Goal: maximize Elo through refined self-play + search
@@ -35,10 +39,7 @@ blood_conv_channels: 256
 blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024
 
-# TileAttention: 保持与 competitive 阶段一致的 2层4头架构
-# 注意: 不能在阶段间改变 tile_attn_layers/heads，否则 checkpoint 权重形状不匹配
-# 如需增强跨花色推理，应从 warmup 阶段就统一使用目标架构
-blood_num_tile_attn_layers: 2
+blood_num_tile_attn_layers: 4
 blood_tile_attn_heads: 4
 
 # Opponents: neural self-play via league
@@ -51,6 +52,8 @@ opponent_refresh_every: 10
 # oracle_value_warmup_steps: 0 — no gate needed
 oracle_enabled: true
 oracle_num_blocks: 20
+oracle_num_tile_attn_layers: 4
+oracle_tile_attn_heads: 4
 oracle_distill_weight: 0.01
 oracle_distill_temperature: 1.5
 oracle_ce_weight: 0.02
@@ -99,13 +102,10 @@ aux_shanten_weight: 0.5
 aux_opp_waits_weight: 0.2
 
 # LSTM — temporal modeling across turns
-# 注意: rnn_num_layers 必须与 competitive 阶段保持一致(1层)，
-# 否则从 competitive checkpoint 恢复时权重形状不匹配。
-# 如需2层LSTM，应从 warmup_transition 阶段就统一使用。
 use_rnn: true
 rnn_type: lstm
 rnn_size: 512
-rnn_num_layers: 1
+rnn_num_layers: 2
 rollout: 32
 recurrence: 32
 
@@ -121,3 +121,9 @@ rtpa_defend_temp: 1.5
 ismce_enabled: true
 ismce_num_worlds: 64
 ismce_rollout_depth: 4
+
+# Dynamic hyperparameter schedules (within this stage)
+# Entropy: cosine anneal from 0.02 → 0.005 over full 40M steps
+blood_schedule_entropy: "cosine,0.02,0.005,0,40000000"
+# Adv clip: linear tighten from 5.0 → 3.0 starting at 10M steps
+blood_schedule_adv_clip: "linear,5.0,3.0,10000000,40000000"

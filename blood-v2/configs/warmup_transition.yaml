@@ -1,3 +1,7 @@
+# ⚠️ Architecture params (blood_num_tile_attn_layers, oracle_num_tile_attn_layers,
+#    rnn_num_layers) MUST be identical across ALL training stages.
+#    Changing them between stages will cause checkpoint weight shape mismatches.
+
 # Phase 1.5: Warmup→Competitive 过渡阶段
 # 时长: ~500K env steps
 # 目标: 平滑过渡，避免同时改变6个超参数导致训练崩溃
@@ -42,6 +46,8 @@ blood_obs_channels: 470
 blood_conv_channels: 256
 blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024
+blood_num_tile_attn_layers: 4
+blood_tile_attn_heads: 4
 
 # 对手: 保持 RuleBot — 让 LSTM 在稳定环境中先学会时序建模
 # 如果直接切换到自博弈 + LSTM，两个新变量同时引入会导致不稳定
@@ -50,6 +56,8 @@ opponent_mode: rulebot
 # Oracle 蒸馏 — 与 warmup 保持一致
 oracle_enabled: true
 oracle_num_blocks: 20
+oracle_num_tile_attn_layers: 4
+oracle_tile_attn_heads: 4
 oracle_distill_weight: 0.1
 oracle_distill_temperature: 3.0
 oracle_value_distill_weight: 0.0
@@ -98,6 +106,6 @@ aux_opp_waits_weight: 0.45           # 中间值: warmup(0.6) → transition(0.4
 use_rnn: true
 rnn_type: lstm
 rnn_size: 512
-rnn_num_layers: 1
+rnn_num_layers: 2
 rollout: 32
 recurrence: 32

@@ -24,32 +24,21 @@ import torch
 from blood.env.blood_env import BloodMahjongEnv, OBS_SIZE, ACTION_SPACE
 from blood.eval.arena import Arena, ArenaResult
 from blood.model.inference import PolicyModel
-from blood.consts import NUM_TILE_TYPES, NUM_STUDENT_CHANNELS
+from blood.consts import (
+    NUM_TILE_TYPES, NUM_STUDENT_CHANNELS,
+    CH_HAND_BASE, CH_HAND_COUNT, CH_DING_QUE_BASE, CH_OPP_DING_QUE_BASE,
+    CH_TILES_REMAINING, CH_SELF_MELDS, CH_OPP_MELD_BASE, CH_OPP_KAWA_OVERVIEW_BASE,
+    TILES_PER_SUIT,
+)
 
 log = logging.getLogger(__name__)
-
-# ── 观测张量通道偏移量（必须与 crates/engine/src/obs/student.rs 保持同步）──
-# Section 1: 手牌 one-hot 编码，通道 0-3 表示持有 1-4 张
-_CH_HAND_BASE = 0
-_CH_HAND_COUNT = 4  # 4 个通道，每个通道 one-hot 表示 count > k
-
-# Section 3: 定缺花色，通道 18-20 分别对应 万/筒/条
-_CH_DING_QUE_BASE = 18
-_CH_DING_QUE_COUNT = 3  # Man=0, Pin=1, Sou=2
-
-# Section 9: 派生特征
-# 通道 329: 每张牌的剩余可见数 = (4 - tiles_seen[t]) / 4
-_CH_TILES_REMAINING = 329
-# 通道 331: 自家副露数 = melds.len() / MAX_MELDS(4)
-_CH_SELF_MELDS = 331
-
-# 每花色牌数
-_TILES_PER_SUIT = NUM_TILE_TYPES // 3  # 9
 
 # COPIES_PER_TILE（每张牌的副本数）
 _COPIES_PER_TILE = 4
 # MAX_MELDS（最大副露数）
 _MAX_MELDS = 4
+# 定缺花色数
+_CH_DING_QUE_COUNT = 3  # Man=0, Pin=1, Sou=2
 
 
 def _extract_ismce_state(obs: np.ndarray) -> dict:
@@ -78,14 +67,14 @@ def _extract_ismce_state(obs: np.ndarray) -> dict:
         # 通道 0-3 是 one-hot 编码：ch_k[t] = 1.0 if hand[t] > k
         # 因此 hand[t] = sum(ch0[t], ch1[t], ch2[t], ch3[t])
         hand = np.zeros(NUM_TILE_TYPES, dtype=np.uint8)
-        for k in range(_CH_HAND_COUNT):
-            hand += (obs_2d[_CH_HAND_BASE + k] > 0.5).astype(np.uint8)
+        for k in range(CH_HAND_COUNT):
+            hand += (obs_2d[CH_HAND_BASE + k] > 0.5).astype(np.uint8)
         result["hand"] = hand
 
         # ── 提取可见牌数 ──
         # 通道 329 编码: remaining[t] / 4.0，其中 remaining = 4 - tiles_seen[t]
         # 因此 tiles_seen[t] = 4 - round(obs_2d[329][t] * 4)
-        remaining_ratio = obs_2d[_CH_TILES_REMAINING]
+        remaining_ratio = obs_2d[CH_TILES_REMAINING]
         tiles_seen = np.clip(
             _COPIES_PER_TILE - np.round(remaining_ratio * _COPIES_PER_TILE).astype(np.int32),
             0, _COPIES_PER_TILE,
@@ -94,17 +83,17 @@ def _extract_ismce_state(obs: np.ndarray) -> dict:
 
         # ── 提取副露数 ──
         # 通道 331 编码: melds.len() / MAX_MELDS
-        melds_ratio = float(obs_2d[_CH_SELF_MELDS].mean())
+        melds_ratio = float(obs_2d[CH_SELF_MELDS].mean())
         result["melds_count"] = max(0, min(int(round(melds_ratio * _MAX_MELDS)), _MAX_MELDS))
 
         # ── 提取定缺花色 ──
         # 通道 18-20 分别对应 万(0)/筒(1)/条(2)，花色通道内对应牌位置为 1.0
         ding_que = -1
         for suit_idx in range(_CH_DING_QUE_COUNT):
-            ch_val = obs_2d[_CH_DING_QUE_BASE + suit_idx]
+            ch_val = obs_2d[CH_DING_QUE_BASE + suit_idx]
             # 检查该花色对应的 9 张牌位置是否有非零值
-            suit_start = suit_idx * _TILES_PER_SUIT
-            suit_end = suit_start + _TILES_PER_SUIT
+            suit_start = suit_idx * TILES_PER_SUIT
+            suit_end = suit_start + TILES_PER_SUIT
             if np.any(ch_val[suit_start:suit_end] > 0.5):
                 ding_que = suit_idx
                 break
@@ -114,6 +103,76 @@ def _extract_ismce_state(obs: np.ndarray) -> dict:
         log.debug("提取 ISMCE 状态失败: %s", e)
 
     return result
+
+
+def _extract_opponent_state(obs: np.ndarray) -> dict:
+    """从观测张量中提取对手状态信息，用于 ISMCE 全量评估。
+
+    解析通道：
+    - 通道 23-31 (Section 3): 对手定缺花色 (3 opponents × 3 suits)
+    - 通道 333-335 (Section 9): 对手副露数
+    - Section 7 (ch 272+): 对手打牌概览 (3 × 4 one-hot) → 推算打牌数
+
+    Returns:
+        dict with opponent_ding_que, opponent_meld_counts,
+        opponent_discard_counts, opponent_discards;
+        提取失败时返回 None，调用方应做 fallback 处理。
+    """
+    try:
+        if obs.size < NUM_STUDENT_CHANNELS * NUM_TILE_TYPES:
+            return None
+        obs_2d = obs.reshape(NUM_STUDENT_CHANNELS, NUM_TILE_TYPES)
+
+        # ── 对手定缺花色 ──
+        opponent_ding_que = []
+        for opp_idx in range(3):
+            dq = -1
+            base_ch = CH_OPP_DING_QUE_BASE + opp_idx * 3
+            for suit_idx in range(3):
+                ch_val = obs_2d[base_ch + suit_idx]
+                suit_start = suit_idx * TILES_PER_SUIT
+                suit_end = suit_start + TILES_PER_SUIT
+                if np.any(ch_val[suit_start:suit_end] > 0.5):
+                    dq = suit_idx
+                    break
+            opponent_ding_que.append(dq)
+
+        # ── 对手副露数 ──
+        opponent_meld_counts = []
+        for opp_idx in range(3):
+            meld_ratio = float(obs_2d[CH_OPP_MELD_BASE + opp_idx].mean())
+            mc = max(0, min(int(round(meld_ratio * _MAX_MELDS)), _MAX_MELDS))
+            opponent_meld_counts.append(mc)
+
+        # ── 对手打牌数和最近打牌 ──
+        # Section 7 kawa overview: 3 opponents × 4 one-hot channels
+        # counts[t] = sum of one-hot layers > 0.5 → how many times opp discarded tile t
+        opponent_discard_counts = []
+        opponent_discards = []
+        for opp_idx in range(3):
+            base_ch = CH_OPP_KAWA_OVERVIEW_BASE + opp_idx * 4
+            counts = np.zeros(NUM_TILE_TYPES, dtype=np.int32)
+            for k in range(4):
+                counts += (obs_2d[base_ch + k] > 0.5).astype(np.int32)
+            total_discards = int(counts.sum())
+            opponent_discard_counts.append(total_discards)
+            # Reconstruct discard list (tiles with counts > 0, repeated)
+            disc = []
+            for t in range(NUM_TILE_TYPES):
+                for _ in range(counts[t]):
+                    disc.append(t)
+            opponent_discards.append(disc)
+
+        return {
+            "opponent_ding_que": opponent_ding_que,
+            "opponent_meld_counts": opponent_meld_counts,
+            "opponent_discard_counts": opponent_discard_counts,
+            "opponent_discards": opponent_discards,
+        }
+
+    except Exception as e:
+        log.debug("提取对手状态失败: %s", e)
+        return None
 
 
 class NeuralAgent:
@@ -205,9 +264,11 @@ class NeuralAgent:
             # 从观测张量提取 ISMCE 所需的游戏状态
             ismce_state = _extract_ismce_state(obs)
 
+            # 提取对手状态用于全量评估（约束采样+防守）
+            opp_state = _extract_opponent_state(obs)
+
             try:
-                action = self._ismce.select_action(
-                    logits, mask,
+                kwargs = dict(
                     hand=ismce_state["hand"],
                     tiles_seen=ismce_state["tiles_seen"],
                     melds_count=ismce_state["melds_count"],
@@ -215,6 +276,11 @@ class NeuralAgent:
                     wall_remaining=ctx["wall_remaining"],
                     temperature=temperature,  # 使用 RTPA 自适应温度（或默认温度）
                 )
+                # Pass opponent state if extraction succeeded
+                if opp_state is not None:
+                    kwargs.update(opp_state)
+
+                action = self._ismce.select_action(logits, mask, **kwargs)
                 return action
             except Exception as e:
                 log.debug("ISMCE select_action 异常，回退到策略网络: %s", e)
@@ -236,7 +302,7 @@ class NeuralAgent:
             return int(np.random.choice(ACTION_SPACE, p=probs))
 
         # ── 第四步：纯策略网络（无 RTPA 无 ISMCE）──
-        logits[mask < 0.5] = -1e9
+        logits[mask < 0.5] = -1e38  # safe for both float32 and float16
         logits /= max(self.temperature, 1e-8)
         probs = _softmax(logits)
         return int(np.random.choice(ACTION_SPACE, p=probs))

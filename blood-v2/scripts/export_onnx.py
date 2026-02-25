@@ -20,8 +20,12 @@ import torch.nn as nn
 
 log = logging.getLogger(__name__)
 
-NUM_TILE_TYPES = 27
-OBS_CHANNELS = 464
+try:
+    from blood.consts import NUM_STUDENT_CHANNELS, NUM_TILE_TYPES
+    OBS_CHANNELS = NUM_STUDENT_CHANNELS
+except ImportError:
+    OBS_CHANNELS = 470
+    NUM_TILE_TYPES = 27
 OBS_SIZE = OBS_CHANNELS * NUM_TILE_TYPES
 ACTION_DIM = 34
 
@@ -42,7 +46,7 @@ class OnnxWrapper(nn.Module):
         self.policy = policy_model
 
     def forward(self, obs: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        logits = self.policy(obs)
+        logits, _ = self.policy(obs)  # PolicyModel returns (logits, hidden_state)
         logits = logits.masked_fill(mask < 0.5, -1e9)
         return logits
 

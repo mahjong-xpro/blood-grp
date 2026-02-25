@@ -10,6 +10,8 @@ from typing import Optional
 
 import numpy as np
 
+from blood.utils import softmax as _softmax  # Issue #53: moved from hot loop to module level
+
 log = logging.getLogger(__name__)
 
 ACTION_SPACE = 34
@@ -38,11 +40,18 @@ class ISMCESearcher:
         self.rollout_depth = rollout_depth
 
         self._ismce_available = False
+        self._ismce_full_available = False
         try:
             from blood._engine import ismce_evaluate, ismce_danger
             self._ismce_evaluate = ismce_evaluate
             self._ismce_danger = ismce_danger
             self._ismce_available = True
+            try:
+                from blood._engine import ismce_evaluate_full
+                self._ismce_evaluate_full = ismce_evaluate_full
+                self._ismce_full_available = True
+            except ImportError:
+                log.debug("ismce_evaluate_full not available; defense path disabled")
         except ImportError:
             log.warning("ISMCE Rust module not available; falling back to policy-only")
 
@@ -56,8 +65,16 @@ class ISMCESearcher:
         tiles_seen: Optional[np.ndarray] = None,
         wall_remaining: int = 50,
         temperature: float = 1.0,
+        opponent_ding_que: Optional[list] = None,
+        opponent_meld_counts: Optional[list] = None,
+        opponent_discard_counts: Optional[list] = None,
+        opponent_discards: Optional[list] = None,
     ) -> int:
-        """Select action by blending policy with ISMCE scores."""
+        """Select action by blending policy with ISMCE scores.
+
+        When opponent state is provided and the full evaluator is available,
+        uses constrained sampling + defense-aware rollouts for stronger play.
+        """
         logits = policy_logits.copy()
         logits[action_mask < 0.5] = -1e9
 
@@ -70,17 +87,41 @@ class ISMCESearcher:
 
         try:
             base_seed = int(time.monotonic_ns()) & 0xFFFFFFFFFFFFFFFF
-            results = self._ismce_evaluate(
-                hand.astype(np.uint8),
-                melds_count,
-                ding_que,
-                tiles_seen.astype(np.uint8),
-                discard_candidates,
-                wall_remaining,
-                self.num_worlds,
-                self.rollout_depth,
-                base_seed,
-            )
+
+            # Use full evaluation if opponent info available and full evaluator loaded
+            if (self._ismce_full_available
+                    and opponent_ding_que is not None
+                    and opponent_meld_counts is not None
+                    and opponent_discard_counts is not None
+                    and opponent_discards is not None):
+                results = self._ismce_evaluate_full(
+                    hand.astype(np.uint8),
+                    melds_count,
+                    ding_que,
+                    tiles_seen.astype(np.uint8),
+                    discard_candidates,
+                    wall_remaining,
+                    opponent_ding_que,
+                    opponent_meld_counts,
+                    opponent_discard_counts,
+                    opponent_discards,
+                    self.num_worlds,
+                    self.rollout_depth,
+                    base_seed,
+                )
+            else:
+                # Fallback to basic evaluation
+                results = self._ismce_evaluate(
+                    hand.astype(np.uint8),
+                    melds_count,
+                    ding_que,
+                    tiles_seen.astype(np.uint8),
+                    discard_candidates,
+                    wall_remaining,
+                    self.num_worlds,
+                    self.rollout_depth,
+                    base_seed,
+                )
         except Exception:
             return self._sample_from_logits(logits, temperature)
 
@@ -121,8 +162,7 @@ class ISMCESearcher:
             blended_logits[i] = (self.policy_weight * policy_cand_norm[j]
                                  + self.ismce_weight * ismce_cand_norm[j])
 
-        from blood.utils import softmax
-        blended = softmax(blended_logits)
+        blended = _softmax(blended_logits)
         total = blended.sum()
         if total < 1e-8:
             return self._sample_from_logits(logits, temperature)
@@ -131,11 +171,9 @@ class ISMCESearcher:
 
     @staticmethod
     def _softmax(x: np.ndarray) -> np.ndarray:
-        from blood.utils import softmax
-        return softmax(x)
+        return _softmax(x)
 
     @staticmethod
     def _sample_from_logits(logits: np.ndarray, temperature: float = 1.0) -> int:
-        from blood.utils import softmax
-        probs = softmax(logits / max(temperature, 1e-8))
+        probs = _softmax(logits / max(temperature, 1e-8))
         return int(np.random.choice(len(probs), p=probs))

@@ -10,7 +10,7 @@ use engine::tile::{Suit, Tile, is_terminal};
 use engine::hand::{HandCounts, MeldType};
 use engine::algo::shanten::{calc_shanten, waiting_tiles};
 use engine::algo::agari::{calc_fan, calc_gen_count, WinContext, FanConfig};
-use engine::obs::{encode_student_obs, encode_oracle_obs, encode_action_mask};
+use engine::obs::{encode_student_obs, encode_oracle_obs, encode_action_mask, OracleSpCache};
 
 fn event_to_json(e: &Event) -> String {
     match e {
@@ -56,6 +56,7 @@ pub struct RustMahjongEnv {
     opponent_policy: OpponentPolicy,
     seed: u64,
     initial_score: i32,
+    oracle_sp_cache: OracleSpCache,
 }
 
 #[pymethods]
@@ -76,6 +77,7 @@ impl RustMahjongEnv {
             opponent_policy: policy,
             seed,
             initial_score,
+            oracle_sp_cache: OracleSpCache::default(),
         }
     }
 
@@ -83,6 +85,7 @@ impl RustMahjongEnv {
         self.seed = seed;
         self.state = BoardState::with_initial_score(seed, self.initial_score);
         self.prev_score = self.state.players[self.player_id].score;
+        self.oracle_sp_cache.clear();
 
         if let OpponentPolicy::Random(ref mut rng) = self.opponent_policy {
             *rng = fastrand::Rng::with_seed(seed.wrapping_add(12345));
@@ -91,7 +94,7 @@ impl RustMahjongEnv {
         self.advance_opponents();
 
         let obs = encode_student_obs(&self.state, self.player_id);
-        let oracle_obs = encode_oracle_obs(&self.state, self.player_id);
+        let oracle_obs = encode_oracle_obs(&self.state, self.player_id, Some(&mut self.oracle_sp_cache));
         let mask = encode_action_mask(&self.state, self.player_id);
         let mask_f32: Vec<f32> = mask.iter().map(|&b| if b { 1.0 } else { 0.0 }).collect();
         let (shanten_labels, ow_labels) = self.compute_aux_labels();
@@ -102,6 +105,16 @@ impl RustMahjongEnv {
         dict.set_item("action_mask", PyArray1::from_vec_bound(py, mask_f32))?;
         dict.set_item("shanten_labels", PyArray1::from_vec_bound(py, shanten_labels))?;
         dict.set_item("ow_labels", PyArray1::from_vec_bound(py, ow_labels))?;
+
+        // Initial info fields for arena compatibility (no winners yet at reset)
+        let info = PyDict::new_bound(py);
+        info.set_item("winners", Vec::<usize>::new())?;
+        let scores: Vec<i32> = (0..NUM_PLAYERS)
+            .map(|i| self.state.players[i].score)
+            .collect();
+        info.set_item("scores", scores)?;
+        dict.set_item("info", info)?;
+
         Ok(dict)
     }
 
@@ -125,7 +138,7 @@ impl RustMahjongEnv {
         let truncated = false;
 
         let obs = encode_student_obs(&self.state, self.player_id);
-        let oracle_obs = encode_oracle_obs(&self.state, self.player_id);
+        let oracle_obs = encode_oracle_obs(&self.state, self.player_id, Some(&mut self.oracle_sp_cache));
         let mask = encode_action_mask(&self.state, self.player_id);
         let mask_f32: Vec<f32> = mask.iter().map(|&b| if b { 1.0 } else { 0.0 }).collect();
         let (shanten_labels, ow_labels) = self.compute_aux_labels();
@@ -141,11 +154,23 @@ impl RustMahjongEnv {
         info.set_item("win_count", self.state.win_count)?;
         info.set_item("player_won", self.state.players[self.player_id].has_won)?;
 
+        // Per-seat win status for arena evaluation with seat rotation
+        let winners: Vec<usize> = (0..NUM_PLAYERS)
+            .filter(|&i| self.state.players[i].has_won)
+            .collect();
+        info.set_item("winners", winners)?;
+
+        // Per-seat final scores (always available, useful for arena)
+        let scores: Vec<i32> = (0..NUM_PLAYERS)
+            .map(|i| self.state.players[i].score)
+            .collect();
+        info.set_item("scores", scores)?;
+
         Ok((dict, reward, terminated, truncated, info).to_object(py))
     }
 
-    fn get_oracle_obs<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<f32>>> {
-        let obs = encode_oracle_obs(&self.state, self.player_id);
+    fn get_oracle_obs<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<f32>>> {
+        let obs = encode_oracle_obs(&self.state, self.player_id, Some(&mut self.oracle_sp_cache));
         Ok(PyArray1::from_vec_bound(py, obs))
     }
 

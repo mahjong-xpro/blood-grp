@@ -29,7 +29,11 @@ from blood.consts import (
 )
 
 # ── Smoke test constants ─────────────────────────────────────────────────────
-SMOKE_OBS_CHANNELS = 470
+try:
+    from blood.consts import NUM_STUDENT_CHANNELS as _NSC
+    SMOKE_OBS_CHANNELS = _NSC
+except ImportError:
+    SMOKE_OBS_CHANNELS = 470
 SMOKE_CONV_CH = 64
 SMOKE_NUM_BLOCKS = 2
 SMOKE_ENC_OUT = 128

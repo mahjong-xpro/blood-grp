@@ -56,23 +56,25 @@ def _setup_process_cleanup():
         pass  # Can't set signal in non-main thread
 
 
-def _inject_config_yaml():
-    """Parse --config <yaml> from sys.argv, expand yaml keys into sys.argv,
-    then remove --config so SF2 never sees it."""
-    argv = sys.argv[1:]
-    if "--config" not in argv:
-        return
-    idx = argv.index("--config")
-    if idx + 1 >= len(argv):
-        return
-    yaml_path = argv[idx + 1]
-    # Remove --config <path> from sys.argv
-    sys.argv = [sys.argv[0]] + argv[:idx] + argv[idx + 2:]
+def _build_argv_from_yaml(config_path: str, original_argv: list[str]) -> list[str]:
+    """Build a new argv list by merging YAML config values with CLI args.
 
-    with open(yaml_path) as f:
+    Does NOT mutate sys.argv. Returns a new list.
+
+    Args:
+        config_path: Path to the YAML config file
+        original_argv: The original sys.argv to merge with
+
+    Returns:
+        New argv list with YAML values injected
+    """
+    with open(config_path) as f:
         cfg = yaml.safe_load(f)
     if not cfg:
-        return
+        return list(original_argv)
+
+    # Start with a copy of original argv
+    new_argv = list(original_argv)
 
     # Keys handled outside SF2 arg parsing — skip them here.
     # encoder_custom: not a registered SF2 arg.
@@ -86,13 +88,13 @@ def _inject_config_yaml():
 
     # Inject --no_oracle / --no_league if yaml explicitly disables them.
     # (Default is True for both; only inject the negation flag when False.)
-    if cfg.get("oracle_enabled") is False and "--no_oracle" not in sys.argv:
-        sys.argv.append("--no_oracle")
-    if cfg.get("league_enabled") is False and "--no_league" not in sys.argv:
-        sys.argv.append("--no_league")
+    if cfg.get("oracle_enabled") is False and "--no_oracle" not in new_argv:
+        new_argv.append("--no_oracle")
+    if cfg.get("league_enabled") is False and "--no_league" not in new_argv:
+        new_argv.append("--no_league")
 
-    # Append yaml values as CLI args (only if not already in sys.argv)
-    existing = set(sys.argv)
+    # Append yaml values as CLI args (only if not already in new_argv)
+    existing = set(new_argv)
     for key, val in cfg.items():
         if key in _skip:
             continue
@@ -103,19 +105,38 @@ def _inject_config_yaml():
             if val:
                 if key in _str2bool_args:
                     # str2bool args require an explicit value (--use_rnn True)
-                    sys.argv.extend([flag, "True"])
+                    new_argv.extend([flag, "True"])
                 else:
-                    sys.argv.append(flag)  # store_true: no value needed
+                    new_argv.append(flag)  # store_true: no value needed
             elif key in _str2bool_args:
                 # str2bool args: pass --key False to override set_defaults(key=True)
-                sys.argv.extend([flag, "False"])
+                new_argv.extend([flag, "False"])
             # else: store_true arg with False value — skip (can't unset via CLI)
         elif isinstance(val, list):
             # nargs="*" args (e.g. normalize_input_keys): pass each element separately
             # --normalize_input_keys obs oracle_obs
-            sys.argv.extend([flag] + [str(v) for v in val])
+            new_argv.extend([flag] + [str(v) for v in val])
         else:
-            sys.argv.extend([flag, str(val)])
+            new_argv.extend([flag, str(val)])
+
+    return new_argv
+
+
+def _extract_config_path(argv: list[str]) -> tuple[str | None, list[str]]:
+    """Extract --config <path> from argv, returning (path, cleaned_argv).
+
+    Returns (None, original_argv) if --config is not present.
+    """
+    args = argv[1:]  # skip argv[0] (program name)
+    if "--config" not in args:
+        return None, list(argv)
+    idx = args.index("--config")
+    if idx + 1 >= len(args):
+        return None, list(argv)
+    yaml_path = args[idx + 1]
+    # Remove --config <path> from argv
+    cleaned = [argv[0]] + args[:idx] + args[idx + 2:]
+    return yaml_path, cleaned
 
 
 def make_blood_env(full_env_name, cfg=None, env_config=None, render_mode=None):
@@ -139,9 +160,14 @@ def _patch_learner():
     this wrapper only handles minibatch pre-processing (adv std + adv clip).
     """
     _original = Learner._calculate_losses
-    _loss_computer = BloodLossComputer()
+    # Lazily initialized with cfg from the first Learner call so that
+    # BloodLossComputer can read blood_metrics_interval from the config.
+    _state = {"loss_computer": None}
 
     def _patched(self, mb, num_invalids):
+        if _state["loss_computer"] is None:
+            _state["loss_computer"] = BloodLossComputer(cfg=self.cfg)
+
         # Record raw advantage std before SF2 normalizes advantages in-place.
         raw_advantages = getattr(mb, "advantages", None)
         if raw_advantages is not None:
@@ -155,7 +181,7 @@ def _patch_learner():
         result = _original(self, mb, num_invalids)
         action_dist, policy_loss, exploration_loss, kl_old, kl_loss, value_loss, summaries = result
 
-        extra_loss, summaries = _loss_computer.compute(
+        extra_loss, summaries = _state["loss_computer"].compute(
             self.actor_critic, mb, action_dist, value_loss, summaries,
             env_steps=getattr(self, "env_steps", 0),
         )
@@ -192,16 +218,27 @@ def run_training():
     _configure_logging()
 
     # Expand --config <yaml> into individual SF2 CLI args before SF2 parses sys.argv.
-    _inject_config_yaml()
+    # Build a merged argv without mutating the global sys.argv permanently.
+    config_path, cleaned_argv = _extract_config_path(sys.argv)
+    if config_path is not None:
+        merged_argv = _build_argv_from_yaml(config_path, cleaned_argv)
+    else:
+        merged_argv = cleaned_argv
 
     # SF2 requires --env as a mandatory CLI argument before set_defaults can run.
-    if "--env" not in sys.argv:
-        sys.argv.extend(["--env", "blood_mahjong"])
+    if "--env" not in merged_argv:
+        merged_argv.extend(["--env", "blood_mahjong"])
 
-    parser, partial_cfg = parse_sf_args(evaluation=False)
-    add_blood_args(parser)
-    blood_override_defaults(parser)
-    cfg = parse_full_cfg(parser)
+    # SF2's argument parser reads from sys.argv, so temporarily swap and restore.
+    original_argv = sys.argv
+    try:
+        sys.argv = merged_argv
+        parser, partial_cfg = parse_sf_args(evaluation=False)
+        add_blood_args(parser)
+        blood_override_defaults(parser)
+        cfg = parse_full_cfg(parser)
+    finally:
+        sys.argv = original_argv  # Always restore, even on parse errors
 
     cfg, runner = make_runner(cfg)
 

@@ -215,18 +215,16 @@ class SuitAwareResNetEncoder(Encoder):
         obs (B, C*27) -> reshape (B, C, 27)
         -> stem: SuitAwareConv(C -> conv_ch) + GroupNorm + Mish
         -> pos_enc: SuitPositionalEncoding (rank-aware embeddings)
-        -> res_blocks_1: BottleneckBlock x (num_blocks // 2)
-        -> tile_attn_mid: TileAttention (中层全局交互)
-        -> res_blocks_2a: BottleneckBlock x (blocks_2 // 2)  [仅3层模式]
-        -> tile_attn_mid2: TileAttention (后中层全局交互)     [仅3层模式]
-        -> res_blocks_2b: BottleneckBlock x (blocks_2 - blocks_2 // 2)  [仅3层模式]
-        -> tile_attn: TileAttention (末层全局交互)
+        -> for each segment i in [0, n_segments):
+               segments[i]: BottleneckBlock x n_blocks_i
+               tile_attns[i]: TileAttention (cross-suit interaction)
         -> flatten -> enc_proj: Linear(conv_ch*27 -> enc_out_dim)
         -> [B, enc_out_dim]
 
-    TileAttention 层数通过 blood_num_tile_attn_layers 控制:
-        2层(默认): 中层 + 末层 — 旧行为，向后兼容
-        3层: 中层 + 后中层 + 末层 — 增强跨花色推理能力
+    The number of TileAttention layers (= segments) is controlled by
+    blood_num_tile_attn_layers (default 2, supports 2-6+). Residual blocks
+    are distributed evenly across segments with remainder blocks allocated
+    to earlier segments.
 
     注意力头数通过 blood_tile_attn_heads 控制:
         4头(默认): 旧行为
@@ -238,6 +236,11 @@ class SuitAwareResNetEncoder(Encoder):
     当 enc_proj_layers=2 时，使用渐进压缩 MLP：
         6912 → mid_dim (enc_out_dim*2) → enc_out_dim
     将单步 6.75x 压缩拆分为 3.38x + 2x 两步渐进，缓解信息瓶颈。
+
+    ⚠️ BREAKING CHANGE: This refactored loop-based segment architecture is
+    incompatible with checkpoints from the old hardcoded 2/3-layer layout.
+    Old attribute names (res_blocks_1, res_blocks_2, tile_attn_mid, etc.)
+    no longer exist; they are replaced by segments[i] and tile_attns[i].
     """
 
     # Maximum allowed encoder output dimension. Prevents accidental LSTM
@@ -256,7 +259,6 @@ class SuitAwareResNetEncoder(Encoder):
         tile_attn_heads = getattr(cfg, "blood_tile_attn_heads", 4)
 
         ng = _num_groups(conv_ch)
-        mid = num_blocks // 2
 
         self.stem = nn.Sequential(
             SuitAwareConv1d(self.obs_channels, conv_ch, kernel_size=3),
@@ -264,23 +266,24 @@ class SuitAwareResNetEncoder(Encoder):
             nn.Mish(inplace=True),
         )
         self.pos_enc = SuitPositionalEncoding(conv_ch)
-        self.res_blocks_1 = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(mid)])
-        self.tile_attn_mid = TileAttention(conv_ch, num_heads=tile_attn_heads)
 
-        # 3层模式: 将 res_blocks_2 拆分为 2a + tile_attn_mid2 + 2b
-        # 2层模式(默认): res_blocks_2 不拆分，tile_attn_mid2 = None
-        blocks_2 = num_blocks - mid
-        self._num_tile_attn_layers = num_tile_attn_layers
-        if num_tile_attn_layers >= 3:
-            split_2 = blocks_2 // 2
-            self.res_blocks_2a = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(split_2)])
-            self.tile_attn_mid2 = TileAttention(conv_ch, num_heads=tile_attn_heads)
-            self.res_blocks_2b = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(blocks_2 - split_2)])
-        else:
-            # 2层模式: 保持旧行为，res_blocks_2 不拆分
-            self.res_blocks_2 = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(blocks_2)])
+        # Loop-based segment architecture: evenly distribute residual blocks
+        # across n_segments, each followed by a TileAttention layer.
+        n_segments = num_tile_attn_layers
+        blocks_per_segment = num_blocks // n_segments
+        remainder = num_blocks % n_segments
 
-        self.tile_attn = TileAttention(conv_ch, num_heads=tile_attn_heads)
+        self.segments = nn.ModuleList()
+        self.tile_attns = nn.ModuleList()
+        for i in range(n_segments):
+            # Distribute remainder blocks to earlier segments
+            n_blks = blocks_per_segment + (1 if i < remainder else 0)
+            self.segments.append(nn.Sequential(
+                *[BottleneckBlock(conv_ch) for _ in range(n_blks)]
+            ))
+            self.tile_attns.append(
+                TileAttention(conv_ch, num_heads=tile_attn_heads)
+            )
 
         raw_dim = conv_ch * NUM_TILES  # e.g. 256*27 = 6912
         # Guard: if enc_out_dim >= raw_dim, the projection would be a no-op or
@@ -304,19 +307,9 @@ class SuitAwareResNetEncoder(Encoder):
         x = obs.view(B, self.obs_channels, NUM_TILES)
         x = self.stem(x)
         x = self.pos_enc(x)
-        x = self.res_blocks_1(x)
-        x = self.tile_attn_mid(x)
-
-        # 3层模式: res_blocks_2a → tile_attn_mid2 → res_blocks_2b
-        # 2层模式: res_blocks_2 (不拆分)
-        if self._num_tile_attn_layers >= 3:
-            x = self.res_blocks_2a(x)
-            x = self.tile_attn_mid2(x)
-            x = self.res_blocks_2b(x)
-        else:
-            x = self.res_blocks_2(x)
-
-        x = self.tile_attn(x)
+        for i in range(len(self.segments)):
+            x = self.segments[i](x)
+            x = self.tile_attns[i](x)
         flat = x.reshape(B, -1)
         flat = self.enc_proj(flat)
         return flat

@@ -29,10 +29,9 @@ HiddenState = Tuple[Tensor, Tensor]  # (h, c) for LSTM
 class PolicyModel(nn.Module):
     """Standalone policy model for opponent inference.
 
-    Mirrors the full training architecture:
-        encoder (stem + pos_enc + res_blocks_1 + tile_attn_mid +
-                 [res_blocks_2a + tile_attn_mid2 + res_blocks_2b | res_blocks_2] +
-                 tile_attn + enc_proj)
+    Mirrors the full training architecture (loop-based segments):
+        encoder (stem + pos_enc + [segments[i] + tile_attns[i]] * n_segments
+                 + enc_proj)
         → LSTM (temporal modeling across turns, 支持多层)
         → actor_head (2-layer Pre-norm MLP)
         → action_head (logits)
@@ -58,29 +57,33 @@ class PolicyModel(nn.Module):
         super().__init__()
 
         ng = _num_groups(conv_ch)
-        mid = num_blocks // 2
+
+        # Stem
         self.stem = nn.Sequential(
             SuitAwareConv1d(obs_channels, conv_ch, kernel_size=3),
             nn.GroupNorm(ng, conv_ch),
             nn.Mish(inplace=True),
         )
         self.pos_enc = SuitPositionalEncoding(conv_ch)
-        self.res_blocks_1 = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(mid)])
-        self.tile_attn_mid = TileAttention(conv_ch, num_heads=tile_attn_heads)
 
-        # 3层模式: 将 res_blocks_2 拆分为 2a + tile_attn_mid2 + 2b
-        # 2层模式(默认): res_blocks_2 不拆分
-        blocks_2 = num_blocks - mid
-        self._num_tile_attn_layers = num_tile_attn_layers
-        if num_tile_attn_layers >= 3:
-            split_2 = blocks_2 // 2
-            self.res_blocks_2a = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(split_2)])
-            self.tile_attn_mid2 = TileAttention(conv_ch, num_heads=tile_attn_heads)
-            self.res_blocks_2b = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(blocks_2 - split_2)])
-        else:
-            self.res_blocks_2 = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(blocks_2)])
+        # Loop-based segment architecture matching encoder.py:
+        # evenly distribute residual blocks across n_segments,
+        # each followed by a TileAttention layer.
+        n_segments = num_tile_attn_layers
+        blocks_per_segment = num_blocks // n_segments
+        remainder = num_blocks % n_segments
 
-        self.tile_attn = TileAttention(conv_ch, num_heads=tile_attn_heads)
+        self.segments = nn.ModuleList()
+        self.tile_attns = nn.ModuleList()
+        for i in range(n_segments):
+            # Distribute remainder blocks to earlier segments
+            n_blks = blocks_per_segment + (1 if i < remainder else 0)
+            self.segments.append(nn.Sequential(
+                *[BottleneckBlock(conv_ch) for _ in range(n_blks)]
+            ))
+            self.tile_attns.append(
+                TileAttention(conv_ch, num_heads=tile_attn_heads)
+            )
 
         raw_dim = conv_ch * NUM_TILES
         # enc_proj 使用与训练编码器相同的构建函数，支持渐进压缩
@@ -108,19 +111,9 @@ class PolicyModel(nn.Module):
         x = obs_flat.view(B, self._obs_channels, NUM_TILES)
         x = self.stem(x)
         x = self.pos_enc(x)
-        x = self.res_blocks_1(x)
-        x = self.tile_attn_mid(x)
-
-        # 3层模式: res_blocks_2a → tile_attn_mid2 → res_blocks_2b
-        # 2层模式: res_blocks_2 (不拆分)
-        if self._num_tile_attn_layers >= 3:
-            x = self.res_blocks_2a(x)
-            x = self.tile_attn_mid2(x)
-            x = self.res_blocks_2b(x)
-        else:
-            x = self.res_blocks_2(x)
-
-        x = self.tile_attn(x)
+        for i in range(len(self.segments)):
+            x = self.segments[i](x)
+            x = self.tile_attns[i](x)
         flat = x.reshape(B, -1)
         flat = self.enc_proj(flat)
         return flat
@@ -147,7 +140,8 @@ class PolicyModel(nn.Module):
         """Returns (action, new_hidden_state)."""
         logits, new_hidden = self.forward(obs_flat.unsqueeze(0), hidden_state)
         logits = logits.squeeze(0)
-        logits[mask < 0.5] = -1e9
+        # Use dtype-safe minimum instead of -1e9 to avoid overflow in float16
+        logits[mask < 0.5] = torch.finfo(logits.dtype).min
         if temperature <= 0.01:
             return int(logits.argmax().item()), new_hidden
         probs = F.softmax(logits / temperature, dim=-1)
@@ -214,51 +208,62 @@ class PolicyModel(nn.Module):
         else:
             enc_out_dim = conv_ch * NUM_TILES
 
-        # Count blocks in each half (split architecture)
-        # 支持3层 TileAttention 模式: res_blocks_2a + res_blocks_2b 替代 res_blocks_2
-        num_blocks_1 = 0
-        while f"res_blocks_1.{num_blocks_1}.block.0.weight" in encoder_sd:
-            num_blocks_1 += 1
+        # Detect number of segments and total blocks from loop-based architecture.
+        # New format: segments.0.0.block.0.weight, segments.1.0.block.0.weight, ...
+        # Also support legacy format: res_blocks_1.0.block.0.weight, etc.
+        num_tile_attn_layers = 0
+        num_blocks = 0
+        is_legacy = False
 
-        # 检测 TileAttention 层数: 3层模式有 res_blocks_2a/2b，2层模式有 res_blocks_2
-        num_tile_attn_layers = 2
-        num_blocks_2 = 0
-        if "res_blocks_2a.0.block.0.weight" in encoder_sd:
-            # 3层模式: res_blocks_2a + tile_attn_mid2 + res_blocks_2b
-            num_tile_attn_layers = 3
-            num_blocks_2a = 0
-            while f"res_blocks_2a.{num_blocks_2a}.block.0.weight" in encoder_sd:
-                num_blocks_2a += 1
-            num_blocks_2b = 0
-            while f"res_blocks_2b.{num_blocks_2b}.block.0.weight" in encoder_sd:
-                num_blocks_2b += 1
-            num_blocks_2 = num_blocks_2a + num_blocks_2b
-        else:
-            # 2层模式: res_blocks_2
-            while f"res_blocks_2.{num_blocks_2}.block.0.weight" in encoder_sd:
-                num_blocks_2 += 1
+        # Try new loop-based format first
+        seg_idx = 0
+        while f"segments.{seg_idx}.0.block.0.weight" in encoder_sd:
+            blk_idx = 0
+            while f"segments.{seg_idx}.{blk_idx}.block.0.weight" in encoder_sd:
+                blk_idx += 1
+            num_blocks += blk_idx
+            seg_idx += 1
+        num_tile_attn_layers = seg_idx
 
-        num_blocks = num_blocks_1 + num_blocks_2
+        if num_tile_attn_layers == 0:
+            # Fallback to legacy hardcoded format
+            is_legacy = True
+            num_blocks_1 = 0
+            while f"res_blocks_1.{num_blocks_1}.block.0.weight" in encoder_sd:
+                num_blocks_1 += 1
+
+            num_tile_attn_layers = 2
+            num_blocks_2 = 0
+            if "res_blocks_2a.0.block.0.weight" in encoder_sd:
+                # 3层模式: res_blocks_2a + tile_attn_mid2 + res_blocks_2b
+                num_tile_attn_layers = 3
+                num_blocks_2a = 0
+                while f"res_blocks_2a.{num_blocks_2a}.block.0.weight" in encoder_sd:
+                    num_blocks_2a += 1
+                num_blocks_2b = 0
+                while f"res_blocks_2b.{num_blocks_2b}.block.0.weight" in encoder_sd:
+                    num_blocks_2b += 1
+                num_blocks_2 = num_blocks_2a + num_blocks_2b
+            else:
+                while f"res_blocks_2.{num_blocks_2}.block.0.weight" in encoder_sd:
+                    num_blocks_2 += 1
+
+            num_blocks = num_blocks_1 + num_blocks_2
+
         if num_blocks == 0:
             log.warning("Could not detect num_blocks; defaulting to 20")
             num_blocks = 20
+        if num_tile_attn_layers == 0:
+            log.warning("Could not detect num_tile_attn_layers; defaulting to 2")
+            num_tile_attn_layers = 2
 
-        # 检测 TileAttention heads 数: 从 tile_attn.attn.in_proj_weight 推断
+        # 检测 TileAttention heads 数: 从 tile_attns.0.attn.in_proj_weight 推断
         tile_attn_heads = 4
-        attn_proj_key = "tile_attn.attn.in_proj_weight"
-        if attn_proj_key in encoder_sd:
-            # in_proj_weight shape = (3 * embed_dim, embed_dim)
-            # num_heads = embed_dim / head_dim, 但我们无法直接获取 head_dim
-            # 改用 tile_attn.attn.num_heads (如果可用) 或从配置推断
-            # MultiheadAttention 的 num_heads 存储在模块属性中，不在 state_dict 中
-            # 因此我们检查 embed_dim 是否能被 8 整除来推断
-            embed_dim = encoder_sd[attn_proj_key].shape[1]
-            if embed_dim % 8 == 0:
-                # 默认尝试8头，如果 checkpoint 是4头训练的也能兼容加载
-                # 因为 MultiheadAttention 的权重形状不依赖 num_heads
-                pass
-            # 注意: num_heads 不影响权重形状，所以无法从 state_dict 精确检测
-            # 使用默认值4，除非 checkpoint 元数据中有记录
+        attn_proj_key = "tile_attns.0.attn.in_proj_weight"
+        if attn_proj_key not in encoder_sd:
+            # Legacy fallback
+            attn_proj_key = "tile_attn.attn.in_proj_weight"
+        # num_heads 不影响权重形状，使用默认值4
 
         # Detect head_dim from actor_head.4.weight (Pre-norm 2-layer)
         head_dim = 512
@@ -280,10 +285,21 @@ class PolicyModel(nn.Module):
         model.to(device)
 
         partial_sd = {}
-        # Encoder weights
-        for k, v in encoder_sd.items():
-            if k in model.state_dict():
-                partial_sd[k] = v
+
+        if is_legacy:
+            # Map legacy hardcoded keys to new loop-based keys.
+            # Reconstruct how blocks were distributed in the old layout:
+            #   res_blocks_1 had `mid` blocks, res_blocks_2 had the rest.
+            #   For 3-layer: res_blocks_2a + res_blocks_2b split the second half.
+            # We need to map these to segments[i] in the new layout.
+            partial_sd.update(
+                _map_legacy_encoder_to_segments(encoder_sd, model, num_tile_attn_layers)
+            )
+        else:
+            # New format: encoder keys map directly (strip encoder. prefix already done)
+            for k, v in encoder_sd.items():
+                if k in model.state_dict():
+                    partial_sd[k] = v
 
         # Map core.core.* → lstm.*  (SF2 ModelCoreRNN stores LSTM as self.core)
         # Also handle legacy core.rnn.* prefix for older checkpoints.
@@ -316,11 +332,108 @@ class PolicyModel(nn.Module):
         model.eval()
         log.info(
             "Loaded opponent model from %s (%d keys, rnn_size=%d, rnn_layers=%d, "
-            "enc_out=%d, enc_proj_layers=%d, tile_attn_layers=%d)",
+            "enc_out=%d, enc_proj_layers=%d, tile_attn_layers=%d, legacy=%s)",
             path, len(partial_sd), rnn_size, rnn_num_layers,
-            enc_out_dim, enc_proj_layers, num_tile_attn_layers,
+            enc_out_dim, enc_proj_layers, num_tile_attn_layers, is_legacy,
         )
         return model
+
+
+def _map_legacy_encoder_to_segments(
+    encoder_sd: dict,
+    model: PolicyModel,
+    num_tile_attn_layers: int,
+) -> dict:
+    """Map legacy hardcoded encoder keys to the new loop-based segment layout.
+
+    Legacy layout (2-layer):
+        res_blocks_1.{i} → segment 0, block i
+        tile_attn_mid     → tile_attns.0
+        res_blocks_2.{i}  → segment 1, block i
+        tile_attn          → tile_attns.1
+
+    Legacy layout (3-layer):
+        res_blocks_1.{i}  → segment 0, block i
+        tile_attn_mid      → tile_attns.0
+        res_blocks_2a.{i}  → segment 1, block i
+        tile_attn_mid2     → tile_attns.1
+        res_blocks_2b.{i}  → segment 2, block i
+        tile_attn           → tile_attns.2
+    """
+    mapped = {}
+    model_sd = model.state_dict()
+
+    # Map stem and pos_enc directly (same keys)
+    for k, v in encoder_sd.items():
+        if k.startswith("stem.") or k.startswith("pos_enc.") or k.startswith("enc_proj."):
+            if k in model_sd:
+                mapped[k] = v
+
+    if num_tile_attn_layers == 2:
+        # res_blocks_1.{i}.* → segments.0.{i}.*
+        for k, v in encoder_sd.items():
+            if k.startswith("res_blocks_1."):
+                new_key = "segments.0." + k[len("res_blocks_1."):]
+                if new_key in model_sd:
+                    mapped[new_key] = v
+        # tile_attn_mid.* → tile_attns.0.*
+        for k, v in encoder_sd.items():
+            if k.startswith("tile_attn_mid."):
+                new_key = "tile_attns.0." + k[len("tile_attn_mid."):]
+                if new_key in model_sd:
+                    mapped[new_key] = v
+        # res_blocks_2.{i}.* → segments.1.{i}.*
+        for k, v in encoder_sd.items():
+            if k.startswith("res_blocks_2."):
+                new_key = "segments.1." + k[len("res_blocks_2."):]
+                if new_key in model_sd:
+                    mapped[new_key] = v
+        # tile_attn.* → tile_attns.1.*
+        for k, v in encoder_sd.items():
+            if k.startswith("tile_attn.") and not k.startswith("tile_attn_mid"):
+                new_key = "tile_attns.1." + k[len("tile_attn."):]
+                if new_key in model_sd:
+                    mapped[new_key] = v
+
+    elif num_tile_attn_layers == 3:
+        # res_blocks_1.{i}.* → segments.0.{i}.*
+        for k, v in encoder_sd.items():
+            if k.startswith("res_blocks_1."):
+                new_key = "segments.0." + k[len("res_blocks_1."):]
+                if new_key in model_sd:
+                    mapped[new_key] = v
+        # tile_attn_mid.* → tile_attns.0.*
+        for k, v in encoder_sd.items():
+            if k.startswith("tile_attn_mid.") and not k.startswith("tile_attn_mid2"):
+                new_key = "tile_attns.0." + k[len("tile_attn_mid."):]
+                if new_key in model_sd:
+                    mapped[new_key] = v
+        # res_blocks_2a.{i}.* → segments.1.{i}.*
+        for k, v in encoder_sd.items():
+            if k.startswith("res_blocks_2a."):
+                new_key = "segments.1." + k[len("res_blocks_2a."):]
+                if new_key in model_sd:
+                    mapped[new_key] = v
+        # tile_attn_mid2.* → tile_attns.1.*
+        for k, v in encoder_sd.items():
+            if k.startswith("tile_attn_mid2."):
+                new_key = "tile_attns.1." + k[len("tile_attn_mid2."):]
+                if new_key in model_sd:
+                    mapped[new_key] = v
+        # res_blocks_2b.{i}.* → segments.2.{i}.*
+        for k, v in encoder_sd.items():
+            if k.startswith("res_blocks_2b."):
+                new_key = "segments.2." + k[len("res_blocks_2b."):]
+                if new_key in model_sd:
+                    mapped[new_key] = v
+        # tile_attn.* → tile_attns.2.*
+        for k, v in encoder_sd.items():
+            if k.startswith("tile_attn.") and not k.startswith("tile_attn_mid"):
+                new_key = "tile_attns.2." + k[len("tile_attn."):]
+                if new_key in model_sd:
+                    mapped[new_key] = v
+
+    return mapped
 
 
 class OpponentModelPool:

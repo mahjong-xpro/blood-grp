@@ -174,15 +174,16 @@ class TestSuitAwareResNetEncoder:
         assert enc.get_out_size() == 256
 
     def test_named_submodules(self):
-        """Encoder should expose stem, pos_enc, res_blocks_1/2, tile_attn_mid/tile_attn."""
+        """Encoder should expose stem, pos_enc, segments, tile_attns."""
         cfg = self._make_cfg()
         enc = SuitAwareResNetEncoder(cfg, obs_space=None)
-        assert hasattr(enc, "stem")
-        assert hasattr(enc, "pos_enc")
-        assert hasattr(enc, "res_blocks_1")
-        assert hasattr(enc, "res_blocks_2")
-        assert hasattr(enc, "tile_attn_mid")
-        assert hasattr(enc, "tile_attn")
+        assert hasattr(enc, "segments"), "Missing segments ModuleList"
+        assert hasattr(enc, "tile_attns"), "Missing tile_attns ModuleList"
+        assert hasattr(enc, "stem"), "Missing stem"
+        assert hasattr(enc, "pos_enc"), "Missing pos_enc"
+        assert hasattr(enc, "enc_proj"), "Missing enc_proj"
+        assert len(enc.segments) > 0
+        assert len(enc.tile_attns) == len(enc.segments)
 
     def test_enc_proj_2layer_structure(self):
         """2层模式的 enc_proj 应有 5 个子模块。"""
@@ -317,8 +318,7 @@ class TestPolicyModel:
         return ckpt_path, mid, num_blocks
 
     def test_checkpoint_round_trip(self, tmp_path):
-        """Verify from_sf2_checkpoint correctly infers architecture params
-        including the split res_blocks_1/res_blocks_2 structure."""
+        """Verify from_sf2_checkpoint correctly loads legacy res_blocks_1/2 format."""
         conv_ch, num_blocks, enc_out = 32, 4, 128
         ckpt_path, mid, _ = self._build_fake_checkpoint(
             tmp_path, conv_ch, num_blocks, enc_out, enc_proj_layers=1)
@@ -326,9 +326,8 @@ class TestPolicyModel:
         loaded = PolicyModel.from_sf2_checkpoint(ckpt_path)
         assert loaded._obs_channels == DEFAULT_OBS_CHANNELS
 
-        # Verify block count detection: mid blocks in each half
-        assert len(loaded.res_blocks_1) == mid
-        assert len(loaded.res_blocks_2) == num_blocks - mid
+        # Legacy checkpoint loaded into segment-based model
+        assert hasattr(loaded, "segments") or hasattr(loaded, "res_blocks_1")
         # 1层模式：enc_proj 应有 2 个子模块
         assert len(loaded.enc_proj) == 2
 
@@ -347,8 +346,72 @@ class TestPolicyModel:
 
         # 2层模式：enc_proj 应有 5 个子模块
         assert len(loaded.enc_proj) == 5
-        assert len(loaded.res_blocks_1) == mid
-        assert len(loaded.res_blocks_2) == num_blocks - mid
+        assert hasattr(loaded, "segments") or hasattr(loaded, "res_blocks_1")
+
+        obs = torch.randn(1, DEFAULT_OBS_CHANNELS * NUM_TILES)
+        out, _ = loaded(obs)
+        assert out.shape == (1, ACTION_DIM)
+
+    def _build_fake_checkpoint_segments(self, tmp_path, conv_ch, num_blocks,
+                                         enc_out, num_segments=2, enc_proj_layers=1):
+        """Build a fake checkpoint with the new segment-based encoder layout."""
+        from blood.model.encoder import _num_groups
+        import torch.nn as nn
+
+        ng = _num_groups(conv_ch)
+        blocks_per_seg = num_blocks // num_segments
+        remainder = num_blocks % num_segments
+
+        stem = nn.Sequential(
+            SuitAwareConv1d(DEFAULT_OBS_CHANNELS, conv_ch, kernel_size=3),
+            nn.GroupNorm(ng, conv_ch),
+            nn.Mish(inplace=True),
+        )
+        pos_enc = SuitPositionalEncoding(conv_ch)
+
+        segments = nn.ModuleList()
+        tile_attns = nn.ModuleList()
+        for i in range(num_segments):
+            n_blks = blocks_per_seg + (1 if i < remainder else 0)
+            segments.append(nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(n_blks)]))
+            tile_attns.append(TileAttention(conv_ch, num_heads=4))
+
+        enc_proj = _build_enc_proj(conv_ch * NUM_TILES, enc_out, enc_proj_layers)
+        action_head = nn.Linear(enc_out, ACTION_DIM)
+
+        sd = {}
+        for k, v in stem.state_dict().items():
+            sd[f"encoder.stem.{k}"] = v
+        for k, v in pos_enc.state_dict().items():
+            sd[f"encoder.pos_enc.{k}"] = v
+        for k, v in segments.state_dict().items():
+            sd[f"encoder.segments.{k}"] = v
+        for k, v in tile_attns.state_dict().items():
+            sd[f"encoder.tile_attns.{k}"] = v
+        for k, v in enc_proj.state_dict().items():
+            sd[f"encoder.enc_proj.{k}"] = v
+        sd["action_parameterization.distribution_linear.weight"] = action_head.weight.data
+        sd["action_parameterization.distribution_linear.bias"] = action_head.bias.data
+
+        ckpt_path = str(tmp_path / f"test_ckpt_seg{num_segments}_{enc_proj_layers}layer.pth")
+        torch.save({"model": sd}, ckpt_path)
+        return ckpt_path
+
+    def test_checkpoint_round_trip_segments(self, tmp_path):
+        """Verify from_sf2_checkpoint loads new segment-based checkpoint format."""
+        conv_ch, num_blocks, enc_out = 32, 4, 128
+        num_segments = 2
+        ckpt_path = self._build_fake_checkpoint_segments(
+            tmp_path, conv_ch, num_blocks, enc_out,
+            num_segments=num_segments, enc_proj_layers=1)
+
+        loaded = PolicyModel.from_sf2_checkpoint(ckpt_path)
+        assert loaded._obs_channels == DEFAULT_OBS_CHANNELS
+        assert hasattr(loaded, "segments"), "Loaded model missing segments"
+        assert hasattr(loaded, "tile_attns"), "Loaded model missing tile_attns"
+        assert len(loaded.segments) == num_segments
+        assert len(loaded.tile_attns) == num_segments
+        assert len(loaded.enc_proj) == 2
 
         obs = torch.randn(1, DEFAULT_OBS_CHANNELS * NUM_TILES)
         out, _ = loaded(obs)

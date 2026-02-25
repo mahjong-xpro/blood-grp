@@ -19,7 +19,17 @@ DEFAULT_ORACLE_CHANNELS = NUM_ORACLE_CHANNELS
 
 
 class OracleEncoder(nn.Module):
-    """Oracle encoder: same architecture as student but with perfect info."""
+    """Oracle encoder: same loop-based segment architecture as student but with perfect info.
+
+    Uses the same generalized segment design as SuitAwareResNetEncoder:
+    residual blocks are evenly distributed across n_segments, each followed
+    by a TileAttention layer.
+
+    ⚠️ BREAKING CHANGE: This refactored loop-based segment architecture is
+    incompatible with checkpoints from the old hardcoded 2-layer layout.
+    Old attribute names (res_blocks_1, res_blocks_2, tile_attn_mid, tile_attn)
+    no longer exist; they are replaced by segments[i] and tile_attns[i].
+    """
 
     def __init__(
         self,
@@ -27,21 +37,34 @@ class OracleEncoder(nn.Module):
         conv_ch: int = 256,
         num_blocks: int = 20,
         action_dim: int = 34,
+        num_tile_attn_layers: int = 2,
+        tile_attn_heads: int = 4,
     ):
         super().__init__()
 
         ng = _num_groups(conv_ch)
-        mid = num_blocks // 2
         self.stem = nn.Sequential(
             SuitAwareConv1d(obs_channels, conv_ch, kernel_size=3),
             nn.GroupNorm(ng, conv_ch),
             nn.Mish(inplace=True),
         )
         self.pos_enc = SuitPositionalEncoding(conv_ch)
-        self.res_blocks_1 = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(mid)])
-        self.tile_attn_mid = TileAttention(conv_ch, num_heads=4)
-        self.res_blocks_2 = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(num_blocks - mid)])
-        self.tile_attn = TileAttention(conv_ch, num_heads=4)
+
+        # Loop-based segment architecture (mirrors SuitAwareResNetEncoder)
+        n_segments = num_tile_attn_layers
+        blocks_per_segment = num_blocks // n_segments
+        remainder = num_blocks % n_segments
+
+        self.segments = nn.ModuleList()
+        self.tile_attns = nn.ModuleList()
+        for i in range(n_segments):
+            n_blks = blocks_per_segment + (1 if i < remainder else 0)
+            self.segments.append(nn.Sequential(
+                *[BottleneckBlock(conv_ch) for _ in range(n_blks)]
+            ))
+            self.tile_attns.append(
+                TileAttention(conv_ch, num_heads=tile_attn_heads)
+            )
 
         # Output Trunk
         trunk_dim = conv_ch * NUM_TILES
@@ -79,10 +102,9 @@ class OracleEncoder(nn.Module):
         x = oracle_obs.view(B, -1, NUM_TILES)
         x = self.stem(x)
         x = self.pos_enc(x)
-        x = self.res_blocks_1(x)
-        x = self.tile_attn_mid(x)
-        x = self.res_blocks_2(x)
-        x = self.tile_attn(x)
+        for i in range(len(self.segments)):
+            x = self.segments[i](x)
+            x = self.tile_attns[i](x)
         trunk = x.reshape(B, -1)
         logits = self.policy_head(trunk)
         values = self.value_head(trunk)

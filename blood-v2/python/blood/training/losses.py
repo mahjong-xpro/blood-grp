@@ -21,6 +21,11 @@ class BloodLossComputer:
     inputs come from the actor-critic's cached forward-pass tensors.
     """
 
+    def __init__(self, cfg=None):
+        self._metrics_interval = getattr(cfg, 'blood_metrics_interval', 100) if cfg else 100
+        self._metrics_step = 0
+        self._cached_logprob_metrics: dict = {}
+
     def compute(
         self,
         ac,
@@ -46,11 +51,13 @@ class BloodLossComputer:
             return extra_loss, summaries
 
         # Stale-cache guard: skip if the encoder cache wasn't refreshed this step.
+        # Use != instead of <= to handle checkpoint reload where counters may
+        # reset independently (Issue #39).
         cache_gen = getattr(ac, "_cache_gen", 0)
-        loss_gen = getattr(ac, "_loss_gen", 0)
-        if cache_gen <= loss_gen:
+        loss_gen = getattr(ac, "_loss_gen", -1)
+        if cache_gen == loss_gen:
             log.warning(
-                "Stale encoder cache detected (gen %d <= %d); skipping aux losses",
+                "Stale encoder cache detected (gen %d == %d); skipping aux losses",
                 cache_gen, loss_gen,
             )
             return extra_loss, summaries
@@ -138,8 +145,11 @@ class BloodLossComputer:
             )
         ce_raw = F.cross_entropy(oracle_logits_masked, actions.long(), reduction="none")
         if advantages is not None:
-            adv_w = torch.clamp(advantages.detach(), min=0.0)
-            adv_w = adv_w / (adv_w.mean() + 1e-8)
+            # Use softmax weighting instead of clamp(min=0) to ensure non-zero
+            # weights even when all advantages are negative (Issue #45).
+            adv_std = max(advantages.detach().std().item(), 1e-4)
+            adv_w = F.softmax(advantages.detach() / adv_std, dim=0)
+            adv_w = adv_w * len(adv_w)  # Scale so mean weight ≈ 1.0
             return (ce_raw * adv_w).mean()
         return ce_raw.mean()
 
@@ -177,17 +187,34 @@ class BloodLossComputer:
         return F.mse_loss(sv, ov)
 
     def _logprob_metrics(self, action_dist, obs, summaries) -> None:
-        """Monitor logprob extremes over legal actions only."""
+        """Monitor logprob extremes over legal actions only.
+
+        The log_softmax computation is throttled to every ``_metrics_interval``
+        steps to avoid unnecessary overhead on every minibatch.  Between
+        computation steps the last cached values are returned.
+        """
+        self._metrics_step += 1
+        if self._metrics_step % self._metrics_interval != 0:
+            # Return cached metrics from the last computation
+            summaries.update(self._cached_logprob_metrics)
+            return
+
         student_logits = getattr(action_dist, "raw_logits", None)
         if student_logits is None:
             return
         mask = obs.get("action_mask") if obs is not None else None
         with torch.no_grad():
-            log_probs = F.log_softmax(student_logits, dim=-1)
+            log_probs = F.log_softmax(student_logits.detach(), dim=-1)
             if mask is not None:
                 legal_lp = log_probs[mask.bool()]
-                summaries["blood/max_abs_logprob"] = legal_lp.abs().max()
-                summaries["blood/mean_abs_logprob"] = legal_lp.abs().mean()
+                metrics = {
+                    "blood/max_abs_logprob": legal_lp.abs().max(),
+                    "blood/mean_abs_logprob": legal_lp.abs().mean(),
+                }
             else:
-                summaries["blood/max_abs_logprob"] = log_probs.abs().max()
-                summaries["blood/mean_abs_logprob"] = log_probs.abs().mean()
+                metrics = {
+                    "blood/max_abs_logprob": log_probs.abs().max(),
+                    "blood/mean_abs_logprob": log_probs.abs().mean(),
+                }
+        self._cached_logprob_metrics = metrics
+        summaries.update(metrics)

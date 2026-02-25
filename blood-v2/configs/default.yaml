@@ -1,3 +1,7 @@
+# ⚠️ Architecture params (blood_num_tile_attn_layers, oracle_num_tile_attn_layers,
+#    rnn_num_layers) MUST be identical across ALL training stages.
+#    Changing them between stages will cause checkpoint weight shape mismatches.
+
 # Blood-v2 Production Hyperparameters
 # Single unified configuration for superhuman-level training
 # Use phase-specific yamls (warmup/competitive/elite) for curriculum training
@@ -28,11 +32,15 @@ blood_obs_channels: 470
 blood_conv_channels: 256
 blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024
+blood_num_tile_attn_layers: 4
+blood_tile_attn_heads: 4
 
 # Oracle
 oracle_enabled: true
 # 修复: 从 25 改为 20，与所有阶段 yaml 配置 (warmup/competitive/elite) 保持一致
 oracle_num_blocks: 20
+oracle_num_tile_attn_layers: 4
+oracle_tile_attn_heads: 4
 oracle_distill_weight: 0.05
 oracle_distill_temperature: 2.0
 
@@ -76,7 +84,7 @@ aux_opp_waits_weight: 0.3
 # 各阶段 yaml 会覆盖此值，实际训练以阶段配置为准。
 use_rnn: true
 rnn_type: lstm
-rnn_size: 1024
-rnn_num_layers: 1
+rnn_size: 512
+rnn_num_layers: 2
 rollout: 32
 recurrence: 32

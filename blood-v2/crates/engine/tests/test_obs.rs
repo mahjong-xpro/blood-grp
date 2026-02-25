@@ -33,7 +33,7 @@ fn test_student_obs_shape() {
 #[test]
 fn test_oracle_obs_shape() {
     let board = BoardState::new(42);
-    let obs = encode_oracle_obs(&board, 0);
+    let obs = encode_oracle_obs(&board, 0, None);
     assert_eq!(obs.len(), NUM_ORACLE_CHANNELS * NUM_TILE_TYPES);
 }
 
@@ -83,7 +83,7 @@ fn test_obs_values_in_range() {
 fn test_oracle_contains_student() {
     let board = BoardState::new(42);
     let student = encode_student_obs(&board, 0);
-    let oracle = encode_oracle_obs(&board, 0);
+    let oracle = encode_oracle_obs(&board, 0, None);
 
     // Oracle should contain student obs as prefix
     let student_size = NUM_STUDENT_CHANNELS * NUM_TILE_TYPES;

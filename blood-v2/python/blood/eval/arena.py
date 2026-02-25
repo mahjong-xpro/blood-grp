@@ -1,9 +1,15 @@
 """1v3 竞技场评估：Blood 麻将 agent 对战评估。"""
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from blood.eval.elo import EloTracker
 
 log = logging.getLogger(__name__)
 
@@ -19,6 +25,8 @@ class ArenaResult:
     win_fan_count: int = 0
     scores: list = field(default_factory=list)
     ranks: list = field(default_factory=list)
+    agent_elo: float = 1500.0
+    baseline_elo: float = 1500.0
 
     @property
     def win_rate(self) -> float:
@@ -56,13 +64,16 @@ class ArenaResult:
     def summary(self) -> str:
         score_ci = self.confidence_interval("score")
         rank_ci = self.confidence_interval("rank")
-        return (
-            f"Games: {self.num_games}\n"
-            f"Win rate: {self.win_rate:.3f}\n"
-            f"Avg rank: {self.avg_rank:.3f} (95% CI: [{rank_ci[0]:.3f}, {rank_ci[1]:.3f}])\n"
-            f"Avg score: {self.avg_score:.1f} (95% CI: [{score_ci[0]:.1f}, {score_ci[1]:.1f}])\n"
-            f"Avg fan per win: {self.avg_fan:.2f}"
-        )
+        lines = [
+            f"Games: {self.num_games}",
+            f"Win rate: {self.win_rate:.3f}",
+            f"Avg rank: {self.avg_rank:.3f} (95% CI: [{rank_ci[0]:.3f}, {rank_ci[1]:.3f}])",
+            f"Avg score: {self.avg_score:.1f} (95% CI: [{score_ci[0]:.1f}, {score_ci[1]:.1f}])",
+            f"Avg fan per win: {self.avg_fan:.2f}",
+            f"Agent Elo: {self.agent_elo:.1f}",
+            f"Baseline Elo: {self.baseline_elo:.1f}",
+        ]
+        return "\n".join(lines)
 
 
 def _compute_rank_with_ties(scores: list, player_idx: int) -> float:
@@ -95,20 +106,30 @@ def _compute_rank_with_ties(scores: list, player_idx: int) -> float:
 class Arena:
     """运行 1v3 评估：agent 对战 3 个基线。"""
 
-    def __init__(self, env_cls, agent_fn, baseline_mode="rulebot", recorder=None):
+    def __init__(
+        self,
+        env_cls,
+        agent_fn,
+        baseline_mode="rulebot",
+        recorder=None,
+        elo_tracker: Optional[EloTracker] = None,
+    ):
         """
         env_cls: 环境类
         agent_fn: callable(obs) -> action
         baseline_mode: 基线对手模式
         recorder: 可选的 ReplayRecorder 实例
+        elo_tracker: 可选的 EloTracker 实例，用于跟踪 Elo 评分
         """
         self.env_cls = env_cls
         self.agent_fn = agent_fn
         self.baseline_mode = baseline_mode
         self.recorder = recorder
+        self.elo_tracker = elo_tracker
 
     def evaluate(self, num_games: int = 1000, seed: int = 0,
-                 names: list | None = None) -> ArenaResult:
+                 names: list | None = None,
+                 agent_name: str = "current_policy") -> ArenaResult:
         """运行竞技场评估。
 
         每局游戏随机选择 agent 的座位（0-3），消除庄家位偏差。
@@ -167,16 +188,19 @@ class Arena:
 
             won = False
             if isinstance(info, dict):
-                # 优先使用 info 中的 winner_seat 信息
-                winner_seat = info.get("winner_seat", None)
-                if winner_seat is not None:
-                    won = (winner_seat == agent_seat)
+                # Prefer the per-seat winners list from the Rust env (Issue #44)
+                winners = info.get("winners", None)
+                if winners is not None and len(winners) > 0:
+                    won = agent_seat in winners
                 else:
-                    # 回退：如果 agent 在座位0，使用旧的 player_won 字段
-                    if agent_seat == 0:
+                    # Backward compatibility: fall back to older info fields
+                    winner_seat = info.get("winner_seat", None)
+                    if winner_seat is not None:
+                        won = (winner_seat == agent_seat)
+                    elif agent_seat == 0:
                         won = info.get("player_won", False)
                     else:
-                        # 无法确定胜负时，用分数最高判断
+                        # Last resort: score-based heuristic
                         won = all(player_score >= s for s in scores) and player_score > min(scores)
 
             result.num_games += 1
@@ -192,5 +216,28 @@ class Arena:
                 if fan > 0:
                     result.total_fan += fan
                     result.win_fan_count += 1
+
+            # Update Elo ratings for this game
+            if self.elo_tracker is not None:
+                # Build per-seat names for Elo: use agent_name for the agent seat
+                elo_names = list(rotated_names)
+                elo_names[agent_seat] = agent_name
+                all_ranks = [_compute_rank_with_ties(scores, i) for i in range(4)]
+                self.elo_tracker.update_from_game(
+                    player_names=elo_names,
+                    ranks=all_ranks,
+                    scores=scores,
+                )
+
+        # Finalize Elo stats on the result
+        if self.elo_tracker is not None:
+            result.agent_elo = self.elo_tracker.get_rating(agent_name)
+            # Average baseline Elo across unique baseline names
+            baseline_names = set(rotated_names) - {agent_name}
+            if baseline_names:
+                result.baseline_elo = sum(
+                    self.elo_tracker.get_rating(b) for b in baseline_names
+                ) / len(baseline_names)
+            self.elo_tracker.save()
 
         return result

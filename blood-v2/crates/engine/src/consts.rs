@@ -41,9 +41,59 @@ pub const NUM_ORACLE_CHANNELS: usize = NUM_STUDENT_CHANNELS + NUM_ORACLE_EXTRA_C
 // These must stay in sync with crates/engine/src/obs/student.rs.
 // Exported via PyO3 so Python code (RTPA, etc.) never hardcodes offsets.
 
+// === Section 1: Hand ===
+pub const CH_HAND_BASE: usize = 0;
+pub const CH_HAND_COUNT: usize = 5;
+
+// === Section 2: Game Context ===
+pub const CH_GAME_CONTEXT_BASE: usize = 5;
+pub const CH_TURN_PROGRESS: usize = 17;
+
+// === Section 3: Ding Que ===
+pub const CH_DING_QUE_BASE: usize = 18;
+pub const CH_OPP_DING_QUE_BASE: usize = 23;
+pub const CH_OPP_AGARI_BASE: usize = 32;
+
+// === Section 4: Game State ===
 /// Section 4, ch 0: wall_remaining / 55.0
 pub const CH_WALL_REMAINING: usize = 35;
+
+// === Section 5: Self Kawa ===
+pub const CH_SELF_KAWA_BASE: usize = 40;
+
+// === Section 6: Opponent Kawa ===
+pub const CH_OPP_KAWA_BASE: usize = 98;
+pub const CH_OPP_KAWA_STRIDE: usize = 58; // MAX_TURNS * 2 + 2
+
+// === Section 7: Visible Tiles ===
+pub const CH_VISIBLE_TILES_BASE: usize = 272;
+pub const CH_OPP_KAWA_OVERVIEW_BASE: usize = 272;
+
+// === Section 8: Defense ===
+pub const CH_OPP_SUIT_RATIO_BASE: usize = 320;
+
+// === Section 9: Derived ===
+pub const CH_TILES_REMAINING: usize = 329;
+pub const CH_SELF_MENZEN: usize = 330;
+pub const CH_SELF_MELDS: usize = 331;
 /// Section 9: opponent meld counts (3 opponents at ch+0, ch+1, ch+2)
 pub const CH_OPP_MELD_BASE: usize = 333;
+pub const CH_OPP_TERMINAL_RATIO_BASE: usize = 336;
+pub const CH_SELF_DISCARD_COUNT: usize = 339;
+
+// === Section 10: Hand Analysis ===
+pub const CH_HAND_ANALYSIS_BASE: usize = 340;
 /// Section 10: wait_tiles at ch=340, shanten one-hot at ch=341..345
 pub const CH_SHANTEN_BASE: usize = 341;
+
+// === Section 11: Action Context ===
+pub const CH_ACTION_CONTEXT_BASE: usize = 346;
+
+// === Section 12: SP Table ===
+pub const CH_SP_TABLE_BASE: usize = 358;
+
+// === Section 13: Fan Config ===
+pub const CH_FAN_CONFIG_BASE: usize = 457;
+
+// === Section 14: Opponent Hand Info ===
+pub const CH_OPP_HAND_INFO_BASE: usize = 464;
