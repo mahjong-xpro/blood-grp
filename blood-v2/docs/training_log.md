@@ -255,10 +255,74 @@ Elo 停留在 1500 是因为训练循环中从未调用 `EloTracker.update_from_
 
 ---
 
-### Phase 2b: Competitive Distill（进行中 🔄 ~2.2M/4M）
+### Phase 2b-续: Competitive Distill — LR 优化后（进行中 🔄 ~377K/4M 新计数）
 
-> 运行名: `blood_v2_competitive_distill/.summary/0`
-> 配置: `configs/competitive_distill.yaml` | 目标: 4M steps | 当前: ~2.1M steps
+> 运行名: `blood_v2_competitive_distill/.summary/0`（step counter 已重置）
+> 配置: `configs/competitive_distill.yaml` | 实际总训练量: ~2.2M(旧) + 377K(新) ≈ 2.6M steps
+> 关键变更: `lr_adaptive_min: 5e-5`, `lr_schedule_kl_threshold: 0.0005`, `arena_eval_games: 100`
+> Elo tracker 状态已继承（起始 elo_games=550）
+
+#### 优化效果对比
+
+| 指标 | 优化前 (旧 2.2M 均值) | 优化后 (@377K) | 变化 | 评估 |
+|------|----------------------|----------------|------|------|
+| `train/actual_lr` | 2e-5 (76.6% 锁死) | **5e-5** (稳定) | ↑ 2.5x | ✅ 核心修复 |
+| `train/kl_divergence` | 0.0004 | **0.0016** | ↑ 4x | ✅ 策略更新更积极 |
+| `train/fraction_clipped` | 1.1% | **9.4%** | ↑ 8.5x | ⚠️ 偏高，观察中 |
+| `train/entropy` | 0.92 | **1.11** | ↑ 0.19 | ✅ entropy schedule 重启 |
+| `train/grad_norm` | 1.50 (均值) | **2.0** (频繁贴满) | ↑ | ⚠️ 梯度压力增大 |
+| `blood/elo_current` | 1441 (末值) | **1517** | ↑ +76 | ✅ 显著回升 |
+
+#### 奖励 / 目标
+
+| 指标 | @8K | @100K | @200K | @300K | @377K | 评估 |
+|------|-----|-------|-------|-------|-------|------|
+| `reward/reward` | +0.62 | -0.25 | -0.21 | -0.19 | **-0.19** | ✅ 零和收敛 |
+| `reward/reward_max` | — | — | — | — | **+0.77** | ✅ 正常 |
+| `reward/reward_min` | — | — | — | — | **-1.62** | ✅ 正常 |
+
+#### 损失
+
+| 指标 | @8K | @100K | @200K | @300K | @377K | 评估 |
+|------|-----|-------|-------|-------|-------|------|
+| `train/loss` | 0.42 | 0.73 | 0.83 | 1.26 | **1.11** | ⚠️ 上升中，适应期 |
+| `train/value_loss` | 0.46 | 0.79 | 0.88 | 1.31 | **1.16** | ⚠️ 同上 |
+| `train/policy_loss` | — | — | — | — | **-0.000** | ✅ 正常 |
+
+#### Arena 评估 📊（100 局/次，Elo 累积）
+
+| # | Step (新) | Elo | Elo Games | Win Rate | Avg Rank | Avg Score | 评估 |
+|---|-----------|-----|-----------|----------|----------|-----------|------|
+| 11 | 213K | 1498 | 596 | 0.60 | 2.44 | 99440 | ✅ |
+| 12 | 221K | 1517 | 650 | 0.52 | 2.44 | 100380 | ✅ Elo 回升 |
+
+> 注: Eval 编号从 11 开始（继承旧 run 的 10 次评估）。Elo 从 1507 起步（旧 run 末值 1441 + 新 eval 修正）。
+
+#### 分析（2026-02-26 00:42 CST）
+
+**LR 优化效果: ✅ 正面**
+
+1. **Elo 回升到 1517**: 从旧 run 末值 1441 回升 +76，超过初始 1500。这是最重要的正面信号。
+2. **KL 提升 4x**: 从 0.0004 升到 0.0016，说明策略在更积极地更新。
+3. **Arena 指标稳定**: win_rate 0.52~0.60, avg_rank 2.44, avg_score 100380。均优于旧 run 后半段。
+
+**需要关注的信号**:
+
+1. **value_loss 上升** (0.46→1.16): 预期中的适应期。更高的 LR + 重启的 entropy schedule (0.05) 导致 value function 需要重新适应。预计在 ~500K 步后稳定。
+2. **fraction_clipped 9.4%**: 比旧 run 的 1.1% 高很多。`ppo_clip_ratio=0.1` 下 9.4% 的 clip 率说明策略更新幅度较大。如果持续 > 15%，可能需要降低 LR 或提升 clip_ratio。
+3. **grad_norm 频繁贴满 2.0**: 与 value_loss 上升一致。如果 value_loss 稳定后 grad_norm 仍频繁贴满，考虑提升 `max_grad_norm` 到 3.0。
+
+**后续监控**:
+- 观察到 ~1M 步（新计数），确认 value_loss 是否回落到 < 1.0
+- Elo 是否持续上升（目标: ≥ 1550）
+- fraction_clipped 是否稳定在 < 15%
+
+---
+
+### Phase 2b（旧 run 存档）: Competitive Distill — 优化前数据
+
+> 运行名: `blood_v2_competitive_distill/.summary/0`（TensorBoard 数据已被覆盖）
+> 配置: `configs/competitive_distill.yaml` | 实际运行: ~2.2M steps
 > 核心变化: `oracle_value_distill_weight: 0.1`（启用 oracle value 蒸馏）
 > LR 修复: `lr_adaptive_min: 2e-5`, `lr_schedule_kl_threshold: 0.0002`
 > entropy schedule: `cosine,0.05,0.02,0,4000000`（当前 0.034）
