@@ -49,17 +49,26 @@ pub struct BoardState {
 
     // Turn 0 tracking for tianhu/dihu
     pub dahai_count: u16,
+
+    // Configurable initial score (stored for obs encoding / header generation)
+    pub initial_score: i32,
 }
 
 impl BoardState {
+    /// Create a new board with the default initial score (100,000).
     pub fn new(seed: u64) -> Self {
+        Self::with_initial_score(seed, INITIAL_SCORE)
+    }
+
+    /// Create a new board with a custom initial score per player.
+    pub fn with_initial_score(seed: u64, initial_score: i32) -> Self {
         let mut rng = fastrand::Rng::with_seed(seed);
         let wall = generate_deck(&mut rng);
         let dealer = (seed % NUM_PLAYERS as u64) as usize;
 
         let mut state = Self {
             phase: Phase::DingQue,
-            players: std::array::from_fn(|_| PlayerState::new()),
+            players: std::array::from_fn(|_| PlayerState::with_score(initial_score)),
             wall,
             wall_idx: 0,
             wall_back_idx: 0,
@@ -75,6 +84,7 @@ impl BoardState {
             events: Vec::new(),
             fan_config: FanConfig::default(),
             dahai_count: 0,
+            initial_score,
         };
 
         // Deal 13 tiles to each player
@@ -376,6 +386,7 @@ impl BoardState {
             remove_tile(&mut p.hand, tile);
             remove_tile(&mut p.hand, tile);
             p.melds.push(MeldType::AnKan(tile));
+            p.meld_from.push(None); // 暗杠无来源玩家
 
             for i in 0..NUM_PLAYERS {
                 if i != player_id && !self.players[i].has_won {
@@ -639,6 +650,7 @@ impl BoardState {
         remove_tile(&mut p.hand, tile);
         remove_tile(&mut p.hand, tile);
         p.melds.push(MeldType::Pon(tile));
+        p.meld_from.push(Some(from)); // 碰的来源玩家
         p.furiten_passed_ron_fan = None;
 
         // The claimed tile is always the most recent discard — pop() is O(1)
@@ -663,6 +675,7 @@ impl BoardState {
         remove_tile(&mut p.hand, tile);
         remove_tile(&mut p.hand, tile);
         p.melds.push(MeldType::MinKan(tile));
+        p.meld_from.push(Some(from)); // 明杠的来源玩家
 
         // The claimed tile is always the most recent discard — pop() is O(1).
         self.players[from].discards.pop();
@@ -803,7 +816,8 @@ impl BoardState {
             is_chankan: false,
             is_haidi: self.wall_remaining() == 0,
             is_tianhu: !is_ron && self.dahai_count == 0 && player_id == self.dealer,
-            is_dihu: is_ron && self.dahai_count == 1 && self.last_discard.map_or(false, |(d, _)| d == self.dealer),
+            // 地胡：闲家在第一次打牌前自摸（非荣和、无人打过牌、非庄家）
+            is_dihu: !is_ron && self.dahai_count == 0 && player_id != self.dealer,
             exclude_gen_tile: None,
             fan_config: self.fan_config,  // Copy
         }

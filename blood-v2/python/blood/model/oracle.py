@@ -9,12 +9,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from blood.consts import NUM_ORACLE_CHANNELS
 from blood.model.encoder import (
     SuitAwareConv1d, BottleneckBlock, SuitPositionalEncoding, TileAttention,
     NUM_TILES, _num_groups,
 )
 
-DEFAULT_ORACLE_CHANNELS = 516  # 464 student + 52 oracle extra
+DEFAULT_ORACLE_CHANNELS = NUM_ORACLE_CHANNELS
 
 
 class OracleEncoder(nn.Module):

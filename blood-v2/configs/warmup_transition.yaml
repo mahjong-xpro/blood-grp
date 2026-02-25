@@ -1,0 +1,103 @@
+# Phase 1.5: Warmup→Competitive 过渡阶段
+# 时长: ~500K env steps
+# 目标: 平滑过渡，避免同时改变6个超参数导致训练崩溃
+# 前置条件: 从 warmup checkpoint 恢复
+# 后续: 切换到 competitive.yaml (Phase 2a)
+#
+# === 过渡策略 ===
+# warmup → transition → competitive 参数变化路径:
+#   对手:       RuleBot    → RuleBot(保持)  → 自博弈
+#   LSTM:       禁用       → 启用(512)      → 启用(512)  ← 本阶段启用
+#   batch_size: 4096       → 4096(保持)     → 2048
+#   gamma:      0.99       → 0.995(中间值)  → 0.998
+#   lr:         5e-4       → 2e-4(中间值)   → 1e-4
+#   entropy:    0.01       → 0.01(保持)     → 0.05
+#
+# 本阶段只改变2个参数(LSTM启用 + gamma/lr渐变)，保持对手和batch不变，
+# 让LSTM先在稳定的RuleBot环境中学会时序建模，再进入自博弈。
+
+# Sample Factory
+num_workers: 16
+num_envs_per_worker: 32
+batch_size: 4096                    # 保持与 warmup 一致，不在此阶段缩小
+num_batches_per_epoch: 4
+ppo_clip_ratio: 0.2                 # 保持与 warmup 一致
+max_grad_norm: 1.0
+gamma: 0.995                        # 中间值: warmup(0.99) → transition(0.995) → competitive(0.998)
+gae_lambda: 0.95
+learning_rate: 2e-4                 # 中间值: warmup(5e-4) → transition(2e-4) → competitive(1e-4)
+lr_schedule: kl_adaptive_minibatch
+exploration_loss_coeff: 0.01        # 保持与 warmup 一致，competitive 阶段再提升到 0.05
+value_loss_coeff: 1.0
+train_for_env_steps: 500000         # 过渡阶段 500K 步，足够 LSTM 适应
+
+# Environment
+initial_score: 100000
+env: blood_mahjong
+encoder_custom: blood_encoder
+experiment: blood_v2_warmup_transition
+
+# Model — 与所有阶段保持一致 (256ch/20blocks Bottleneck, obs=470)
+blood_obs_channels: 470
+blood_conv_channels: 256
+blood_num_res_blocks: 20
+blood_encoder_out_dim: 1024
+
+# 对手: 保持 RuleBot — 让 LSTM 在稳定环境中先学会时序建模
+# 如果直接切换到自博弈 + LSTM，两个新变量同时引入会导致不稳定
+opponent_mode: rulebot
+
+# Oracle 蒸馏 — 与 warmup 保持一致
+oracle_enabled: true
+oracle_num_blocks: 20
+oracle_distill_weight: 0.1
+oracle_distill_temperature: 3.0
+oracle_value_distill_weight: 0.0
+oracle_value_head_loss_weight: 1.0
+oracle_value_warmup_steps: 0
+
+# League — 继续收集快照
+league_enabled: true
+league_pool_dir: checkpoints/league/
+league_add_every: 100000
+league_newest_weight: 2.0              # 与 default.yaml/cfg.py 保持一致
+league_uniform_floor: 0.1
+league_self_play_prob: 0.0             # 过渡阶段不自博弈（对手仍是 RuleBot）
+
+# 奖励塑形 — 保持 warmup 的辅助奖励，过渡阶段不突然移除
+warmup_reward_shaping: true
+warmup_dq_bonus: 0.05
+warmup_win_bonus: 0.1
+warmup_dangerous_discard_penalty: 0.03
+
+# 数据增强
+suit_augment_prob: 0.5
+
+# 结构化奖励 — 与 warmup 一致
+reward_tsumo_bonus: 0.0
+reward_deal_in_penalty: 0.0
+reward_shanten_progress: 0.003
+reward_shanten_regress: 0.001
+
+# 向听番数加权 — 过渡阶段禁用，与 warmup 保持一致
+shanten_fan_bonus_scale: 0.0
+
+# 排名奖励和安全弃牌奖励 — 过渡阶段暂不启用，competitive 阶段再开启
+reward_rank_bonus: 0.0
+reward_safe_discard: 0.0
+
+# 辅助任务 — 从 warmup 的高权重逐步降低
+aux_shanten_weight: 1.5              # 中间值: warmup(2.0) → transition(1.5) → competitive(1.0)
+aux_opp_waits_weight: 0.45           # 中间值: warmup(0.6) → transition(0.45) → competitive(0.3)
+
+# LSTM — 本阶段核心变化: 启用 LSTM
+# warmup 阶段禁用 LSTM 是因为 RuleBot 的固定模式不需要时序建模。
+# 但直接在 competitive 阶段同时启用 LSTM + 切换自博弈风险太高。
+# 本阶段在 RuleBot 环境中先让 LSTM 学会基本的时序表示，
+# 这样进入 competitive 时 LSTM 权重已经有合理的初始化。
+use_rnn: true
+rnn_type: lstm
+rnn_size: 512
+rnn_num_layers: 1
+rollout: 32
+recurrence: 32

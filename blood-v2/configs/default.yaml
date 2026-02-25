@@ -18,27 +18,31 @@ value_loss_coeff: 1.0
 train_for_env_steps: 5000000
 
 # Environment
+initial_score: 100000
 env: blood_mahjong
 encoder_custom: blood_encoder
 experiment: blood_v2
 
-# Model — 与 Rust consts.rs 保持一致 (NUM_STUDENT_CHANNELS=464, Bottleneck 256ch/20blocks)
-blood_obs_channels: 464
+# Model — 与 Rust consts.rs 保持一致 (NUM_STUDENT_CHANNELS=470, Bottleneck 256ch/20blocks)
+blood_obs_channels: 470
 blood_conv_channels: 256
 blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024
 
 # Oracle
 oracle_enabled: true
-oracle_num_blocks: 25
+# 修复: 从 25 改为 20，与所有阶段 yaml 配置 (warmup/competitive/elite) 保持一致
+oracle_num_blocks: 20
 oracle_distill_weight: 0.05
 oracle_distill_temperature: 2.0
 
-# League
+# League — 多项式衰减 α=2.0 + uniform_floor 保底，提高有效多样性
 league_enabled: true
 league_pool_dir: checkpoints/league/
 league_add_every: 50000
-league_newest_weight: 3.0
+league_newest_weight: 2.0              # 从 3.0 降到 2.0，提高有效多样性（与 cfg.py 默认值一致）
+league_uniform_floor: 0.1              # 最低采样概率下限，确保旧 checkpoint 也能被采样
+league_self_play_prob: 0.2             # 20% 概率使用当前策略自博弈
 opponent_mode: selfplay
 opponent_refresh_every: 20
 
@@ -51,11 +55,25 @@ reward_deal_in_penalty: 0.05
 reward_shanten_progress: 0.003
 reward_shanten_regress: 0.001
 
+# 向听番数加权 — 默认启用完整引导
+shanten_fan_bonus_scale: 0.3
+shanten_fan_max: 8.0
+
+# 排名奖励 — 根据最终排名给予额外奖励/惩罚
+# 默认关闭(0.0)，在 competitive 及后续阶段启用
+reward_rank_bonus: 0.0
+
+# 安全弃牌奖励 — 对安全弃牌行为给予正向激励
+# 默认关闭(0.0)，在 competitive 及后续阶段启用
+reward_safe_discard: 0.0
+
 # Auxiliary tasks
 aux_shanten_weight: 1.0
 aux_opp_waits_weight: 0.3
 
 # LSTM — temporal modeling across turns
+# 注意: rnn_size 在此为基础默认值 1024，但 competitive/elite 阶段覆盖为 512。
+# 各阶段 yaml 会覆盖此值，实际训练以阶段配置为准。
 use_rnn: true
 rnn_type: lstm
 rnn_size: 1024

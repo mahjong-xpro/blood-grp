@@ -15,5 +15,14 @@ fn blood_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("ACTION_SPACE", engine::consts::ACTION_SPACE)?;
     m.add("NUM_STUDENT_CHANNELS", engine::consts::NUM_STUDENT_CHANNELS)?;
     m.add("NUM_ORACLE_CHANNELS", engine::consts::NUM_ORACLE_CHANNELS)?;
+    m.add("NUM_ORACLE_EXTRA_CHANNELS", engine::consts::NUM_ORACLE_EXTRA_CHANNELS)?;
+    m.add("INITIAL_SCORE", engine::consts::INITIAL_SCORE)?;
+    m.add("REWARD_NORM", engine::consts::REWARD_NORM)?;
+    m.add("MAX_FAN", engine::consts::MAX_FAN)?;
+    m.add("MAX_TURNS", engine::consts::MAX_TURNS)?;
+    // Observation channel offsets (for RTPA, etc.)
+    m.add("CH_WALL_REMAINING", engine::consts::CH_WALL_REMAINING)?;
+    m.add("CH_OPP_MELD_BASE", engine::consts::CH_OPP_MELD_BASE)?;
+    m.add("CH_SHANTEN_BASE", engine::consts::CH_SHANTEN_BASE)?;
     Ok(())
 }

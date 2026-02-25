@@ -8,7 +8,8 @@ use crate::state::board::{BoardState, Phase};
 
 const OBS_SIZE: usize = NUM_STUDENT_CHANNELS * NUM_TILE_TYPES;
 
-/// Encode full student observation: 464 channels x 27 tiles
+/// Encode full student observation: 470 channels x 27 tiles
+/// 注意：通道数变更（464→470）需要重新训练模型。
 pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
     let mut obs = vec![0.0f32; OBS_SIZE];
     let mut ch = 0usize;
@@ -48,7 +49,7 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
     ch += 1;
 
     // === Section 2: GAME CONTEXT (13 ch) ===
-    let total_score = (INITIAL_SCORE * NUM_PLAYERS as i32) as f32;
+    let total_score = (board.initial_score * NUM_PLAYERS as i32) as f32;
     for pi in 0..NUM_PLAYERS {
         let idx = (player_id + pi) % NUM_PLAYERS;
         fill_ch!(ch + pi, board.players[idx].score as f32 / total_score);
@@ -548,6 +549,36 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
     fill_ch!(ch, fc.jiaxinwu as u8 as f32); ch += 1;
     fill_ch!(ch, fc.haidi as u8 as f32); ch += 1;
     fill_ch!(ch, fc.tianhu_dihu as u8 as f32); ch += 1;
+
+    // === Section 14: 对手手牌信息 (6 ch) ===
+    // 注意：此 Section 为新增通道（464→470），需要重新训练模型。
+    //
+    // 通道 ch+0..ch+2: 3个对手的手牌数量（归一化，hand_count / 13.0）
+    // 通道 ch+3..ch+5: 3个对手最近一次副露的来源玩家相对位置（归一化，source / 3.0）
+    for opp_off in 1..NUM_PLAYERS {
+        let opp_id = (player_id + opp_off) % NUM_PLAYERS;
+        let opp = &board.players[opp_id];
+        // 对手手牌数量：归一化到 [0, 1]，除以 13（初始手牌数）
+        fill_ch!(ch, opp.hand_count() as f32 / 13.0);
+        ch += 1;
+    }
+    for opp_off in 1..NUM_PLAYERS {
+        let opp_id = (player_id + opp_off) % NUM_PLAYERS;
+        let opp = &board.players[opp_id];
+        // 副露来源编码：取最近一次副露的来源玩家相对位置
+        // 相对位置：1=下家, 2=对家, 3=上家（相对于观测玩家 player_id）
+        // 归一化为 source / 3.0；无副露则为 0
+        let meld_source_val = opp.meld_from.iter().rev()
+            .find_map(|&from| from)
+            .map(|abs_from| {
+                // 将绝对座位号转换为相对于观测玩家的位置 (1-3)
+                let rel = (abs_from + NUM_PLAYERS - player_id) % NUM_PLAYERS;
+                rel as f32 / 3.0
+            })
+            .unwrap_or(0.0);
+        fill_ch!(ch, meld_source_val);
+        ch += 1;
+    }
 
     assert_eq!(ch, NUM_STUDENT_CHANNELS, "used {} channels, expected {}", ch, NUM_STUDENT_CHANNELS);
 

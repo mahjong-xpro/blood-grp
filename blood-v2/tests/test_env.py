@@ -30,7 +30,7 @@ class TestBloodMahjongEnvFallback:
         assert env.observation_space["obs"].shape == (OBS_SIZE,)
         assert env.observation_space["oracle_obs"].shape == (ORACLE_OBS_SIZE,)
         assert env.observation_space["action_mask"].shape == (ACTION_SPACE,)
-        assert env.observation_space["dq_labels"].shape == (3,)
+        assert env.observation_space["shanten_labels"].shape == (15,)
         assert env.observation_space["ow_labels"].shape == (81,)
 
     def test_reset_returns_valid(self):
@@ -106,7 +106,7 @@ class TestBloodMahjongEnvWithEngine:
     def test_scores_accessible(self):
         env = BloodMahjongEnv()
         env.reset(seed=42)
-        scores = env._env.get_scores()
+        scores = env.get_scores()
         assert len(scores) == 4
         assert all(s > 0 for s in scores)
 
@@ -211,19 +211,6 @@ class TestAugmentation:
         env._current_perm = perm
         actual = env._apply_augment_mask(mask)
         np.testing.assert_array_equal(actual, expected)
-
-    def test_augment_dq_round_trip(self):
-        from blood.env.augment import SUIT_PERMUTATIONS
-        rng = np.random.default_rng(8)
-        dq = rng.integers(0, 4, size=3).astype(np.float32)
-        env = BloodMahjongEnv()
-        for perm in SUIT_PERMUTATIONS[1:]:
-            inv_perm = tuple(perm.index(i) for i in range(3))
-            env._current_perm = perm
-            aug = env._apply_augment_dq(dq)
-            env._current_perm = inv_perm
-            restored = env._apply_augment_dq(aug)
-            np.testing.assert_array_equal(restored, dq)
 
     def test_augment_ow_round_trip(self):
         from blood.env.augment import SUIT_PERMUTATIONS

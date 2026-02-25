@@ -72,8 +72,15 @@ class SelfPlayEnv(BloodMahjongEnv):
 
         if cfg is not None:
             pool_dir = getattr(cfg, "league_pool_dir", "checkpoints/league")
-            newest_w = getattr(cfg, "league_newest_weight", 3.0)
-            self._league = LeagueManager(pool_dir, newest_w)
+            newest_w = getattr(cfg, "league_newest_weight", 2.0)
+            uniform_floor = getattr(cfg, "league_uniform_floor", 0.1)
+            self_play_prob = getattr(cfg, "league_self_play_prob", 0.2)
+            self._league = LeagueManager(
+                pool_dir,
+                newest_weight=newest_w,
+                uniform_floor=uniform_floor,
+                self_play_prob=self_play_prob,
+            )
             self._refresh_every = getattr(cfg, "opponent_refresh_every", 20)
 
         self._warmup_reward_shaping = False
@@ -103,10 +110,63 @@ class SelfPlayEnv(BloodMahjongEnv):
             self._reward_safe_discard = getattr(cfg, "reward_safe_discard", 0.0)
             self._reward_rank_bonus = getattr(cfg, "reward_rank_bonus", 0.0)
 
+        # 向听奖励衰减调度：随训练进度线性衰减向听奖励，避免贪心追求听牌而忽略番数
+        self._shanten_decay_steps = 0
+        self._shanten_min_ratio = 0.3
+        if cfg is not None:
+            self._shanten_decay_steps = getattr(cfg, "shanten_reward_decay_steps", 0)
+            self._shanten_min_ratio = getattr(cfg, "shanten_reward_min_ratio", 0.3)
+        # 全局环境步数计数器，用于衰减调度
+        self._global_env_steps = 0
+
+        # 向听奖励番数加权：向听改善时乘以 (1 + scale * estimated_fan / max_fan)
+        # 引导模型在向听数相同时倾向于选择番数更高的手牌方向
+        self._shanten_fan_bonus_scale = 0.0
+        self._shanten_fan_max = 8.0
+        if cfg is not None:
+            self._shanten_fan_bonus_scale = getattr(cfg, "shanten_fan_bonus_scale", 0.0)
+            self._shanten_fan_max = getattr(cfg, "shanten_fan_max", 8.0)
+
         self._max_steps = 500
         self._step_count = 0
         self._prev_scores = np.zeros(4, dtype=np.float32)
         self._prev_agent_shanten: Optional[int] = None
+
+    def _get_shanten_decay_factor(self) -> float:
+        """计算当前向听奖励的衰减系数。
+
+        衰减公式: factor = max(min_ratio, 1.0 - progress)
+        其中 progress = global_env_steps / decay_steps
+
+        返回值范围 [min_ratio, 1.0]，乘以基础向听奖励得到有效奖励。
+        当 decay_steps=0 时不衰减，始终返回 1.0。
+        """
+        if self._shanten_decay_steps <= 0:
+            return 1.0
+        progress = self._global_env_steps / self._shanten_decay_steps
+        return max(self._shanten_min_ratio, 1.0 - progress)
+
+    def _get_fan_bonus_factor(self) -> float:
+        """计算基于预估番数的向听奖励加权系数。
+
+        加权公式: factor = 1.0 + fan_bonus_scale * estimated_fan / max_fan
+        当 fan_bonus_scale=0 时返回 1.0（无加权）。
+
+        优先使用 Rust 引擎的 get_agent_estimated_fan()（精确计算听牌番数 /
+        启发式估计非听牌番数潜力）。若引擎不支持则返回 1.0。
+        """
+        if self._shanten_fan_bonus_scale <= 0 or self._env is None:
+            return 1.0
+        try:
+            if hasattr(self._env, "get_agent_estimated_fan"):
+                estimated_fan = float(self._env.get_agent_estimated_fan())
+            else:
+                return 1.0
+        except Exception:
+            return 1.0
+        # 归一化并计算加权系数
+        normalized = min(estimated_fan / self._shanten_fan_max, 1.0)
+        return 1.0 + self._shanten_fan_bonus_scale * normalized
 
     def _try_refresh_opponent(self):
         self._episodes_since_refresh += 1
@@ -247,7 +307,7 @@ class SelfPlayEnv(BloodMahjongEnv):
 
         self._step_count = 0
         if self._engine_cls is not None:
-            self._env = self._engine_cls(game_seed, "external")
+            self._env = self._engine_cls(game_seed, "external", self._initial_score)
             self._env.reset(game_seed)
             self._advance_external_opponents()
 
@@ -268,7 +328,7 @@ class SelfPlayEnv(BloodMahjongEnv):
             oracle_obs = np.zeros(self.observation_space["oracle_obs"].shape[0], dtype=np.float32)
             shanten = np.zeros(15, dtype=np.float32)
             ow = np.zeros(81, dtype=np.float32)
-            self._prev_scores = np.full(4, 100000.0, dtype=np.float32)
+            self._prev_scores = np.full(4, float(self._initial_score), dtype=np.float32)
             self._prev_agent_shanten = None
 
         self._episode_count += 1
@@ -314,8 +374,10 @@ class SelfPlayEnv(BloodMahjongEnv):
         agent_delta = scores[0] - self._prev_scores[0]
         opp_deltas = scores[1:] - self._prev_scores[1:]
 
-        # Compute terminated early so reward shaping blocks can reference it.
-        # (Final value is re-assigned below after fast-forward logic.)
+        # 在 finalize_scoring() 之后计算 terminated，确保排名奖励等逻辑
+        # 能正确感知游戏结束状态。之前此处在 finalize_scoring() 之前计算，
+        # 导致 finalize_scoring() 将游戏从未结束变为结束时，terminated 仍为
+        # False，排名奖励的 guard 条件不满足，奖励被跳过。
         terminated = self._env.is_done() or self._env.player_has_won(0)
 
         # Base reward: sqrt-compressed normalized score delta.
@@ -345,7 +407,7 @@ class SelfPlayEnv(BloodMahjongEnv):
             if int(np.sum(opp_deltas > 100)) >= 1 and int(np.sum(opp_deltas < -100)) == 0:
                 reward -= self._reward_deal_in_penalty
 
-        # Shanten progress reward (dense signal during game).
+        # 向听进退奖励（带衰减调度 + 番数加权）
         # Guard against game-end: when terminated, shanten may be -1 (complete hand)
         # which would produce a spurious large progress reward on top of the win reward.
         if (not terminated
@@ -353,10 +415,15 @@ class SelfPlayEnv(BloodMahjongEnv):
                 and hasattr(self._env, "get_agent_shanten")):
             current_shanten = self._env.get_agent_shanten()
             shanten_delta = current_shanten - self._prev_agent_shanten
+            # 计算衰减系数：随 global_env_steps 线性衰减到 min_ratio
+            decay_factor = self._get_shanten_decay_factor()
+            # 番数加权：向听改善时乘以 (1 + scale * estimated_fan / max_fan)
+            # 引导模型在向听数相同时倾向于选择番数更高的手牌方向
+            fan_bonus = self._get_fan_bonus_factor()
             if shanten_delta < 0 and self._reward_shanten_progress > 0:
-                reward += self._reward_shanten_progress * (-shanten_delta)
+                reward += self._reward_shanten_progress * (-shanten_delta) * decay_factor * fan_bonus
             elif shanten_delta > 0 and self._reward_shanten_regress > 0:
-                reward -= self._reward_shanten_regress * shanten_delta
+                reward -= self._reward_shanten_regress * shanten_delta * decay_factor
             self._prev_agent_shanten = current_shanten
 
         # Safe discard reward: agent discards a tile that no opponent is waiting for,
@@ -392,8 +459,10 @@ class SelfPlayEnv(BloodMahjongEnv):
         self._prev_scores = scores
 
         self._step_count += 1
+        # 累加全局环境步数，用于向听奖励衰减调度
+        self._global_env_steps += 1
 
-        terminated = self._env.is_done() or self._env.player_has_won(0)
+        # terminated 已在 finalize_scoring() 之后统一计算，此处无需重复赋值
         truncated = self._step_count >= self._max_steps and not terminated
 
         obs_dict = self._env.get_player_obs(0)

@@ -6,8 +6,10 @@ use engine::consts::*;
 use engine::state::board::{BoardState, Phase};
 use engine::state::action::Action;
 use engine::state::event::Event;
-use engine::tile::Suit;
+use engine::tile::{Suit, Tile, is_terminal};
+use engine::hand::{HandCounts, MeldType};
 use engine::algo::shanten::{calc_shanten, waiting_tiles};
+use engine::algo::agari::{calc_fan, calc_gen_count, WinContext, FanConfig};
 use engine::obs::{encode_student_obs, encode_oracle_obs, encode_action_mask};
 
 fn event_to_json(e: &Event) -> String {
@@ -53,14 +55,15 @@ pub struct RustMahjongEnv {
     prev_score: i32,
     opponent_policy: OpponentPolicy,
     seed: u64,
+    initial_score: i32,
 }
 
 #[pymethods]
 impl RustMahjongEnv {
     #[new]
-    #[pyo3(signature = (seed=42, opponent_mode="rulebot"))]
-    fn new(seed: u64, opponent_mode: &str) -> Self {
-        let state = BoardState::new(seed);
+    #[pyo3(signature = (seed=42, opponent_mode="rulebot", initial_score=100_000))]
+    fn new(seed: u64, opponent_mode: &str, initial_score: i32) -> Self {
+        let state = BoardState::with_initial_score(seed, initial_score);
         let policy = match opponent_mode {
             "random" => OpponentPolicy::Random(fastrand::Rng::with_seed(seed.wrapping_add(12345))),
             "external" => OpponentPolicy::External,
@@ -72,12 +75,13 @@ impl RustMahjongEnv {
             state,
             opponent_policy: policy,
             seed,
+            initial_score,
         }
     }
 
     fn reset<'py>(&mut self, py: Python<'py>, seed: u64) -> PyResult<Bound<'py, PyDict>> {
         self.seed = seed;
-        self.state = BoardState::new(seed);
+        self.state = BoardState::with_initial_score(seed, self.initial_score);
         self.prev_score = self.state.players[self.player_id].score;
 
         if let OpponentPolicy::Random(ref mut rng) = self.opponent_policy {
@@ -211,7 +215,7 @@ impl RustMahjongEnv {
 
     fn get_reward_for(&self, player_id: usize) -> f32 {
         let current = self.state.players[player_id].score;
-        (current - engine::consts::INITIAL_SCORE) as f32 / engine::consts::REWARD_NORM as f32
+        (current - self.initial_score) as f32 / engine::consts::REWARD_NORM as f32
     }
 
     fn player_has_won(&self, player_id: usize) -> bool {
@@ -227,6 +231,51 @@ impl RustMahjongEnv {
         calc_shanten(&p.hand, p.melds.len()).into()
     }
 
+    /// Heuristic fan estimation for the agent's current hand.
+    ///
+    /// For tenpai hands (shanten=0), computes the best achievable fan across all
+    /// waiting tiles using the full agari calculator. For non-tenpai hands,
+    /// estimates fan potential from structural patterns (qingyise, menqing,
+    /// duanyaojiu, gen count) without requiring a complete hand.
+    ///
+    /// Returns a float in [0, MAX_FAN] representing estimated fan count.
+    fn get_agent_estimated_fan(&self) -> f32 {
+        let p = &self.state.players[self.player_id];
+        let shanten = calc_shanten(&p.hand, p.melds.len());
+
+        if shanten == 0 {
+            // Tenpai: compute exact best fan across all waiting tiles
+            let waits = waiting_tiles(&p.hand, p.melds.len());
+            let mut best_fan = 0u8;
+            for &wt in &waits {
+                let mut h = p.hand;
+                h[wt as usize] += 1;
+                let ctx = WinContext {
+                    tehai: h,
+                    melds: p.melds.clone(),
+                    winning_tile: wt,
+                    is_ron: false, // assume tsumo (higher fan) for optimistic estimate
+                    ding_que: p.ding_que,
+                    is_after_kan: false,
+                    is_kan_discard: false,
+                    is_chankan: false,
+                    is_haidi: false,
+                    is_tianhu: false,
+                    is_dihu: false,
+                    exclude_gen_tile: None,
+                    fan_config: FanConfig::default(),
+                };
+                if let Some(result) = calc_fan(&ctx) {
+                    best_fan = best_fan.max(result.fan);
+                }
+            }
+            return best_fan as f32;
+        }
+
+        // Non-tenpai: heuristic estimation from hand structure
+        estimate_fan_heuristic(&p.hand, &p.melds, p.ding_que)
+    }
+
     /// Returns all recorded events as a JSONL string (one JSON object per line).
     /// Call after finalize_scoring() to get the complete game log.
     fn get_events_jsonl(&self) -> String {
@@ -238,10 +287,15 @@ impl RustMahjongEnv {
 
     /// Returns the game header JSON string for the replay file.
     fn get_game_header_json(&self, names: Vec<String>) -> String {
+        let scores_str = (0..NUM_PLAYERS)
+            .map(|_| self.initial_score.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
         format!(
-            r#"{{"type":"game_start","seed":{},"names":[{}],"initial_scores":[100000,100000,100000,100000],"dealer":{}}}"#,
+            r#"{{"type":"game_start","seed":{},"names":[{}],"initial_scores":[{}],"dealer":{}}}"#,
             self.seed,
             names.iter().map(|n| format!("\"{}\"", n)).collect::<Vec<_>>().join(","),
+            scores_str,
             self.state.dealer,
         )
     }
@@ -371,4 +425,79 @@ impl RustMahjongEnv {
             }
         }
     }
+}
+
+/// Heuristic fan estimation for non-tenpai hands.
+///
+/// Checks structural patterns that contribute to fan in blood mahjong:
+/// - pinghu (base): +1 (always)
+/// - tsumo: +1 (optimistic assumption)
+/// - menqing (no open melds): +1
+/// - qingyise (single suit): +2
+/// - duanyaojiu (all 2-8): +1
+/// - gen (4 copies of a tile): +1 each
+///
+/// Returns estimated fan as f32, capped at MAX_FAN.
+fn estimate_fan_heuristic(hand: &HandCounts, melds: &[MeldType], ding_que: Option<Suit>) -> f32 {
+    let mut fan = 1.0f32; // pinghu base
+    fan += 1.0; // optimistic tsumo assumption
+
+    // Menqing: no open melds
+    let is_menqing = melds.iter().all(|m| !m.is_open());
+    if is_menqing {
+        fan += 1.0;
+    }
+
+    // Qingyise: all tiles in hand + melds belong to a single suit
+    // (excluding ding_que suit tiles which will be discarded)
+    let mut suit_counts = [0u32; 3]; // man, pin, sou
+    for t in 0..NUM_TILE_TYPES {
+        if hand[t] > 0 {
+            let suit_idx = t / TILES_PER_SUIT;
+            // Skip tiles of ding_que suit (they'll be discarded)
+            if let Some(dq) = ding_que {
+                if suit_idx == dq as usize { continue; }
+            }
+            suit_counts[suit_idx] += hand[t] as u32;
+        }
+    }
+    for m in melds {
+        let suit_idx = m.tile() as usize / TILES_PER_SUIT;
+        suit_counts[suit_idx] += 1;
+    }
+    let active_suits = suit_counts.iter().filter(|&&c| c > 0).count();
+    if active_suits == 1 {
+        fan += 2.0;
+    }
+
+    // Duanyaojiu: all tiles are rank 2-8 (no terminals)
+    let mut all_inner = true;
+    for t in 0..NUM_TILE_TYPES {
+        if hand[t] > 0 {
+            if let Some(dq) = ding_que {
+                if t / TILES_PER_SUIT == dq as usize { continue; }
+            }
+            if is_terminal(t as Tile) {
+                all_inner = false;
+                break;
+            }
+        }
+    }
+    if all_inner {
+        for m in melds {
+            if is_terminal(m.tile()) {
+                all_inner = false;
+                break;
+            }
+        }
+    }
+    if all_inner && (suit_counts.iter().sum::<u32>() > 0) {
+        fan += 1.0;
+    }
+
+    // Gen count: tiles appearing 4 times
+    let gen = calc_gen_count(hand, melds, None);
+    fan += gen as f32;
+
+    fan.min(MAX_FAN as f32)
 }

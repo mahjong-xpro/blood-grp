@@ -1,7 +1,7 @@
 # Phase 3: Elite — fine-tuning for superhuman play
-# Duration: ~10M+ env steps
+# Duration: ~50M env steps (从10M大幅提升，确保充分训练)
 # Goal: maximize Elo through refined self-play + search
-# Prerequisite: resume from competitive checkpoint
+# Prerequisite: resume from competitive_distill checkpoint
 
 # Sample Factory
 num_workers: 16
@@ -19,20 +19,27 @@ lr_adaptive_max: 3e-4              # hard LR ceiling — elite policy is fragile
 lr_adaptive_min: 1e-6
 exploration_loss_coeff: 0.01
 value_loss_coeff: 1.0
-train_for_env_steps: 10000000
+train_for_env_steps: 50000000       # 从10M提升到50M — 原规模严重不足
 
 # Environment
+initial_score: 100000
 env: blood_mahjong
 encoder_custom: blood_encoder
 experiment: blood_v2_elite
 
 # Model — 与 warmup.yaml/default.yaml 保持一致 (256ch/20blocks Bottleneck)
 # 修复: 原 192ch/30blocks 为 V1 规格，无法加载 competitive 阶段的 256ch/20blocks 权重
-# 修复: blood_obs_channels 384 → 464 (Rust NUM_STUDENT_CHANNELS=464)
-blood_obs_channels: 464
+# 修复: blood_obs_channels 384 → 470 (Rust NUM_STUDENT_CHANNELS=470)
+blood_obs_channels: 470
 blood_conv_channels: 256
-blood_num_res_blocks: 16
+blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024
+
+# TileAttention: 保持与 competitive 阶段一致的 2层4头架构
+# 注意: 不能在阶段间改变 tile_attn_layers/heads，否则 checkpoint 权重形状不匹配
+# 如需增强跨花色推理，应从 warmup 阶段就统一使用目标架构
+blood_num_tile_attn_layers: 2
+blood_tile_attn_heads: 4
 
 # Opponents: neural self-play via league
 opponent_mode: selfplay
@@ -55,7 +62,9 @@ oracle_value_warmup_steps: 0
 league_enabled: true
 league_pool_dir: checkpoints/league/
 league_add_every: 25000
-league_newest_weight: 3.0
+league_newest_weight: 2.0              # 与所有阶段保持一致
+league_uniform_floor: 0.1
+league_self_play_prob: 0.2
 
 # No reward shaping
 warmup_reward_shaping: false
@@ -63,17 +72,36 @@ warmup_reward_shaping: false
 # Data augmentation
 suit_augment_prob: 0.5
 
-# Structured reward shaping — reduced shanten signal as model matures
+# Structured reward shaping — 向听奖励在 elite 阶段通过衰减调度自动衰减
+# 模型已成熟，过高的向听奖励会导致贪心追求听牌而忽略番数
 reward_tsumo_bonus: 0.1
 reward_deal_in_penalty: 0.05
-reward_shanten_progress: 0.001
-reward_shanten_regress: 0.0005
+reward_shanten_progress: 0.003      # 基础值与 competitive 一致，通过衰减调度自动降低
+reward_shanten_regress: 0.001       # 基础值与 competitive 一致，通过衰减调度自动降低
+
+# 向听番数加权 — elite 阶段完整引导，充分利用番数信号优化手牌方向
+shanten_fan_bonus_scale: 0.3
+shanten_fan_max: 8.0
+
+# 向听奖励衰减调度：在前 30M 步内从 100% 线性衰减到 30%
+# 50M 步训练中，前 30M 步逐步降低向听信号，后 20M 步保持最低值
+shanten_reward_decay_steps: 30000000
+shanten_reward_min_ratio: 0.3
+
+# 排名奖励 — elite 阶段提升排名奖励权重，强化最终排名目标
+reward_rank_bonus: 0.2              # 比 competitive(0.15) 更高，排名是最终目标
+
+# 安全弃牌奖励 — 保持与 competitive 一致
+reward_safe_discard: 0.015          # 维持防守信号
 
 # Auxiliary tasks — reduced weight as model matures
 aux_shanten_weight: 0.5
 aux_opp_waits_weight: 0.2
 
 # LSTM — temporal modeling across turns
+# 注意: rnn_num_layers 必须与 competitive 阶段保持一致(1层)，
+# 否则从 competitive checkpoint 恢复时权重形状不匹配。
+# 如需2层LSTM，应从 warmup_transition 阶段就统一使用。
 use_rnn: true
 rnn_type: lstm
 rnn_size: 512

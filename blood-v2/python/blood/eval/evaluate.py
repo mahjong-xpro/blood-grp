@@ -6,7 +6,7 @@ Usage:
 Supports:
     - RuleBot baseline evaluation
     - Neural opponent evaluation
-    - RTPA and ISMCE enhanced evaluation
+    - RTPA and ISMCE enhanced evaluation (可协同工作)
     - Bootstrap confidence intervals
     - JSON result export
 """
@@ -24,8 +24,96 @@ import torch
 from blood.env.blood_env import BloodMahjongEnv, OBS_SIZE, ACTION_SPACE
 from blood.eval.arena import Arena, ArenaResult
 from blood.model.inference import PolicyModel
+from blood.consts import NUM_TILE_TYPES, NUM_STUDENT_CHANNELS
 
 log = logging.getLogger(__name__)
+
+# ── 观测张量通道偏移量（必须与 crates/engine/src/obs/student.rs 保持同步）──
+# Section 1: 手牌 one-hot 编码，通道 0-3 表示持有 1-4 张
+_CH_HAND_BASE = 0
+_CH_HAND_COUNT = 4  # 4 个通道，每个通道 one-hot 表示 count > k
+
+# Section 3: 定缺花色，通道 18-20 分别对应 万/筒/条
+_CH_DING_QUE_BASE = 18
+_CH_DING_QUE_COUNT = 3  # Man=0, Pin=1, Sou=2
+
+# Section 9: 派生特征
+# 通道 329: 每张牌的剩余可见数 = (4 - tiles_seen[t]) / 4
+_CH_TILES_REMAINING = 329
+# 通道 331: 自家副露数 = melds.len() / MAX_MELDS(4)
+_CH_SELF_MELDS = 331
+
+# 每花色牌数
+_TILES_PER_SUIT = NUM_TILE_TYPES // 3  # 9
+
+# COPIES_PER_TILE（每张牌的副本数）
+_COPIES_PER_TILE = 4
+# MAX_MELDS（最大副露数）
+_MAX_MELDS = 4
+
+
+def _extract_ismce_state(obs: np.ndarray) -> dict:
+    """从 470×27 观测张量中提取 ISMCE 所需的游戏状态信息。
+
+    解析已知通道偏移量（来自 crates/engine/src/obs/student.rs）：
+    - 通道 0-3 (Section 1): 手牌 one-hot 编码 → hand[t] = sum(ch0..ch3)
+    - 通道 18-20 (Section 3): 定缺花色 → ding_que suit index
+    - 通道 329 (Section 9): 每张牌剩余数 → tiles_seen = 4 - round(val * 4)
+    - 通道 331 (Section 9): 自家副露数 → melds_count = round(val * 4)
+
+    Returns:
+        dict 包含 hand, tiles_seen, melds_count, ding_que；
+        提取失败时返回 None 值，调用方应做 fallback 处理。
+    """
+    result = {"hand": None, "tiles_seen": None, "melds_count": 0, "ding_que": -1}
+
+    try:
+        # 将一维观测重塑为 (NUM_STUDENT_CHANNELS, NUM_TILE_TYPES)
+        if obs.size < NUM_STUDENT_CHANNELS * NUM_TILE_TYPES:
+            log.debug("观测张量尺寸不足，无法提取 ISMCE 状态")
+            return result
+        obs_2d = obs.reshape(NUM_STUDENT_CHANNELS, NUM_TILE_TYPES)
+
+        # ── 提取手牌 ──
+        # 通道 0-3 是 one-hot 编码：ch_k[t] = 1.0 if hand[t] > k
+        # 因此 hand[t] = sum(ch0[t], ch1[t], ch2[t], ch3[t])
+        hand = np.zeros(NUM_TILE_TYPES, dtype=np.uint8)
+        for k in range(_CH_HAND_COUNT):
+            hand += (obs_2d[_CH_HAND_BASE + k] > 0.5).astype(np.uint8)
+        result["hand"] = hand
+
+        # ── 提取可见牌数 ──
+        # 通道 329 编码: remaining[t] / 4.0，其中 remaining = 4 - tiles_seen[t]
+        # 因此 tiles_seen[t] = 4 - round(obs_2d[329][t] * 4)
+        remaining_ratio = obs_2d[_CH_TILES_REMAINING]
+        tiles_seen = np.clip(
+            _COPIES_PER_TILE - np.round(remaining_ratio * _COPIES_PER_TILE).astype(np.int32),
+            0, _COPIES_PER_TILE,
+        ).astype(np.uint8)
+        result["tiles_seen"] = tiles_seen
+
+        # ── 提取副露数 ──
+        # 通道 331 编码: melds.len() / MAX_MELDS
+        melds_ratio = float(obs_2d[_CH_SELF_MELDS].mean())
+        result["melds_count"] = max(0, min(int(round(melds_ratio * _MAX_MELDS)), _MAX_MELDS))
+
+        # ── 提取定缺花色 ──
+        # 通道 18-20 分别对应 万(0)/筒(1)/条(2)，花色通道内对应牌位置为 1.0
+        ding_que = -1
+        for suit_idx in range(_CH_DING_QUE_COUNT):
+            ch_val = obs_2d[_CH_DING_QUE_BASE + suit_idx]
+            # 检查该花色对应的 9 张牌位置是否有非零值
+            suit_start = suit_idx * _TILES_PER_SUIT
+            suit_end = suit_start + _TILES_PER_SUIT
+            if np.any(ch_val[suit_start:suit_end] > 0.5):
+                ding_que = suit_idx
+                break
+        result["ding_que"] = ding_que
+
+    except Exception as e:
+        log.debug("提取 ISMCE 状态失败: %s", e)
+
+    return result
 
 
 class NeuralAgent:
@@ -39,6 +127,7 @@ class NeuralAgent:
         self._ismce = None
         self._env_ref = None
         self._hidden_state = None  # LSTM hidden state across turns
+        self._last_obs = None
 
     def enable_rtpa(self, attack_temp=0.8, defend_temp=1.5):
         from blood.eval.rtpa import RTPA
@@ -54,7 +143,7 @@ class NeuralAgent:
         self._hidden_state = None  # reset LSTM state at episode boundary
 
     def _get_game_context(self):
-        """Extract game state context for RTPA/ISMCE from the Rust env."""
+        """从环境公共 API 提取 RTPA/ISMCE 所需的游戏状态上下文。"""
         ctx = {
             "is_tenpai": False,
             "opponents_likely_tenpai": 0,
@@ -64,30 +153,21 @@ class NeuralAgent:
         }
         try:
             env = self._env_ref
-            if env is None or env._env is None:
+            if env is None or not env.has_engine:
                 return ctx
-            rust = env._env
-            scores = rust.get_scores()
+            scores = env.get_scores()
             ctx["my_score"] = scores[0]
             ctx["avg_opponent_score"] = sum(scores[1:]) / 3.0
 
-            if hasattr(rust, "get_wall_remaining"):
-                ctx["wall_remaining"] = rust.get_wall_remaining()
-            else:
-                ctx["wall_remaining"] = 55
-
-            if hasattr(rust, "get_is_tenpai"):
-                ctx["is_tenpai"] = rust.get_is_tenpai(0)
-
-            if hasattr(rust, "get_opponent_likely_tenpai"):
-                ctx["opponents_likely_tenpai"] = rust.get_opponent_likely_tenpai(0)
-            else:
-                opp_tenpai = 0
-                for pid in range(1, 4):
-                    if hasattr(rust, "get_player_melds_count"):
-                        if rust.get_player_melds_count(pid) >= 2:
-                            opp_tenpai += 1
-                ctx["opponents_likely_tenpai"] = opp_tenpai
+            # 使用 GameStateTracker 从观测张量解析听牌/牌墙信息
+            if self._last_obs is not None:
+                from blood.eval.rtpa import GameStateTracker
+                if not hasattr(self, "_tracker"):
+                    self._tracker = GameStateTracker()
+                self._tracker.update_from_obs(self._last_obs, scores=scores)
+                ctx["is_tenpai"] = self._tracker.my_tenpai
+                ctx["opponents_likely_tenpai"] = self._tracker.opponents_tenpai_count
+                ctx["wall_remaining"] = self._tracker.wall_remaining
         except Exception:
             pass
         return ctx
@@ -96,44 +176,54 @@ class NeuralAgent:
     def __call__(self, obs_dict) -> int:
         obs = obs_dict["obs"]
         mask = obs_dict["action_mask"]
+        self._last_obs = obs  # 缓存用于 _get_game_context
 
         obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(0)
-        # PolicyModel.forward() returns (logits, new_hidden_state)
+        # PolicyModel.forward() 返回 (logits, new_hidden_state)
         logits_t, self._hidden_state = self.model(obs_t, self._hidden_state)
         logits = logits_t.squeeze(0).numpy()
 
-        if self._ismce is not None:
-            ctx = self._get_game_context()
-            hand_arr = None
-            tiles_seen_arr = None
-            melds_count = 0
-            dq_int = -1
-            try:
-                env = self._env_ref
-                if env is not None and env._env is not None:
-                    rust = env._env
-                    if hasattr(rust, "get_hand_counts"):
-                        hand_arr = np.array(rust.get_hand_counts(0), dtype=np.uint8)
-                    if hasattr(rust, "get_tiles_seen"):
-                        tiles_seen_arr = np.array(rust.get_tiles_seen(0), dtype=np.uint8)
-                    if hasattr(rust, "get_player_melds_count"):
-                        melds_count = rust.get_player_melds_count(0)
-                    if hasattr(rust, "get_ding_que"):
-                        dq_int = rust.get_ding_que(0)
-            except Exception:
-                pass
-            return self._ismce.select_action(
-                logits, mask,
-                hand=hand_arr,
-                melds_count=melds_count,
-                ding_que=dq_int,
-                tiles_seen=tiles_seen_arr,
-                wall_remaining=ctx["wall_remaining"],
-                temperature=self.temperature,
-            )
-
+        # ── 第一步：RTPA 计算自适应温度 ──
+        # 无论是否启用 ISMCE，只要启用了 RTPA 就先计算动态温度
+        temperature = self.temperature  # 默认使用固定温度
+        ctx = None
         if self._rtpa is not None:
             ctx = self._get_game_context()
+            temperature = self._rtpa.compute_temperature(
+                is_tenpai=ctx["is_tenpai"],
+                opponents_likely_tenpai=ctx["opponents_likely_tenpai"],
+                my_score=ctx["my_score"],
+                avg_opponent_score=ctx["avg_opponent_score"],
+                wall_remaining=ctx["wall_remaining"],
+            )
+
+        # ── 第二步：ISMCE 搜索（使用 RTPA 温度 + 完整游戏状态）──
+        if self._ismce is not None:
+            if ctx is None:
+                ctx = self._get_game_context()
+
+            # 从观测张量提取 ISMCE 所需的游戏状态
+            ismce_state = _extract_ismce_state(obs)
+
+            try:
+                action = self._ismce.select_action(
+                    logits, mask,
+                    hand=ismce_state["hand"],
+                    tiles_seen=ismce_state["tiles_seen"],
+                    melds_count=ismce_state["melds_count"],
+                    ding_que=ismce_state["ding_que"],
+                    wall_remaining=ctx["wall_remaining"],
+                    temperature=temperature,  # 使用 RTPA 自适应温度（或默认温度）
+                )
+                return action
+            except Exception as e:
+                log.debug("ISMCE select_action 异常，回退到策略网络: %s", e)
+                # ISMCE 失败时 fallback 到下面的逻辑
+
+        # ── 第三步：纯 RTPA 路径（无 ISMCE 时）──
+        if self._rtpa is not None:
+            if ctx is None:
+                ctx = self._get_game_context()
             logits = self._rtpa.adapt_logits(
                 logits, mask,
                 is_tenpai=ctx["is_tenpai"],
@@ -145,6 +235,7 @@ class NeuralAgent:
             probs = _softmax(logits)
             return int(np.random.choice(ACTION_SPACE, p=probs))
 
+        # ── 第四步：纯策略网络（无 RTPA 无 ISMCE）──
         logits[mask < 0.5] = -1e9
         logits /= max(self.temperature, 1e-8)
         probs = _softmax(logits)

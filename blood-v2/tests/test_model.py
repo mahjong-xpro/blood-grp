@@ -7,7 +7,7 @@ import numpy as np
 from blood.model.encoder import (
     SuitAwareConv1d, ChannelAttention, ResBlock,
     SuitPositionalEncoding, TileAttention, BottleneckBlock,
-    SuitAwareResNetEncoder,
+    SuitAwareResNetEncoder, _build_enc_proj,
     NUM_TILES, DEFAULT_OBS_CHANNELS,
 )
 from blood.model.heads import AuxHead
@@ -92,13 +92,60 @@ class TestResBlock:
         assert not torch.allclose(out, x)
 
 
+class TestBuildEncProj:
+    """测试 _build_enc_proj 工厂函数。"""
+
+    def test_1layer_shape(self):
+        """单层模式：LayerNorm + Linear。"""
+        proj = _build_enc_proj(6912, 1024, num_layers=1)
+        x = torch.randn(2, 6912)
+        out = proj(x)
+        assert out.shape == (2, 1024)
+        # 单层模式只有 2 个子模块: LayerNorm(0) + Linear(1)
+        assert len(proj) == 2
+
+    def test_2layer_shape(self):
+        """渐进压缩模式：LayerNorm + Linear + LayerNorm + Mish + Linear。"""
+        proj = _build_enc_proj(6912, 1024, num_layers=2)
+        x = torch.randn(2, 6912)
+        out = proj(x)
+        assert out.shape == (2, 1024)
+        # 2层模式有 5 个子模块
+        assert len(proj) == 5
+
+    def test_2layer_mid_dim(self):
+        """中间维度应为 enc_out_dim * 2。"""
+        proj = _build_enc_proj(6912, 1024, num_layers=2)
+        # proj[1] 是第一个 Linear，输出维度 = mid_dim = 1024*2 = 2048
+        assert proj[1].out_features == 2048
+        # proj[4] 是第二个 Linear，输出维度 = enc_out_dim = 1024
+        assert proj[4].out_features == 1024
+
+    def test_2layer_mid_dim_capped(self):
+        """当 enc_out_dim * 2 > raw_dim 时，mid_dim 应被截断为 raw_dim。"""
+        proj = _build_enc_proj(1000, 600, num_layers=2)
+        # mid_dim = min(600*2, 1000) = 1000
+        assert proj[1].out_features == 1000
+
+    def test_invalid_layers(self):
+        """不支持的层数应抛出 ValueError。"""
+        with pytest.raises(ValueError):
+            _build_enc_proj(6912, 1024, num_layers=3)
+
+    def test_backward_compat_default(self):
+        """默认 num_layers=1 保持旧行为。"""
+        proj = _build_enc_proj(1728, 256)
+        assert len(proj) == 2  # LayerNorm + Linear
+
+
 class TestSuitAwareResNetEncoder:
-    def _make_cfg(self):
+    def _make_cfg(self, enc_proj_layers=1):
         class Cfg:
             blood_obs_channels = DEFAULT_OBS_CHANNELS
             blood_conv_channels = 64
             blood_num_res_blocks = 2
             blood_encoder_out_dim = 256
+            blood_enc_proj_layers = enc_proj_layers
         return Cfg()
 
     def test_output_shape(self):
@@ -108,10 +155,23 @@ class TestSuitAwareResNetEncoder:
         out = enc({"obs": obs})
         assert out.shape == (4, 256)  # enc_proj active: 64*27=1728 → 256
 
+    def test_output_shape_2layer(self):
+        """2层渐进压缩模式输出维度不变。"""
+        cfg = self._make_cfg(enc_proj_layers=2)
+        enc = SuitAwareResNetEncoder(cfg, obs_space=None)
+        obs = torch.randn(4, DEFAULT_OBS_CHANNELS * NUM_TILES)
+        out = enc({"obs": obs})
+        assert out.shape == (4, 256)
+
     def test_get_out_size(self):
         cfg = self._make_cfg()
         enc = SuitAwareResNetEncoder(cfg, obs_space=None)
         assert enc.get_out_size() == 256  # enc_proj active
+
+    def test_get_out_size_2layer(self):
+        cfg = self._make_cfg(enc_proj_layers=2)
+        enc = SuitAwareResNetEncoder(cfg, obs_space=None)
+        assert enc.get_out_size() == 256
 
     def test_named_submodules(self):
         """Encoder should expose stem, pos_enc, res_blocks_1/2, tile_attn_mid/tile_attn."""
@@ -123,6 +183,12 @@ class TestSuitAwareResNetEncoder:
         assert hasattr(enc, "res_blocks_2")
         assert hasattr(enc, "tile_attn_mid")
         assert hasattr(enc, "tile_attn")
+
+    def test_enc_proj_2layer_structure(self):
+        """2层模式的 enc_proj 应有 5 个子模块。"""
+        cfg = self._make_cfg(enc_proj_layers=2)
+        enc = SuitAwareResNetEncoder(cfg, obs_space=None)
+        assert len(enc.enc_proj) == 5
 
 
 class TestAuxHead:
@@ -190,6 +256,14 @@ class TestPolicyModel:
         logits, _ = model(obs)
         assert logits.shape == (2, ACTION_DIM)
 
+    def test_forward_2layer(self):
+        """2层渐进压缩模式的前向传播。"""
+        model = PolicyModel(obs_channels=DEFAULT_OBS_CHANNELS, conv_ch=32, num_blocks=2,
+                            enc_out_dim=128, enc_proj_layers=2)
+        obs = torch.randn(2, DEFAULT_OBS_CHANNELS * NUM_TILES)
+        logits, _ = model(obs)
+        assert logits.shape == (2, ACTION_DIM)
+
     def test_get_action(self):
         model = PolicyModel(obs_channels=DEFAULT_OBS_CHANNELS, conv_ch=32, num_blocks=2, enc_out_dim=128)
         obs = torch.randn(DEFAULT_OBS_CHANNELS * NUM_TILES)
@@ -200,23 +274,24 @@ class TestPolicyModel:
         action, _ = model.get_action(obs, mask)
         assert action in [0, 5, 30]
 
-    def test_checkpoint_round_trip(self, tmp_path):
-        """Verify from_sf2_checkpoint correctly infers architecture params."""
-        conv_ch, num_blocks, enc_out = 32, 4, 128
+    def _build_fake_checkpoint(self, tmp_path, conv_ch, num_blocks, enc_out, enc_proj_layers=1):
+        """构建模拟 SF2 checkpoint 的辅助方法。"""
         from blood.model.encoder import _num_groups
         import torch.nn as nn
 
-        # Build a minimal encoder matching the new named-submodule structure
         ng = _num_groups(conv_ch)
+        mid = num_blocks // 2
         stem = nn.Sequential(
             SuitAwareConv1d(DEFAULT_OBS_CHANNELS, conv_ch, kernel_size=3),
             nn.GroupNorm(ng, conv_ch),
             nn.Mish(inplace=True),
         )
         pos_enc = SuitPositionalEncoding(conv_ch)
-        res_blocks = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(num_blocks)])
+        res_blocks_1 = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(mid)])
+        tile_attn_mid = TileAttention(conv_ch, num_heads=4)
+        res_blocks_2 = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(num_blocks - mid)])
         tile_attn = TileAttention(conv_ch, num_heads=4)
-        fc = nn.Sequential(nn.Linear(conv_ch * NUM_TILES, enc_out), nn.Mish(inplace=True))
+        enc_proj = _build_enc_proj(conv_ch * NUM_TILES, enc_out, enc_proj_layers)
         action_head = nn.Linear(enc_out, ACTION_DIM)
 
         sd = {}
@@ -224,23 +299,59 @@ class TestPolicyModel:
             sd[f"encoder.stem.{k}"] = v
         for k, v in pos_enc.state_dict().items():
             sd[f"encoder.pos_enc.{k}"] = v
-        for k, v in res_blocks.state_dict().items():
-            sd[f"encoder.res_blocks.{k}"] = v
+        for k, v in res_blocks_1.state_dict().items():
+            sd[f"encoder.res_blocks_1.{k}"] = v
+        for k, v in tile_attn_mid.state_dict().items():
+            sd[f"encoder.tile_attn_mid.{k}"] = v
+        for k, v in res_blocks_2.state_dict().items():
+            sd[f"encoder.res_blocks_2.{k}"] = v
         for k, v in tile_attn.state_dict().items():
             sd[f"encoder.tile_attn.{k}"] = v
-        for k, v in fc.state_dict().items():
-            sd[f"encoder.fc.{k}"] = v
+        for k, v in enc_proj.state_dict().items():
+            sd[f"encoder.enc_proj.{k}"] = v
         sd["action_parameterization.distribution_linear.weight"] = action_head.weight.data
         sd["action_parameterization.distribution_linear.bias"] = action_head.bias.data
 
-        ckpt_path = str(tmp_path / "test_ckpt.pth")
+        ckpt_path = str(tmp_path / f"test_ckpt_{enc_proj_layers}layer.pth")
         torch.save({"model": sd}, ckpt_path)
+        return ckpt_path, mid, num_blocks
+
+    def test_checkpoint_round_trip(self, tmp_path):
+        """Verify from_sf2_checkpoint correctly infers architecture params
+        including the split res_blocks_1/res_blocks_2 structure."""
+        conv_ch, num_blocks, enc_out = 32, 4, 128
+        ckpt_path, mid, _ = self._build_fake_checkpoint(
+            tmp_path, conv_ch, num_blocks, enc_out, enc_proj_layers=1)
 
         loaded = PolicyModel.from_sf2_checkpoint(ckpt_path)
         assert loaded._obs_channels == DEFAULT_OBS_CHANNELS
 
+        # Verify block count detection: mid blocks in each half
+        assert len(loaded.res_blocks_1) == mid
+        assert len(loaded.res_blocks_2) == num_blocks - mid
+        # 1层模式：enc_proj 应有 2 个子模块
+        assert len(loaded.enc_proj) == 2
+
         obs = torch.randn(1, DEFAULT_OBS_CHANNELS * NUM_TILES)
-        out = loaded(obs)
+        out, _ = loaded(obs)
+        assert out.shape == (1, ACTION_DIM)
+
+    def test_checkpoint_round_trip_2layer(self, tmp_path):
+        """验证 from_sf2_checkpoint 能正确检测并加载 2层渐进压缩格式。"""
+        conv_ch, num_blocks, enc_out = 32, 4, 128
+        ckpt_path, mid, _ = self._build_fake_checkpoint(
+            tmp_path, conv_ch, num_blocks, enc_out, enc_proj_layers=2)
+
+        loaded = PolicyModel.from_sf2_checkpoint(ckpt_path)
+        assert loaded._obs_channels == DEFAULT_OBS_CHANNELS
+
+        # 2层模式：enc_proj 应有 5 个子模块
+        assert len(loaded.enc_proj) == 5
+        assert len(loaded.res_blocks_1) == mid
+        assert len(loaded.res_blocks_2) == num_blocks - mid
+
+        obs = torch.randn(1, DEFAULT_OBS_CHANNELS * NUM_TILES)
+        out, _ = loaded(obs)
         assert out.shape == (1, ACTION_DIM)
 
 

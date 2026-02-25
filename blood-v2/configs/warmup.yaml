@@ -18,16 +18,17 @@ value_loss_coeff: 1.0
 train_for_env_steps: 2000000
 
 # Environment
+initial_score: 100000
 env: blood_mahjong
 encoder_custom: blood_encoder
 experiment: blood_v2_warmup
 
 # Model — 与 default.yaml/competitive.yaml 保持一致 (256ch/20blocks Bottleneck)
 # 修复: 原 192ch/30blocks 为 V1 规格，warmup 权重无法迁移到后续阶段
-# 修复: blood_obs_channels 384 → 464 (Rust NUM_STUDENT_CHANNELS=464)
-blood_obs_channels: 464
+# 修复: blood_obs_channels 384 → 470 (Rust NUM_STUDENT_CHANNELS=470)
+blood_obs_channels: 470
 blood_conv_channels: 256
-blood_num_res_blocks: 16
+blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024
 
 # Opponents: RuleBot during warmup
@@ -49,7 +50,9 @@ oracle_value_warmup_steps: 0
 league_enabled: true
 league_pool_dir: checkpoints/league/
 league_add_every: 100000
-league_newest_weight: 3.0
+league_newest_weight: 2.0              # 与 default.yaml/cfg.py 保持一致
+league_uniform_floor: 0.1
+league_self_play_prob: 0.0             # warmup 阶段不自博弈（对手是 RuleBot）
 
 # Reward shaping — extra signals to accelerate early learning
 warmup_reward_shaping: true
@@ -65,6 +68,9 @@ reward_tsumo_bonus: 0.0
 reward_deal_in_penalty: 0.0
 reward_shanten_progress: 0.003
 reward_shanten_regress: 0.001
+
+# 向听番数加权 — warmup 阶段禁用，先学基础向听进退
+shanten_fan_bonus_scale: 0.0
 
 # Auxiliary tasks — higher weight during warmup for faster shanten learning
 aux_shanten_weight: 2.0

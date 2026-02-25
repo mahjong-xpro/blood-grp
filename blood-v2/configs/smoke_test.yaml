@@ -1,0 +1,62 @@
+# Smoke Test — minimal config for end-to-end pipeline verification
+# Purpose: validate model creation → env interaction → forward pass → loss → gradient update
+# NOT for training quality; just verifies nothing crashes
+
+# Sample Factory
+num_workers: 1
+num_envs_per_worker: 1
+batch_size: 4
+num_batches_per_epoch: 1
+ppo_clip_ratio: 0.2
+max_grad_norm: 1.0
+gamma: 0.99
+gae_lambda: 0.95
+learning_rate: 1e-3
+lr_schedule: constant
+exploration_loss_coeff: 0.01
+value_loss_coeff: 1.0
+train_for_env_steps: 100
+
+# Environment
+initial_score: 100000
+env: blood_mahjong
+encoder_custom: blood_encoder
+experiment: blood_v2_smoke_test
+
+# Model — minimal architecture for fast CPU execution
+blood_obs_channels: 470
+blood_conv_channels: 64
+blood_num_res_blocks: 2
+blood_encoder_out_dim: 128
+blood_enc_proj_layers: 1
+blood_num_tile_attn_layers: 1
+blood_tile_attn_heads: 4
+
+# Opponents: rulebot (simplest)
+opponent_mode: rulebot
+
+# Oracle — disabled to reduce complexity
+oracle_enabled: false
+
+# League — disabled
+league_enabled: false
+
+# Reward shaping — all disabled
+warmup_reward_shaping: false
+reward_tsumo_bonus: 0.0
+reward_deal_in_penalty: 0.0
+reward_shanten_progress: 0.0
+reward_shanten_regress: 0.0
+shanten_fan_bonus_scale: 0.0
+reward_rank_bonus: 0.0
+reward_safe_discard: 0.0
+
+# Data augmentation — disabled for determinism
+suit_augment_prob: 0.0
+
+# Auxiliary tasks — minimal weight
+aux_shanten_weight: 0.1
+aux_opp_waits_weight: 0.1
+
+# LSTM — disabled for simplicity
+use_rnn: false

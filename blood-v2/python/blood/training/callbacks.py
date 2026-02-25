@@ -24,8 +24,15 @@ class BloodObserver(AlgoObserver):
         self._runner = None
 
         pool_dir = getattr(cfg, "league_pool_dir", "checkpoints/league")
-        newest_weight = getattr(cfg, "league_newest_weight", 3.0)
-        self.league = LeagueManager(pool_dir, newest_weight)
+        newest_weight = getattr(cfg, "league_newest_weight", 2.0)
+        uniform_floor = getattr(cfg, "league_uniform_floor", 0.1)
+        self_play_prob = getattr(cfg, "league_self_play_prob", 0.2)
+        self.league = LeagueManager(
+            pool_dir,
+            newest_weight=newest_weight,
+            uniform_floor=uniform_floor,
+            self_play_prob=self_play_prob,
+        )
         self.league_add_every = getattr(cfg, "league_add_every", 50000)
 
     def on_init(self, runner: Runner) -> None:

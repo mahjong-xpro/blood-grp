@@ -12,6 +12,7 @@ from sample_factory.model.actor_critic import ActorCritic, ActorCriticSharedWeig
 from sample_factory.model.encoder import Encoder
 from sample_factory.utils.typing import ActionSpace, Config, ObsSpace
 
+from blood.consts import NUM_ORACLE_CHANNELS
 from .encoder import SuitAwareResNetEncoder
 from .heads import AuxHead
 from .oracle import OracleEncoder, DistillationLoss
@@ -71,8 +72,8 @@ class BloodActorCritic(ActorCriticSharedWeights):
 
         self.oracle_enabled = getattr(cfg, "oracle_enabled", True)
         if self.oracle_enabled:
-            oracle_obs_ch = 516
-            oracle_blocks = getattr(cfg, "oracle_num_blocks", 25)  # 25 blocks for oracle (matches cfg.py default)
+            oracle_obs_ch = NUM_ORACLE_CHANNELS
+            oracle_blocks = getattr(cfg, "oracle_num_blocks", 20)  # 20 blocks for oracle (matches cfg.py default and all yaml configs)
             self.oracle_encoder = OracleEncoder(
                 obs_channels=oracle_obs_ch,
                 conv_ch=256,         # Also 256 for oracle
@@ -125,14 +126,16 @@ class BloodActorCritic(ActorCriticSharedWeights):
 
         action_distribution_params, self.last_action_distribution = self.action_parameterization(actor_features)
 
-        # Apply action mask: illegal actions get -1e9 so they are never sampled
-        # and contribute near-zero probability to log_prob during PPO loss.
-        # _cached_obs is set in forward_head() for the current minibatch.
+        # 对非法动作施加掩码，使其永远不会被采样，且在 PPO loss 中贡献近零概率。
+        # 使用 dtype.min 替代硬编码 -1e9，避免 float16 下溢出为 -inf
+        # （float16 最大值约 65504，-1e9 会溢出），确保混合精度训练数值稳定。
+        # _cached_obs 在 forward_head() 中为当前 minibatch 设置。
         if self._cached_obs is not None:
             mask = self._cached_obs.get("action_mask")
             if mask is not None:
                 illegal = ~mask.bool()
-                action_distribution_params = action_distribution_params.masked_fill(illegal, -1e9)
+                mask_value = torch.finfo(action_distribution_params.dtype).min
+                action_distribution_params = action_distribution_params.masked_fill(illegal, mask_value)
                 # Sync raw_logits so SF2's entropy/log_prob use the masked distribution.
                 self.last_action_distribution.raw_logits = action_distribution_params
 

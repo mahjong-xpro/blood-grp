@@ -1,15 +1,16 @@
-"""Auxiliary task heads for Bloody Battle Mahjong.
+"""血战麻将辅助任务头。
 
-- Opponent shanten prediction (3 opponents x 5-class CE)
-- Opponent waits prediction (81-dim BCE)
+- 对手向听数预测 (3 opponents x 5-class CE)
+- 对手听牌预测 (81-dim Focal Loss)
 
-DingQue prediction was removed: opponent dingque is directly observable
-in Section 3 of the student observation (channels 5-21), making it
-redundant as an auxiliary task.
+定缺预测已移除：对手定缺在学生观测 Section 3 (channels 5-21) 中直接可观测，
+作为辅助任务是冗余的。
 
-Shanten prediction is non-trivial: the model must infer opponent progress
-(0-4 shanten) from observable information (discards, melds, game context),
-which directly informs defensive decisions.
+向听数预测有实际价值：模型需从可观测信息（弃牌、副露、游戏上下文）推断
+对手进度 (0-4 向听)，直接影响防守决策。
+
+听牌预测改用 Focal Loss：听牌是极度不平衡任务（大部分时间大部分对手不听牌），
+标准 BCE 容易退化为"全部预测不听"。Focal Loss 对难分类样本给予更大权重。
 """
 
 import torch
@@ -17,17 +18,62 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+def sigmoid_focal_loss(
+    inputs: torch.Tensor,
+    targets: torch.Tensor,
+    alpha: float = 0.25,
+    gamma: float = 2.0,
+    reduction: str = "mean",
+) -> torch.Tensor:
+    """Sigmoid Focal Loss，用于解决类别不平衡问题。
+
+    对容易分类的样本降低权重，对难分类样本（如实际听牌但预测不听）给予更大权重。
+
+    Args:
+        inputs: 未经 sigmoid 的 logits
+        targets: 二值标签 (0 或 1)
+        alpha: 正样本权重因子，默认 0.25
+        gamma: 聚焦参数，gamma 越大越关注难分类样本，默认 2.0
+        reduction: 'mean' | 'sum' | 'none'
+    """
+    p = torch.sigmoid(inputs)
+    # 标准 BCE 部分
+    ce_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
+    # focal 调制因子: (1 - p_t)^gamma
+    # p_t = p (当 target=1) 或 1-p (当 target=0)
+    p_t = p * targets + (1 - p) * (1 - targets)
+    focal_weight = (1 - p_t) ** gamma
+    # alpha 平衡因子: alpha (当 target=1) 或 1-alpha (当 target=0)
+    alpha_t = alpha * targets + (1 - alpha) * (1 - targets)
+    loss = alpha_t * focal_weight * ce_loss
+
+    if reduction == "mean":
+        return loss.mean()
+    elif reduction == "sum":
+        return loss.sum()
+    return loss
+
+
 class AuxHead(nn.Module):
-    """Auxiliary prediction head: opp_shanten (3x5-class CE) + opp_waits (81-dim BCE)."""
+    """辅助预测头: opp_shanten (3x5-class CE) + opp_waits (81-dim Focal Loss)。"""
 
     NUM_OPPONENTS = 3
     NUM_SHANTEN_CLASSES = 5  # 0, 1, 2, 3, 4+
 
-    def __init__(self, in_dim: int = 1024, hidden: int = 512):
+    def __init__(
+        self,
+        in_dim: int = 1024,
+        hidden: int = 512,
+        focal_alpha: float = 0.25,
+        focal_gamma: float = 2.0,
+    ):
         super().__init__()
-        # Pre-norm 2-layer shared trunk matching actor/critic head depth.
-        # Two layers allow the shared representation to disentangle shanten
-        # and wait-tile features before the task-specific heads split off.
+        # Focal Loss 超参数
+        self.focal_alpha = focal_alpha
+        self.focal_gamma = focal_gamma
+
+        # Pre-norm 2层共享主干，与 actor/critic head 深度匹配。
+        # 两层允许共享表示在任务特定头分叉前解耦向听数和听牌特征。
         self.shared = nn.Sequential(
             nn.LayerNorm(in_dim),
             nn.Linear(in_dim, hidden),
@@ -46,17 +92,19 @@ class AuxHead(nn.Module):
         return shanten_logits, ow_logits
 
     def loss(self, features, shanten_labels, ow_labels, shanten_weight=1.0, ow_weight=0.1):
-        """
-        shanten_labels: (B, 15) flat or (B, 3, 5) one-hot float
-        ow_labels:      (B, 81) float binary
+        """计算辅助任务损失。
+
+        Args:
+            shanten_labels: (B, 15) flat 或 (B, 3, 5) one-hot float
+            ow_labels:      (B, 81) float binary
         """
         shanten_logits, ow_logits = self.forward(features)
 
-        # Normalise shanten_labels to (B, 3, 5) regardless of input shape
+        # 归一化 shanten_labels 为 (B, 3, 5)
         B = features.shape[0]
         sl = shanten_labels.view(B, self.NUM_OPPONENTS, self.NUM_SHANTEN_CLASSES)
 
-        # Convert one-hot to class index for CE
+        # one-hot 转 class index 用于 CE
         shanten_targets = sl.argmax(dim=-1)  # (B, 3)
         shanten_loss = F.cross_entropy(
             shanten_logits.reshape(-1, self.NUM_SHANTEN_CLASSES),
@@ -65,17 +113,21 @@ class AuxHead(nn.Module):
         )
 
         if ow_weight > 0:
-            # Reshape to (B, 3, 27) to mask per opponent independently.
-            # Only compute BCE for opponents that are actually tenpai (ow_labels non-zero).
-            # Mixing tenpai and non-tenpai opponents in a single mask introduces noise
-            # from the all-zero rows of non-tenpai opponents.
+            # 重塑为 (B, 3, 27) 以按对手独立处理。
+            # 仅对实际听牌的对手计算损失（ow_labels 非零）。
+            # 混合听牌和非听牌对手会引入噪声（非听牌对手的全零行）。
             ow_per_opp = ow_logits.view(-1, self.NUM_OPPONENTS, 27)
             ow_labels_3d = ow_labels.view(-1, self.NUM_OPPONENTS, 27)
             opp_tenpai_mask = ow_labels_3d.abs().sum(dim=-1) > 0.01  # (B, 3)
             if opp_tenpai_mask.any():
-                ow_loss = F.binary_cross_entropy_with_logits(
+                # 使用 Focal Loss 替代标准 BCE
+                # 听牌是极度不平衡任务，Focal Loss 对难分类样本给予更大权重，
+                # 避免模型退化为"全部预测不听"
+                ow_loss = sigmoid_focal_loss(
                     ow_per_opp[opp_tenpai_mask],
                     ow_labels_3d[opp_tenpai_mask],
+                    alpha=self.focal_alpha,
+                    gamma=self.focal_gamma,
                     reduction="mean",
                 )
             else:

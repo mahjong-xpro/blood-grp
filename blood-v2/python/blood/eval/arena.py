@@ -1,4 +1,4 @@
-"""1v3 arena evaluation for Blood Mahjong agents."""
+"""1v3 竞技场评估：Blood 麻将 agent 对战评估。"""
 
 import logging
 from dataclasses import dataclass, field
@@ -10,7 +10,7 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class ArenaResult:
-    """Aggregated metrics from arena evaluation."""
+    """竞技场评估的聚合指标。"""
     num_games: int = 0
     wins: int = 0
     total_rank: float = 0.0
@@ -37,7 +37,7 @@ class ArenaResult:
         return self.total_fan / max(self.win_fan_count, 1)
 
     def confidence_interval(self, metric: str, confidence: float = 0.95, n_bootstrap: int = 10000):
-        """Bootstrap confidence interval for a given metric."""
+        """给定指标的 Bootstrap 置信区间。"""
         rng = np.random.default_rng(42)
         data = getattr(self, f"{metric}s", None)
         if data is None or len(data) == 0:
@@ -65,15 +65,42 @@ class ArenaResult:
         )
 
 
+def _compute_rank_with_ties(scores: list, player_idx: int) -> float:
+    """计算考虑同分平均排名的名次。
+
+    同分时使用平均排名而非最低排名，避免系统性偏差。
+    例如：分数 [100, 100, 80, 60]，前两名同分，排名为 1.5, 1.5, 3, 4
+    """
+    player_score = scores[player_idx]
+    n = len(scores)
+
+    # 找出所有与 player_score 相同的玩家
+    sorted_scores = sorted(scores, reverse=True)
+
+    # 计算同分组的平均排名
+    # 先找到该分数在排序后的起始和结束位置
+    first_pos = None
+    last_pos = None
+    for pos, s in enumerate(sorted_scores):
+        if s == player_score:
+            if first_pos is None:
+                first_pos = pos
+            last_pos = pos
+
+    # 平均排名 = (起始排名 + 结束排名) / 2，排名从1开始
+    avg_rank = ((first_pos + 1) + (last_pos + 1)) / 2.0
+    return avg_rank
+
+
 class Arena:
-    """Run 1v3 evaluation: agent vs 3 baselines."""
+    """运行 1v3 评估：agent 对战 3 个基线。"""
 
     def __init__(self, env_cls, agent_fn, baseline_mode="rulebot", recorder=None):
         """
-        env_cls: environment class
+        env_cls: 环境类
         agent_fn: callable(obs) -> action
-        baseline_mode: opponent mode for baselines
-        recorder: optional ReplayRecorder instance
+        baseline_mode: 基线对手模式
+        recorder: 可选的 ReplayRecorder 实例
         """
         self.env_cls = env_cls
         self.agent_fn = agent_fn
@@ -82,7 +109,10 @@ class Arena:
 
     def evaluate(self, num_games: int = 1000, seed: int = 0,
                  names: list | None = None) -> ArenaResult:
-        """Run arena evaluation."""
+        """运行竞技场评估。
+
+        每局游戏随机选择 agent 的座位（0-3），消除庄家位偏差。
+        """
         result = ArenaResult()
         rng = np.random.default_rng(seed)
         if names is None:
@@ -94,7 +124,16 @@ class Arena:
 
         for game_idx in range(num_games):
             game_seed = int(rng.integers(0, 2**32))
+
+            # 随机选择 agent 座位（0-3），消除固定庄家位的系统性偏差
+            agent_seat = int(rng.integers(0, 4))
+
             env = self.env_cls(cfg=_EvalCfg())
+
+            # 如果环境支持设置 agent 座位，则传入
+            if hasattr(env, 'set_agent_seat'):
+                env.set_agent_seat(agent_seat)
+
             if hasattr(self.agent_fn, 'set_env'):
                 self.agent_fn.set_env(env)
             obs, info = env.reset(seed=game_seed)
@@ -106,19 +145,39 @@ class Arena:
                 done = terminated or truncated
 
             try:
-                scores = env._env.get_scores() if env._env else [100000] * 4
+                scores = env.get_scores()
             except Exception:
                 scores = [100000] * 4
 
-            if self.recorder is not None and env._env is not None:
+            # 构建带座位轮换的名称列表用于录像
+            rotated_names = ["RuleBot"] * 4
+            rotated_names[agent_seat] = names[0] if names else "Agent"
+
+            if self.recorder is not None and env.has_engine:
                 try:
-                    self.recorder.save(env._env, names=names)
+                    self.recorder.save(env, names=rotated_names)
                 except Exception as e:
                     log.warning("Recorder save failed for game %d: %s", game_idx, e)
 
-            player_score = scores[0]
-            rank = sum(1 for s in scores if s > player_score) + 1
-            won = info.get("player_won", False) if isinstance(info, dict) else False
+            # 从 agent 实际座位提取分数
+            player_score = scores[agent_seat]
+
+            # 使用同分平均排名，避免同分时的排名偏差
+            rank = _compute_rank_with_ties(scores, agent_seat)
+
+            won = False
+            if isinstance(info, dict):
+                # 优先使用 info 中的 winner_seat 信息
+                winner_seat = info.get("winner_seat", None)
+                if winner_seat is not None:
+                    won = (winner_seat == agent_seat)
+                else:
+                    # 回退：如果 agent 在座位0，使用旧的 player_won 字段
+                    if agent_seat == 0:
+                        won = info.get("player_won", False)
+                    else:
+                        # 无法确定胜负时，用分数最高判断
+                        won = all(player_score >= s for s in scores) and player_score > min(scores)
 
             result.num_games += 1
             result.total_score += player_score

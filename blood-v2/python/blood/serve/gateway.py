@@ -71,12 +71,7 @@ class GameSession:
         resp["reward"] = float(reward)
 
         if self._done:
-            scores = [100000] * 4
-            try:
-                if self._env._env:
-                    scores = list(self._env._env.get_scores())
-            except Exception:
-                pass
+            scores = self._env.get_scores() if self._env else [100000] * 4
             resp["type"] = "game_over"
             resp["scores"] = scores
             winner = -1
@@ -113,14 +108,8 @@ class GameSession:
         mask = self._obs["action_mask"]
         legal = [int(i) for i in range(ACTION_SPACE) if mask[i] > 0.5]
 
-        scores = [100000] * 4
-        phase = "unknown"
-        try:
-            if self._env._env:
-                scores = list(self._env._env.get_scores())
-                phase = self._env._env.get_phase()
-        except Exception:
-            pass
+        scores = self._env.get_scores() if self._env else [100000] * 4
+        phase = self._env.get_phase() if self._env else "unknown"
 
         suggestion = self.get_ai_suggestion()
 

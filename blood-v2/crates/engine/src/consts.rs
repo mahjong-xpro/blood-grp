@@ -31,6 +31,19 @@ pub const MAX_TURNS: usize = 28;
 /// reward variance while preserving ordering. Centered at 0 for PPO.
 pub const REWARD_NORM: i32 = 32_000;
 
-pub const NUM_STUDENT_CHANNELS: usize = 464;
+/// 注意：通道数变更需要重新训练模型。
+/// 464 → 470: 新增 Section 14（对手手牌数 3ch + 副露来源 3ch）
+pub const NUM_STUDENT_CHANNELS: usize = 470;
 pub const NUM_ORACLE_EXTRA_CHANNELS: usize = 52;
 pub const NUM_ORACLE_CHANNELS: usize = NUM_STUDENT_CHANNELS + NUM_ORACLE_EXTRA_CHANNELS;
+
+// ── Observation channel offsets (0-indexed) ─────────────────────────────────
+// These must stay in sync with crates/engine/src/obs/student.rs.
+// Exported via PyO3 so Python code (RTPA, etc.) never hardcodes offsets.
+
+/// Section 4, ch 0: wall_remaining / 55.0
+pub const CH_WALL_REMAINING: usize = 35;
+/// Section 9: opponent meld counts (3 opponents at ch+0, ch+1, ch+2)
+pub const CH_OPP_MELD_BASE: usize = 333;
+/// Section 10: wait_tiles at ch=340, shanten one-hot at ch=341..345
+pub const CH_SHANTEN_BASE: usize = 341;

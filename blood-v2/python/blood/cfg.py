@@ -7,16 +7,29 @@ def add_blood_args(parser: ArgumentParser):
     """Add Blood-specific command-line arguments."""
     p = parser
 
-    # Model — 与 Rust consts.rs 保持一致 (NUM_STUDENT_CHANNELS=464, Bottleneck 256ch/20blocks)
-    p.add_argument("--blood_obs_channels", type=int, default=464)
+    # Game rules
+    p.add_argument("--initial_score", type=int, default=100_000,
+                    help="Initial score per player (blood mahjong: 100000 or 60000)")
+
+    # Model — 与 Rust consts.rs 保持一致 (NUM_STUDENT_CHANNELS=470, Bottleneck 256ch/20blocks)
+    p.add_argument("--blood_obs_channels", type=int, default=470)
     p.add_argument("--blood_conv_channels", type=int, default=256)
     p.add_argument("--blood_num_res_blocks", type=int, default=20)
     p.add_argument("--blood_encoder_out_dim", type=int, default=1024)
+    p.add_argument("--blood_enc_proj_layers", type=int, default=1,
+                    help="enc_proj 层数: 1=单层Linear(旧行为), 2=渐进压缩MLP(缓解信息瓶颈)")
+
+    # TileAttention 增强参数
+    p.add_argument("--blood_num_tile_attn_layers", type=int, default=2,
+                    help="TileAttention 层数: 2=中层+末层(旧行为), 3=中层+后中层+末层(增强跨花色推理)")
+    p.add_argument("--blood_tile_attn_heads", type=int, default=4,
+                    help="TileAttention 注意力头数: 4=旧行为, 8=增强多模式跨花色交互")
 
     # Oracle
     p.add_argument("--oracle_enabled", default=True, type=lambda x: x.lower() != "false")
     p.add_argument("--no_oracle", dest="oracle_enabled", action="store_false")
-    p.add_argument("--oracle_num_blocks", type=int, default=25)
+    # 修复: 默认值从 25 改为 20，与所有阶段 yaml 配置保持一致
+    p.add_argument("--oracle_num_blocks", type=int, default=20)
     p.add_argument("--oracle_distill_weight", type=float, default=0.05)
     p.add_argument("--oracle_distill_temperature", type=float, default=2.0)
     p.add_argument("--oracle_ce_weight", type=float, default=0.1,
@@ -36,7 +49,12 @@ def add_blood_args(parser: ArgumentParser):
     p.add_argument("--no_league", dest="league_enabled", action="store_false")
     p.add_argument("--league_pool_dir", type=str, default="checkpoints/league/")
     p.add_argument("--league_add_every", type=int, default=50000)
-    p.add_argument("--league_newest_weight", type=float, default=3.0)
+    p.add_argument("--league_newest_weight", type=float, default=2.0,
+                    help="多项式衰减指数 α，从 3.0 降到 2.0 提高有效多样性")
+    p.add_argument("--league_uniform_floor", type=float, default=0.1,
+                    help="最低采样概率下限，确保旧 checkpoint 也有一定概率被采样")
+    p.add_argument("--league_self_play_prob", type=float, default=0.2,
+                    help="使用当前最新策略自博弈的概率（不从历史池采样）")
     p.add_argument("--opponent_mode", type=str, default="rulebot",
                     choices=["rulebot", "selfplay", "random"])
     p.add_argument("--opponent_refresh_every", type=int, default=20,
@@ -48,6 +66,10 @@ def add_blood_args(parser: ArgumentParser):
     # Auxiliary tasks
     p.add_argument("--aux_shanten_weight", type=float, default=1.0)
     p.add_argument("--aux_opp_waits_weight", type=float, default=0.3)
+    p.add_argument("--aux_focal_alpha", type=float, default=0.25,
+                    help="Focal Loss alpha: 正样本权重因子，缓解听牌预测类别不平衡")
+    p.add_argument("--aux_focal_gamma", type=float, default=2.0,
+                    help="Focal Loss gamma: 聚焦参数，越大越关注难分类样本")
 
     # Warmup reward shaping
     p.add_argument("--warmup_reward_shaping", default=False, action="store_true")
@@ -72,6 +94,16 @@ def add_blood_args(parser: ArgumentParser):
                     help="Reward per shanten reduction (dense progress signal)")
     p.add_argument("--reward_shanten_regress", type=float, default=0.001,
                     help="Penalty per shanten increase")
+    p.add_argument("--shanten_reward_decay_steps", type=int, default=0,
+                    help="向听奖励线性衰减步数 (0=不衰减)。在此步数内从原始值衰减到 min_ratio 倍")
+    p.add_argument("--shanten_reward_min_ratio", type=float, default=0.3,
+                    help="向听奖励衰减下限比例 (默认0.3=衰减到原始值的30%%)")
+    p.add_argument("--shanten_fan_bonus_scale", type=float, default=0.3,
+                    help="向听奖励番数加权缩放因子 (0=禁用)。向听改善时乘以 "
+                         "(1 + scale * estimated_fan / max_fan)，引导模型追求高番手牌")
+    p.add_argument("--shanten_fan_max", type=float, default=8.0,
+                    help="番数归一化上限。血战麻将理论最高6番(封顶)，"
+                         "设为8.0留出余量避免加权系数过大")
     p.add_argument("--reward_safe_discard", type=float, default=0.0,
                     help="Reward for discarding a safe tile when any opponent is tenpai")
     p.add_argument("--reward_rank_bonus", type=float, default=0.0,
@@ -120,6 +152,7 @@ def blood_override_defaults(parser: ArgumentParser):
         experiment="blood_v2",
         use_rnn=True,
         rnn_type="lstm",
+        # 注意: 基础默认值 1024，competitive/elite 阶段覆盖为 512
         rnn_size=1024,
         rnn_num_layers=1,
         rollout=32,

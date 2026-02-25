@@ -17,7 +17,7 @@ from torch import Tensor
 from blood.model.encoder import (
     SuitAwareConv1d, BottleneckBlock, ChannelAttention,
     SuitPositionalEncoding, TileAttention,
-    _num_groups, NUM_TILES, DEFAULT_OBS_CHANNELS,
+    _num_groups, _build_enc_proj, NUM_TILES, DEFAULT_OBS_CHANNELS,
 )
 
 log = logging.getLogger(__name__)
@@ -31,8 +31,9 @@ class PolicyModel(nn.Module):
 
     Mirrors the full training architecture:
         encoder (stem + pos_enc + res_blocks_1 + tile_attn_mid +
-                 res_blocks_2 + tile_attn + enc_proj)
-        → LSTM (temporal modeling across turns)
+                 [res_blocks_2a + tile_attn_mid2 + res_blocks_2b | res_blocks_2] +
+                 tile_attn + enc_proj)
+        → LSTM (temporal modeling across turns, 支持多层)
         → actor_head (2-layer Pre-norm MLP)
         → action_head (logits)
 
@@ -49,6 +50,10 @@ class PolicyModel(nn.Module):
         action_dim: int = ACTION_DIM,
         enc_out_dim: int = 1024,
         head_dim: int = 512,
+        enc_proj_layers: int = 1,
+        num_tile_attn_layers: int = 2,
+        tile_attn_heads: int = 4,
+        rnn_num_layers: int = 1,
     ):
         super().__init__()
 
@@ -61,20 +66,29 @@ class PolicyModel(nn.Module):
         )
         self.pos_enc = SuitPositionalEncoding(conv_ch)
         self.res_blocks_1 = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(mid)])
-        self.tile_attn_mid = TileAttention(conv_ch, num_heads=4)
-        self.res_blocks_2 = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(num_blocks - mid)])
-        self.tile_attn = TileAttention(conv_ch, num_heads=4)
+        self.tile_attn_mid = TileAttention(conv_ch, num_heads=tile_attn_heads)
+
+        # 3层模式: 将 res_blocks_2 拆分为 2a + tile_attn_mid2 + 2b
+        # 2层模式(默认): res_blocks_2 不拆分
+        blocks_2 = num_blocks - mid
+        self._num_tile_attn_layers = num_tile_attn_layers
+        if num_tile_attn_layers >= 3:
+            split_2 = blocks_2 // 2
+            self.res_blocks_2a = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(split_2)])
+            self.tile_attn_mid2 = TileAttention(conv_ch, num_heads=tile_attn_heads)
+            self.res_blocks_2b = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(blocks_2 - split_2)])
+        else:
+            self.res_blocks_2 = nn.Sequential(*[BottleneckBlock(conv_ch) for _ in range(blocks_2)])
+
+        self.tile_attn = TileAttention(conv_ch, num_heads=tile_attn_heads)
 
         raw_dim = conv_ch * NUM_TILES
-        if enc_out_dim != raw_dim:
-            self.enc_proj = nn.Sequential(
-                nn.LayerNorm(raw_dim),
-                nn.Linear(raw_dim, enc_out_dim),
-            )
-        else:
-            self.enc_proj = None
+        # enc_proj 使用与训练编码器相同的构建函数，支持渐进压缩
+        self.enc_proj = _build_enc_proj(raw_dim, enc_out_dim, enc_proj_layers)
 
-        self.lstm = nn.LSTM(enc_out_dim, rnn_size, batch_first=True)
+        # LSTM 支持多层 (rnn_num_layers >= 1)
+        self._rnn_num_layers = rnn_num_layers
+        self.lstm = nn.LSTM(enc_out_dim, rnn_size, num_layers=rnn_num_layers, batch_first=True)
         self._rnn_size = rnn_size
 
         # 2-layer Pre-norm actor head matching training BloodActorCritic.actor_head
@@ -96,11 +110,19 @@ class PolicyModel(nn.Module):
         x = self.pos_enc(x)
         x = self.res_blocks_1(x)
         x = self.tile_attn_mid(x)
-        x = self.res_blocks_2(x)
+
+        # 3层模式: res_blocks_2a → tile_attn_mid2 → res_blocks_2b
+        # 2层模式: res_blocks_2 (不拆分)
+        if self._num_tile_attn_layers >= 3:
+            x = self.res_blocks_2a(x)
+            x = self.tile_attn_mid2(x)
+            x = self.res_blocks_2b(x)
+        else:
+            x = self.res_blocks_2(x)
+
         x = self.tile_attn(x)
         flat = x.reshape(B, -1)
-        if self.enc_proj is not None:
-            flat = self.enc_proj(flat)
+        flat = self.enc_proj(flat)
         return flat
 
     def forward(
@@ -132,8 +154,9 @@ class PolicyModel(nn.Module):
         return int(torch.multinomial(probs, 1).item()), new_hidden
 
     def init_hidden(self, device: str = "cpu") -> HiddenState:
-        h = torch.zeros(1, 1, self._rnn_size, device=device)
-        c = torch.zeros(1, 1, self._rnn_size, device=device)
+        # 多层 LSTM: hidden state shape = (num_layers, batch, rnn_size)
+        h = torch.zeros(self._rnn_num_layers, 1, self._rnn_size, device=device)
+        c = torch.zeros(self._rnn_num_layers, 1, self._rnn_size, device=device)
         return (h, c)
 
     @classmethod
@@ -166,24 +189,76 @@ class PolicyModel(nn.Module):
         elif "actor_head.0.weight" in model_sd:
             rnn_size = model_sd["actor_head.0.weight"].shape[0]
 
-        # Detect enc_out_dim from enc_proj if present
-        enc_proj_key = "enc_proj.1.weight"
-        if enc_proj_key in encoder_sd:
-            enc_out_dim = encoder_sd[enc_proj_key].shape[0]
+        # 检测 LSTM 层数: 检查 weight_hh_l1 是否存在来判断是否为多层
+        rnn_num_layers = 1
+        for prefix in ["core.core.", "core.rnn."]:
+            layer_idx = 1
+            while f"{prefix}weight_hh_l{layer_idx}" in model_sd:
+                layer_idx += 1
+            if layer_idx > 1:
+                rnn_num_layers = layer_idx
+                break
+
+        # 检测 enc_proj 层数和 enc_out_dim
+        # 2层渐进压缩格式: enc_proj = [LayerNorm(0), Linear(1), LayerNorm(2), Mish(3), Linear(4)]
+        # 1层旧格式:       enc_proj = [LayerNorm(0), Linear(1)]
+        enc_proj_layers = 1
+        enc_proj_2layer_key = "enc_proj.4.weight"  # 第二个 Linear 的权重
+        enc_proj_1layer_key = "enc_proj.1.weight"  # 第一个（或唯一的）Linear 的权重
+        if enc_proj_2layer_key in encoder_sd:
+            # 2层渐进压缩：最终输出维度从第二个 Linear 获取
+            enc_proj_layers = 2
+            enc_out_dim = encoder_sd[enc_proj_2layer_key].shape[0]
+        elif enc_proj_1layer_key in encoder_sd:
+            enc_out_dim = encoder_sd[enc_proj_1layer_key].shape[0]
         else:
             enc_out_dim = conv_ch * NUM_TILES
 
         # Count blocks in each half (split architecture)
+        # 支持3层 TileAttention 模式: res_blocks_2a + res_blocks_2b 替代 res_blocks_2
         num_blocks_1 = 0
         while f"res_blocks_1.{num_blocks_1}.block.0.weight" in encoder_sd:
             num_blocks_1 += 1
+
+        # 检测 TileAttention 层数: 3层模式有 res_blocks_2a/2b，2层模式有 res_blocks_2
+        num_tile_attn_layers = 2
         num_blocks_2 = 0
-        while f"res_blocks_2.{num_blocks_2}.block.0.weight" in encoder_sd:
-            num_blocks_2 += 1
+        if "res_blocks_2a.0.block.0.weight" in encoder_sd:
+            # 3层模式: res_blocks_2a + tile_attn_mid2 + res_blocks_2b
+            num_tile_attn_layers = 3
+            num_blocks_2a = 0
+            while f"res_blocks_2a.{num_blocks_2a}.block.0.weight" in encoder_sd:
+                num_blocks_2a += 1
+            num_blocks_2b = 0
+            while f"res_blocks_2b.{num_blocks_2b}.block.0.weight" in encoder_sd:
+                num_blocks_2b += 1
+            num_blocks_2 = num_blocks_2a + num_blocks_2b
+        else:
+            # 2层模式: res_blocks_2
+            while f"res_blocks_2.{num_blocks_2}.block.0.weight" in encoder_sd:
+                num_blocks_2 += 1
+
         num_blocks = num_blocks_1 + num_blocks_2
         if num_blocks == 0:
             log.warning("Could not detect num_blocks; defaulting to 20")
             num_blocks = 20
+
+        # 检测 TileAttention heads 数: 从 tile_attn.attn.in_proj_weight 推断
+        tile_attn_heads = 4
+        attn_proj_key = "tile_attn.attn.in_proj_weight"
+        if attn_proj_key in encoder_sd:
+            # in_proj_weight shape = (3 * embed_dim, embed_dim)
+            # num_heads = embed_dim / head_dim, 但我们无法直接获取 head_dim
+            # 改用 tile_attn.attn.num_heads (如果可用) 或从配置推断
+            # MultiheadAttention 的 num_heads 存储在模块属性中，不在 state_dict 中
+            # 因此我们检查 embed_dim 是否能被 8 整除来推断
+            embed_dim = encoder_sd[attn_proj_key].shape[1]
+            if embed_dim % 8 == 0:
+                # 默认尝试8头，如果 checkpoint 是4头训练的也能兼容加载
+                # 因为 MultiheadAttention 的权重形状不依赖 num_heads
+                pass
+            # 注意: num_heads 不影响权重形状，所以无法从 state_dict 精确检测
+            # 使用默认值4，除非 checkpoint 元数据中有记录
 
         # Detect head_dim from actor_head.4.weight (Pre-norm 2-layer)
         head_dim = 512
@@ -197,6 +272,10 @@ class PolicyModel(nn.Module):
             rnn_size=rnn_size,
             enc_out_dim=enc_out_dim,
             head_dim=head_dim,
+            enc_proj_layers=enc_proj_layers,
+            num_tile_attn_layers=num_tile_attn_layers,
+            tile_attn_heads=tile_attn_heads,
+            rnn_num_layers=rnn_num_layers,
         )
         model.to(device)
 
@@ -208,6 +287,7 @@ class PolicyModel(nn.Module):
 
         # Map core.core.* → lstm.*  (SF2 ModelCoreRNN stores LSTM as self.core)
         # Also handle legacy core.rnn.* prefix for older checkpoints.
+        # 支持多层 LSTM: weight_hh_l0, weight_hh_l1, ... 自动映射
         for k, v in model_sd.items():
             if k.startswith("core.core."):
                 new_key = "lstm." + k[len("core.core."):]
@@ -235,8 +315,10 @@ class PolicyModel(nn.Module):
         model.load_state_dict(partial_sd, strict=False)
         model.eval()
         log.info(
-            "Loaded opponent model from %s (%d keys, rnn_size=%d, enc_out=%d)",
-            path, len(partial_sd), rnn_size, enc_out_dim,
+            "Loaded opponent model from %s (%d keys, rnn_size=%d, rnn_layers=%d, "
+            "enc_out=%d, enc_proj_layers=%d, tile_attn_layers=%d)",
+            path, len(partial_sd), rnn_size, rnn_num_layers,
+            enc_out_dim, enc_proj_layers, num_tile_attn_layers,
         )
         return model
 

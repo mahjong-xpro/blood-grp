@@ -89,22 +89,37 @@ class ISMCESearcher:
             combined = 2.0 * win_rate + tenpai_rate + 0.5 * improvement
             ismce_scores[tile_idx] = combined
 
-        # Blend in log-space: final_logits = policy_logits/T + ismce_weight * ismce_logits
-        # This is more principled than probability-space blending because:
-        # 1. Avoids probability collapse when one distribution is very peaked
-        # 2. Preserves the relative ordering from both signals
-        # 3. ismce_scores are already in a comparable scale (win_rate ∈ [0,1])
+        # --- log 空间尺度归一化 ---
+        # 对 policy logits 和 ISMCE 分数都在候选牌上做标准化（零均值 + 单位方差），
+        # 使得混合权重能准确反映两个信号的相对重要性，不受原始尺度影响。
         policy_logits_t = logits / max(temperature, 1e-8)
-        # Normalize ISMCE scores to zero-mean over candidates to avoid scale mismatch
-        candidate_scores = ismce_scores[discard_candidates]
-        ismce_scores_norm = ismce_scores.copy()
-        ismce_scores_norm[discard_candidates] = candidate_scores - candidate_scores.mean()
 
-        blended_logits = policy_logits_t.copy()
-        for i in discard_candidates:
-            blended_logits[i] = (self.policy_weight * policy_logits_t[i]
-                                 + self.ismce_weight * ismce_scores_norm[i])
-        blended_logits[action_mask < 0.5] = -1e9
+        # 提取候选牌上的 policy logits，做标准化
+        cand_idx = np.array(discard_candidates)
+        policy_cand = policy_logits_t[cand_idx]
+        p_mean = policy_cand.mean()
+        p_std = policy_cand.std()
+        if p_std < 1e-8:
+            # 所有候选牌 logit 几乎相同，标准化后全为 0
+            policy_cand_norm = np.zeros_like(policy_cand)
+        else:
+            policy_cand_norm = (policy_cand - p_mean) / p_std
+
+        # 提取候选牌上的 ISMCE 分数，做标准化
+        ismce_cand = ismce_scores[cand_idx]
+        i_mean = ismce_cand.mean()
+        i_std = ismce_cand.std()
+        if i_std < 1e-8:
+            # 所有候选牌 ISMCE 分数几乎相同，标准化后全为 0
+            ismce_cand_norm = np.zeros_like(ismce_cand)
+        else:
+            ismce_cand_norm = (ismce_cand - i_mean) / i_std
+
+        # 按权重混合标准化后的信号
+        blended_logits = np.full(ACTION_SPACE, -1e9)
+        for j, i in enumerate(discard_candidates):
+            blended_logits[i] = (self.policy_weight * policy_cand_norm[j]
+                                 + self.ismce_weight * ismce_cand_norm[j])
 
         from blood.utils import softmax
         blended = softmax(blended_logits)

@@ -7,6 +7,10 @@ use crate::hand::*;
 pub struct PlayerState {
     pub hand: HandCounts,
     pub melds: Vec<MeldType>,
+    /// 每个副露的来源玩家（绝对座位号）。
+    /// AnKan 为 None（暗杠无来源），Pon/MinKan 为 Some(from)，
+    /// KaKan 继承原 Pon 的来源。与 melds 一一对应。
+    pub meld_from: Vec<Option<usize>>,
     pub discards: Vec<Tile>,
     pub tsumogiri: Vec<bool>,
     pub score: i32,
@@ -24,12 +28,17 @@ pub struct PlayerState {
 
 impl PlayerState {
     pub fn new() -> Self {
+        Self::with_score(INITIAL_SCORE)
+    }
+
+    pub fn with_score(initial_score: i32) -> Self {
         Self {
             hand: [0; NUM_TILE_TYPES],
             melds: Vec::new(),
+            meld_from: Vec::new(),
             discards: Vec::new(),
             tsumogiri: Vec::new(),
-            score: INITIAL_SCORE,
+            score: initial_score,
             ding_que: None,
             has_won: false,
             last_drawn_tile: None,
