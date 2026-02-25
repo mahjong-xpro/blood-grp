@@ -18,8 +18,8 @@
 #   help                                          显示此帮助
 #
 # 五阶段训练流水线:
-#   1. warmup              — RuleBot 对手, 无 LSTM (2.5M steps)
-#   2. warmup_transition   — RuleBot 对手, LSTM 开启 (2.5M steps)
+#   1. warmup              — RuleBot 对手, LSTM 开启 (2M steps)
+#   2. warmup_transition   — RuleBot 对手, gamma/lr 渐变 (500K steps)
 #   3. competitive         — Self-play (2.5M steps)
 #   4. competitive_distill — Oracle Value 蒸馏 (2.5M steps)
 #   5. elite               — RTPA+ISMCE 精英训练 (50M steps)
@@ -161,10 +161,10 @@ Blood-v2 管理脚本
       显示此帮助
 
 五阶段训练流水线:
-  1. warmup              — RuleBot 对手, 无 LSTM (2.5M steps)
-  2. warmup_transition   — RuleBot 对手, LSTM 开启 (2.5M steps)
-  3. competitive         — Self-play (2.5M steps)
-  4. competitive_distill — Oracle Value 蒸馏 (2.5M steps)
+  1. warmup              — RuleBot 对手, LSTM 开启 (2M steps)
+  2. warmup_transition   — RuleBot 对手, gamma/lr 渐变 (500K steps)
+  3. competitive         — Self-play (1M steps)
+  4. competitive_distill — Oracle Value 蒸馏 (4M steps)
   5. elite               — RTPA+ISMCE 精英训练 (50M steps)
 
   阶段别名:
@@ -287,8 +287,8 @@ train_pipeline() {
 
     local PHASES=("warmup" "warmup_transition" "competitive" "competitive_distill" "elite")
     local PHASE_NAMES=(
-        "Phase 1: Warmup (RuleBot, no LSTM)"
-        "Phase 1.5: Warmup Transition (RuleBot, LSTM ON)"
+        "Phase 1: Warmup (RuleBot, LSTM ON)"
+        "Phase 1.5: Warmup Transition (RuleBot, gamma/lr ramp)"
         "Phase 2a: Competitive (Self-play)"
         "Phase 2b: Competitive Distill (Oracle Value)"
         "Phase 3: Elite (RTPA+ISMCE, 50M steps)"

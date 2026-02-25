@@ -292,16 +292,17 @@ def _patch_learner_load_state():
 
 
 def _seed_init_checkpoint(cfg):
-    """Seed a previous phase's model weights into the new experiment directory.
+    """Seed a previous phase's checkpoint into the new experiment directory.
 
     SF2's learner runs in a subprocess, so we can't load weights directly from
-    the main process.  Instead, we create a minimal checkpoint containing only
-    the model weights in the target experiment's checkpoint_p0/ directory
-    *before* runner.init().  SF2 will then discover and load it via its
-    built-in checkpoint restoration logic.
+    the main process.  Instead, we copy the full checkpoint (model + optimizer)
+    into the target experiment's checkpoint_p0/ directory *before*
+    runner.init().  SF2 will then discover and load it via its built-in
+    checkpoint restoration logic.
 
-    We strip optimizer state and reset env_steps to 0 so the new phase starts
-    fresh training with the previous phase's model weights.
+    We preserve optimizer state (SF2's _load_state requires it) and reset
+    env_steps/train_steps to 0 so the new phase starts from step 0.
+    The new phase's LR schedule will override the optimizer's LR.
 
     If the target directory already contains checkpoints (e.g. from a previous
     run), we skip to avoid overwriting real training progress.
@@ -337,12 +338,25 @@ def _seed_init_checkpoint(cfg):
     # Build a new checkpoint preserving model + optimizer state.
     # SF2 checkpoint keys: model, optimizer, env_steps, stats, cfg, ...
     # We keep the optimizer state because SF2's _load_state unconditionally
-    # loads it (KeyError if missing). The new phase's LR schedule will
-    # override the optimizer's LR from the first training step.
+    # loads it (KeyError if missing).
     seed_ckpt = dict(source_ckpt)  # shallow copy
     # Reset training counters so the new phase starts from step 0
     seed_ckpt["env_steps"] = 0
     seed_ckpt["train_steps"] = 0
+
+    # Reset optimizer LR to the new phase's configured learning_rate.
+    # Without this, the inherited LR (potentially inflated to 0.01 by
+    # kl_adaptive_minibatch) causes value_loss spikes at phase transitions.
+    new_lr = getattr(cfg, "learning_rate", None)
+    opt_state = seed_ckpt.get("optimizer")
+    if new_lr is not None and opt_state is not None:
+        param_groups = opt_state.get("param_groups", [])
+        for pg in param_groups:
+            old_lr = pg.get("lr", "?")
+            pg["lr"] = new_lr
+            pg["initial_lr"] = new_lr
+        if param_groups:
+            log.info("Reset optimizer LR: %s → %s (new phase learning_rate)", old_lr, new_lr)
 
     # Convert numpy scalars to Python native types so that torch.load with
     # weights_only=True (PyTorch 2.6+ default) can deserialize the checkpoint.
@@ -352,7 +366,7 @@ def _seed_init_checkpoint(cfg):
     dest = ckpt_dir / "checkpoint_000000000_0.pth"
     log.info("Seeding init checkpoint: %s → %s", init_path, dest)
     torch.save(seed_ckpt, str(dest))
-    log.info("Init checkpoint seeded successfully (model weights only, training state reset)")
+    log.info("Init checkpoint seeded successfully (model + optimizer, counters reset to 0)")
 
 
 def run_training():
