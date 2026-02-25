@@ -193,11 +193,11 @@ policy_loss 在 @200K (-0.0013)、@400K (-0.0007)、@800K (-0.0009)、@900K (-0.
 
 `max_grad_norm: 1.0` 全程触发 gradient clipping。说明梯度范数始终 > 1.0。这在大模型（256ch/20blocks + LSTM 512×2）+ 多个 loss 项（PPO + aux + oracle distill + oracle CE）的情况下是预期的。不影响训练，但说明模型容量和 loss 复杂度较高。
 
-##### 6. Elo 未变化（1500）
+##### 6. Elo 未变化（1500）— ✅ 已修复
 
-Elo 停留在 1500 是因为 warmup/transition 阶段使用 RuleBot 对手，没有 league 对局来更新 Elo。competitive 阶段虽然使用自博弈，但 EloTracker 需要 league 对局结果来更新评分。当前实现中 `_log_elo_summaries` 只读取已有评分，不主动触发对局评估。
+Elo 停留在 1500 是因为训练循环中从未调用 `EloTracker.update_from_game()`。`_log_elo_summaries` 只读取已有评分，不主动触发对局评估。
 
-**建议**: 这是一个功能缺失，不影响训练质量。后续可在 `BloodObserver.on_training_step` 中添加定期 arena 评估来更新 Elo。
+**修复 (commit 4bfc7472)**: 在 `BloodObserver.on_training_step` 中添加定期 arena 评估。后台线程加载最新 checkpoint，运行 N 局 vs RuleBot，通过 `Arena.evaluate()` 更新 EloTracker。新增 TensorBoard 指标: `blood/elo_current`, `blood/elo_games`, `blood/arena_win_rate`, `blood/arena_avg_rank`, `blood/arena_avg_score`。所有阶段 YAML 已配置 `blood_arena_eval_every`。
 
 ##### 7. 结论与建议
 
@@ -205,10 +205,18 @@ Elo 停留在 1500 是因为 warmup/transition 阶段使用 RuleBot 对手，没
 
 **进入 Phase 2b 的条件**: competitive 阶段即将完成（~926K/1M）。虽然 value_loss 没有完全收敛，但这在自博弈中是可接受的。关键指标（reward 零和、entropy 上升、KL 受控）都正常。可以进入 Phase 2b。
 
-**Phase 2b 建议**:
-- 监控 oracle_value_head_loss 是否收敛到 < 0.1
-- 考虑将 `lr_schedule_kl_threshold` 从 0.001 降到 0.0005 以减少 LR 波动
-- 如果 value_loss 在 Phase 2b 仍然高波动，考虑增加 `value_loss_coeff` 或降低 `exploration_loss_coeff`
+**Phase 2b 已应用的修复**:
+- `lr_schedule_kl_threshold`: 0.001 → 0.0005（减少 masked action space 下的 LR 振荡幅度）
+- `lr_adaptive_max`: 3e-4 → 2e-4（防止 KL 低谷时 LR 跳升过高）
+- `max_grad_norm`: 1.0 → 2.0（oracle value distill 新增 loss 项，需要更多梯度空间）
+- 新增 entropy schedule: cosine 0.05→0.02 over 4M steps（逐步收紧策略）
+- 新增 arena eval: 每 200K 步评估 50 局 vs RuleBot（实时跟踪 Elo 变化）
+
+**Phase 2b 监控重点**:
+- `blood/oracle_value_head_loss` 是否收敛到 < 0.1
+- `train/actual_lr` 振荡幅度是否减小（预期 < 5x 范围）
+- `train/value_loss` 是否比 Phase 2a 更稳定
+- `blood/elo_current` 是否开始上升
 
 ---
 
