@@ -39,6 +39,7 @@ blood_obs_channels: 470
 blood_conv_channels: 256
 blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024
+blood_enc_proj_layers: 3               # SpatialPoolingProj: 与所有阶段保持一致
 blood_num_tile_attn_layers: 4
 blood_tile_attn_heads: 4
 
@@ -76,6 +77,8 @@ league_add_every: 50000
 league_newest_weight: 2.0              # 与 default.yaml/cfg.py 保持一致
 league_uniform_floor: 0.1
 league_self_play_prob: 0.2             # 20% 概率使用当前策略自博弈
+league_frozen_window: 3                # 最近3个checkpoint不参与采样
+league_max_pool_size: 200              # 扩容覆盖更长训练历史
 save_every_sec: 30
 
 # No reward shaping — pure score-based reward

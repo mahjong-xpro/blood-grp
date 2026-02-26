@@ -32,6 +32,7 @@ blood_obs_channels: 470
 blood_conv_channels: 256
 blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024
+blood_enc_proj_layers: 3               # SpatialPoolingProj: 注意力池化保留牌位结构
 blood_num_tile_attn_layers: 4
 blood_tile_attn_heads: 4
 
@@ -56,6 +57,8 @@ league_add_every: 50000
 league_newest_weight: 2.0              # 从 3.0 降到 2.0，提高有效多样性（与 cfg.py 默认值一致）
 league_uniform_floor: 0.1              # 最低采样概率下限，确保旧 checkpoint 也能被采样
 league_self_play_prob: 0.2             # 20% 概率使用当前策略自博弈
+league_frozen_window: 3                # 最近3个checkpoint不参与采样
+league_max_pool_size: 200              # 联赛池容量
 opponent_mode: selfplay
 opponent_refresh_every: 20
 

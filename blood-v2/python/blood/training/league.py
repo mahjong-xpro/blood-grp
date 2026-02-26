@@ -5,6 +5,8 @@
 - 多项式衰减 α=2.0 + uniform_floor 保底，提高有效多样性
 - self_play_prob 支持当前策略 vs 自身对战
 - 可选 Elo-weighted 采样：Gaussian 权重偏好 Elo 接近的对手
+- 稀疏保留淘汰：池满时保留最新 50% 密集 + 旧 50% 稀疏采样，最大化时间跨度
+- 冻结窗口：最近 N 个 checkpoint 不参与采样，避免与过于相似的策略对打
 """
 
 from __future__ import annotations
@@ -66,6 +68,7 @@ class LeagueManager:
         max_pool_size: int = 50,
         uniform_floor: float = 0.1,       # 最低采样概率下限，确保旧 checkpoint 也能被采样
         self_play_prob: float = 0.2,      # 20% 概率使用当前策略自博弈
+        frozen_window: int = 0,           # 最近 N 个 checkpoint 不参与采样
         elo_tracker: Optional[EloTracker] = None,
         use_elo_sampling: bool = False,
         elo_sampling_sigma: float = 200.0,
@@ -75,6 +78,7 @@ class LeagueManager:
         self.max_pool_size = max_pool_size
         self.uniform_floor = uniform_floor
         self.self_play_prob = self_play_prob
+        self.frozen_window = frozen_window
         self._elo_tracker = elo_tracker
         self._use_elo_sampling = use_elo_sampling
         self._elo_sigma = elo_sampling_sigma
@@ -114,8 +118,9 @@ class LeagueManager:
 
         采样策略：
         1. 以 self_play_prob 概率返回 None（表示使用当前最新策略自博弈）
-        2. 若 use_elo_sampling=True 且有 elo_tracker，使用 Elo-based Gaussian 权重
-        3. 否则从历史池中按多项式衰减 + uniform_floor 采样
+        2. 排除冻结窗口内的 checkpoint（最近 frozen_window 个不参与采样）
+        3. 若 use_elo_sampling=True 且有 elo_tracker，使用 Elo-based Gaussian 权重
+        4. 否则从历史池中按多项式衰减 + uniform_floor 采样
 
         权重公式 (poly): w(r) = (1 - floor) * [(1+r)^(-α) / Z] + floor * (1/n)
         其中 r=0 为最新，α=newest_weight，floor=uniform_floor。
@@ -128,6 +133,13 @@ class LeagueManager:
         checkpoints = self.get_checkpoints()
         if not checkpoints:
             return None
+
+        # 冻结窗口：排除最近 N 个 checkpoint，避免与过于相似的策略对打
+        if self.frozen_window > 0 and len(checkpoints) > self.frozen_window:
+            checkpoints = checkpoints[self.frozen_window:]
+        elif self.frozen_window > 0 and len(checkpoints) <= self.frozen_window:
+            # 池太小，所有 checkpoint 都在冻结窗口内，回退到无冻结
+            pass
 
         n = len(checkpoints)
 
@@ -173,12 +185,44 @@ class LeagueManager:
         self._evict_if_needed()
 
     def _evict_if_needed(self):
-        """池超出 max_pool_size 时移除最旧的 checkpoint。"""
-        checkpoints = self.get_checkpoints()
-        while len(checkpoints) > self.max_pool_size:
-            oldest = checkpoints.pop()  # 列表末尾 = env_steps 最小 = 最旧
-            oldest.unlink()
-            log.info("淘汰最旧 checkpoint: %s", oldest.name)
+        """稀疏保留淘汰：池满时保留最新 50% 密集 + 旧 50% 稀疏采样。
+
+        策略：将 checkpoint 按时间分为两半
+        - 新半部分（前 50%）：完整保留，保证近期策略密度
+        - 旧半部分（后 50%）：每隔 sparse_interval 个保留一个 + 始终保留最旧
+        这样可以在固定池大小下最大化有效时间跨度覆盖。
+        """
+        checkpoints = self.get_checkpoints()  # 按 env_steps 降序
+        if len(checkpoints) <= self.max_pool_size:
+            return
+
+        n = len(checkpoints)
+        # 保留最新 50% 密集
+        dense_count = self.max_pool_size // 2
+        keep = set(range(dense_count))  # indices to keep (newest first)
+
+        # 旧半部分稀疏保留
+        old_indices = list(range(dense_count, n))
+        remaining_slots = self.max_pool_size - dense_count
+
+        if remaining_slots > 0 and old_indices:
+            # 始终保留最旧的 checkpoint（index n-1）
+            keep.add(n - 1)
+            remaining_slots -= 1
+
+            if remaining_slots > 0 and len(old_indices) > 1:
+                # 在旧半部分中均匀间隔选取
+                sparse_interval = max(len(old_indices) // (remaining_slots + 1), 1)
+                for i in range(0, len(old_indices), sparse_interval):
+                    if len(keep) >= self.max_pool_size:
+                        break
+                    keep.add(old_indices[i])
+
+        # 删除不在保留集中的 checkpoint
+        for i in range(n):
+            if i not in keep:
+                checkpoints[i].unlink()
+                log.info("稀疏淘汰 checkpoint: %s", checkpoints[i].name)
 
     def pool_size(self) -> int:
         return len(self.get_checkpoints())

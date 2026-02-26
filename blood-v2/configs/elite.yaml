@@ -38,6 +38,7 @@ blood_obs_channels: 470
 blood_conv_channels: 256
 blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024
+blood_enc_proj_layers: 3               # SpatialPoolingProj: 注意力池化保留牌位结构
 
 blood_num_tile_attn_layers: 4
 blood_tile_attn_heads: 4
@@ -69,10 +70,12 @@ blood_arena_eval_temperature: 0.1
 # League — very frequent snapshots for fine-grained progression
 league_enabled: true
 league_pool_dir: checkpoints/league/
-league_add_every: 25000
+league_add_every: 50000                 # 从 25000 提升到 50000，配合更大池保持覆盖范围
 league_newest_weight: 2.0              # 与所有阶段保持一致
 league_uniform_floor: 0.1
 league_self_play_prob: 0.2
+league_frozen_window: 3                # 最近3个checkpoint不参与采样，减少Elo振荡
+league_max_pool_size: 200              # 从50扩容到200，覆盖更长训练历史
 
 # No reward shaping
 warmup_reward_shaping: false
@@ -128,7 +131,11 @@ ismce_num_worlds: 64
 ismce_rollout_depth: 4
 
 # Dynamic hyperparameter schedules (within this stage)
-# Entropy: cosine anneal from 0.02 → 0.005 over full 40M steps
-blood_schedule_entropy: "cosine,0.02,0.005,0,40000000"
+# Entropy: cosine anneal from 0.02 → 0.01 over full 50M steps
+# 终值从 0.005 提升到 0.01 防止策略过早收敛
+blood_schedule_entropy: "cosine,0.02,0.01,0,50000000"
 # Adv clip: linear tighten from 5.0 → 3.0 starting at 10M steps
 blood_schedule_adv_clip: "linear,5.0,3.0,10000000,40000000"
+
+# Entropy floor safety net — 防止 entropy 意外降到极低值
+blood_entropy_floor: 0.008

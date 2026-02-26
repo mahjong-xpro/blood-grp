@@ -60,8 +60,10 @@ class BloodObserver(AlgoObserver):
         self.league = LeagueManager(
             pool_dir,
             newest_weight=newest_weight,
+            max_pool_size=getattr(cfg, "league_max_pool_size", 50),
             uniform_floor=uniform_floor,
             self_play_prob=self_play_prob,
+            frozen_window=getattr(cfg, "league_frozen_window", 0),
             elo_tracker=self.elo_tracker,
             use_elo_sampling=use_elo_sampling,
             elo_sampling_sigma=elo_sigma,
@@ -124,6 +126,16 @@ class BloodObserver(AlgoObserver):
         updates = self._scheduler.step(env_steps)
         if not updates:
             return
+
+        # Entropy floor safety net
+        entropy_floor = getattr(self.cfg, "blood_entropy_floor", 0.0)
+        if entropy_floor > 0 and "exploration_loss_coeff" in updates:
+            if updates["exploration_loss_coeff"] < entropy_floor:
+                log.warning(
+                    "[Scheduler] entropy %.6f < floor %.6f, clamping",
+                    updates["exploration_loss_coeff"], entropy_floor,
+                )
+                updates["exploration_loss_coeff"] = entropy_floor
 
         learner_worker = runner.learners.get(policy_id)
         for param, value in updates.items():

@@ -176,7 +176,74 @@ class ResBlock(nn.Module):
         return x + self.attn(self.block(x))
 
 
-def _build_enc_proj(raw_dim: int, enc_out_dim: int, num_layers: int = 1) -> nn.Sequential:
+class SpatialPoolingProj(nn.Module):
+    """Attention-based spatial pooling to replace flatten + linear projection.
+
+    Uses learnable query tokens with cross-attention to aggregate information
+    from tile positions, preserving spatial structure instead of brute-force
+    flattening.
+
+    Architecture:
+        Input: (B, conv_ch, 27)  -- tile-position features from ResNet encoder
+        → LayerNorm over channels
+        → MultiheadAttention(queries=learnable, keys/values=tile positions)
+        → Flatten queries → (B, num_queries * conv_ch)
+        → Linear → (B, enc_out_dim)
+
+    With num_queries=4 and conv_ch=256: 4 queries attend over 27 positions,
+    each producing a 256-dim summary → concat to 1024 → project to enc_out_dim.
+    Compression is done by the attention mechanism which adaptively selects
+    important tile positions, rather than a blind linear map.
+    """
+
+    def __init__(self, conv_ch: int, enc_out_dim: int, num_queries: int = 4,
+                 num_heads: int = 4, dropout: float = 0.0):
+        super().__init__()
+        self.conv_ch = conv_ch
+        self.num_queries = num_queries
+
+        # Learnable query tokens
+        self.queries = nn.Parameter(torch.zeros(1, num_queries, conv_ch))
+        nn.init.trunc_normal_(self.queries, std=0.02)
+
+        # Pre-norm for stable attention
+        self.norm = nn.LayerNorm(conv_ch)
+
+        # Cross-attention: queries attend to tile positions (keys/values)
+        self.cross_attn = nn.MultiheadAttention(
+            embed_dim=conv_ch,
+            num_heads=num_heads,
+            dropout=dropout,
+            batch_first=True,
+        )
+
+        # Final projection from (num_queries * conv_ch) → enc_out_dim
+        query_dim = num_queries * conv_ch
+        self.proj = nn.Sequential(
+            nn.LayerNorm(query_dim),
+            nn.Linear(query_dim, enc_out_dim),
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        # x: (B, conv_ch, 27) — spatial tile features
+        B = x.shape[0]
+        # Transpose to (B, 27, conv_ch) for attention
+        kv = x.permute(0, 2, 1)
+        kv = self.norm(kv)
+
+        # Expand queries for batch
+        q = self.queries.expand(B, -1, -1)  # (B, num_queries, conv_ch)
+
+        # Cross-attention: queries attend to tile positions
+        attn_out, _ = self.cross_attn(q, kv, kv)  # (B, num_queries, conv_ch)
+
+        # Flatten and project
+        flat = attn_out.reshape(B, -1)  # (B, num_queries * conv_ch)
+        return self.proj(flat)  # (B, enc_out_dim)
+
+
+def _build_enc_proj(raw_dim: int, enc_out_dim: int, num_layers: int = 1,
+                    conv_ch: int = 256) -> nn.Module:
     """构建 enc_proj 投影层。
 
     Args:
@@ -186,6 +253,8 @@ def _build_enc_proj(raw_dim: int, enc_out_dim: int, num_layers: int = 1) -> nn.S
             1 = 单层 Linear（旧行为，向后兼容）
             2 = 渐进压缩 MLP (LayerNorm + Mish)，中间维度 = enc_out_dim * 2
                 将单步高压缩比拆分为两步渐进，缓解信息瓶颈
+            3 = SpatialPoolingProj（注意力池化，保留牌位结构，最少信息损失）
+        conv_ch: 卷积通道数，仅 num_layers=3 时使用
     """
     if num_layers == 1:
         # 旧行为：LayerNorm + 单层 Linear
@@ -204,8 +273,17 @@ def _build_enc_proj(raw_dim: int, enc_out_dim: int, num_layers: int = 1) -> nn.S
             nn.Mish(inplace=True),                # 与 ResBlock 保持一致的激活函数
             nn.Linear(mid_dim, enc_out_dim),      # 第二步压缩
         )
+    elif num_layers == 3:
+        # 注意力池化：SpatialPoolingProj
+        # 自动计算 num_queries = enc_out_dim // conv_ch (通常 1024/256 = 4)
+        num_queries = max(enc_out_dim // conv_ch, 2)
+        return SpatialPoolingProj(
+            conv_ch=conv_ch,
+            enc_out_dim=enc_out_dim,
+            num_queries=num_queries,
+        )
     else:
-        raise ValueError(f"blood_enc_proj_layers 仅支持 1 或 2，当前值: {num_layers}")
+        raise ValueError(f"blood_enc_proj_layers 仅支持 1, 2 或 3，当前值: {num_layers}")
 
 
 class SuitAwareResNetEncoder(Encoder):
@@ -298,7 +376,8 @@ class SuitAwareResNetEncoder(Encoder):
             )
             enc_out_dim = self._MAX_ENC_OUT_DIM
 
-        self.enc_proj = _build_enc_proj(raw_dim, enc_out_dim, enc_proj_layers)
+        self._use_spatial = (enc_proj_layers == 3)
+        self.enc_proj = _build_enc_proj(raw_dim, enc_out_dim, enc_proj_layers, conv_ch=conv_ch)
         self._out_size = enc_out_dim
 
     def forward(self, obs_dict):
@@ -310,9 +389,12 @@ class SuitAwareResNetEncoder(Encoder):
         for i in range(len(self.segments)):
             x = self.segments[i](x)
             x = self.tile_attns[i](x)
-        flat = x.reshape(B, -1)
-        flat = self.enc_proj(flat)
-        return flat
+        if self._use_spatial:
+            # SpatialPoolingProj takes (B, C, 27) directly
+            return self.enc_proj(x)
+        else:
+            flat = x.reshape(B, -1)
+            return self.enc_proj(flat)
 
     def get_out_size(self) -> int:
         return self._out_size

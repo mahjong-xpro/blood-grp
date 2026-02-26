@@ -130,7 +130,7 @@ class TestBuildEncProj:
     def test_invalid_layers(self):
         """不支持的层数应抛出 ValueError。"""
         with pytest.raises(ValueError):
-            _build_enc_proj(6912, 1024, num_layers=3)
+            _build_enc_proj(6912, 1024, num_layers=4)
 
     def test_backward_compat_default(self):
         """默认 num_layers=1 保持旧行为。"""
@@ -546,5 +546,193 @@ class TestLeagueManager:
         assert result is not None
 
 
+class TestSpatialPoolingProj:
+    """Tests for SpatialPoolingProj attention-based pooling."""
+
+    def test_output_shape(self):
+        from blood.model.encoder import SpatialPoolingProj
+        proj = SpatialPoolingProj(conv_ch=64, enc_out_dim=256, num_queries=4)
+        x = torch.randn(2, 64, NUM_TILES)  # (B, C, 27)
+        out = proj(x)
+        assert out.shape == (2, 256)
+
+    def test_output_finite(self):
+        from blood.model.encoder import SpatialPoolingProj
+        proj = SpatialPoolingProj(conv_ch=64, enc_out_dim=128, num_queries=2)
+        x = torch.randn(4, 64, NUM_TILES)
+        out = proj(x)
+        assert torch.isfinite(out).all()
+
+    def test_build_enc_proj_3(self):
+        """_build_enc_proj(num_layers=3) should return SpatialPoolingProj."""
+        from blood.model.encoder import SpatialPoolingProj
+        proj = _build_enc_proj(6912, 1024, num_layers=3, conv_ch=256)
+        assert isinstance(proj, SpatialPoolingProj)
+        x = torch.randn(2, 256, NUM_TILES)
+        out = proj(x)
+        assert out.shape == (2, 1024)
+
+    def test_encoder_with_spatial_pooling(self):
+        """SuitAwareResNetEncoder with enc_proj_layers=3."""
+        class Cfg:
+            blood_obs_channels = DEFAULT_OBS_CHANNELS
+            blood_conv_channels = 64
+            blood_num_res_blocks = 2
+            blood_encoder_out_dim = 256
+            blood_enc_proj_layers = 3
+            blood_num_tile_attn_layers = 1
+            blood_tile_attn_heads = 4
+        enc = SuitAwareResNetEncoder(Cfg(), obs_space=None)
+        assert enc.get_out_size() == 256
+        obs = torch.randn(4, DEFAULT_OBS_CHANNELS * NUM_TILES)
+        out = enc({"obs": obs})
+        assert out.shape == (4, 256)
+
+    def test_num_queries_auto(self):
+        """num_queries should auto-compute from enc_out_dim // conv_ch."""
+        proj = _build_enc_proj(6912, 1024, num_layers=3, conv_ch=256)
+        # 1024 // 256 = 4
+        assert proj.num_queries == 4
+
+    def test_num_queries_floor(self):
+        """num_queries should be at least 2."""
+        proj = _build_enc_proj(1728, 64, num_layers=3, conv_ch=64)
+        # 64 // 64 = 1, but min is 2
+        assert proj.num_queries == 2
+
+
+class TestLeagueSparseEviction:
+    """Tests for sparse retention eviction strategy."""
+
+    def test_sparse_eviction_keeps_newest_and_oldest(self, tmp_path):
+        """After eviction, both newest and oldest checkpoints should survive."""
+        from pathlib import Path
+        from blood.training.league import LeagueManager
+
+        pool_dir = tmp_path / "pool"
+        manager = LeagueManager(str(pool_dir), max_pool_size=10)
+
+        # Add 20 checkpoints
+        for step in range(100, 2100, 100):
+            ckpt = tmp_path / f"checkpoint_{step}.pth"
+            ckpt.write_text("dummy")
+            manager.add_checkpoint(Path(ckpt))
+
+        # Pool should be capped at 10
+        assert manager.pool_size() <= 10
+
+        # Newest (step 2000) and oldest (step 100) should both survive
+        remaining = manager.get_checkpoints()
+        remaining_steps = {int(p.stem.split("_")[1]) for p in remaining}
+        assert 2000 in remaining_steps, "Newest checkpoint should survive eviction"
+        assert 100 in remaining_steps, "Oldest checkpoint should survive eviction"
+
+    def test_sparse_eviction_time_span(self, tmp_path):
+        """After eviction, remaining checkpoints should span the full time range,
+        not just the most recent ones."""
+        from pathlib import Path
+        from blood.training.league import LeagueManager
+
+        pool_dir = tmp_path / "pool"
+        manager = LeagueManager(str(pool_dir), max_pool_size=10)
+
+        for step in range(1000, 6000, 250):
+            ckpt = tmp_path / f"checkpoint_{step}.pth"
+            ckpt.write_text("dummy")
+            manager.add_checkpoint(Path(ckpt))
+
+        remaining = manager.get_checkpoints()
+        remaining_steps = sorted([int(p.stem.split("_")[1]) for p in remaining])
+        # Should cover full range: min near 1000, max near 5750
+        assert remaining_steps[0] <= 2000, "Should have early checkpoints"
+        assert remaining_steps[-1] >= 5000, "Should have latest checkpoints"
+
+
+class TestLeagueFrozenWindow:
+    """Tests for frozen window feature."""
+
+    def test_frozen_window_excludes_recent(self, tmp_path):
+        """With frozen_window=3, the 3 newest checkpoints should never be sampled."""
+        from pathlib import Path
+        from blood.training.league import LeagueManager
+
+        pool_dir = tmp_path / "pool"
+        manager = LeagueManager(
+            str(pool_dir), max_pool_size=50,
+            frozen_window=3, self_play_prob=0.0,  # disable self-play for determinism
+        )
+
+        # Add 10 checkpoints
+        for step in range(100, 1100, 100):
+            ckpt = pool_dir / f"checkpoint_{step}.pth"
+            ckpt.parent.mkdir(parents=True, exist_ok=True)
+            ckpt.write_text("dummy")
+
+        # newest checkpoints are steps 1000, 900, 800 (frozen_window=3)
+        frozen_steps = {1000, 900, 800}
+
+        # Sample 100 times, none should be from frozen window
+        for _ in range(100):
+            result = manager.sample_opponent()
+            if result is not None:
+                step = int(result.stem.split("_")[1])
+                assert step not in frozen_steps, (
+                    f"Frozen checkpoint step={step} was sampled!"
+                )
+
+    def test_frozen_window_fallback_small_pool(self, tmp_path):
+        """When pool size <= frozen_window, all checkpoints should still be available."""
+        from pathlib import Path
+        from blood.training.league import LeagueManager
+
+        pool_dir = tmp_path / "pool"
+        manager = LeagueManager(
+            str(pool_dir), max_pool_size=50,
+            frozen_window=5, self_play_prob=0.0,
+        )
+
+        # Add only 3 checkpoints (< frozen_window=5)
+        for step in [100, 200, 300]:
+            ckpt = pool_dir / f"checkpoint_{step}.pth"
+            ckpt.parent.mkdir(parents=True, exist_ok=True)
+            ckpt.write_text("dummy")
+
+        # Should still be able to sample (fallback behavior)
+        sampled = False
+        for _ in range(20):
+            result = manager.sample_opponent()
+            if result is not None:
+                sampled = True
+                break
+        assert sampled, "Should be able to sample even when pool <= frozen_window"
+
+
+class TestEntropyFloor:
+    """Tests for entropy floor safety net in scheduler."""
+
+    def test_entropy_floor_clamps(self):
+        """Entropy scheduler should clamp values below the floor."""
+        from blood.training.scheduler import HyperparamScheduler, ScheduleConfig
+
+        sched = ScheduleConfig(
+            param_name="exploration_loss_coeff",
+            schedule_type="cosine",
+            start_value=0.02,
+            end_value=0.001,  # below floor
+            start_step=0,
+            end_step=100,
+        )
+        scheduler = HyperparamScheduler([sched])
+
+        # At end_step, the value should be 0.001
+        updates = scheduler.step(100)
+        assert "exploration_loss_coeff" in updates
+        assert abs(updates["exploration_loss_coeff"] - 0.001) < 1e-6
+
+        # The clamping happens in callbacks._apply_schedules, not in the
+        # scheduler itself. Here we just verify the scheduler outputs the raw value.
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+

@@ -17,7 +17,8 @@ def add_blood_args(parser: ArgumentParser):
     p.add_argument("--blood_num_res_blocks", type=int, default=20)
     p.add_argument("--blood_encoder_out_dim", type=int, default=1024)
     p.add_argument("--blood_enc_proj_layers", type=int, default=1,
-                    help="enc_proj 层数: 1=单层Linear(旧行为), 2=渐进压缩MLP(缓解信息瓶颈)")
+                    help="enc_proj 层数: 1=单层Linear(旧行为), 2=渐进压缩MLP(缓解信息瓶颈), "
+                         "3=SpatialPoolingProj(注意力池化，保留牌位结构)")
 
     # TileAttention — architecture params (must be identical across ALL training stages)
     p.add_argument("--blood_num_tile_attn_layers", type=int, default=4,
@@ -53,6 +54,8 @@ def add_blood_args(parser: ArgumentParser):
     p.add_argument("--league_enabled", default=True, action="store_true")
     p.add_argument("--no_league", dest="league_enabled", action="store_false")
     p.add_argument("--league_pool_dir", type=str, default="checkpoints/league/")
+    p.add_argument("--league_max_pool_size", type=int, default=50,
+                    help="联赛池最大 checkpoint 数量。配合稀疏保留淘汰策略")
     p.add_argument("--league_add_every", type=int, default=50000)
     p.add_argument("--league_newest_weight", type=float, default=2.0,
                     help="多项式衰减指数 α，从 3.0 降到 2.0 提高有效多样性")
@@ -60,6 +63,8 @@ def add_blood_args(parser: ArgumentParser):
                     help="最低采样概率下限，确保旧 checkpoint 也有一定概率被采样")
     p.add_argument("--league_self_play_prob", type=float, default=0.2,
                     help="使用当前最新策略自博弈的概率（不从历史池采样）")
+    p.add_argument("--league_frozen_window", type=int, default=0,
+                    help="冻结窗口：最近 N 个 checkpoint 不参与采样，避免与过于相似的策略对打")
     p.add_argument("--opponent_mode", type=str, default="rulebot",
                     choices=["rulebot", "selfplay", "random"])
     p.add_argument("--opponent_refresh_every", type=int, default=20,
@@ -176,6 +181,11 @@ def add_blood_args(parser: ArgumentParser):
                     help="Advantage clip schedule: 'type,start,end,start_step,end_step'")
     p.add_argument("--blood_schedule_extra", default="", type=str,
                     help="Extra schedules: 'param:type,args;param:type,args'")
+
+    # Entropy floor safety net
+    p.add_argument("--blood_entropy_floor", type=float, default=0.0,
+                    help="Entropy coefficient 下限保护。调度器输出低于此值时强制使用 floor。"
+                         "设为 0 禁用。建议 0.008")
 
 
 def blood_override_defaults(parser: ArgumentParser):

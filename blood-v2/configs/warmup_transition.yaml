@@ -47,6 +47,7 @@ blood_obs_channels: 470
 blood_conv_channels: 256
 blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024
+blood_enc_proj_layers: 3               # SpatialPoolingProj: 与所有阶段保持一致
 blood_num_tile_attn_layers: 4
 blood_tile_attn_heads: 4
 

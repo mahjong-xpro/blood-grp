@@ -35,6 +35,7 @@ blood_obs_channels: 470
 blood_conv_channels: 256
 blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024
+blood_enc_proj_layers: 3               # SpatialPoolingProj: 注意力池化保留牌位结构
 blood_num_tile_attn_layers: 4
 blood_tile_attn_heads: 4
 
