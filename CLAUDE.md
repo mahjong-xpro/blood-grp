@@ -85,7 +85,7 @@ typos
 - **PyO3 绑定** (`blood-v2/crates/pybind/`): Rust↔Python 桥接，编译为 `blood._engine`
 - **Python** (`blood-v2/python/blood/`): 神经网络、PPO 训练（基于 Sample Factory 2）、评估、联赛系统
 
-### 神经网络（约 37M 参数）
+### 神经网络（约 20M 参数）
 
 SuitAwareResNetEncoder: 输入 (470×27) → SuitAwareConv1d → 4 个 segment [5×BottleneckBlock + TileAttention] → LSTM(2 层, 512) → 解耦 Actor-Critic 头 + 辅助头。
 

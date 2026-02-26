@@ -20,7 +20,7 @@ def add_blood_args(parser: ArgumentParser):
                     help="enc_proj 层数: 1=单层Linear(旧行为), 2=渐进压缩MLP(缓解信息瓶颈)")
 
     # TileAttention — architecture params (must be identical across ALL training stages)
-    p.add_argument("--blood_num_tile_attn_layers", type=int, default=2,
+    p.add_argument("--blood_num_tile_attn_layers", type=int, default=4,
                     help="TileAttention segment count (2-6). Residual blocks are evenly "
                          "distributed across segments, each followed by a TileAttention layer.")
     p.add_argument("--blood_tile_attn_heads", type=int, default=4,
