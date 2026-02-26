@@ -119,7 +119,7 @@ class GameStateTracker:
         self.opponent_scores = [INITIAL_SCORE] * 3
         self.wall_remaining = 108 - 13 * 4
 
-    def update_from_obs(self, obs: np.ndarray, scores: list = None):
+    def update_from_obs(self, obs: np.ndarray, scores: list = None, agent_seat: int = 0):
         """从观测张量中提取游戏状态特征。
 
         解析 464×27 学生观测中的已知通道偏移量
@@ -137,9 +137,10 @@ class GameStateTracker:
         - CH_OPP_TERMINAL_RATIO_BASE (336-338): 对手幺九打牌比例
         - CH_TURN_PROGRESS (17): 回合进度
         """
+        # Fix R10-H5: use agent_seat to extract correct scores instead of hardcoding seat 0
         if scores is not None and len(scores) >= 4:
-            self.my_score = scores[0]
-            self.opponent_scores = list(scores[1:4])
+            self.my_score = scores[agent_seat]
+            self.opponent_scores = [scores[i] for i in range(len(scores)) if i != agent_seat]
 
         if obs is None or obs.shape[0] < NUM_STUDENT_CHANNELS * NUM_TILE_TYPES:
             return

@@ -222,8 +222,14 @@ pub fn encode_oracle_obs(
         if opp_shantens[opp_off - 1] == 0 {
             let waits = waiting_tiles(&board.players[opp_id].hand, board.players[opp_id].melds.len());
             let best_fan = waits.iter().filter_map(|&wt| {
-                let ctx = board.make_win_context_for_obs(opp_id, wt);
-                calc_fan(&ctx).map(|r| r.fan)
+                // Fix R12-H1: take max of ron and tsumo fan to reflect opponent's
+                // maximum threat. Tsumo adds +1 fan (自摸加番) and enables
+                // gangshanghua, so ron-only estimation systematically underestimates.
+                let ron_ctx = board.make_win_context_for_obs(opp_id, wt);
+                let tsumo_ctx = board.make_win_context_for_obs_tsumo(opp_id, wt);
+                let ron_fan = calc_fan(&ron_ctx).map(|r| r.fan).unwrap_or(0);
+                let tsumo_fan = calc_fan(&tsumo_ctx).map(|r| r.fan).unwrap_or(0);
+                Some(ron_fan.max(tsumo_fan))
             }).max().unwrap_or(0);
             fill_ch!(ch, best_fan as f32 / MAX_FAN as f32);
         }

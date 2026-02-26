@@ -127,7 +127,7 @@ class BloodActorCritic(ActorCriticSharedWeights):
         )
         self._aux_enabled = getattr(cfg, "aux_shanten_weight", 1.0) > 0
         self.shanten_weight = getattr(cfg, "aux_shanten_weight", 1.0)
-        self.ow_weight = getattr(cfg, "aux_opp_waits_weight", 0.1)
+        self.ow_weight = getattr(cfg, "aux_opp_waits_weight", 0.3)  # Fix R11-L1: match cfg.py default
 
         self.oracle_enabled = getattr(cfg, "oracle_enabled", True)
         if self.oracle_enabled:
@@ -178,6 +178,18 @@ class BloodActorCritic(ActorCriticSharedWeights):
         self._cached_obs = None
         self._cache_gen = 0
         self._loss_gen = -1  # -1 so first batch (cache_gen=1 > loss_gen=-1) always passes
+
+        # Fix R11-M2: re-apply orthogonal init to heads created after super().__init__().
+        # SF2's self.apply(initialize_weights) runs inside super().__init__() before
+        # actor_head/critic_head/aux_head exist, so they get PyTorch default (Kaiming).
+        self.apply(self.initialize_weights)
+
+        # Fix R12-H4: re-apply TurnAttention zero-init after orthogonal init.
+        # TurnAttention.out_proj is designed to start near zero for smooth residual,
+        # but self.apply(initialize_weights) overwrites it with orthogonal init.
+        if self.turn_attn_enabled and hasattr(self, "turn_attention"):
+            nn.init.zeros_(self.turn_attention.attn.out_proj.weight)
+            nn.init.zeros_(self.turn_attention.attn.out_proj.bias)
 
     def reset_cache_counters(self):
         """Reset cache generation counters after checkpoint reload (Issue #39)."""

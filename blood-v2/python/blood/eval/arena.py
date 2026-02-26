@@ -175,7 +175,9 @@ class Arena:
                 scores = [100000] * 4
 
             # 构建带座位轮换的名称列表用于录像和 Elo
-            rotated_names = ["RuleBot"] * 4
+            # Fix R10-H4: use distinct names for each RuleBot seat to prevent
+            # 3x stat inflation and noisy self-play Elo updates on the same object.
+            rotated_names = [f"RuleBot_{i}" for i in range(4)]
             rotated_names[agent_seat] = agent_name  # Use agent_name consistently
 
             if self.recorder is not None and env.has_engine:
@@ -232,10 +234,10 @@ class Arena:
                 )
 
         # Finalize Elo stats on the result
-        if self.elo_tracker is not None:
+        if self.elo_tracker is not None and result.num_games > 0:
             result.agent_elo = self.elo_tracker.get_rating(agent_name)
             # Average baseline Elo across unique baseline names
-            baseline_names = set(rotated_names) - {agent_name}
+            baseline_names = {n for n in rotated_names if n != agent_name}
             if baseline_names:
                 result.baseline_elo = sum(
                     self.elo_tracker.get_rating(b) for b in baseline_names

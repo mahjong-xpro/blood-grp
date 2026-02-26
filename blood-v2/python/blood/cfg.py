@@ -46,9 +46,11 @@ def add_blood_args(parser: ArgumentParser):
     p.add_argument("--oracle_value_head_loss_weight", type=float, default=1.0,
                     help="Weight for oracle value head supervised loss against GAE returns. "
                          "Trains oracle value head before distillation is enabled.")
-    p.add_argument("--oracle_value_warmup_steps", type=int, default=500_000,
+    # Fix R12-H5: default 0 (was 500K). All training YAMLs explicitly set this to 0.
+    # A 500K default silently delays distillation if a new stage forgets to set it.
+    p.add_argument("--oracle_value_warmup_steps", type=int, default=0,
                     help="Env steps before oracle value distillation activates. "
-                         "Oracle value head must converge first.")
+                         "Set >0 only if oracle value head needs pre-training.")
 
     # League / self-play
     p.add_argument("--league_enabled", default=True, action="store_true")
@@ -157,6 +159,22 @@ def add_blood_args(parser: ArgumentParser):
                     help="Number of world samples for ISMCE")
     p.add_argument("--ismce_rollout_depth", type=int, default=4,
                     help="Rollout depth for ISMCE playout")
+
+    # Opponent hand predictor (Phase A3)
+    p.add_argument("--opponent_predictor_enabled", default=False, action="store_true",
+                    help="Enable opponent hand prediction auxiliary loss")
+    p.add_argument("--opponent_predictor_conv_ch", type=int, default=128,
+                    help="Conv channels for OpponentHandPredictor")
+    p.add_argument("--opponent_predictor_num_blocks", type=int, default=6,
+                    help="Number of residual blocks in OpponentHandPredictor")
+    p.add_argument("--opponent_predictor_weight", type=float, default=0.1,
+                    help="Loss weight for opponent hand prediction")
+
+    # TurnAttention (Phase B1)
+    p.add_argument("--turn_attention_enabled", default=False, action="store_true",
+                    help="Enable TurnAttention cross-attention over LSTM history")
+    p.add_argument("--turn_attention_heads", type=int, default=4,
+                    help="Number of attention heads for TurnAttention")
 
     # Advantage clipping — clip advantages to [-adv_clip, adv_clip] before PPO update.
     # Prevents extreme advantage samples (observed ±4.7 in warmup) from dominating gradients.

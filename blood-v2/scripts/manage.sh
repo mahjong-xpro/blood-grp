@@ -224,8 +224,9 @@ do_train() {
             fi
         fi
     else
+        # Fix R12-M8: use latest (not best) for resume, matching log message
         info "从最新 checkpoint 恢复"
-        cmd+=(--load_checkpoint_kind best)
+        cmd+=(--load_checkpoint_kind latest)
     fi
 
     cmd+=("${extra_args[@]+"${extra_args[@]}"}")
@@ -364,14 +365,16 @@ cmd_eval() {
     done
 
     # 自动选最新 checkpoint (按五阶段优先级)
+    # Fix R12-M7: also search train_dir/ (SF2 default save location)
     if [[ -z "$checkpoint" ]]; then
         for phase in elite competitive_distill competitive warmup_transition warmup; do
-            local candidate="checkpoints/blood_v2_${phase}"
-            if [[ -d "$candidate" ]]; then
-                checkpoint="$candidate"
-                info "自动选择 checkpoint: $checkpoint"
-                break
-            fi
+            for base_dir in "train_dir/blood_v2_${phase}/checkpoint_p0" "checkpoints/blood_v2_${phase}"; do
+                if [[ -d "$base_dir" ]]; then
+                    checkpoint="$base_dir"
+                    info "自动选择 checkpoint: $checkpoint"
+                    break 2
+                fi
+            done
         done
         [[ -n "$checkpoint" ]] || die "未找到 checkpoint，请用 --checkpoint 指定路径"
     fi
@@ -637,7 +640,10 @@ cmd_stop() {
     local orphans
     orphans=$(pgrep -f "sample_factory" 2>/dev/null || true)
     if [[ -n "$orphans" ]]; then
-        info "清理 ${#orphans[@]} 个 SF2 worker 子进程..."
+        # Fix R12-M6: count PIDs correctly (orphans is a newline-separated string, not array)
+        local orphan_count
+        orphan_count=$(echo "$orphans" | wc -l | tr -d ' ')
+        info "清理 ${orphan_count} 个 SF2 worker 子进程..."
         echo "$orphans" | xargs kill -9 2>/dev/null || true
     fi
 

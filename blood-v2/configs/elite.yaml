@@ -24,6 +24,7 @@ lr_adaptive_min: 5e-5              # Fix @Phase2b: 2e-5 导致学习停滞（Pha
 exploration_loss_coeff: 0.02           # 与 cosine 调度起始值一致
 value_loss_coeff: 1.0
 train_for_env_steps: 200000000      # 50M → 200M for deeper exploration
+save_every_sec: 30                  # Fix R12-M12: frequent saves for league snapshots
 
 # Environment
 initial_score: 100000

@@ -6,6 +6,7 @@ Ratings are persisted to disk and logged to TensorBoard.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
@@ -160,12 +161,18 @@ class EloTracker:
             return stats.elo if stats is not None else self.base_rating
 
     def get_stats(self, name: str) -> Optional[PlayerStats]:
-        """Get full stats for a player, or None if unknown."""
+        """Get full stats for a player, or None if unknown.
+
+        Returns a copy to prevent data races with concurrent mutations.
+        """
         with self._lock:
-            return self.players.get(name)
+            s = self.players.get(name)
+            return copy.copy(s) if s is not None else None
 
     def get_leaderboard(self, top_n: int = 20) -> list[tuple[str, PlayerStats]]:
         """Get top N players sorted by Elo rating.
+
+        Returns copies to prevent data races with concurrent mutations.
 
         Args:
             top_n: Number of players to return. If <= 0, returns all players.
@@ -176,9 +183,10 @@ class EloTracker:
                 key=lambda x: x[1].elo,
                 reverse=True,
             )
+            result = [(name, copy.copy(s)) for name, s in sorted_players]
             if top_n <= 0:
-                return sorted_players  # Return all (Issue #51)
-            return sorted_players[:top_n]
+                return result
+            return result[:top_n]
 
     def save(self) -> None:
         """Persist ratings to disk (atomic write via tmp + rename).

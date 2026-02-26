@@ -106,11 +106,17 @@ class AuxHead(nn.Module):
 
         # one-hot 转 class index 用于 CE
         shanten_targets = sl.argmax(dim=-1)  # (B, 3)
-        shanten_loss = F.cross_entropy(
-            shanten_logits.reshape(-1, self.NUM_SHANTEN_CLASSES),
-            shanten_targets.reshape(-1),
-            reduction="mean",
-        )
+        # Fix R12-H3: mask out opponents with all-zero shanten labels (已和牌).
+        # argmax on all-zero rows returns 0 (tenpai), injecting false labels.
+        valid_shanten = sl.sum(dim=-1) > 0.01  # (B, 3) — True if label is valid
+        if valid_shanten.any():
+            shanten_loss = F.cross_entropy(
+                shanten_logits.reshape(-1, self.NUM_SHANTEN_CLASSES)[valid_shanten.reshape(-1)],
+                shanten_targets.reshape(-1)[valid_shanten.reshape(-1)],
+                reduction="mean",
+            )
+        else:
+            shanten_loss = torch.tensor(0.0, device=features.device)
 
         if ow_weight > 0:
             # 重塑为 (B, 3, 27) 以按对手独立处理。

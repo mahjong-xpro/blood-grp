@@ -12,10 +12,6 @@ from torch import Tensor
 
 from blood.consts import (
     NUM_STUDENT_CHANNELS, NUM_TILE_TYPES,
-    CH_OPP_KAWA_BASE, CH_OPP_KAWA_STRIDE,
-    CH_VISIBLE_TILES_BASE, CH_WALL_REMAINING, CH_TURN_PROGRESS,
-    CH_OPP_DING_QUE_BASE, CH_OPP_MELD_BASE, CH_OPP_HAND_INFO_BASE,
-    CH_GENBUTSU_BASE,
 )
 
 log = logging.getLogger(__name__)
@@ -236,61 +232,20 @@ class BloodLossComputer:
         student_2d = student_obs.view(B, -1, NUM_TILE_TYPES)
         student_ch = NUM_STUDENT_CHANNELS
 
-        # Section 7 fuuro layout: kawa_overview(3×4=12) + fuuro(4×8=32) + ankan(1) + ...
-        # Fuuro starts at CH_VISIBLE_TILES_BASE + 12; self=8ch then 3 opponents×8ch each
-        fuuro_base = CH_VISIBLE_TILES_BASE + 12  # skip 3×4 kawa overview
-        opp_fuuro_base = fuuro_base + 8  # skip self fuuro (8ch)
-
-        # Ground truth: sum of 4 one-hot channels per opponent → tile count [0,4]
-        # Normalize to [0,1] by dividing by 4
-        # Pre-allocate feature buffer once, reuse per opponent to reduce allocation
-        opp_features = torch.zeros(B, 75, NUM_TILE_TYPES, device=oracle_obs.device)
+        # Ground truth: binary presence from oracle one-hot channels
         total_loss = torch.tensor(0.0, device=oracle_obs.device)
         for opp_idx in range(3):
+            # Fix R11-H1: binary target — P(tile in hand) ∈ {0, 1}
+            # Previous code used count/4 as BCE target ({0, 0.25, 0.5, 0.75, 1.0}),
+            # which is a regression target forced into a classification loss.
+            # BCE gradient at target=0.5 pushes logit→0 (sigmoid=0.5), producing
+            # meaningless predictions. Binary target gives clean gradient signal.
             opp_hand_gt = oracle_2d[:, student_ch + opp_idx * 4 : student_ch + (opp_idx + 1) * 4, :].sum(dim=1)
-            opp_hand_gt = (opp_hand_gt / 4.0).clamp(0, 1)  # (B, 27)
+            opp_hand_gt = (opp_hand_gt > 0).float()  # (B, 27) — binary: tile present or not
 
-            # Build 75ch input: kawa(58) + visible(4) + fuuro(8) + context(5)
-            opp_features.zero_()  # reuse buffer
-            ch = 0
-
-            # [0:58] Opponent kawa (58 ch) from Section 6
-            kawa_start = CH_OPP_KAWA_BASE + opp_idx * CH_OPP_KAWA_STRIDE
-            kawa_end = kawa_start + CH_OPP_KAWA_STRIDE
-            if kawa_end <= student_2d.shape[1]:
-                opp_features[:, ch:ch + CH_OPP_KAWA_STRIDE, :] = student_2d[:, kawa_start:kawa_end, :]
-            ch += CH_OPP_KAWA_STRIDE  # 58
-
-            # [58:62] Visible tiles / kawa overview (4 ch) from Section 7
-            vis_start = CH_VISIBLE_TILES_BASE + opp_idx * 4
-            vis_end = vis_start + 4
-            if vis_end <= student_2d.shape[1]:
-                opp_features[:, ch:ch + 4, :] = student_2d[:, vis_start:vis_end, :]
-            ch += 4  # 62
-
-            # [62:70] Opponent fuuro (8 ch) from Section 7: 4 melds × 2ch (tile + type)
-            meld_start = opp_fuuro_base + opp_idx * 8
-            meld_end = meld_start + 8
-            if meld_end <= student_2d.shape[1]:
-                opp_features[:, ch:ch + 8, :] = student_2d[:, meld_start:meld_end, :]
-            ch += 8  # 70
-
-            # [70] Wall remaining (1 ch) from Section 4
-            if CH_WALL_REMAINING < student_2d.shape[1]:
-                opp_features[:, ch, :] = student_2d[:, CH_WALL_REMAINING, :]
-            ch += 1  # 71
-
-            # [71] Turn progress (1 ch) from Section 2
-            if CH_TURN_PROGRESS < student_2d.shape[1]:
-                opp_features[:, ch, :] = student_2d[:, CH_TURN_PROGRESS, :]
-            ch += 1  # 72
-
-            # [72:75] Opponent ding-que (3 ch) from Section 3
-            dq_start = CH_OPP_DING_QUE_BASE + opp_idx * 3
-            dq_end = dq_start + 3
-            if dq_end <= student_2d.shape[1]:
-                opp_features[:, ch:ch + 3, :] = student_2d[:, dq_start:dq_end, :]
-            ch += 3  # 75
+            # Fix R11-H4: use shared feature builder (single source of truth)
+            from blood.model.opponent_model import OpponentHandPredictor
+            opp_features = OpponentHandPredictor.build_features_tensor(student_2d, opp_idx)
 
             pred = predictor(opp_features)
             total_loss = total_loss + predictor.loss(pred, opp_hand_gt)

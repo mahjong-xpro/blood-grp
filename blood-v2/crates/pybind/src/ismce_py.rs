@@ -193,10 +193,20 @@ pub fn ismce_evaluate_full(
         };
         let discards_vec: Vec<u8> = opponent_discards.get(i).cloned().unwrap_or_default();
         let mc = opponent_meld_counts.get(i).copied().unwrap_or(0);
-        // Estimate hand count: pon uses 2 tiles from hand (reveal 2 + 1 from opponent),
-        // kan uses 3 tiles from hand. Without meld type info, use 2 per meld as
-        // conservative estimate (pon is more common than kan in Sichuan mahjong).
-        let hand_count = 13u8.saturating_sub((2 * mc) as u8);
+        // Fix R10-M2: estimate hand count more accurately for kans.
+        // Pon: removes 2 from hand. Kan (min/an/ka): removes 3-4 from hand.
+        // Without meld type info, use discard count as a cross-check:
+        // hand_count = 13 - tiles_used_by_melds. Since we don't know meld types,
+        // use the formula: hand = 13 - discards - 3*melds + draws.
+        // Simpler approximation: each meld uses ~3 tiles on average (weighted by
+        // pon=2, kan=4, avg≈2.5, round to 3 for safety).
+        let dc = opponent_discard_counts.get(i).copied().unwrap_or(0) as u8;
+        let hand_count = if dc > 0 {
+            // Better estimate: 13 - 3*melds, but clamp to reasonable range [1, 13]
+            13u8.saturating_sub(3 * mc as u8).max(1)
+        } else {
+            13u8.saturating_sub((2 * mc) as u8)
+        };
         opponents.push(OpponentInfo {
             ding_que: opp_dq,
             discards: discards_vec,
@@ -315,7 +325,13 @@ pub fn ismce_evaluate_informed(
         };
         let discards_vec = opponent_discards.get(i).cloned().unwrap_or_default();
         let mc = opponent_meld_counts.get(i).copied().unwrap_or(0);
-        let hand_count = 13u8.saturating_sub((2 * mc) as u8);
+        // Fix R11-M1: match ismce_evaluate_full hand_count estimation
+        let dc = opponent_discard_counts.get(i).copied().unwrap_or(0) as u8;
+        let hand_count = if dc > 0 {
+            13u8.saturating_sub(3 * mc as u8).max(1)
+        } else {
+            13u8.saturating_sub((2 * mc) as u8)
+        };
         opponents.push(OpponentInfo { ding_que: opp_dq, discards: discards_vec, melds_count: mc, hand_count });
     }
 

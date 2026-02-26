@@ -15,12 +15,15 @@ ppo_clip_ratio: 0.2
 max_grad_norm: 1.0
 gamma: 0.99
 gae_lambda: 0.95
-learning_rate: 5e-4
+learning_rate: 3e-4                    # Fix R10-H6: was 5e-4 > lr_adaptive_max, immediately clamped
 lr_schedule: kl_adaptive_minibatch
+lr_schedule_kl_threshold: 0.004        # Fix R10-L7: explicit (SF2 default 0.008 too permissive)
 lr_adaptive_max: 3e-4              # Fix: 限制 LR 上限，防止 KL 极低时 LR 攀升到 0.01
+lr_adaptive_min: 1e-4              # Fix R10-L6: prevent LR collapse (SF2 default 1e-6)
 exploration_loss_coeff: 0.01
 value_loss_coeff: 1.0
 train_for_env_steps: 2000000
+save_every_sec: 30                 # Fix R12-M11: frequent saves for league snapshots and crash recovery
 
 # Environment
 initial_score: 100000

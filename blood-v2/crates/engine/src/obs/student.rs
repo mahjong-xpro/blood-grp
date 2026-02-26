@@ -571,9 +571,10 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
         let meld_source_val = opp.meld_from.iter().rev()
             .find_map(|&from| from)
             .map(|abs_from| {
-                // 将绝对座位号转换为相对于观测玩家的位置 (1-3)
+                // Fix R12-M1: use (rel + 1) / 4.0 so rel=0 (from observer) encodes as 0.25,
+                // distinguishable from no-meld (0.0). Old encoding: rel=0 → 0.0 = no-meld.
                 let rel = (abs_from + NUM_PLAYERS - player_id) % NUM_PLAYERS;
-                rel as f32 / 3.0
+                (rel as f32 + 1.0) / 4.0
             })
             .unwrap_or(0.0);
         fill_ch!(ch, meld_source_val);

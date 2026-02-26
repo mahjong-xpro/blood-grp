@@ -120,6 +120,11 @@ impl PlayerState {
         self.tiles_seen[t as usize] = self.tiles_seen[t as usize].saturating_add(1);
     }
 
+    /// Fix R11-M4: reverse a see_tile call (used when chankan reverts kakan).
+    pub fn unsee_tile(&mut self, t: Tile) {
+        self.tiles_seen[t as usize] = self.tiles_seen[t as usize].saturating_sub(1);
+    }
+
     pub fn see_tile_n(&mut self, t: Tile, n: u8) {
         self.tiles_seen[t as usize] = self.tiles_seen[t as usize].saturating_add(n);
     }

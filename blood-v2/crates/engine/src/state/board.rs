@@ -453,6 +453,17 @@ impl BoardState {
                 }
                 add_tile(&mut self.players[player_id].hand, tile);
 
+                // Fix R11-M4: revert tiles_seen for non-winning opponents.
+                // see_tile was called at kakan time (line 424), but chankan
+                // reverts the kakan to pon, so the extra tile is not visible.
+                for i in 0..NUM_PLAYERS {
+                    if i != player_id && !self.players[i].has_won
+                        && !chankan_winners.contains(&i)
+                    {
+                        self.players[i].unsee_tile(tile);
+                    }
+                }
+
                 // Refund jishiyu payment if paid
                 if jishiyu_paid {
                     for i in 0..NUM_PLAYERS {
@@ -506,7 +517,20 @@ impl BoardState {
             return;
         }
         let tile = match action {
-            Action::Discard(t) => t,
+            Action::Discard(t) => {
+                // Fix R11-M5: validate discard tile is legal before proceeding.
+                // A malformed action (e.g. from a buggy action mask) would panic
+                // in remove_tile. Fall back to first legal candidate if invalid.
+                let candidates = self.players[player_id].discard_candidates();
+                if candidates.contains(&t) {
+                    t
+                } else {
+                    match candidates.first() {
+                        Some(&fallback) => fallback,
+                        None => return,
+                    }
+                }
+            }
             _ => {
                 // Non-discard action in discard phase (e.g. Pass from a confused model).
                 // Force the first legal tile to keep the game moving.
@@ -588,7 +612,19 @@ impl BoardState {
                         // Record fan for 过手加番
                         let ctx = self.make_win_context(player_id, tile, true);
                         if let Some(result) = calc_fan(&ctx) {
-                            self.players[player_id].furiten_passed_ron_fan = Some(result.fan);
+                            // Fix R11-H3: only raise threshold, never lower it.
+                            // Non-agari passes (e.g. choosing pon/kan) could
+                            // overwrite a higher fan threshold with a lower one,
+                            // incorrectly relaxing the 过手加番 requirement.
+                            let new_fan = result.fan;
+                            match self.players[player_id].furiten_passed_ron_fan {
+                                Some(existing) if existing >= new_fan => {
+                                    // Keep the higher existing threshold
+                                }
+                                _ => {
+                                    self.players[player_id].furiten_passed_ron_fan = Some(new_fan);
+                                }
+                            }
                         }
                     }
                 }
@@ -980,8 +1016,13 @@ impl BoardState {
         self.win_count += 1;
     }
 
-    /// Public version of make_win_context for observation encoding
+    /// Public version of make_win_context for observation encoding.
+    /// Fix R12-H1: provide both ron and tsumo variants so oracle can take max fan.
     pub fn make_win_context_for_obs(&self, player_id: usize, winning_tile: Tile) -> crate::algo::agari::WinContext {
         self.make_win_context(player_id, winning_tile, true)
+    }
+
+    pub fn make_win_context_for_obs_tsumo(&self, player_id: usize, winning_tile: Tile) -> crate::algo::agari::WinContext {
+        self.make_win_context(player_id, winning_tile, false)
     }
 }

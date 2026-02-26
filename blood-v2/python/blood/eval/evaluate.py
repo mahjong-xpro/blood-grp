@@ -24,6 +24,7 @@ import torch
 from blood.env.blood_env import BloodMahjongEnv, OBS_SIZE, ACTION_SPACE
 from blood.eval.arena import Arena, ArenaResult
 from blood.model.inference import PolicyModel
+from blood.utils import softmax as _softmax  # Fix R10-L5: moved from bottom of file
 from blood.consts import (
     NUM_TILE_TYPES, NUM_STUDENT_CHANNELS,
     CH_HAND_BASE, CH_HAND_COUNT, CH_DING_QUE_BASE, CH_OPP_DING_QUE_BASE,
@@ -61,7 +62,8 @@ def _extract_ismce_state(obs: np.ndarray) -> dict:
         if obs.size < NUM_STUDENT_CHANNELS * NUM_TILE_TYPES:
             log.debug("观测张量尺寸不足，无法提取 ISMCE 状态")
             return result
-        obs_2d = obs.reshape(NUM_STUDENT_CHANNELS, NUM_TILE_TYPES)
+        # Fix R10-M11: slice to student channels to handle oracle obs (525×27)
+        obs_2d = obs[:NUM_STUDENT_CHANNELS * NUM_TILE_TYPES].reshape(NUM_STUDENT_CHANNELS, NUM_TILE_TYPES)
 
         # ── 提取手牌 ──
         # 通道 0-3 是 one-hot 编码：ch_k[t] = 1.0 if hand[t] > k
@@ -121,7 +123,8 @@ def _extract_opponent_state(obs: np.ndarray) -> dict:
     try:
         if obs.size < NUM_STUDENT_CHANNELS * NUM_TILE_TYPES:
             return None
-        obs_2d = obs.reshape(NUM_STUDENT_CHANNELS, NUM_TILE_TYPES)
+        # Fix R10-M11: slice to student channels to handle oracle obs (525×27)
+        obs_2d = obs[:NUM_STUDENT_CHANNELS * NUM_TILE_TYPES].reshape(NUM_STUDENT_CHANNELS, NUM_TILE_TYPES)
 
         # ── 对手定缺花色 ──
         opponent_ding_que = []
@@ -232,7 +235,9 @@ class NeuralAgent:
                 from blood.eval.rtpa import GameStateTracker
                 if not hasattr(self, "_tracker"):
                     self._tracker = GameStateTracker()
-                self._tracker.update_from_obs(self._last_obs, scores=scores)
+                self._tracker.update_from_obs(
+                    self._last_obs, scores=scores, agent_seat=seat,
+                )
                 ctx["is_tenpai"] = self._tracker.my_tenpai
                 ctx["opponents_likely_tenpai"] = self._tracker.opponents_tenpai_count
                 ctx["wall_remaining"] = self._tracker.wall_remaining
@@ -329,8 +334,6 @@ class RandomAgent:
             return 30  # Pass
         return int(np.random.choice(legal))
 
-
-from blood.utils import softmax as _softmax
 
 
 def run_evaluation(

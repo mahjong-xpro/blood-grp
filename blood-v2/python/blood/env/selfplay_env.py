@@ -75,11 +75,15 @@ class SelfPlayEnv(BloodMahjongEnv):
             newest_w = getattr(cfg, "league_newest_weight", 2.0)
             uniform_floor = getattr(cfg, "league_uniform_floor", 0.1)
             self_play_prob = getattr(cfg, "league_self_play_prob", 0.2)
+            # Fix R10-H3: pass frozen_window and Elo params (were silently ignored)
+            frozen_window = getattr(cfg, "league_frozen_window", 0)
             self._league = LeagueManager(
                 pool_dir,
                 newest_weight=newest_w,
+                max_pool_size=getattr(cfg, "league_max_pool_size", 200),  # Fix R12-M5
                 uniform_floor=uniform_floor,
                 self_play_prob=self_play_prob,
+                frozen_window=frozen_window,
             )
             self._refresh_every = getattr(cfg, "opponent_refresh_every", 20)
 

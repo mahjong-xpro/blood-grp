@@ -532,6 +532,7 @@ class OpponentModelPool:
             self._model = PolicyModel.from_sf2_checkpoint(path_str, self._device)
             self._current_path = path_str
             self._hidden_states.clear()
+            self._memory_buffers.clear()  # Fix R11-H2: clear stale TurnAttention buffers
             log.info("Loaded opponent model: %s", path_str)
             return True
         except Exception as e:
@@ -562,14 +563,12 @@ class OpponentModelPool:
             return self._fallback_action(mask)
         temp = temperature if temperature is not None else self._temperature
         hidden = self._hidden_states.get(opponent_id)
-        mem_buf = getattr(self, "_memory_buffers", {}).get(opponent_id)
+        mem_buf = self._memory_buffers.get(opponent_id)
         action, new_hidden, new_memory = self._model.get_action(
             obs, mask, hidden, temperature=temp, memory_buffer=mem_buf,
         )
         self._hidden_states[opponent_id] = new_hidden
         if new_memory is not None:
-            if not hasattr(self, "_memory_buffers"):
-                self._memory_buffers = {}
             self._memory_buffers[opponent_id] = new_memory
         return action
 

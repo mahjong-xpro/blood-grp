@@ -110,7 +110,17 @@ fn sample_world_constrained(
     // 第一轮：为每个对手从池中挑选合法牌
     let mut used = vec![false; pool.len()];
 
-    for (opp_idx, opp) in opponents.iter().enumerate() {
+    // Fix R10-M1: randomize opponent processing order to avoid systematic bias
+    // (opponent 2 previously always got leftover tiles after 0 and 1's ding-que filters)
+    let num_opp = opponents.len();
+    let mut opp_order: Vec<usize> = (0..num_opp).collect();
+    for i in (1..opp_order.len()).rev() {
+        let j = rng.usize(..=i);
+        opp_order.swap(i, j);
+    }
+
+    for &opp_idx in &opp_order {
+        let opp = &opponents[opp_idx];
         let needed = opp.hand_count as usize;
         let mut assigned = 0usize;
 
@@ -193,12 +203,15 @@ pub fn sample_world_informed(
     }
 
     // For each opponent (in random order), assign tiles weighted by predicted probability
+    // Fix R10-H1: use Gumbel-max trick for weighted sampling instead of greedy top-k.
+    // Greedy assignment collapses the predicted distribution to a single mode,
+    // defeating the purpose of Monte Carlo sampling diversity.
     for &opp_idx in &opp_order {
         let opp = &opponents[opp_idx];
         let needed = opp.hand_count as usize;
         let probs = &opponent_hand_probs[opp_idx];
 
-        // Sort pool indices by probability (descending) for this opponent
+        // Build candidates with Gumbel-perturbed log-probabilities for weighted sampling
         let mut candidates: Vec<(usize, f32)> = pool.iter().enumerate()
             .filter(|(idx, _)| !used[*idx])
             .map(|(idx, &tile)| {
@@ -209,11 +222,19 @@ pub fn sample_world_informed(
                 } else {
                     p
                 };
-                (idx, p)
+                // Gumbel-max trick: add Gumbel noise to log(p) for weighted sampling
+                // without replacement. For p=0, use -inf so these are never selected.
+                let gumbel_score = if p > 1e-8 {
+                    let u = (rng.u32(1..u32::MAX) as f32) / (u32::MAX as f32);
+                    p.ln() - (-u.ln()).ln()
+                } else {
+                    f32::NEG_INFINITY
+                };
+                (idx, gumbel_score)
             })
             .collect();
 
-        // Sort by probability descending
+        // Sort by Gumbel-perturbed score descending (top-k = weighted sample)
         candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         let mut assigned = 0usize;
@@ -269,9 +290,9 @@ fn sample_world(info: &PlayerInfo, rng_seed: u64) -> Vec<Tile> {
     pool
 }
 
-/// 轻量番数估算：仅检查高频番种，避免完整 calc_fan 的开销。
+/// 轻量番数估算：仅检查高频番種，避免完整 calc_fan 的开销。
 ///
-/// 检查: 自摸(+1), 清一色(+2), 对对和(+1), 门清(+1)
+/// 检查: 自摸(+1), 清一色(+2), 对对和(+1), 门清(+1), 七对子(+2), 根(+1 each)
 /// 返回估计番数 (1-6)
 fn estimate_fan_quick(hand: &HandCounts, melds_count: usize, is_tsumo: bool) -> u8 {
     let mut fan: u8 = 1; // base: 平胡
@@ -296,6 +317,32 @@ fn estimate_fan_quick(hand: &HandCounts, melds_count: usize, is_tsumo: bool) -> 
     let suit_count = suits_present.iter().filter(|&&s| s).count();
     if suit_count == 1 {
         fan += 2; // 清一色 = 2 fan (per rules.md and agari.rs)
+    }
+
+    // 七对子 (qidui): 7 pairs, no melds — +2 fan
+    // Fix R10-H2: missing qidui caused 2-4x score underestimate for chitoi hands
+    if melds_count == 0 {
+        let mut is_chitoi = true;
+        let mut pair_count = 0u8;
+        for t in 0..NUM_TILE_TYPES {
+            match hand[t] {
+                0 => {},
+                2 => pair_count += 1,
+                4 => pair_count += 2,  // 4-of-a-kind counts as 2 pairs (龙七对)
+                _ => { is_chitoi = false; break; }
+            }
+        }
+        if is_chitoi && pair_count == 7 {
+            fan += 2;
+        }
+    }
+
+    // 根 (gen): 4-of-a-kind in hand — +1 fan each
+    // Fix R10-M5: missing gen check
+    for t in 0..NUM_TILE_TYPES {
+        if hand[t] == 4 {
+            fan += 1;
+        }
     }
 
     // 对对和: all groups are triplets (no sequences), exactly one pair
@@ -869,11 +916,17 @@ pub fn danger_scores_enhanced(
             // 粗略公式：estimated_shanten ≈ max(0, 4 - melds - discards/5)
             let est_shanten = (4.0 - opp.melds_count as f32
                 - opp.discard_count as f32 / 5.0).max(0.0);
-            let shanten_danger = match est_shanten as u8 {
-                0 => 0.3,     // 估计听牌
-                1 => 0.15,    // 估计一向听
-                2 => 0.05,    // 估计二向听
-                _ => 0.0,     // 三向听以上不加成
+            // Fix R10-M3: use float thresholds instead of integer truncation.
+            // `as u8` truncated 0.9 to 0 (tenpai), overestimating danger.
+            // Consistent with estimate_ron_probability which uses 0.5/1.5/2.5.
+            let shanten_danger = if est_shanten < 0.5 {
+                0.3     // 估计听牌
+            } else if est_shanten < 1.5 {
+                0.15    // 估计一向听
+            } else if est_shanten < 2.5 {
+                0.05    // 估计二向听
+            } else {
+                0.0     // 三向听以上不加成
             };
 
             // ── 打牌模式分析：最近几巡是否在打安全牌 ──

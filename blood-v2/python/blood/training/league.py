@@ -179,7 +179,11 @@ class LeagueManager:
         self.pool_dir.mkdir(parents=True, exist_ok=True)
         dest = self.pool_dir / source_path.name
         if not dest.exists():
-            shutil.copy2(source_path, dest)
+            # Fix R12-M13: atomic copy via write-to-temp + rename to prevent
+            # corrupt files if process is killed mid-copy.
+            tmp = dest.with_suffix(".tmp")
+            shutil.copy2(source_path, tmp)
+            tmp.rename(dest)
             log.info("添加 checkpoint 到联赛池: %s", dest)
 
         self._evict_if_needed()

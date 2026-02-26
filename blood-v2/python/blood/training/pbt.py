@@ -28,8 +28,10 @@ class PBTMember:
 
 
 # Hyperparameters that PBT can mutate, with (min, max) ranges
+# Fix R10-H7: removed exploration_loss_coeff and learning_rate — these are controlled
+# by HyperparamScheduler and SF2's KL-adaptive scheduler respectively.
+# PBT mutations would be overwritten every training step.
 PBT_SEARCH_SPACE = {
-    "exploration_loss_coeff": (0.005, 0.05),
     "oracle_distill_weight": (0.005, 0.1),
     "oracle_ce_weight": (0.01, 0.2),
     "reward_tsumo_bonus": (0.02, 0.2),
@@ -38,7 +40,6 @@ PBT_SEARCH_SPACE = {
     "reward_shanten_progress": (0.001, 0.01),
     "reward_rank_bonus": (0.05, 0.4),
     "ppo_clip_ratio": (0.1, 0.25),
-    "learning_rate": (3e-5, 3e-4),
 }
 
 
@@ -50,8 +51,6 @@ class PBTController:
     2. Exploiting: bottom fraction copies top fraction's weights
     3. Exploring: mutating hyperparameters by perturb_factor
     """
-
-    # PLACEHOLDER_METHODS
 
     def __init__(
         self,
@@ -131,7 +130,10 @@ class PBTController:
         for bottom in bottom_members:
             # Exploit: copy weights from a random top member
             donor = random.choice(top_members)
-            if donor.checkpoint_path and donor.member_id != bottom.member_id:
+            # Fix R10-M12: verify donor checkpoint exists (may have been moved/deleted after load_state)
+            if (donor.checkpoint_path
+                    and os.path.exists(donor.checkpoint_path)
+                    and donor.member_id != bottom.member_id):
                 actions.append({
                     "member_id": bottom.member_id,
                     "action": "copy",
@@ -149,7 +151,14 @@ class PBTController:
                             1.0,
                             self.perturb_factor,
                         ])
-                        new_hp[key] = max(lo, min(hi, value * factor))
+                        # Fix R10-M8: multiplicative mutation can't escape 0.0.
+                        # Use additive perturbation when value is near zero.
+                        if abs(value) < 1e-8:
+                            # Additive: jump to a small fraction of the range
+                            step = (hi - lo) * 0.1 * random.choice([0.0, 0.5, 1.0])
+                            new_hp[key] = max(lo, min(hi, lo + step))
+                        else:
+                            new_hp[key] = max(lo, min(hi, value * factor))
                     else:
                         new_hp[key] = value
 

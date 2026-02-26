@@ -63,6 +63,7 @@ oracle_distill_temperature: 2.0
 oracle_ce_weight: 0.05
 oracle_value_distill_weight: 0.0
 oracle_value_head_loss_weight: 1.0
+oracle_value_warmup_steps: 0           # Fix R10-M9: explicit (default 500k would silently gate if distill enabled)
 
 # Arena evaluation — periodic strength measurement via RuleBot games
 # Updates Elo ratings during training so TensorBoard shows real progress

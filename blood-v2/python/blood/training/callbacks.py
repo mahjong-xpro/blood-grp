@@ -89,6 +89,7 @@ class BloodObserver(AlgoObserver):
         # Latest arena result (written by bg thread, read by extra_summaries)
         self._arena_result = None
         self._arena_result_step = 0
+        self._last_logged_arena_step = -1  # Fix R11-M6: dedup TB writes
         if self._arena_eval_every > 0 and self.elo_tracker is not None:
             log.info(
                 "[Arena] Periodic evaluation enabled: every %d steps, %d games, temp=%.2f",
@@ -97,6 +98,12 @@ class BloodObserver(AlgoObserver):
 
     def on_init(self, runner: Runner) -> None:
         self._runner = runner
+        # Fix R11-M7: initialize step counters from runner to avoid
+        # immediate snapshot/eval trigger after --resume.
+        initial_steps = runner.env_steps.get(0, 0)
+        if initial_steps > 0:
+            self._last_snapshot_step = initial_steps
+            self._last_arena_eval_step = initial_steps
 
     def on_training_step(self, runner: Runner, training_iteration_since_resume: int) -> None:
         policy_id = 0
@@ -261,10 +268,12 @@ class BloodObserver(AlgoObserver):
 
         try:
             shutil.copy2(latest, str(save_path))
-            # Verify the copy is a valid PyTorch checkpoint (not a partial write).
-            # weights_only=False needed: SF2 checkpoints contain numpy scalars.
-            import torch
-            torch.load(str(save_path), map_location="cpu", weights_only=False)
+            # Fix R11-M10: verify copy integrity via file size instead of full
+            # torch.load deserialization (which loads 80-160MB into CPU memory).
+            src_size = os.path.getsize(latest)
+            dst_size = os.path.getsize(str(save_path))
+            if dst_size < src_size * 0.99:
+                raise IOError(f"Incomplete copy: {dst_size} < {src_size} bytes")
             self.league._evict_if_needed()
             log.info("Saved league checkpoint: %s (pool size: %d)",
                      save_path, self.league.pool_size())
@@ -345,9 +354,12 @@ class BloodObserver(AlgoObserver):
                 tb.add_scalar("blood/elo_pool_mean", mean_elo, env_steps)
 
         # Arena evaluation metrics (from latest background eval)
+        # Fix R11-M6: only write once per eval to avoid horizontal line segments in TB
         with self._arena_eval_lock:
             result = self._arena_result
-        if result is not None and result.num_games > 0:
-            tb.add_scalar("blood/arena_win_rate", result.win_rate, env_steps)
-            tb.add_scalar("blood/arena_avg_rank", result.avg_rank, env_steps)
-            tb.add_scalar("blood/arena_avg_score", result.avg_score, env_steps)
+            result_step = self._arena_result_step
+        if result is not None and result.num_games > 0 and result_step > self._last_logged_arena_step:
+            tb.add_scalar("blood/arena_win_rate", result.win_rate, result_step)
+            tb.add_scalar("blood/arena_avg_rank", result.avg_rank, result_step)
+            tb.add_scalar("blood/arena_avg_score", result.avg_score, result_step)
+            self._last_logged_arena_step = result_step

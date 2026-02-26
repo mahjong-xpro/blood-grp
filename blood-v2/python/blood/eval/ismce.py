@@ -10,12 +10,10 @@ from typing import Optional
 
 import numpy as np
 
+from blood.consts import ACTION_SPACE, NUM_TILE_TYPES  # Fix R10-L2: use canonical constants
 from blood.utils import softmax as _softmax  # Issue #53: moved from hot loop to module level
 
 log = logging.getLogger(__name__)
-
-ACTION_SPACE = 34
-NUM_TILE_TYPES = 27
 
 
 class ISMCESearcher:
@@ -186,11 +184,12 @@ class ISMCESearcher:
         # --- log 空间尺度归一化 ---
         # 对 policy logits 和 ISMCE 分数都在候选牌上做标准化（零均值 + 单位方差），
         # 使得混合权重能准确反映两个信号的相对重要性，不受原始尺度影响。
-        policy_logits_t = logits / max(temperature, 1e-8)
+        # Fix R10-M4: temperature is applied AFTER blending, not before standardization.
+        # Applying before standardization was completely nullified: (x/T - mean(x/T))/std(x/T) == (x - mean(x))/std(x).
 
         # 提取候选牌上的 policy logits，做标准化
         cand_idx = np.array(discard_candidates)
-        policy_cand = policy_logits_t[cand_idx]
+        policy_cand = logits[cand_idx]
         p_mean = policy_cand.mean()
         p_std = policy_cand.std()
         if p_std < 1e-8:
@@ -209,13 +208,14 @@ class ISMCESearcher:
         else:
             ismce_cand_norm = (ismce_cand - i_mean) / i_std
 
-        # 按权重混合标准化后的信号
+        # 按权重混合标准化后的信号，然后应用温度
         blended_logits = np.full(ACTION_SPACE, -1e9)
         for j, i in enumerate(discard_candidates):
             blended_logits[i] = (self.policy_weight * policy_cand_norm[j]
                                  + self.ismce_weight * ismce_cand_norm[j])
 
-        blended = _softmax(blended_logits)
+        # Apply temperature to blended result (controls exploration/exploitation)
+        blended = _softmax(blended_logits / max(temperature, 1e-8))
         total = blended.sum()
         if total < 1e-8:
             return self._sample_from_logits(logits, temperature)
@@ -238,51 +238,17 @@ class ISMCESearcher:
         """
         try:
             import torch
-            from blood.consts import (
-                CH_OPP_KAWA_BASE, CH_OPP_KAWA_STRIDE,
-                CH_VISIBLE_TILES_BASE, CH_WALL_REMAINING, CH_TURN_PROGRESS,
-                CH_OPP_DING_QUE_BASE,
-            )
+            from blood.model.opponent_model import OpponentHandPredictor
 
             predictor = self._opponent_predictor
             device = next(predictor.parameters()).device
 
             obs_2d = obs_flat.reshape(-1, NUM_TILE_TYPES)  # (C, 27)
-            fuuro_base = CH_VISIBLE_TILES_BASE + 12  # skip kawa overview
-            opp_fuuro_base = fuuro_base + 8  # skip self fuuro
 
             all_probs = []
             for opp_idx in range(3):
-                features = np.zeros((75, NUM_TILE_TYPES), dtype=np.float32)
-                ch = 0
-                # Kawa (58ch)
-                ks = CH_OPP_KAWA_BASE + opp_idx * CH_OPP_KAWA_STRIDE
-                ke = ks + CH_OPP_KAWA_STRIDE
-                if ke <= obs_2d.shape[0]:
-                    features[ch:ch + CH_OPP_KAWA_STRIDE] = obs_2d[ks:ke]
-                ch += CH_OPP_KAWA_STRIDE
-                # Visible (4ch)
-                vs = CH_VISIBLE_TILES_BASE + opp_idx * 4
-                if vs + 4 <= obs_2d.shape[0]:
-                    features[ch:ch + 4] = obs_2d[vs:vs + 4]
-                ch += 4
-                # Fuuro (8ch)
-                ms = opp_fuuro_base + opp_idx * 8
-                if ms + 8 <= obs_2d.shape[0]:
-                    features[ch:ch + 8] = obs_2d[ms:ms + 8]
-                ch += 8
-                # Wall remaining (1ch)
-                if CH_WALL_REMAINING < obs_2d.shape[0]:
-                    features[ch] = obs_2d[CH_WALL_REMAINING]
-                ch += 1
-                # Turn progress (1ch)
-                if CH_TURN_PROGRESS < obs_2d.shape[0]:
-                    features[ch] = obs_2d[CH_TURN_PROGRESS]
-                ch += 1
-                # Ding-que (3ch)
-                dqs = CH_OPP_DING_QUE_BASE + opp_idx * 3
-                if dqs + 3 <= obs_2d.shape[0]:
-                    features[ch:ch + 3] = obs_2d[dqs:dqs + 3]
+                # Fix R11-H4: use shared feature builder (single source of truth)
+                features = OpponentHandPredictor.build_features_numpy(obs_2d, opp_idx)
 
                 inp = torch.from_numpy(features).unsqueeze(0).to(device)
                 with torch.no_grad():
