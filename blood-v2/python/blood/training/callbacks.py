@@ -122,12 +122,18 @@ class BloodObserver(AlgoObserver):
             self._last_snapshot_step = env_steps
 
     def _apply_schedules(self, runner: Runner, policy_id: int, env_steps: int) -> None:
-        """Apply scheduled hyperparameter updates to the learner and cfg."""
+        """Log scheduled hyperparameter values.
+
+        Actual application happens inside the Learner process via the
+        monkey-patched _calculate_losses (see runner.py _patch_learner).
+        This method mirrors the computation for logging and observer-side cfg
+        updates (used by extra_summaries and arena eval).
+        """
         updates = self._scheduler.step(env_steps)
         if not updates:
             return
 
-        # Entropy floor safety net
+        # Entropy floor safety net (mirror the Learner-side logic for logging)
         entropy_floor = getattr(self.cfg, "blood_entropy_floor", 0.0)
         if entropy_floor > 0 and "exploration_loss_coeff" in updates:
             if updates["exploration_loss_coeff"] < entropy_floor:
@@ -137,16 +143,10 @@ class BloodObserver(AlgoObserver):
                 )
                 updates["exploration_loss_coeff"] = entropy_floor
 
-        learner_worker = runner.learners.get(policy_id)
         for param, value in updates.items():
-            # Update on the learner's cfg (used by SF2 loss computation)
+            # Update observer-side cfg for logging / arena eval
             if hasattr(self.cfg, param):
                 setattr(self.cfg, param, value)
-            # Also update on the learner object directly if it exists
-            if learner_worker is not None and learner_worker.learner is not None:
-                learner = learner_worker.learner
-                if hasattr(learner.cfg, param):
-                    setattr(learner.cfg, param, value)
             log.info("[Scheduler] %s = %.6f at step %d", param, value, env_steps)
 
     def _find_latest_checkpoint(self, runner: Runner, policy_id: int) -> str | None:

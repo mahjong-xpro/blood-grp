@@ -163,11 +163,27 @@ def _patch_learner():
     _original = Learner._calculate_losses
     # Lazily initialized with cfg from the first Learner call so that
     # BloodLossComputer can read blood_metrics_interval from the config.
-    _state = {"loss_computer": None}
+    _state = {"loss_computer": None, "scheduler": None}
 
     def _patched(self, mb, num_invalids):
         if _state["loss_computer"] is None:
             _state["loss_computer"] = BloodLossComputer(cfg=self.cfg)
+        if _state["scheduler"] is None:
+            from blood.training.scheduler import HyperparamScheduler
+            _state["scheduler"] = HyperparamScheduler.from_config(self.cfg)
+
+        # Apply scheduled hyperparameter updates inside the Learner process.
+        # The observer (main process) may be in a different process and cannot
+        # reliably setattr on the Learner's cfg.
+        env_steps = getattr(self, "env_steps", 0)
+        sched_updates = _state["scheduler"].step(env_steps)
+        entropy_floor = getattr(self.cfg, "blood_entropy_floor", 0.0)
+        if entropy_floor > 0 and "exploration_loss_coeff" in sched_updates:
+            if sched_updates["exploration_loss_coeff"] < entropy_floor:
+                sched_updates["exploration_loss_coeff"] = entropy_floor
+        for _param, _val in sched_updates.items():
+            if hasattr(self.cfg, _param):
+                setattr(self.cfg, _param, _val)
 
         # Record raw advantage std before SF2 normalizes advantages in-place.
         raw_advantages = getattr(mb, "advantages", None)

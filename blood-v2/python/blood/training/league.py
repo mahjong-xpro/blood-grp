@@ -185,11 +185,11 @@ class LeagueManager:
         self._evict_if_needed()
 
     def _evict_if_needed(self):
-        """稀疏保留淘汰：池满时保留最新 50% 密集 + 旧 50% 稀疏采样。
+        """稀疏保留淘汰：池满时保留最新 50% 密集 + 旧 50% 均匀采样。
 
         策略：将 checkpoint 按时间分为两半
         - 新半部分（前 50%）：完整保留，保证近期策略密度
-        - 旧半部分（后 50%）：每隔 sparse_interval 个保留一个 + 始终保留最旧
+        - 旧半部分（后 50%）：用 linspace 均匀选取，自动包含首尾
         这样可以在固定池大小下最大化有效时间跨度覆盖。
         """
         checkpoints = self.get_checkpoints()  # 按 env_steps 降序
@@ -206,17 +206,14 @@ class LeagueManager:
         remaining_slots = self.max_pool_size - dense_count
 
         if remaining_slots > 0 and old_indices:
-            # 始终保留最旧的 checkpoint（index n-1）
-            keep.add(n - 1)
-            remaining_slots -= 1
-
-            if remaining_slots > 0 and len(old_indices) > 1:
-                # 在旧半部分中均匀间隔选取
-                sparse_interval = max(len(old_indices) // (remaining_slots + 1), 1)
-                for i in range(0, len(old_indices), sparse_interval):
-                    if len(keep) >= self.max_pool_size:
-                        break
-                    keep.add(old_indices[i])
+            # 始终保留最旧的 checkpoint
+            keep.add(old_indices[-1])
+            if remaining_slots >= 2:
+                # linspace 在旧半部分均匀选取，包含首尾（最新旧+最旧）
+                pick_idx = np.linspace(0, len(old_indices) - 1, remaining_slots,
+                                       dtype=int)
+                for idx in pick_idx:
+                    keep.add(old_indices[idx])
 
         # 删除不在保留集中的 checkpoint
         for i in range(n):
