@@ -296,6 +296,8 @@ impl BoardState {
 
     fn apply_ding_que(&mut self, player_id: usize, action: Action) {
         if let Action::DingQue(suit) = action {
+            // Guard: ignore duplicate ding_que for the same player
+            if self.ding_que_done[player_id] { return; }
             self.players[player_id].ding_que = Some(suit);
             self.ding_que_done[player_id] = true;
             self.events.push(Event::DingQue { player: player_id, suit });
@@ -719,14 +721,15 @@ impl BoardState {
         let ctx = self.make_win_context(winner, winning_tile, loser.is_some());
 
         // Safety net: if calc_fan returns None (invalid win — hand not complete,
-        // ding-que tiles remain, or wrong tile count), advance the game instead of
-        // returning early. An early return leaves phase=SelfCheck/Reaction with no
-        // state change, causing _advance_external_opponents to stall indefinitely.
+        // ding-que tiles remain, or wrong tile count), recover gracefully.
+        // - Tsumo (loser=None): player has 14 tiles; go to Discard so they shed one.
+        //   Do NOT call advance_to_next_draw (would leave 14-tile hand and draw for
+        //   the next player, eventually causing a 15-tile hand).
+        // - Ron (loser=Some): player has 13 tiles (winning tile only in copy);
+        //   just return — resolve_reactions() handles advancement after all rons.
         let Some(result) = calc_fan(&ctx) else {
-            if self.win_count < 3 {
-                self.advance_to_next_draw();
-            } else {
-                self.phase = Phase::Scoring;
+            if loser.is_none() {
+                self.phase = Phase::Discard;
             }
             return;
         };
@@ -816,8 +819,10 @@ impl BoardState {
             is_chankan: false,
             is_haidi: self.wall_remaining() == 0,
             is_tianhu: !is_ron && self.dahai_count == 0 && player_id == self.dealer,
-            // 地胡：闲家在第一次打牌前自摸（非荣和、无人打过牌、非庄家）
-            is_dihu: !is_ron && self.dahai_count == 0 && player_id != self.dealer,
+            // 地胡：闲家在第一巡自摸（非荣和、该玩家尚未打过牌、非庄家）
+            // 使用 p.discards.is_empty() 而非 dahai_count==0，因为非庄家首次摸牌时
+            // 庄家已打过一张牌 (dahai_count >= 1)，dahai_count==0 永远不成立。
+            is_dihu: !is_ron && p.discards.is_empty() && player_id != self.dealer,
             exclude_gen_tile: None,
             fan_config: self.fan_config,  // Copy
         }
@@ -925,13 +930,16 @@ impl BoardState {
             add_tile(&mut h, tile);
             if !is_complete(&h, p.melds.len()) { continue; }
 
+            // Always validate with calc_fan before adding to winners.
+            // This prevents phantom Ron events when process_chankan_win would
+            // fail validation (e.g. ding-que tiles remain, invalid division).
+            let ctx = self.make_chankan_win_context(i, tile);
+            let Some(result) = calc_fan(&ctx) else { continue; };
+
             // Blood mahjong has no furiten; only 过手加番 applies.
             if let Some(passed_fan) = p.furiten_passed_ron_fan {
-                let ctx = self.make_chankan_win_context(i, tile);
-                if let Some(result) = calc_fan(&ctx) {
-                    if result.fan > passed_fan {
-                        winners.push(i);
-                    }
+                if result.fan > passed_fan {
+                    winners.push(i);
                 }
             } else {
                 winners.push(i);

@@ -10,6 +10,14 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 
+from blood.consts import (
+    NUM_STUDENT_CHANNELS, NUM_TILE_TYPES,
+    CH_OPP_KAWA_BASE, CH_OPP_KAWA_STRIDE,
+    CH_VISIBLE_TILES_BASE, CH_WALL_REMAINING, CH_TURN_PROGRESS,
+    CH_OPP_DING_QUE_BASE, CH_OPP_MELD_BASE, CH_OPP_HAND_INFO_BASE,
+    CH_GENBUTSU_BASE,
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -45,7 +53,7 @@ class BloodLossComputer:
         obs = getattr(ac, "_cached_obs", None)
 
         device = value_loss.device if hasattr(value_loss, "device") else "cpu"
-        extra_loss = torch.zeros(1, device=device)
+        extra_loss = torch.zeros((), device=device)
 
         if features is None or obs is None or not ac.training:
             return extra_loss, summaries
@@ -146,22 +154,23 @@ class BloodLossComputer:
 
     def _oracle_ce_loss(self, oracle_logits, actions, advantages, action_mask) -> Tensor:
         """Advantage-weighted cross-entropy on oracle logits vs taken actions."""
-        oracle_logits_masked = oracle_logits.clone()
+        oracle_logits_masked = oracle_logits
         if action_mask is not None:
-            # Safe mask value: -1e4 for float16, -1e9 for float32
-            if oracle_logits.dtype == torch.float16:
-                large_neg = -1e4
-            else:
-                large_neg = -1e9
-            oracle_logits_masked = oracle_logits_masked.masked_fill(
-                ~action_mask.bool(), large_neg
+            # Use dtype.min for consistent masking (same strategy as factory.py forward_tail)
+            mask_value = torch.finfo(oracle_logits.dtype).min
+            oracle_logits_masked = oracle_logits.masked_fill(
+                ~action_mask.bool(), mask_value
             )
         ce_raw = F.cross_entropy(oracle_logits_masked, actions.long(), reduction="none")
         if advantages is not None:
             # Use softmax weighting instead of clamp(min=0) to ensure non-zero
             # weights even when all advantages are negative (Issue #45).
-            adv_std = max(advantages.detach().std().item(), 1e-4)
-            adv_w = F.softmax(advantages.detach() / adv_std, dim=0)
+            # Floor adv_std at 0.1 (not 1e-4) to prevent overflow in float16
+            # where exp(x) overflows for x > ~11. Clamp normalized advantages
+            # to [-10, 10] as an additional safety net.
+            adv_std = max(advantages.detach().std().item(), 0.1)
+            normed = (advantages.detach() / adv_std).clamp(-10.0, 10.0)
+            adv_w = F.softmax(normed, dim=0)
             adv_w = adv_w * len(adv_w)  # Scale so mean weight ≈ 1.0
             return (ce_raw * adv_w).mean()
         return ce_raw.mean()
@@ -170,7 +179,7 @@ class BloodLossComputer:
         """MSE between oracle value head predictions and GAE returns."""
         if returns is None:
             return None
-        ov = oracle_values.squeeze().view(-1)
+        ov = oracle_values.squeeze(-1).view(-1)
         ret = returns.view(-1)
         if ov.shape != ret.shape:
             log.warning(
@@ -222,13 +231,6 @@ class BloodLossComputer:
         # Oracle obs shape: (B, oracle_channels * 27)
         # The first 12 extra channels (after student channels) encode opponent hands
         # as 4 one-hot layers per opponent (3 opponents × 4 = 12 channels).
-        from blood.consts import (
-            NUM_STUDENT_CHANNELS, NUM_TILE_TYPES,
-            CH_OPP_KAWA_BASE, CH_OPP_KAWA_STRIDE,
-            CH_VISIBLE_TILES_BASE, CH_WALL_REMAINING, CH_TURN_PROGRESS,
-            CH_OPP_DING_QUE_BASE, CH_OPP_MELD_BASE, CH_OPP_HAND_INFO_BASE,
-            CH_GENBUTSU_BASE,
-        )
         B = oracle_obs.shape[0]
         oracle_2d = oracle_obs.view(B, -1, NUM_TILE_TYPES)  # (B, oracle_ch, 27)
         student_2d = student_obs.view(B, -1, NUM_TILE_TYPES)
@@ -241,13 +243,15 @@ class BloodLossComputer:
 
         # Ground truth: sum of 4 one-hot channels per opponent → tile count [0,4]
         # Normalize to [0,1] by dividing by 4
-        total_loss = torch.zeros(1, device=oracle_obs.device)
+        # Pre-allocate feature buffer once, reuse per opponent to reduce allocation
+        opp_features = torch.zeros(B, 75, NUM_TILE_TYPES, device=oracle_obs.device)
+        total_loss = torch.tensor(0.0, device=oracle_obs.device)
         for opp_idx in range(3):
             opp_hand_gt = oracle_2d[:, student_ch + opp_idx * 4 : student_ch + (opp_idx + 1) * 4, :].sum(dim=1)
             opp_hand_gt = (opp_hand_gt / 4.0).clamp(0, 1)  # (B, 27)
 
             # Build 75ch input: kawa(58) + visible(4) + fuuro(8) + context(5)
-            opp_features = torch.zeros(B, 75, NUM_TILE_TYPES, device=oracle_obs.device)
+            opp_features.zero_()  # reuse buffer
             ch = 0
 
             # [0:58] Opponent kawa (58 ch) from Section 6

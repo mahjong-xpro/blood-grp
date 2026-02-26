@@ -201,7 +201,6 @@ class BloodActorCritic(ActorCriticSharedWeights):
 
     def forward_tail(self, core_output, values_only: bool, sample_actions: bool) -> TensorDict:
         # core_output is always a plain Tensor here (SF2 unpacks before calling us).
-        self._cached_core_out = core_output  # post-LSTM features for AuxHead
 
         # B1: TurnAttention — apply cross-attention over LSTM sequence
         # During BPTT training, core_output is (B*T, dim); during inference, (B, dim).
@@ -223,6 +222,7 @@ class BloodActorCritic(ActorCriticSharedWeights):
                 ).squeeze(1)
             # else: non-aligned batch — skip TurnAttention to avoid cross-contamination
 
+        self._cached_core_out = core_output  # post-TurnAttention features for AuxHead
         actor_features = self.actor_head(core_output)
         critic_features = self.critic_head(core_output)
 
