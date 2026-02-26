@@ -60,7 +60,7 @@ class BloodObserver(AlgoObserver):
         self.league = LeagueManager(
             pool_dir,
             newest_weight=newest_weight,
-            max_pool_size=getattr(cfg, "league_max_pool_size", 50),
+            max_pool_size=getattr(cfg, "league_max_pool_size", 200),
             uniform_floor=uniform_floor,
             self_play_prob=self_play_prob,
             frozen_window=getattr(cfg, "league_frozen_window", 0),

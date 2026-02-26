@@ -16,7 +16,7 @@ def add_blood_args(parser: ArgumentParser):
     p.add_argument("--blood_conv_channels", type=int, default=256)
     p.add_argument("--blood_num_res_blocks", type=int, default=20)
     p.add_argument("--blood_encoder_out_dim", type=int, default=1024)
-    p.add_argument("--blood_enc_proj_layers", type=int, default=1,
+    p.add_argument("--blood_enc_proj_layers", type=int, default=3,
                     help="enc_proj 层数: 1=单层Linear(旧行为), 2=渐进压缩MLP(缓解信息瓶颈), "
                          "3=SpatialPoolingProj(注意力池化，保留牌位结构)")
 
@@ -54,7 +54,7 @@ def add_blood_args(parser: ArgumentParser):
     p.add_argument("--league_enabled", default=True, action="store_true")
     p.add_argument("--no_league", dest="league_enabled", action="store_false")
     p.add_argument("--league_pool_dir", type=str, default="checkpoints/league/")
-    p.add_argument("--league_max_pool_size", type=int, default=50,
+    p.add_argument("--league_max_pool_size", type=int, default=200,
                     help="联赛池最大 checkpoint 数量。配合稀疏保留淘汰策略")
     p.add_argument("--league_add_every", type=int, default=50000)
     p.add_argument("--league_newest_weight", type=float, default=2.0,

@@ -137,5 +137,5 @@ blood_schedule_entropy: "cosine,0.02,0.01,0,50000000"
 # Adv clip: linear tighten from 5.0 → 3.0 starting at 10M steps
 blood_schedule_adv_clip: "linear,5.0,3.0,10000000,40000000"
 
-# Entropy floor safety net — 略低于 cosine 终值(0.01)，捕获意外下降
-blood_entropy_floor: 0.01
+# Entropy floor safety net — 低于 cosine 终值(0.01)，捕获意外下降
+blood_entropy_floor: 0.009

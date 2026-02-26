@@ -49,8 +49,8 @@ class PolicyModel(nn.Module):
         action_dim: int = ACTION_DIM,
         enc_out_dim: int = 1024,
         head_dim: int = 512,
-        enc_proj_layers: int = 1,
-        num_tile_attn_layers: int = 2,
+        enc_proj_layers: int = 3,
+        num_tile_attn_layers: int = 4,
         tile_attn_heads: int = 4,
         rnn_num_layers: int = 1,
     ):

@@ -332,8 +332,8 @@ class SuitAwareResNetEncoder(Encoder):
         conv_ch = getattr(cfg, "blood_conv_channels", 256)
         num_blocks = getattr(cfg, "blood_num_res_blocks", 20)
         enc_out_dim = getattr(cfg, "blood_encoder_out_dim", 1024)
-        enc_proj_layers = getattr(cfg, "blood_enc_proj_layers", 1)
-        num_tile_attn_layers = getattr(cfg, "blood_num_tile_attn_layers", 2)
+        enc_proj_layers = getattr(cfg, "blood_enc_proj_layers", 3)
+        num_tile_attn_layers = getattr(cfg, "blood_num_tile_attn_layers", 4)
         tile_attn_heads = getattr(cfg, "blood_tile_attn_heads", 4)
 
         ng = _num_groups(conv_ch)
