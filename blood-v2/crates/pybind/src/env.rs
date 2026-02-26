@@ -7,7 +7,7 @@ use engine::state::board::{BoardState, Phase};
 use engine::state::action::Action;
 use engine::state::event::Event;
 use engine::tile::{Suit, Tile, is_terminal};
-use engine::hand::{HandCounts, MeldType};
+use engine::hand::{HandCounts, MeldType, suit_tile_count};
 use engine::algo::shanten::{calc_shanten, waiting_tiles};
 use engine::algo::agari::{calc_fan, calc_gen_count, WinContext, FanConfig};
 use engine::obs::{encode_student_obs, encode_oracle_obs, encode_action_mask, OracleSpCache};
@@ -254,6 +254,16 @@ impl RustMahjongEnv {
     fn get_agent_shanten(&self) -> i32 {
         let p = &self.state.players[self.player_id];
         calc_shanten(&p.hand, p.melds.len()).into()
+    }
+
+    /// Returns [man_count, pin_count, sou_count] for the agent's hand.
+    fn get_agent_suit_counts(&self) -> [u8; 3] {
+        let p = &self.state.players[self.player_id];
+        [
+            suit_tile_count(&p.hand, Suit::Man),
+            suit_tile_count(&p.hand, Suit::Pin),
+            suit_tile_count(&p.hand, Suit::Sou),
+        ]
     }
 
     /// Heuristic fan estimation for the agent's current hand.

@@ -532,6 +532,17 @@ class SelfPlayEnv(BloodMahjongEnv):
     def _compute_shaping_reward(self, prev_score: float, action: int, ow_before) -> float:
         """Extra reward signals during warmup phase."""
         bonus = 0.0
+
+        # DingQue bonus: reward choosing the suit with fewest tiles in hand.
+        # get_agent_suit_counts() reads hand *after* apply_ding_que(), but that
+        # method only sets the ding_que flag — it never modifies the hand array,
+        # so the counts still reflect the pre-dingque hand.
+        if self._warmup_dq_bonus > 0 and 31 <= action <= 33:
+            chosen_suit = action - 31  # 0=Man, 1=Pin, 2=Sou
+            counts = self._env.get_agent_suit_counts()  # [man, pin, sou]
+            if counts[chosen_suit] == min(counts):
+                bonus += self._warmup_dq_bonus
+
         if self._env.player_has_won(0) and self._warmup_win_bonus > 0:
             bonus += self._warmup_win_bonus
         # Deal-in penalty: only apply when agent discards (action 0-26) and score drops.
