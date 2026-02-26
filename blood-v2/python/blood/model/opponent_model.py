@@ -48,7 +48,7 @@ class OpponentHandPredictor(nn.Module):
         self.stem = nn.Sequential(
             SuitAwareConv1d(in_channels, conv_ch, kernel_size=3),
             nn.GroupNorm(ng, conv_ch),
-            nn.Mish(inplace=True),
+            nn.Mish(),
         )
 
         self.blocks = nn.Sequential(
@@ -77,13 +77,18 @@ class OpponentHandPredictor(nn.Module):
         x = self.blocks(x)
         for attn in self.tile_attn:
             x = attn(x)
-        return torch.sigmoid(self.head(x).squeeze(1))  # (B, 27)
+        # Return raw logits (pre-sigmoid) for numerically stable loss computation
+        return self.head(x).squeeze(1)  # (B, 27)
 
-    def loss(self, pred: Tensor, target: Tensor) -> Tensor:
-        """BCE loss between predicted and true opponent hand.
+    def predict_probs(self, x: Tensor) -> Tensor:
+        """Return probabilities (sigmoid applied). Use for inference only."""
+        return torch.sigmoid(self.forward(x))
+
+    def loss(self, logits: Tensor, target: Tensor) -> Tensor:
+        """Numerically stable BCE loss using logits directly.
 
         Args:
-            pred: (B, 27) predicted probabilities
+            logits: (B, 27) raw logits (pre-sigmoid) from forward()
             target: (B, 27) ground truth (from Oracle obs)
         """
-        return F.binary_cross_entropy(pred, target.clamp(0, 1))
+        return F.binary_cross_entropy_with_logits(logits, target.clamp(0, 1))

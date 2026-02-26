@@ -186,7 +186,9 @@ class NeuralAgent:
         self._ismce = None
         self._env_ref = None
         self._hidden_state = None  # LSTM hidden state across turns
+        self._memory_buffer = None  # TurnAttention memory buffer across turns
         self._last_obs = None
+        self._agent_seat = 0  # Track agent seat for correct score extraction
 
     def enable_rtpa(self, attack_temp=0.8, defend_temp=1.5):
         from blood.eval.rtpa import RTPA
@@ -200,6 +202,11 @@ class NeuralAgent:
         """Allow the arena to pass the env reference for game state queries."""
         self._env_ref = env
         self._hidden_state = None  # reset LSTM state at episode boundary
+        self._memory_buffer = None  # reset TurnAttention memory at episode boundary
+
+    def set_agent_seat(self, seat: int):
+        """Set the agent's seat index for correct score extraction."""
+        self._agent_seat = seat
 
     def _get_game_context(self):
         """从环境公共 API 提取 RTPA/ISMCE 所需的游戏状态上下文。"""
@@ -215,8 +222,10 @@ class NeuralAgent:
             if env is None or not env.has_engine:
                 return ctx
             scores = env.get_scores()
-            ctx["my_score"] = scores[0]
-            ctx["avg_opponent_score"] = sum(scores[1:]) / 3.0
+            seat = self._agent_seat
+            ctx["my_score"] = scores[seat]
+            opp_scores = [scores[i] for i in range(len(scores)) if i != seat]
+            ctx["avg_opponent_score"] = sum(opp_scores) / max(len(opp_scores), 1)
 
             # 使用 GameStateTracker 从观测张量解析听牌/牌墙信息
             if self._last_obs is not None:
@@ -238,8 +247,10 @@ class NeuralAgent:
         self._last_obs = obs  # 缓存用于 _get_game_context
 
         obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(0)
-        # PolicyModel.forward() 返回 (logits, new_hidden_state)
-        logits_t, self._hidden_state = self.model(obs_t, self._hidden_state)
+        # PolicyModel.forward() returns (logits, new_hidden_state, new_memory_buffer)
+        logits_t, self._hidden_state, self._memory_buffer = self.model(
+            obs_t, self._hidden_state, memory_buffer=self._memory_buffer,
+        )
         logits = logits_t.squeeze(0).numpy()
 
         # ── 第一步：RTPA 计算自适应温度 ──

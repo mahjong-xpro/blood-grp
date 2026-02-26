@@ -11,7 +11,7 @@ pub enum Suit {
 
 impl Suit {
     pub fn from_tile(t: Tile) -> Suit {
-        debug_assert!((t as usize) < NUM_TILE_TYPES, "tile {} out of range", t);
+        assert!((t as usize) < NUM_TILE_TYPES, "Suit::from_tile: tile {} out of range [0, {})", t, NUM_TILE_TYPES);
         match t as usize / TILES_PER_SUIT {
             0 => Suit::Man,
             1 => Suit::Pin,

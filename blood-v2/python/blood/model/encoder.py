@@ -71,13 +71,13 @@ class BottleneckBlock(nn.Module):
 
         self.block = nn.Sequential(
             nn.GroupNorm(ng, channels),
-            nn.Mish(inplace=True),
+            nn.Mish(),
             nn.Conv1d(channels, mid_channels, 1, bias=False),  # 1x1 down
             nn.GroupNorm(mid_ng, mid_channels),
-            nn.Mish(inplace=True),
+            nn.Mish(),
             SuitAwareConv1d(mid_channels, mid_channels, kernel_size=3),
             nn.GroupNorm(mid_ng, mid_channels),
-            nn.Mish(inplace=True),
+            nn.Mish(),
             nn.Conv1d(mid_channels, channels, 1, bias=False),  # 1x1 up
         )
         self.attn = ChannelAttention(channels)
@@ -87,21 +87,20 @@ class BottleneckBlock(nn.Module):
 
 
 class ChannelAttention(nn.Module):
-    """Squeeze-Excitation channel attention for cross-suit information exchange."""
+    """Squeeze-Excitation channel attention for cross-suit information exchange.
+
+    Shares MLP weights between avg-pool and max-pool branches (standard CBAM/SE-Net
+    design). Only the pooling operation differs; the shared MLP learns a single
+    channel importance mapping applied to both pooled representations.
+    """
 
     def __init__(self, channels: int, reduction: int = 16):
         super().__init__()
         mid = max(channels // reduction, 8)
-        self.avg_fc = nn.Sequential(
-            nn.AdaptiveAvgPool1d(1),
-            nn.Flatten(),
-            nn.Linear(channels, mid),
-            nn.Mish(inplace=True),
-            nn.Linear(mid, channels),
-        )
-        self.max_fc = nn.Sequential(
-            nn.AdaptiveMaxPool1d(1),
-            nn.Flatten(),
+        self.avg_pool = nn.AdaptiveAvgPool1d(1)
+        self.max_pool = nn.AdaptiveMaxPool1d(1)
+        # Shared MLP across both pooling branches
+        self.fc = nn.Sequential(
             nn.Linear(channels, mid),
             nn.Mish(inplace=True),
             nn.Linear(mid, channels),
@@ -109,7 +108,9 @@ class ChannelAttention(nn.Module):
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x: Tensor) -> Tensor:
-        scale = self.sigmoid(self.avg_fc(x) + self.max_fc(x)).unsqueeze(-1)
+        avg_out = self.fc(self.avg_pool(x).squeeze(-1))
+        max_out = self.fc(self.max_pool(x).squeeze(-1))
+        scale = self.sigmoid(avg_out + max_out).unsqueeze(-1)
         return x * scale
 
 
@@ -164,10 +165,10 @@ class ResBlock(nn.Module):
         ng = _num_groups(channels)
         self.block = nn.Sequential(
             nn.GroupNorm(ng, channels),
-            nn.Mish(inplace=True),
+            nn.Mish(),
             SuitAwareConv1d(channels, channels, kernel_size=3),
             nn.GroupNorm(ng, channels),
-            nn.Mish(inplace=True),
+            nn.Mish(),
             SuitAwareConv1d(channels, channels, kernel_size=3),
         )
         self.attn = ChannelAttention(channels)
@@ -208,6 +209,7 @@ class SpatialPoolingProj(nn.Module):
 
         # Pre-norm for stable attention
         self.norm = nn.LayerNorm(conv_ch)
+        self.query_norm = nn.LayerNorm(conv_ch)  # Symmetric normalization for queries
 
         # Cross-attention: queries attend to tile positions (keys/values)
         self.cross_attn = nn.MultiheadAttention(
@@ -231,8 +233,8 @@ class SpatialPoolingProj(nn.Module):
         kv = x.permute(0, 2, 1)
         kv = self.norm(kv)
 
-        # Expand queries for batch
-        q = self.queries.expand(B, -1, -1)  # (B, num_queries, conv_ch)
+        # Expand queries for batch and normalize symmetrically with keys/values
+        q = self.query_norm(self.queries.expand(B, -1, -1))  # (B, num_queries, conv_ch)
 
         # Cross-attention: queries attend to tile positions
         attn_out, _ = self.cross_attn(q, kv, kv)  # (B, num_queries, conv_ch)
@@ -341,7 +343,7 @@ class SuitAwareResNetEncoder(Encoder):
         self.stem = nn.Sequential(
             SuitAwareConv1d(self.obs_channels, conv_ch, kernel_size=3),
             nn.GroupNorm(ng, conv_ch),
-            nn.Mish(inplace=True),
+            nn.Mish(),
         )
         self.pos_enc = SuitPositionalEncoding(conv_ch)
 

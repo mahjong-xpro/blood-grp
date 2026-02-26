@@ -9,7 +9,7 @@ use engine::state::event::Event;
 use engine::tile::{Suit, Tile, is_terminal};
 use engine::hand::{HandCounts, MeldType, suit_tile_count};
 use engine::algo::shanten::{calc_shanten, waiting_tiles};
-use engine::algo::agari::{calc_fan, calc_gen_count, WinContext, FanConfig};
+use engine::algo::agari::{calc_fan, calc_gen_count, WinContext};
 use engine::obs::{encode_student_obs, encode_oracle_obs, encode_action_mask, OracleSpCache};
 
 fn event_to_json(e: &Event) -> String {
@@ -298,7 +298,7 @@ impl RustMahjongEnv {
                     is_tianhu: false,
                     is_dihu: false,
                     exclude_gen_tile: None,
-                    fan_config: FanConfig::default(),
+                    fan_config: self.state.fan_config.clone(),
                 };
                 if let Some(result) = calc_fan(&ctx) {
                     best_fan = best_fan.max(result.fan);

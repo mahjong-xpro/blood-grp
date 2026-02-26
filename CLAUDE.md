@@ -93,8 +93,8 @@ SuitAwareResNetEncoder: 输入 (470×27) → SuitAwareConv1d → 4 个 segment [
 
 ### 观测空间
 
-- 学生观测: 470×27 张量（手牌、游戏上下文、定缺、牌河、可见牌、防守、SP Table、番种配置）
-- Oracle 观测: 额外 52 通道（对手手牌、危险度、SP 摘要）→ 522×27
+- 学生观测: 473×27 张量（手牌、游戏上下文、定缺、牌河、可见牌、防守、SP Table、番种配置、現物安全牌）
+- Oracle 观测: 额外 52 通道（对手手牌、危险度、SP 摘要）→ 525×27
 
 ### 动作空间
 
@@ -114,8 +114,8 @@ SuitAwareResNetEncoder: 输入 (470×27) → SuitAwareConv1d → 4 个 segment [
 
 | 常量 | 值 | 位置 |
 |------|-----|------|
-| `NUM_STUDENT_CHANNELS` | 470 | `crates/engine/src/consts.rs` |
-| `NUM_ORACLE_CHANNELS` | 522 | `crates/engine/src/consts.rs` |
+| `NUM_STUDENT_CHANNELS` | 473 | `crates/engine/src/consts.rs` |
+| `NUM_ORACLE_CHANNELS` | 525 | `crates/engine/src/consts.rs` |
 | `ACTION_SPACE` | 34 | `crates/engine/src/consts.rs` |
 | `TILE_TYPES` | 27 | `crates/engine/src/consts.rs` |
 | `REWARD_NORM` | 32000 | configs |

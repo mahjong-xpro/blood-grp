@@ -57,8 +57,10 @@ class ArenaResult:
             sample = rng.choice(data, size=n, replace=True)
             means.append(np.mean(sample))
         means = sorted(means)
-        lo = means[int((1 - confidence) / 2 * n_bootstrap)]
-        hi = means[int((1 + confidence) / 2 * n_bootstrap)]
+        lo_idx = min(int((1 - confidence) / 2 * n_bootstrap), n_bootstrap - 1)
+        hi_idx = min(int((1 + confidence) / 2 * n_bootstrap), n_bootstrap - 1)
+        lo = means[lo_idx]
+        hi = means[hi_idx]
         return (lo, hi)
 
     def summary(self) -> str:
@@ -157,6 +159,8 @@ class Arena:
 
             if hasattr(self.agent_fn, 'set_env'):
                 self.agent_fn.set_env(env)
+            if hasattr(self.agent_fn, 'set_agent_seat'):
+                self.agent_fn.set_agent_seat(agent_seat)
             obs, info = env.reset(seed=game_seed)
             done = False
 
@@ -170,9 +174,9 @@ class Arena:
             except Exception:
                 scores = [100000] * 4
 
-            # 构建带座位轮换的名称列表用于录像
+            # 构建带座位轮换的名称列表用于录像和 Elo
             rotated_names = ["RuleBot"] * 4
-            rotated_names[agent_seat] = names[0] if names else "Agent"
+            rotated_names[agent_seat] = agent_name  # Use agent_name consistently
 
             if self.recorder is not None and env.has_engine:
                 try:
@@ -219,12 +223,10 @@ class Arena:
 
             # Update Elo ratings for this game
             if self.elo_tracker is not None:
-                # Build per-seat names for Elo: use agent_name for the agent seat
-                elo_names = list(rotated_names)
-                elo_names[agent_seat] = agent_name
+                # rotated_names already has agent_name at agent_seat
                 all_ranks = [_compute_rank_with_ties(scores, i) for i in range(4)]
                 self.elo_tracker.update_from_game(
-                    player_names=elo_names,
+                    player_names=rotated_names,
                     ranks=all_ranks,
                     scores=scores,
                 )

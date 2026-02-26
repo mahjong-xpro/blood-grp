@@ -6,6 +6,7 @@ selecting top performers, and mutating hyperparameters.
 
 import json
 import logging
+import os
 import shutil
 import time
 from dataclasses import dataclass, field
@@ -167,7 +168,11 @@ class PBTController:
         return dict(self.population[member_id].hyperparams)
 
     def _save_state(self):
-        """Persist PBT state to disk."""
+        """Persist PBT state to disk atomically.
+
+        Writes to a temporary file first, then atomically renames to prevent
+        corruption if the process crashes mid-write.
+        """
         state = {
             "population": [
                 {
@@ -183,8 +188,10 @@ class PBTController:
             "last_eval_steps": self._last_eval_steps,
         }
         state_path = self.work_dir / "pbt_state.json"
-        with open(state_path, "w") as f:
+        tmp_path = self.work_dir / "pbt_state.json.tmp"
+        with open(tmp_path, "w") as f:
             json.dump(state, f, indent=2)
+        os.replace(str(tmp_path), str(state_path))
 
     def load_state(self) -> bool:
         """Load PBT state from disk. Returns True if loaded successfully."""

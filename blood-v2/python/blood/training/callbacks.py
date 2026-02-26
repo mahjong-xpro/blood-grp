@@ -122,12 +122,13 @@ class BloodObserver(AlgoObserver):
             self._last_snapshot_step = env_steps
 
     def _apply_schedules(self, runner: Runner, policy_id: int, env_steps: int) -> None:
-        """Log scheduled hyperparameter values.
+        """Log scheduled hyperparameter values (observer-side, logging only).
 
         Actual application happens inside the Learner process via the
         monkey-patched _calculate_losses (see runner.py _patch_learner).
-        This method mirrors the computation for logging and observer-side cfg
-        updates (used by extra_summaries and arena eval).
+        This method mirrors the computation for logging only.
+        NOTE: Observer-side cfg updates are intentionally removed to prevent
+        divergence between observer and learner cfg objects (Issue #R4-H6).
         """
         updates = self._scheduler.step(env_steps)
         if not updates:
@@ -144,9 +145,6 @@ class BloodObserver(AlgoObserver):
                 updates["exploration_loss_coeff"] = entropy_floor
 
         for param, value in updates.items():
-            # Update observer-side cfg for logging / arena eval
-            if hasattr(self.cfg, param):
-                setattr(self.cfg, param, value)
             log.info("[Scheduler] %s = %.6f at step %d", param, value, env_steps)
 
     def _find_latest_checkpoint(self, runner: Runner, policy_id: int) -> str | None:

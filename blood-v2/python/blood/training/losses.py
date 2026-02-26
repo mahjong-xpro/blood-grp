@@ -148,8 +148,13 @@ class BloodLossComputer:
         """Advantage-weighted cross-entropy on oracle logits vs taken actions."""
         oracle_logits_masked = oracle_logits.clone()
         if action_mask is not None:
+            # Safe mask value: -1e4 for float16, -1e9 for float32
+            if oracle_logits.dtype == torch.float16:
+                large_neg = -1e4
+            else:
+                large_neg = -1e9
             oracle_logits_masked = oracle_logits_masked.masked_fill(
-                ~action_mask.bool(), torch.finfo(oracle_logits.dtype).min
+                ~action_mask.bool(), large_neg
             )
         ce_raw = F.cross_entropy(oracle_logits_masked, actions.long(), reduction="none")
         if advantages is not None:

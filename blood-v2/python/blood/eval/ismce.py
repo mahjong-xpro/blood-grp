@@ -286,7 +286,7 @@ class ISMCESearcher:
 
                 inp = torch.from_numpy(features).unsqueeze(0).to(device)
                 with torch.no_grad():
-                    pred = predictor(inp).squeeze(0).cpu().numpy()
+                    pred = predictor.predict_probs(inp).squeeze(0).cpu().numpy()
                 all_probs.append(pred.tolist())
 
             return all_probs

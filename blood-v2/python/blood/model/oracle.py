@@ -46,7 +46,7 @@ class OracleEncoder(nn.Module):
         self.stem = nn.Sequential(
             SuitAwareConv1d(obs_channels, conv_ch, kernel_size=3),
             nn.GroupNorm(ng, conv_ch),
-            nn.Mish(inplace=True),
+            nn.Mish(),
         )
         self.pos_enc = SuitPositionalEncoding(conv_ch)
 
@@ -74,10 +74,10 @@ class OracleEncoder(nn.Module):
         self.policy_head = nn.Sequential(
             nn.LayerNorm(trunk_dim),
             nn.Linear(trunk_dim, head_dim),
-            nn.Mish(inplace=True),
+            nn.Mish(),
             nn.LayerNorm(head_dim),
             nn.Linear(head_dim, head_dim),
-            nn.Mish(inplace=True),
+            nn.Mish(),
             nn.Linear(head_dim, action_dim),
         )
 
@@ -89,10 +89,10 @@ class OracleEncoder(nn.Module):
         self.value_head = nn.Sequential(
             nn.LayerNorm(trunk_dim),
             nn.Linear(trunk_dim, head_dim),
-            nn.Mish(inplace=True),
+            nn.Mish(),
             nn.LayerNorm(head_dim),
             nn.Linear(head_dim, head_dim),
-            nn.Mish(inplace=True),
+            nn.Mish(),
             nn.Linear(head_dim, 1),
         )
 
@@ -122,12 +122,20 @@ class DistillationLoss(nn.Module):
         T = self.temperature
 
         if action_mask is not None:
-            large_neg = torch.finfo(student_logits.dtype).min
+            # Use -1e4 for float16 (safe under division by T >= 1.0) or -1e9 for float32.
+            # torch.finfo(dtype).min is dangerous: dividing by T < 1.0 overflows float16,
+            # and if all actions are masked, softmax produces 0/0 = NaN.
+            if student_logits.dtype == torch.float16:
+                large_neg = -1e4
+            else:
+                large_neg = -1e9
             student_logits = student_logits.masked_fill(~action_mask, large_neg)
             oracle_logits = oracle_logits.masked_fill(~action_mask, large_neg)
 
+        # Use log_target=True for numerical stability: avoids computing oracle_probs
+        # which can contain exact 0.0 in float16 (causing 0 * log(0) = NaN in kl_div).
         student_log_probs = F.log_softmax(student_logits / T, dim=-1)
-        oracle_probs = F.softmax(oracle_logits / T, dim=-1)
+        oracle_log_probs = F.log_softmax(oracle_logits / T, dim=-1)
 
-        kl = F.kl_div(student_log_probs, oracle_probs, reduction="batchmean")
+        kl = F.kl_div(student_log_probs, oracle_log_probs, reduction="batchmean", log_target=True)
         return kl * (T * T)

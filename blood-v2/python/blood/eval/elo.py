@@ -139,11 +139,13 @@ class EloTracker:
 
             # Apply updates and accumulate stats
             result = {}
+            min_rank = min(ranks)
             for i, name in enumerate(player_names):
                 stats[i].elo += elo_deltas[i]
                 stats[i].games += 1
                 stats[i].total_rank += ranks[i]
-                if ranks[i] <= 1.0:
+                # Count as win if player has the best (lowest) rank, including ties
+                if ranks[i] <= min_rank:
                     stats[i].wins += 1
                 if scores is not None and i < len(scores):
                     stats[i].total_score += scores[i]
@@ -179,7 +181,11 @@ class EloTracker:
             return sorted_players[:top_n]
 
     def save(self) -> None:
-        """Persist ratings to disk (atomic write via tmp + rename)."""
+        """Persist ratings to disk (atomic write via tmp + rename).
+
+        Uses a unique tmp filename (with thread ID) to prevent concurrent
+        save() calls from corrupting each other's tmp file.
+        """
         if not self.save_path:
             return
         with self._lock:
@@ -198,9 +204,11 @@ class EloTracker:
                     for name, s in self.players.items()
                 },
             }
-        # Write outside the lock to minimise hold time
+        # Write outside the lock to minimise hold time.
+        # Use thread-unique tmp path to prevent concurrent writes from colliding.
         Path(self.save_path).parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = self.save_path + ".tmp"
+        tid = threading.get_ident()
+        tmp_path = f"{self.save_path}.tmp.{tid}"
         with open(tmp_path, "w") as f:
             json.dump(data, f, indent=2)
         os.replace(tmp_path, self.save_path)

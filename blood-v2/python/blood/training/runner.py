@@ -203,10 +203,15 @@ def _patch_learner():
             env_steps=getattr(self, "env_steps", 0),
         )
 
-        # Add extra losses to value_loss so the PPO policy_loss curve stays clean.
+        # Add extra losses as a separate term in the total loss, NOT to value_loss.
+        # Adding to value_loss contaminates the critic gradient signal and makes
+        # TensorBoard's value_loss metric misleading (Issue #R4-M1).
+        # SF2 computes: loss = actor_loss + critic_loss (where critic_loss = value_loss)
+        # We add extra_loss to policy_loss instead (which becomes actor_loss in SF2).
+        # This keeps value_loss clean for critic diagnostics.
         summaries["ppo_policy_loss"] = policy_loss.detach()
         summaries["extra_loss_total"] = extra_loss.squeeze().detach()
-        value_loss = value_loss + extra_loss.squeeze()
+        policy_loss = policy_loss + extra_loss.squeeze()
         return action_dist, policy_loss, exploration_loss, kl_old, kl_loss, value_loss, summaries
 
     Learner._calculate_losses = _patched
@@ -414,6 +419,15 @@ def run_training():
         cfg = parse_full_cfg(parser)
     finally:
         sys.argv = original_argv  # Always restore, even on parse errors
+
+    # Force serial mode: SF2's ParallelRunner spawns the Learner in a subprocess
+    # via multiprocessing.spawn, which re-imports all modules from scratch.
+    # Our monkey-patches (_patch_learner, _patch_learner_load_state) are applied
+    # in the main process and are NOT inherited by the spawned subprocess.
+    # This silently disables all auxiliary losses (oracle distillation, aux head, etc.).
+    # Serial mode runs the Learner in the main process where patches are active.
+    cfg.serial_mode = True
+    cfg.async_rl = False
 
     cfg, runner = make_runner(cfg)
 

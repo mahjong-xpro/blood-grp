@@ -115,17 +115,21 @@ impl MeldType {
 }
 
 pub fn add_tile(hand: &mut HandCounts, t: Tile) {
-    debug_assert!(
-        hand[t as usize] < COPIES_PER_TILE as u8,
+    let idx = t as usize;
+    assert!(idx < NUM_TILE_TYPES, "add_tile: tile {} out of range", t);
+    assert!(
+        hand[idx] < COPIES_PER_TILE as u8,
         "add_tile: tile {} already at max count {}",
-        t, hand[t as usize]
+        t, hand[idx]
     );
-    hand[t as usize] += 1;
+    hand[idx] += 1;
 }
 
 pub fn remove_tile(hand: &mut HandCounts, t: Tile) {
-    debug_assert!(hand[t as usize] > 0, "tile {} not in hand", t);
-    hand[t as usize] -= 1;
+    let idx = t as usize;
+    assert!(idx < NUM_TILE_TYPES, "remove_tile: tile {} out of range", t);
+    assert!(hand[idx] > 0, "remove_tile: tile {} not in hand (count=0)", t);
+    hand[idx] -= 1;
 }
 
 pub fn total_tiles(hand: &HandCounts) -> u8 {

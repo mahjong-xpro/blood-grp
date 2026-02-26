@@ -46,6 +46,15 @@ pub fn ismce_evaluate(
         ));
     }
 
+    // Validate candidate tile indices are in range [0, 27)
+    for &c in &candidates {
+        if (c as usize) >= NUM_TILE_TYPES {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                format!("candidate tile {} out of range [0, {})", c, NUM_TILE_TYPES)
+            ));
+        }
+    }
+
     let mut h = [0u8; NUM_TILE_TYPES];
     h.copy_from_slice(&hand_slice[..NUM_TILE_TYPES]);
     let mut s = [0u8; NUM_TILE_TYPES];
@@ -138,6 +147,15 @@ pub fn ismce_evaluate_full(
         ));
     }
 
+    // Validate candidate tile indices are in range [0, 27)
+    for &c in &candidates {
+        if (c as usize) >= NUM_TILE_TYPES {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                format!("candidate tile {} out of range [0, {})", c, NUM_TILE_TYPES)
+            ));
+        }
+    }
+
     let mut h = [0u8; NUM_TILE_TYPES];
     h.copy_from_slice(&hand_slice[..NUM_TILE_TYPES]);
     let mut s = [0u8; NUM_TILE_TYPES];
@@ -175,8 +193,10 @@ pub fn ismce_evaluate_full(
         };
         let discards_vec: Vec<u8> = opponent_discards.get(i).cloned().unwrap_or_default();
         let mc = opponent_meld_counts.get(i).copied().unwrap_or(0);
-        // Estimate hand count: 13 - 3*melds - discards (rough)
-        let hand_count = 13u8.saturating_sub((3 * mc) as u8);
+        // Estimate hand count: pon uses 2 tiles from hand (reveal 2 + 1 from opponent),
+        // kan uses 3 tiles from hand. Without meld type info, use 2 per meld as
+        // conservative estimate (pon is more common than kan in Sichuan mahjong).
+        let hand_count = 13u8.saturating_sub((2 * mc) as u8);
         opponents.push(OpponentInfo {
             ding_que: opp_dq,
             discards: discards_vec,
@@ -266,6 +286,15 @@ pub fn ismce_evaluate_informed(
         ));
     }
 
+    // Validate candidate tile indices are in range [0, 27)
+    for &c in &candidates {
+        if (c as usize) >= NUM_TILE_TYPES {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                format!("candidate tile {} out of range [0, {})", c, NUM_TILE_TYPES)
+            ));
+        }
+    }
+
     let mut h = [0u8; NUM_TILE_TYPES];
     h.copy_from_slice(&hand_slice[..NUM_TILE_TYPES]);
     let mut s = [0u8; NUM_TILE_TYPES];
@@ -286,7 +315,7 @@ pub fn ismce_evaluate_informed(
         };
         let discards_vec = opponent_discards.get(i).cloned().unwrap_or_default();
         let mc = opponent_meld_counts.get(i).copied().unwrap_or(0);
-        let hand_count = 13u8.saturating_sub((3 * mc) as u8);
+        let hand_count = 13u8.saturating_sub((2 * mc) as u8);
         opponents.push(OpponentInfo { ding_que: opp_dq, discards: discards_vec, melds_count: mc, hand_count });
     }
 
@@ -358,6 +387,11 @@ pub fn ismce_danger<'py>(
     opp_discard_counts: Option<Vec<usize>>,
 ) -> PyResult<Bound<'py, PyArray1<f32>>> {
     let seen_slice = tiles_seen.as_slice()?;
+    if seen_slice.len() < NUM_TILE_TYPES {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            format!("tiles_seen must have at least {} elements, got {}", NUM_TILE_TYPES, seen_slice.len())
+        ));
+    }
     let mut s = [0u8; NUM_TILE_TYPES];
     s.copy_from_slice(&seen_slice[..NUM_TILE_TYPES]);
 

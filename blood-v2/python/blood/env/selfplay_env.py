@@ -18,6 +18,7 @@ from .blood_env import (
     BloodMahjongEnv, NUM_TILE_TYPES, ACTION_SPACE,
     OBS_SIZE, NUM_STUDENT_CHANNELS,
 )
+from blood.consts import REWARD_NORM
 from blood.model.inference import OpponentModelPool
 from blood.training.league import LeagueManager
 
@@ -392,7 +393,7 @@ class SelfPlayEnv(BloodMahjongEnv):
         # causing high reward variance. Sqrt compression reduces this to ~5.6:1:
         #   1-fan ron  → 0.177,  6-fan ron  → 1.000
         #   1-fan tsumo→ 0.306,  6-fan tsumo→ 1.732
-        _r = float(agent_delta) / 32000.0
+        _r = float(agent_delta) / float(REWARD_NORM)
         reward = float(np.sign(_r) * np.sqrt(abs(_r)))
 
         # --- Structured reward shaping (all phases) ---
@@ -407,7 +408,7 @@ class SelfPlayEnv(BloodMahjongEnv):
             # Score-weighted: 1-fan tsumo(Δ3000)→0.031, 6-fan tsumo(Δ96000)→0.100
             if self._reward_tsumo_bonus > 0 and self._env.player_has_won(0) and agent_delta > 0:
                 if int(np.sum(opp_deltas < -100)) >= 2:
-                    t_intensity = min(1.0, float(np.sqrt(agent_delta / 32000.0)))
+                    t_intensity = min(1.0, float(np.sqrt(agent_delta / float(REWARD_NORM))))
                     t_intensity = max(0.25, t_intensity)
                     reward += self._reward_tsumo_bonus * t_intensity
 
@@ -415,7 +416,7 @@ class SelfPlayEnv(BloodMahjongEnv):
             # Score-weighted: 1-fan deal-in(Δ1000)→0.014, 6-fan deal-in(Δ32000)→0.050
             elif self._reward_deal_in_penalty > 0 and agent_delta < -100:
                 if int(np.sum(opp_deltas > 100)) >= 1 and int(np.sum(opp_deltas < -100)) == 0:
-                    d_intensity = min(1.0, float(np.sqrt(abs(agent_delta) / 32000.0)))
+                    d_intensity = min(1.0, float(np.sqrt(abs(agent_delta) / float(REWARD_NORM))))
                     d_intensity = max(0.25, d_intensity)
                     reward -= self._reward_deal_in_penalty * d_intensity
 
@@ -452,25 +453,32 @@ class SelfPlayEnv(BloodMahjongEnv):
                 reward += self._reward_safe_discard * (1.0 - max_danger)
 
         # Rank bonus at game end: encourages maximizing relative ranking, not just
-        # absolute score. Applied once when the game fully terminates.
+        # absolute score. Applied when the game fully terminates OR when the agent
+        # wins (guaranteed rank 1). Without the early-win case, agents that win first
+        # never receive a positive rank bonus, creating an asymmetry where only
+        # losing agents get rank penalties.
         #
-        # Score-weighted intensity: rank bonus scales with sqrt(|score_delta|/32000)
+        # Score-weighted intensity: rank bonus scales with sqrt(|score_delta|/REWARD_NORM)
         # so that rank matters more in high-stakes games and less in quiet ones.
-        # Without this, a fixed rank_bonus=0.2 dominates 1-fan games (53% of signal).
-        # With weighting: 1-fan(Δ1000) → intensity=0.25 → effective=0.05,
-        #                 6-fan(Δ32000) → intensity=1.0 → effective=0.20.
-        if self._reward_rank_bonus > 0 and terminated and self._env.is_done():
+        if self._reward_rank_bonus > 0 and terminated:
             final_scores = self._env.get_scores()
-            # Tie-aware ranking: average rank for tied players (Issue #46)
             player_score = final_scores[0]
-            above = sum(1 for s in final_scores if s > player_score)
-            equal = sum(1 for s in final_scores if s == player_score)
-            avg_rank = above + (equal + 1) / 2.0  # 1-indexed average rank
-            rank_idx = min(int(avg_rank - 0.5), 3)  # Map 1.0→0, 1.5→1, 2.0→1, etc.
+
+            if self._env.is_done():
+                # Game fully ended: compute actual rank
+                above = sum(1 for s in final_scores if s > player_score)
+                equal = sum(1 for s in final_scores if s == player_score)
+                avg_rank = above + (equal + 1) / 2.0
+            elif self._env.player_has_won(0):
+                # Agent won but game not done: guaranteed rank 1
+                avg_rank = 1.0
+            else:
+                avg_rank = 2.5  # fallback: neutral
+
+            rank_idx = min(int(avg_rank - 0.5), 3)
             rank_multipliers = [1.0, 0.3, -0.3, -1.0]
-            # Scale by game intensity: sqrt-compressed score magnitude
             score_delta = abs(float(player_score - self._initial_score))
-            intensity = min(1.0, float(np.sqrt(score_delta / 32000.0)))
+            intensity = min(1.0, float(np.sqrt(score_delta / float(REWARD_NORM))))
             intensity = max(0.25, intensity)  # floor: rank always has some weight
             reward += self._reward_rank_bonus * rank_multipliers[rank_idx] * intensity
 

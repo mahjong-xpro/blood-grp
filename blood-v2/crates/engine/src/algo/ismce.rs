@@ -271,14 +271,14 @@ fn sample_world(info: &PlayerInfo, rng_seed: u64) -> Vec<Tile> {
 
 /// 轻量番数估算：仅检查高频番种，避免完整 calc_fan 的开销。
 ///
-/// 检查: 清一色(+4), 对对和(+1), 门清(+1), 自摸(+1 base)
+/// 检查: 自摸(+1), 清一色(+2), 对对和(+1), 门清(+1)
 /// 返回估计番数 (1-6)
 fn estimate_fan_quick(hand: &HandCounts, melds_count: usize, is_tsumo: bool) -> u8 {
     let mut fan: u8 = 1; // base: 平胡
 
-    // 自摸 +0 (already in base), but tsumo is the default in rollout
+    // 自摸 +1 (per rules.md and agari.rs: tsumo is a separate yaku)
     if is_tsumo {
-        // tsumo is already counted in base
+        fan += 1;
     }
 
     // 门清: no melds
@@ -295,7 +295,7 @@ fn estimate_fan_quick(hand: &HandCounts, melds_count: usize, is_tsumo: bool) -> 
     }
     let suit_count = suits_present.iter().filter(|&&s| s).count();
     if suit_count == 1 {
-        fan += 4; // 清一色 = 4 fan
+        fan += 2; // 清一色 = 2 fan (per rules.md and agari.rs)
     }
 
     // 对对和: all groups are triplets (no sequences), exactly one pair
@@ -352,7 +352,9 @@ pub fn evaluate_discards(
             let mut total_score = 0.0f64;
 
             for world_idx in 0..config.num_worlds {
-                let seed = config.base_seed
+                // Seed mixing: wrapping_add(1) ensures non-zero input to the multiplier,
+                // preventing base_seed=0 from producing deterministic (zero) seeds.
+                let seed = config.base_seed.wrapping_add(1)
                     .wrapping_mul(6364136223846793005)
                     .wrapping_add((discard as u64) * 100_000 + world_idx as u64);
                 let wall = sample_world(info, seed);
@@ -415,7 +417,7 @@ pub fn evaluate_discards_constrained(
             let mut total_score = 0.0f64;
 
             for world_idx in 0..config.num_worlds {
-                let seed = config.base_seed
+                let seed = config.base_seed.wrapping_add(1)
                     .wrapping_mul(6364136223846793005)
                     .wrapping_add((discard as u64) * 100_000 + world_idx as u64);
 
@@ -531,7 +533,7 @@ fn evaluate_discards_full_inner(
             let mut total_tenpai_waits = 0.0f64;
 
             for world_idx in 0..config.num_worlds {
-                let seed = config.base_seed
+                let seed = config.base_seed.wrapping_add(1)
                     .wrapping_mul(6364136223846793005)
                     .wrapping_add((discard as u64) * 100_000 + world_idx as u64);
 
@@ -622,12 +624,17 @@ fn estimate_ron_probability(
             let mut max_p = 0.0f32;
             for o in infos.iter() {
                 let est_shanten = (4.0 - o.melds_count as f32 - o.discard_count as f32 / 5.0).max(0.0);
-                // Tenpai probability: sigmoid-like mapping from estimated shanten
-                let tenpai_p = match est_shanten as u8 {
-                    0 => 0.8,     // very likely tenpai
-                    1 => 0.3,     // possibly tenpai
-                    2 => 0.05,    // unlikely
-                    _ => 0.0,
+                // Tenpai probability: continuous mapping from estimated shanten.
+                // Use float comparison to avoid integer truncation bias
+                // (e.g., est_shanten=0.9 should NOT map to tenpai_p=0.8).
+                let tenpai_p = if est_shanten < 0.5 {
+                    0.8     // very likely tenpai
+                } else if est_shanten < 1.5 {
+                    0.3     // possibly tenpai
+                } else if est_shanten < 2.5 {
+                    0.05    // unlikely
+                } else {
+                    0.0
                 };
                 max_p = max_p.max(tenpai_p);
             }
@@ -712,18 +719,27 @@ fn simulate_draws_with_opponents(
         if let Some(suit) = ding_que {
             let start = suit.start();
             let end = suit.end();
-            for t in start..end {
-                if h[t] == 0 { continue; }
+            // First check if any ding-que tiles exist in hand
+            let has_dq_tiles = (start..end).any(|t| h[t] > 0);
+            if has_dq_tiles {
                 forced_dq = true;
-                let mut hh = h;
-                remove_tile(&mut hh, t as Tile);
-                let s = calc_shanten(&hh, melds);
-                let d = danger_tiles.map_or(0.0f32, |dt| dt[t]);
-                // 优先选择向听数更低的；向听数相同时选危险度更低的
-                if s < best_s || (s == best_s && d < best_danger) {
-                    best_s = s;
-                    best_discard = t as Tile;
-                    best_danger = d;
+                // Reset baseline: must pick from ding-que tiles only.
+                // Initialize to worst possible so any ding-que tile wins.
+                best_s = i8::MAX;
+                best_danger = f32::MAX;
+                best_discard = start as Tile; // fallback to first ding-que position
+                for t in start..end {
+                    if h[t] == 0 { continue; }
+                    let mut hh = h;
+                    remove_tile(&mut hh, t as Tile);
+                    let s = calc_shanten(&hh, melds);
+                    let d = danger_tiles.map_or(0.0f32, |dt| dt[t]);
+                    // 优先选择向听数更低的；向听数相同时选危险度更低的
+                    if s < best_s || (s == best_s && d < best_danger) {
+                        best_s = s;
+                        best_discard = t as Tile;
+                        best_danger = d;
+                    }
                 }
             }
         }
