@@ -87,7 +87,8 @@ class PolicyModel(nn.Module):
 
         raw_dim = conv_ch * NUM_TILES
         # enc_proj 使用与训练编码器相同的构建函数，支持渐进压缩
-        self.enc_proj = _build_enc_proj(raw_dim, enc_out_dim, enc_proj_layers)
+        self._use_spatial = (enc_proj_layers == 3)
+        self.enc_proj = _build_enc_proj(raw_dim, enc_out_dim, enc_proj_layers, conv_ch=conv_ch)
 
         # LSTM 支持多层 (rnn_num_layers >= 1)
         self._rnn_num_layers = rnn_num_layers
@@ -114,9 +115,12 @@ class PolicyModel(nn.Module):
         for i in range(len(self.segments)):
             x = self.segments[i](x)
             x = self.tile_attns[i](x)
-        flat = x.reshape(B, -1)
-        flat = self.enc_proj(flat)
-        return flat
+        if self._use_spatial:
+            # SpatialPoolingProj takes (B, C, 27) directly
+            return self.enc_proj(x)
+        else:
+            flat = x.reshape(B, -1)
+            return self.enc_proj(flat)
 
     def forward(
         self,
@@ -194,12 +198,18 @@ class PolicyModel(nn.Module):
                 break
 
         # 检测 enc_proj 层数和 enc_out_dim
+        # 3层 SpatialPoolingProj: enc_proj.queries 是独有的 Parameter
         # 2层渐进压缩格式: enc_proj = [LayerNorm(0), Linear(1), LayerNorm(2), Mish(3), Linear(4)]
         # 1层旧格式:       enc_proj = [LayerNorm(0), Linear(1)]
         enc_proj_layers = 1
+        enc_proj_spatial_key = "enc_proj.queries"  # SpatialPoolingProj 独有
         enc_proj_2layer_key = "enc_proj.4.weight"  # 第二个 Linear 的权重
         enc_proj_1layer_key = "enc_proj.1.weight"  # 第一个（或唯一的）Linear 的权重
-        if enc_proj_2layer_key in encoder_sd:
+        if enc_proj_spatial_key in encoder_sd:
+            # SpatialPoolingProj: enc_out_dim 从 proj Sequential 的 Linear 获取
+            enc_proj_layers = 3
+            enc_out_dim = encoder_sd["enc_proj.proj.1.weight"].shape[0]
+        elif enc_proj_2layer_key in encoder_sd:
             # 2层渐进压缩：最终输出维度从第二个 Linear 获取
             enc_proj_layers = 2
             enc_out_dim = encoder_sd[enc_proj_2layer_key].shape[0]
