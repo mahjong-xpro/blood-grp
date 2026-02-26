@@ -53,6 +53,9 @@ class PolicyModel(nn.Module):
         num_tile_attn_layers: int = 4,
         tile_attn_heads: int = 4,
         rnn_num_layers: int = 1,
+        turn_attention_enabled: bool = False,
+        turn_attention_heads: int = 4,
+        turn_attention_max_turns: int = 32,
     ):
         super().__init__()
 
@@ -107,6 +110,16 @@ class PolicyModel(nn.Module):
         self.action_head = nn.Linear(head_dim, action_dim)
         self._obs_channels = obs_channels
 
+        # B1: TurnAttention for inference
+        self._turn_attn_enabled = turn_attention_enabled
+        self._turn_attn_max_turns = turn_attention_max_turns
+        if turn_attention_enabled:
+            from blood.model.factory import TurnAttention
+            self.turn_attention = TurnAttention(
+                dim=rnn_size, num_heads=turn_attention_heads,
+                max_turns=turn_attention_max_turns,
+            )
+
     def _encode(self, obs_flat: Tensor) -> Tensor:
         B = obs_flat.shape[0]
         x = obs_flat.view(B, self._obs_channels, NUM_TILES)
@@ -130,7 +143,20 @@ class PolicyModel(nn.Module):
         """obs_flat: (B, C*27) → (logits (B, action_dim), new_hidden_state)"""
         enc = self._encode(obs_flat)
         lstm_out, new_hidden = self.lstm(enc.unsqueeze(1), hidden_state)
-        features = self.actor_head(lstm_out.squeeze(1))
+        features = lstm_out.squeeze(1)  # (B, rnn_size)
+
+        # B1: TurnAttention with memory buffer
+        if self._turn_attn_enabled and hasattr(self, "turn_attention"):
+            if not hasattr(self, "_memory_buffer"):
+                self._memory_buffer = []
+            self._memory_buffer.append(features.detach())
+            if len(self._memory_buffer) > self._turn_attn_max_turns:
+                self._memory_buffer = self._memory_buffer[-self._turn_attn_max_turns:]
+            memory = torch.stack(self._memory_buffer, dim=1)  # (B, K, dim)
+            current = features.unsqueeze(1)  # (B, 1, dim)
+            features = self.turn_attention(current, memory).squeeze(1)
+
+        features = self.actor_head(features)
         return self.action_head(features), new_hidden
 
     @torch.no_grad()
@@ -155,6 +181,9 @@ class PolicyModel(nn.Module):
         # 多层 LSTM: hidden state shape = (num_layers, batch, rnn_size)
         h = torch.zeros(self._rnn_num_layers, 1, self._rnn_size, device=device)
         c = torch.zeros(self._rnn_num_layers, 1, self._rnn_size, device=device)
+        # Reset TurnAttention memory buffer
+        if self._turn_attn_enabled:
+            self._memory_buffer = []
         return (h, c)
 
     @classmethod
@@ -280,6 +309,10 @@ class PolicyModel(nn.Module):
         if "actor_head.4.weight" in model_sd:
             head_dim = model_sd["actor_head.4.weight"].shape[0]
 
+        # Detect TurnAttention
+        turn_attention_enabled = "turn_attention.attn.in_proj_weight" in model_sd
+        turn_attention_heads = 4  # default
+
         model = cls(
             obs_channels=obs_channels,
             conv_ch=conv_ch,
@@ -291,6 +324,8 @@ class PolicyModel(nn.Module):
             num_tile_attn_layers=num_tile_attn_layers,
             tile_attn_heads=tile_attn_heads,
             rnn_num_layers=rnn_num_layers,
+            turn_attention_enabled=turn_attention_enabled,
+            turn_attention_heads=turn_attention_heads,
         )
         model.to(device)
 
@@ -327,6 +362,12 @@ class PolicyModel(nn.Module):
         # Load full actor_head weights (Pre-norm 2-layer MLP)
         for k, v in model_sd.items():
             if k.startswith("actor_head."):
+                if k in model.state_dict():
+                    partial_sd[k] = v
+
+        # Load TurnAttention weights if present
+        for k, v in model_sd.items():
+            if k.startswith("turn_attention."):
                 if k in model.state_dict():
                     partial_sd[k] = v
 
@@ -488,6 +529,9 @@ class OpponentModelPool:
     def reset_hidden_states(self) -> None:
         """Reset all opponent hidden states at episode boundaries."""
         self._hidden_states.clear()
+        # Reset TurnAttention memory buffers if model has them
+        if self._model is not None and hasattr(self._model, "_memory_buffer"):
+            self._model._memory_buffer = []
 
     @torch.no_grad()
     def get_action(

@@ -24,7 +24,7 @@ encoder_custom: blood_encoder
 experiment: blood_v2_smoke_test
 
 # Model — minimal architecture for fast CPU execution
-blood_obs_channels: 470
+blood_obs_channels: 473
 blood_conv_channels: 64
 blood_num_res_blocks: 2
 blood_encoder_out_dim: 128

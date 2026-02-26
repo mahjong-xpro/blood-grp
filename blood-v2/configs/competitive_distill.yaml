@@ -35,7 +35,7 @@ encoder_custom: blood_encoder
 experiment: blood_v2_competitive_distill
 
 # Model — 与 warmup.yaml/default.yaml 保持一致 (256ch/20blocks Bottleneck)
-blood_obs_channels: 470
+blood_obs_channels: 473
 blood_conv_channels: 256
 blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024

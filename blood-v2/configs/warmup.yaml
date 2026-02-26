@@ -30,8 +30,8 @@ experiment: blood_v2_warmup
 
 # Model — 与 default.yaml/competitive.yaml 保持一致 (256ch/20blocks Bottleneck)
 # 修复: 原 192ch/30blocks 为 V1 规格，warmup 权重无法迁移到后续阶段
-# 修复: blood_obs_channels 384 → 470 (Rust NUM_STUDENT_CHANNELS=470)
-blood_obs_channels: 470
+# 修复: blood_obs_channels 384 → 473 (Rust NUM_STUDENT_CHANNELS=473, +3 genbutsu)
+blood_obs_channels: 473
 blood_conv_channels: 256
 blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024

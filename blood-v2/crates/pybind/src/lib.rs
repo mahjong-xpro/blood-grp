@@ -10,6 +10,7 @@ fn blood_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<env::RustMahjongEnv>()?;
     m.add_function(wrap_pyfunction!(ismce_py::ismce_evaluate, m)?)?;
     m.add_function(wrap_pyfunction!(ismce_py::ismce_evaluate_full, m)?)?;
+    m.add_function(wrap_pyfunction!(ismce_py::ismce_evaluate_informed, m)?)?;
     m.add_function(wrap_pyfunction!(ismce_py::ismce_danger, m)?)?;
     m.add("NUM_TILE_TYPES", engine::consts::NUM_TILE_TYPES)?;
     m.add("NUM_PLAYERS", engine::consts::NUM_PLAYERS)?;
@@ -48,5 +49,6 @@ fn blood_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("CH_SP_TABLE_BASE", engine::consts::CH_SP_TABLE_BASE)?;
     m.add("CH_FAN_CONFIG_BASE", engine::consts::CH_FAN_CONFIG_BASE)?;
     m.add("CH_OPP_HAND_INFO_BASE", engine::consts::CH_OPP_HAND_INFO_BASE)?;
+    m.add("CH_GENBUTSU_BASE", engine::consts::CH_GENBUTSU_BASE)?;
     Ok(())
 }

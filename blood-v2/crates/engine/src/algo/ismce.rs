@@ -9,14 +9,29 @@ use crate::consts::*;
 use crate::tile::{Tile, Suit};
 use crate::hand::*;
 use crate::algo::shanten::calc_shanten;
+use crate::algo::point::calc_score;
+
+/// Rollout 结果（替代原来的 (bool, bool) 元组）
+#[derive(Debug, Clone, Copy)]
+struct RolloutResult {
+    won: bool,
+    tenpai: bool,
+    score: f64,       // 和牌时的期望得分
+    tenpai_waits: usize, // 听牌时的待牌数（0 = 未听牌或已和牌）
+}
 
 /// 单个候选弃牌的评估结果
 #[derive(Debug, Clone)]
 pub struct IsmceScore {
     pub tile: Tile,
     pub win_rate: f64,
+    pub expected_score: f64,          // 番数加权期望得分
     pub tenpai_rate: f64,
+    pub tenpai_value: f64,            // 听牌质量 (待数×剩余轮归一化)
+    pub danger_cost: f64,             // 防守代价
     pub avg_shanten_improvement: f64,
+    // Legacy fields for backward compatibility
+    pub win_rate_raw: f64,
 }
 
 /// ISMCE 评估配置
@@ -30,7 +45,7 @@ impl Default for IsmceConfig {
     fn default() -> Self {
         Self {
             num_worlds: 64,
-            rollout_depth: 4,
+            rollout_depth: 8,       // v2: 4 → 8 for deeper lookahead
             base_seed: 0,
         }
     }
@@ -137,6 +152,79 @@ fn sample_world_constrained(
     (opp_hands, remaining_pool)
 }
 
+/// 信息引导的世界采样：使用对手手牌概率分布加权分配
+///
+/// 当 OpponentHandPredictor 提供了每个对手持有每种牌的概率时，
+/// 在 Fisher-Yates 采样中优先将高概率的牌分配给对应对手。
+pub fn sample_world_informed(
+    info: &PlayerInfo,
+    opponents: &[OpponentInfo],
+    opponent_hand_probs: &[[f32; NUM_TILE_TYPES]; 3],
+    rng_seed: u64,
+) -> (Vec<Vec<Tile>>, Vec<Tile>) {
+    let mut rng = fastrand::Rng::with_seed(rng_seed);
+
+    // Collect unseen tiles
+    let mut pool: Vec<Tile> = Vec::new();
+    for t in 0..NUM_TILE_TYPES {
+        let unseen = (COPIES_PER_TILE as u8).saturating_sub(info.tiles_seen[t]);
+        for _ in 0..unseen {
+            pool.push(t as Tile);
+        }
+    }
+
+    // Shuffle pool
+    let n = pool.len();
+    for i in (1..n).rev() {
+        let j = rng.usize(..=i);
+        pool.swap(i, j);
+    }
+
+    let mut opp_hands: Vec<Vec<Tile>> = opponents.iter().map(|_| Vec::new()).collect();
+    let mut used = vec![false; pool.len()];
+
+    // For each opponent, assign tiles weighted by predicted probability
+    for (opp_idx, opp) in opponents.iter().enumerate() {
+        if opp_idx >= 3 { break; }
+        let needed = opp.hand_count as usize;
+        let probs = &opponent_hand_probs[opp_idx];
+
+        // Sort pool indices by probability (descending) for this opponent
+        let mut candidates: Vec<(usize, f32)> = pool.iter().enumerate()
+            .filter(|(idx, _)| !used[*idx])
+            .map(|(idx, &tile)| {
+                let p = probs[tile as usize];
+                // Apply ding-que constraint: zero probability for ding-que suit
+                let p = if let Some(dq) = opp.ding_que {
+                    if Suit::from_tile(tile) == dq { 0.0 } else { p }
+                } else {
+                    p
+                };
+                (idx, p)
+            })
+            .collect();
+
+        // Sort by probability descending, with randomization for ties
+        candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        let mut assigned = 0usize;
+        for (pool_idx, _prob) in candidates {
+            if assigned >= needed { break; }
+            used[pool_idx] = true;
+            opp_hands[opp_idx].push(pool[pool_idx]);
+            assigned += 1;
+        }
+    }
+
+    // Remaining tiles form the wall
+    let remaining_pool: Vec<Tile> = pool.iter().enumerate()
+        .filter(|(idx, _)| !used[*idx])
+        .map(|(_, &tile)| tile)
+        .collect();
+
+    (opp_hands, remaining_pool)
+}
+
 /// 从信息集中采样一致的对手手牌配置（无约束版本，向后兼容）
 fn sample_world(info: &PlayerInfo, rng_seed: u64) -> Vec<Tile> {
     let mut rng = fastrand::Rng::with_seed(rng_seed);
@@ -159,6 +247,60 @@ fn sample_world(info: &PlayerInfo, rng_seed: u64) -> Vec<Tile> {
     }
 
     pool
+}
+
+/// 轻量番数估算：仅检查高频番种，避免完整 calc_fan 的开销。
+///
+/// 检查: 清一色(+4), 对对和(+1), 门清(+1), 自摸(+1 base)
+/// 返回估计番数 (1-6)
+fn estimate_fan_quick(hand: &HandCounts, melds_count: usize, is_tsumo: bool) -> u8 {
+    let mut fan: u8 = 1; // base: 平胡
+
+    // 自摸 +0 (already in base), but tsumo is the default in rollout
+    if is_tsumo {
+        // tsumo is already counted in base
+    }
+
+    // 门清: no melds
+    if melds_count == 0 {
+        fan += 1;
+    }
+
+    // 清一色: all tiles in one suit
+    let mut suits_present = [false; 3];
+    for t in 0..NUM_TILE_TYPES {
+        if hand[t] > 0 {
+            suits_present[t / TILES_PER_SUIT] = true;
+        }
+    }
+    let suit_count = suits_present.iter().filter(|&&s| s).count();
+    if suit_count == 1 {
+        fan += 4; // 清一色 = 4 fan
+    }
+
+    // 对对和: all groups are triplets (no sequences), exactly one pair
+    // Quick check: every tile count in hand must be 0, 2, or 3.
+    // count=1 implies a sequence component → not toitoi.
+    // count=4 is ambiguous (triplet+single or pair+pair) → skip toitoi.
+    {
+        let mut pairs = 0u8;
+        let mut triplets = 0u8;
+        let mut is_toitoi = true;
+        for t in 0..NUM_TILE_TYPES {
+            match hand[t] {
+                0 => {},
+                2 => pairs += 1,
+                3 => triplets += 1,
+                _ => { is_toitoi = false; break; }  // count 1 or 4 → not pure toitoi
+            }
+        }
+        // Hand portion: triplets + 1 pair; total with melds: triplets + melds >= 4
+        if is_toitoi && pairs == 1 && triplets + melds_count as u8 >= 4 {
+            fan += 1;
+        }
+    }
+
+    fan.min(MAX_FAN)
 }
 
 /// 使用 ISMCE 评估所有候选弃牌（基础版本，无约束采样，无防守）
@@ -187,6 +329,7 @@ pub fn evaluate_discards(
 
             let mut wins = 0u64;
             let mut tenpais = 0u64;
+            let mut total_score = 0.0f64;
 
             for world_idx in 0..config.num_worlds {
                 let seed = config.base_seed
@@ -194,13 +337,15 @@ pub fn evaluate_discards(
                     .wrapping_add((discard as u64) * 100_000 + world_idx as u64);
                 let wall = sample_world(info, seed);
 
-                let (won, is_tenpai) =
-                    simulate_draws(&hand_after, info.melds_count, info.ding_que, &wall, config.rollout_depth);
+                let result = simulate_draws_with_defense(
+                    &hand_after, info.melds_count, info.ding_que, &wall, config.rollout_depth, None,
+                );
 
-                if won {
+                if result.won {
                     wins += 1;
+                    total_score += result.score;
                 }
-                if is_tenpai {
+                if result.tenpai {
                     tenpais += 1;
                 }
             }
@@ -209,8 +354,12 @@ pub fn evaluate_discards(
             IsmceScore {
                 tile: discard,
                 win_rate: wins as f64 / n,
+                expected_score: total_score / n,
                 tenpai_rate: tenpais as f64 / n,
+                tenpai_value: 0.0,  // basic version doesn't compute tenpai quality
+                danger_cost: 0.0,   // basic version doesn't compute danger
                 avg_shanten_improvement: improvement,
+                win_rate_raw: wins as f64 / n,
             }
         })
         .collect()
@@ -243,22 +392,24 @@ pub fn evaluate_discards_constrained(
 
             let mut wins = 0u64;
             let mut tenpais = 0u64;
+            let mut total_score = 0.0f64;
 
             for world_idx in 0..config.num_worlds {
                 let seed = config.base_seed
                     .wrapping_mul(6364136223846793005)
                     .wrapping_add((discard as u64) * 100_000 + world_idx as u64);
 
-                // 使用约束采样，牌山部分用于模拟摸牌
                 let (_opp_hands, wall) = sample_world_constrained(info, opponents, seed);
 
-                let (won, is_tenpai) =
-                    simulate_draws(&hand_after, info.melds_count, info.ding_que, &wall, config.rollout_depth);
+                let result = simulate_draws_with_defense(
+                    &hand_after, info.melds_count, info.ding_que, &wall, config.rollout_depth, None,
+                );
 
-                if won {
+                if result.won {
                     wins += 1;
+                    total_score += result.score;
                 }
-                if is_tenpai {
+                if result.tenpai {
                     tenpais += 1;
                 }
             }
@@ -267,8 +418,12 @@ pub fn evaluate_discards_constrained(
             IsmceScore {
                 tile: discard,
                 win_rate: wins as f64 / n,
+                expected_score: total_score / n,
                 tenpai_rate: tenpais as f64 / n,
+                tenpai_value: 0.0,
+                danger_cost: 0.0,
                 avg_shanten_improvement: improvement,
+                win_rate_raw: wins as f64 / n,
             }
         })
         .collect()
@@ -278,11 +433,13 @@ pub fn evaluate_discards_constrained(
 ///
 /// This is the recommended entry point that combines all three capabilities:
 /// 1. Constrained world sampling (respects opponent ding-que)
+///    — or informed sampling when `opponent_hand_probs` is provided
 /// 2. Enhanced danger score computation
 /// 3. Defense-aware rollout (uses danger as tiebreaker among equal-shanten discards)
 ///
 /// When `opponents` is empty, falls back to unconstrained sampling.
 /// When `opponent_danger_info` is empty, rollouts run without defense awareness.
+/// When `opponent_hand_probs` is Some, uses probability-weighted sampling.
 pub fn evaluate_discards_full(
     info: &PlayerInfo,
     candidates: &[Tile],
@@ -290,6 +447,33 @@ pub fn evaluate_discards_full(
     opponent_discards: &[Vec<Tile>; 3],
     opponent_danger_info: &[OpponentDangerInfo; 3],
     config: &IsmceConfig,
+) -> Vec<IsmceScore> {
+    evaluate_discards_full_inner(info, candidates, opponents, opponent_discards,
+                                 opponent_danger_info, config, None)
+}
+
+/// Full ISMCE evaluation with informed sampling from opponent hand predictions.
+pub fn evaluate_discards_informed(
+    info: &PlayerInfo,
+    candidates: &[Tile],
+    opponents: &[OpponentInfo],
+    opponent_discards: &[Vec<Tile>; 3],
+    opponent_danger_info: &[OpponentDangerInfo; 3],
+    config: &IsmceConfig,
+    opponent_hand_probs: &[[f32; NUM_TILE_TYPES]; 3],
+) -> Vec<IsmceScore> {
+    evaluate_discards_full_inner(info, candidates, opponents, opponent_discards,
+                                 opponent_danger_info, config, Some(opponent_hand_probs))
+}
+
+fn evaluate_discards_full_inner(
+    info: &PlayerInfo,
+    candidates: &[Tile],
+    opponents: &[OpponentInfo],
+    opponent_discards: &[Vec<Tile>; 3],
+    opponent_danger_info: &[OpponentDangerInfo; 3],
+    config: &IsmceConfig,
+    opponent_hand_probs: Option<&[[f32; NUM_TILE_TYPES]; 3]>,
 ) -> Vec<IsmceScore> {
     let base_shanten = calc_shanten(&info.hand, info.melds_count);
 
@@ -306,6 +490,9 @@ pub fn evaluate_discards_full(
         None
     };
 
+    // Estimate remaining turns for tenpai value calculation
+    let remaining_turns = info.wall_remaining.min(MAX_TURNS) as f64;
+
     // 2. For each candidate discard, evaluate across sampled worlds
     candidates
         .iter()
@@ -320,62 +507,124 @@ pub fn evaluate_discards_full(
 
             let mut wins = 0u64;
             let mut tenpais = 0u64;
+            let mut total_score = 0.0f64;
+            let mut total_tenpai_waits = 0.0f64;
 
             for world_idx in 0..config.num_worlds {
                 let seed = config.base_seed
                     .wrapping_mul(6364136223846793005)
                     .wrapping_add((discard as u64) * 100_000 + world_idx as u64);
 
-                // Use constrained sampling if opponent info available
-                let wall = if !opponents.is_empty() {
+                // Use informed/constrained sampling if opponent info available
+                let wall = if let Some(probs) = opponent_hand_probs {
+                    let (_opp_hands, wall) = sample_world_informed(info, opponents, probs, seed);
+                    wall
+                } else if !opponents.is_empty() {
                     let (_opp_hands, wall) = sample_world_constrained(info, opponents, seed);
                     wall
                 } else {
                     sample_world(info, seed)
                 };
 
-                // Use defense-aware rollout
-                let (won, is_tenpai) = simulate_draws_with_defense(
+                // Use defense-aware rollout with opponent behavior model
+                let rollout_seed = seed.wrapping_add(world_idx as u64 * 7919);
+                let opp_info_ref = if has_danger_info { Some(opponent_danger_info) } else { None };
+                let result = simulate_draws_with_opponents(
                     &hand_after,
                     info.melds_count,
                     info.ding_que,
                     &wall,
                     config.rollout_depth,
                     danger.as_ref(),
+                    opp_info_ref,
+                    rollout_seed,
                 );
 
-                if won {
+                if result.won {
                     wins += 1;
+                    total_score += result.score;
                 }
-                if is_tenpai {
+                if result.tenpai {
                     tenpais += 1;
+                    // Use wait count from rollout terminal hand state (not hand_after)
+                    total_tenpai_waits += result.tenpai_waits as f64;
                 }
             }
 
             let n = config.num_worlds as f64;
+            let win_rate = wins as f64 / n;
+            let tenpai_rate = tenpais as f64 / n;
+
+            // Tenpai value: average wait count × remaining turns (normalized)
+            let avg_waits = if tenpais > 0 { total_tenpai_waits / tenpais as f64 } else { 0.0 };
+            let tenpai_value = (avg_waits / NUM_TILE_TYPES as f64) * (remaining_turns / MAX_TURNS as f64);
+
+            // Danger cost: danger score of the discard tile itself
+            let danger_cost = danger.as_ref().map_or(0.0, |d| d[discard as usize] as f64);
+
             IsmceScore {
                 tile: discard,
-                win_rate: wins as f64 / n,
-                tenpai_rate: tenpais as f64 / n,
+                win_rate,
+                expected_score: total_score / n,
+                tenpai_rate,
+                tenpai_value,
+                danger_cost,
                 avg_shanten_improvement: improvement,
+                win_rate_raw: win_rate,
             }
         })
         .collect()
 }
 
-/// 模拟从牌山摸牌并检查听牌/和牌
+/// 估算对手荣和弃牌的概率
 ///
-/// 改进：加入基础防守意识。当 `danger_tiles` 非空时，在向听数相同的候选弃牌中
-/// 优先选择低危险度的牌，避免在对手可能听牌时打出高危险牌。
-/// 这比纯贪心向听最小化更接近真实玩家的行为模型。
-fn simulate_draws(
-    hand: &HandCounts,
-    melds: usize,
-    ding_que: Option<Suit>,
-    wall: &[Tile],
-    depth: usize,
-) -> (bool, bool) {
-    simulate_draws_with_defense(hand, melds, ding_que, wall, depth, None)
+/// 基于对手的危险度信息和弃牌的危险度评分，估算对手荣和的概率。
+/// 对每个对手独立估算听牌概率，取最大值。
+/// 使用非线性缩放：danger² 使高危险牌的放铳概率显著高于中等危险牌。
+fn estimate_ron_probability(
+    discard_tile: Tile,
+    danger_tiles: Option<&[f32; NUM_TILE_TYPES]>,
+    opponent_danger_info: Option<&[OpponentDangerInfo; 3]>,
+) -> f32 {
+    let danger = match danger_tiles {
+        Some(d) => d[discard_tile as usize],
+        None => return 0.0,
+    };
+
+    // Only consider ron if danger is non-trivial
+    if danger < 0.2 {
+        return 0.0;
+    }
+
+    // Per-opponent tenpai probability estimation
+    let max_tenpai_prob = match opponent_danger_info {
+        Some(infos) => {
+            let mut max_p = 0.0f32;
+            for o in infos.iter() {
+                let est_shanten = (4.0 - o.melds_count as f32 - o.discard_count as f32 / 5.0).max(0.0);
+                // Tenpai probability: sigmoid-like mapping from estimated shanten
+                let tenpai_p = match est_shanten as u8 {
+                    0 => 0.8,     // very likely tenpai
+                    1 => 0.3,     // possibly tenpai
+                    2 => 0.05,    // unlikely
+                    _ => 0.0,
+                };
+                max_p = max_p.max(tenpai_p);
+            }
+            max_p
+        },
+        None => if danger > 0.5 { 0.3 } else { 0.0 },
+    };
+
+    if max_tenpai_prob < 0.01 {
+        return 0.0;
+    }
+
+    // Non-linear scaling: danger² × tenpai_prob × ceiling
+    // danger=0.2 → 0.04, danger=0.5 → 0.25, danger=0.8 → 0.64, danger=1.0 → 1.0
+    // Ceiling 0.45: max ron prob = 0.45 × 0.8 (tenpai) × 1.0 (danger²) = 0.36
+    let ron_ceiling = 0.45;
+    (danger * danger * max_tenpai_prob * ron_ceiling).min(0.5)
 }
 
 /// 带防守意识的摸牌模拟
@@ -383,6 +632,8 @@ fn simulate_draws(
 /// `danger_tiles`: 可选的每张牌危险度评分 [0, 1]。
 /// 在向听数相同的候选弃牌中，选择危险度最低的牌。
 /// 当 danger_tiles 为 None 时退化为纯贪心向听最小化（向后兼容）。
+///
+/// 返回 RolloutResult，和牌时包含基于 estimate_fan_quick 的期望得分。
 fn simulate_draws_with_defense(
     hand: &HandCounts,
     melds: usize,
@@ -390,9 +641,27 @@ fn simulate_draws_with_defense(
     wall: &[Tile],
     depth: usize,
     danger_tiles: Option<&[f32; NUM_TILE_TYPES]>,
-) -> (bool, bool) {
+) -> RolloutResult {
+    simulate_draws_with_opponents(hand, melds, ding_que, wall, depth, danger_tiles, None, 0)
+}
+
+/// 带对手行为模型的摸牌模拟
+///
+/// 在弃牌后检查对手是否可能荣和，模拟放铳风险。
+/// `rng_seed` 用于对手荣和的随机判定。
+fn simulate_draws_with_opponents(
+    hand: &HandCounts,
+    melds: usize,
+    ding_que: Option<Suit>,
+    wall: &[Tile],
+    depth: usize,
+    danger_tiles: Option<&[f32; NUM_TILE_TYPES]>,
+    opponent_danger_info: Option<&[OpponentDangerInfo; 3]>,
+    rng_seed: u64,
+) -> RolloutResult {
     let mut h = *hand;
     let max_draws = depth.min(wall.len());
+    let mut rng = fastrand::Rng::with_seed(rng_seed);
 
     for i in 0..max_draws {
         let drawn = wall[i];
@@ -404,7 +673,9 @@ fn simulate_draws_with_defense(
                 None => true,
             };
             if complete_ok {
-                return (true, true);
+                let fan = estimate_fan_quick(&h, melds, true);
+                let score = calc_score(fan) as f64;
+                return RolloutResult { won: true, tenpai: true, score, tenpai_waits: 0 };
             }
         }
 
@@ -455,10 +726,24 @@ fn simulate_draws_with_defense(
         }
 
         remove_tile(&mut h, best_discard);
+
+        // A4: 简化对手行为模型 — 弃牌后检查对手是否可能荣和
+        let ron_prob = estimate_ron_probability(best_discard, danger_tiles, opponent_danger_info);
+        if ron_prob > 0.0 && rng.f32() < ron_prob {
+            // 对手荣和：我方放铳，返回负分（估计 2 番放铳）
+            let penalty_score = -(calc_score(2) as f64);
+            return RolloutResult { won: false, tenpai: false, score: penalty_score, tenpai_waits: 0 };
+        }
     }
 
     let final_s = calc_shanten(&h, melds);
-    (false, final_s == 0)
+    let is_tenpai = final_s == 0;
+    let waits = if is_tenpai {
+        crate::algo::shanten::waiting_tiles(&h, melds).len()
+    } else {
+        0
+    };
+    RolloutResult { won: false, tenpai: is_tenpai, score: 0.0, tenpai_waits: waits }
 }
 
 /// 增强版危险度评分：综合考虑对手行为模型

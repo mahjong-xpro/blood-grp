@@ -8,8 +8,8 @@ use crate::state::board::{BoardState, Phase};
 
 const OBS_SIZE: usize = NUM_STUDENT_CHANNELS * NUM_TILE_TYPES;
 
-/// Encode full student observation: 470 channels x 27 tiles
-/// 注意：通道数变更（464→470）需要重新训练模型。
+/// Encode full student observation: 473 channels x 27 tiles
+/// 注意：通道数变更（464→470→473）需要重新训练模型。
 pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
     let mut obs = vec![0.0f32; OBS_SIZE];
     let mut ch = 0usize;
@@ -577,6 +577,18 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
             })
             .unwrap_or(0.0);
         fill_ch!(ch, meld_source_val);
+        ch += 1;
+    }
+
+    // === Section 15: GENBUTSU / 現物 (3 ch) ===
+    // 每个对手一个通道：该对手弃过的牌标记为 1.0（100% 安全牌）。
+    // 血战无振听规则，对手弃过的牌永远不会被该对手荣和。
+    // 显式编码避免网络从 174ch 牌河中自行学习此规则。
+    for opp_off in 1..NUM_PLAYERS {
+        let opp_id = (player_id + opp_off) % NUM_PLAYERS;
+        for &tile in &board.players[opp_id].discards {
+            w!(ch, tile as usize, 1.0);
+        }
         ch += 1;
     }
 

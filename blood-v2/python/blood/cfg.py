@@ -11,8 +11,8 @@ def add_blood_args(parser: ArgumentParser):
     p.add_argument("--initial_score", type=int, default=100_000,
                     help="Initial score per player (blood mahjong: 100000 or 60000)")
 
-    # Model — 与 Rust consts.rs 保持一致 (NUM_STUDENT_CHANNELS=470, Bottleneck 256ch/20blocks)
-    p.add_argument("--blood_obs_channels", type=int, default=470)
+    # Model — 与 Rust consts.rs 保持一致 (NUM_STUDENT_CHANNELS=473, Bottleneck 256ch/20blocks)
+    p.add_argument("--blood_obs_channels", type=int, default=473)
     p.add_argument("--blood_conv_channels", type=int, default=256)
     p.add_argument("--blood_num_res_blocks", type=int, default=20)
     p.add_argument("--blood_encoder_out_dim", type=int, default=1024)

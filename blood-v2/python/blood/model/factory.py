@@ -16,6 +16,61 @@ from blood.consts import NUM_ORACLE_CHANNELS
 from .encoder import SuitAwareResNetEncoder
 from .heads import AuxHead
 from .oracle import OracleEncoder, DistillationLoss
+from .opponent_model import OpponentHandPredictor
+
+
+class TurnAttention(nn.Module):
+    """Turn-level cross-attention over LSTM history.
+
+    Maintains a memory buffer of recent LSTM outputs and attends over them
+    to recover information that may have been compressed in the LSTM hidden state.
+    Uses residual connection so initial behavior is equivalent to pure LSTM.
+    """
+
+    def __init__(self, dim: int = 512, num_heads: int = 4, max_turns: int = 32):
+        super().__init__()
+        self.norm = nn.LayerNorm(dim)
+        self.attn = nn.MultiheadAttention(dim, num_heads, batch_first=True)
+        self.pos_embed = nn.Parameter(torch.zeros(1, max_turns, dim))
+        self._max_turns = max_turns
+        nn.init.trunc_normal_(self.pos_embed, std=0.02)
+        # Initialize output projection near zero for smooth residual start
+        nn.init.zeros_(self.attn.out_proj.weight)
+        nn.init.zeros_(self.attn.out_proj.bias)
+        # Pre-register causal mask buffer (upper-triangular = masked positions)
+        causal = torch.triu(torch.ones(max_turns, max_turns, dtype=torch.bool), diagonal=1)
+        self.register_buffer("_causal_mask", causal, persistent=False)
+
+    def forward(self, current: Tensor, memory: Tensor) -> Tensor:
+        """
+        Args:
+            current: (B, 1, dim) — current turn LSTM output
+            memory: (B, K, dim) — recent K turns of LSTM outputs
+        Returns:
+            (B, 1, dim) — attended output with residual
+        """
+        K = memory.size(1)
+        memory = memory + self.pos_embed[:, :K]
+        q = self.norm(current)
+        k = v = self.norm(memory)
+        attn_out, _ = self.attn(q, k, v)
+        return current + attn_out
+
+    def forward_causal(self, seq: Tensor) -> Tensor:
+        """Causal self-attention over a full sequence in a single call.
+
+        Args:
+            seq: (B, T, dim) — full LSTM output sequence
+        Returns:
+            (B, T, dim) — attended output with residual
+        """
+        T = seq.size(1)
+        seq_pos = seq + self.pos_embed[:, :T]
+        q = self.norm(seq)
+        k = v = self.norm(seq_pos)
+        mask = self._causal_mask[:T, :T].to(device=seq.device)
+        attn_out, _ = self.attn(q, k, v, attn_mask=mask)
+        return seq + attn_out
 
 
 class BloodActorCritic(ActorCriticSharedWeights):
@@ -93,6 +148,26 @@ class BloodActorCritic(ActorCriticSharedWeights):
             self.oracle_value_warmup_steps = getattr(cfg, "oracle_value_warmup_steps", 500_000)
             self.oracle_value_head_loss_weight = getattr(cfg, "oracle_value_head_loss_weight", 1.0)
 
+        # Opponent hand predictor (A3): lightweight model trained with Oracle labels
+        self.opponent_predictor_enabled = getattr(cfg, "opponent_predictor_enabled", False)
+        if self.opponent_predictor_enabled:
+            opp_conv_ch = getattr(cfg, "opponent_predictor_conv_ch", 128)
+            opp_blocks = getattr(cfg, "opponent_predictor_num_blocks", 6)
+            self.opponent_predictor = OpponentHandPredictor(
+                conv_ch=opp_conv_ch,
+                num_blocks=opp_blocks,
+            )
+            self.opponent_predictor_weight = getattr(cfg, "opponent_predictor_weight", 0.1)
+
+        # TurnAttention (B1): cross-attention over LSTM history
+        self.turn_attn_enabled = getattr(cfg, "turn_attention_enabled", False)
+        if self.turn_attn_enabled:
+            ta_heads = getattr(cfg, "turn_attention_heads", 4)
+            ta_max_turns = getattr(cfg, "recurrence", 32)
+            self.turn_attention = TurnAttention(
+                dim=core_out, num_heads=ta_heads, max_turns=ta_max_turns,
+            )
+
         self._cached_encoder_out = None  # post-enc_proj; used as forward-pass guard in runner.py
         self._cached_core_out = None     # post-LSTM; used by AuxHead in runner.py
         self._cached_values = None       # student values; used by Oracle value distillation
@@ -123,6 +198,25 @@ class BloodActorCritic(ActorCriticSharedWeights):
     def forward_tail(self, core_output, values_only: bool, sample_actions: bool) -> TensorDict:
         # core_output is always a plain Tensor here (SF2 unpacks before calling us).
         self._cached_core_out = core_output  # post-LSTM features for AuxHead
+
+        # B1: TurnAttention — apply cross-attention over LSTM sequence
+        # During BPTT training, core_output is (B*T, dim); during inference, (B, dim).
+        # Training uses forward_causal for O(T) attention calls instead of O(T²) loop.
+        if getattr(self, "turn_attn_enabled", False) and hasattr(self, "turn_attention"):
+            recurrence = getattr(self.cfg, "recurrence", 32) if hasattr(self, "cfg") else 32
+            total = core_output.shape[0]
+            dim = core_output.shape[-1]
+            if total > 1 and total % recurrence == 0:
+                # Training mode: single causal attention call over full sequence
+                B = total // recurrence
+                T = recurrence
+                seq = core_output.view(B, T, dim)
+                core_output = self.turn_attention.forward_causal(seq).reshape(total, dim)
+            elif total == 1 or (total > 1 and total % recurrence != 0):
+                # Inference mode or non-aligned batch: apply with self as memory
+                core_output = self.turn_attention(
+                    core_output.unsqueeze(1), core_output.unsqueeze(1)
+                ).squeeze(1)
 
         actor_features = self.actor_head(core_output)
         critic_features = self.critic_head(core_output)

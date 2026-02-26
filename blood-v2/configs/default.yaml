@@ -27,8 +27,8 @@ env: blood_mahjong
 encoder_custom: blood_encoder
 experiment: blood_v2
 
-# Model — 与 Rust consts.rs 保持一致 (NUM_STUDENT_CHANNELS=470, Bottleneck 256ch/20blocks)
-blood_obs_channels: 470
+# Model — 与 Rust consts.rs 保持一致 (NUM_STUDENT_CHANNELS=473, +3 genbutsu, Bottleneck 256ch/20blocks)
+blood_obs_channels: 473
 blood_conv_channels: 256
 blood_num_res_blocks: 20
 blood_encoder_out_dim: 1024

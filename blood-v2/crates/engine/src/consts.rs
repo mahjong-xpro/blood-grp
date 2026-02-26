@@ -33,7 +33,8 @@ pub const REWARD_NORM: i32 = 32_000;
 
 /// 注意：通道数变更需要重新训练模型。
 /// 464 → 470: 新增 Section 14（对手手牌数 3ch + 副露来源 3ch）
-pub const NUM_STUDENT_CHANNELS: usize = 470;
+/// 470 → 473: 新增 Section 15（现物标记 3ch — 对手弃过的牌 100% 安全）
+pub const NUM_STUDENT_CHANNELS: usize = 473;
 pub const NUM_ORACLE_EXTRA_CHANNELS: usize = 52;
 pub const NUM_ORACLE_CHANNELS: usize = NUM_STUDENT_CHANNELS + NUM_ORACLE_EXTRA_CHANNELS;
 
@@ -97,3 +98,6 @@ pub const CH_FAN_CONFIG_BASE: usize = 457;
 
 // === Section 14: Opponent Hand Info ===
 pub const CH_OPP_HAND_INFO_BASE: usize = 464;
+
+// === Section 15: Genbutsu (Safe Tiles) ===
+pub const CH_GENBUTSU_BASE: usize = 470;

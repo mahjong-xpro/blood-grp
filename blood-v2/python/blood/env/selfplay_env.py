@@ -438,8 +438,9 @@ class SelfPlayEnv(BloodMahjongEnv):
                 reward -= self._reward_shanten_regress * shanten_delta * decay_factor
             self._prev_agent_shanten = current_shanten
 
-        # Safe discard reward: agent discards a tile that no opponent is waiting for,
-        # while at least one opponent is tenpai. Rewards defensive awareness.
+        # Safe discard reward: gradient-based danger penalty.
+        # Instead of binary safe/dangerous, reward scales with (1 - max_danger):
+        #   safe tile (danger=0) → full reward, risky tile (danger=0.8) → 0.2× reward.
         # Only applies to discard actions (0-26) and when ow_before is available.
         if (self._reward_safe_discard > 0
                 and ow_before is not None
@@ -447,9 +448,8 @@ class SelfPlayEnv(BloodMahjongEnv):
             ow_3d = ow_before.reshape(3, 27)
             any_tenpai = bool(np.any(ow_3d.sum(axis=1) > 0.01))
             if any_tenpai:
-                tile_dangerous = bool(np.any(ow_3d[:, engine_action] > 0.5))
-                if not tile_dangerous:
-                    reward += self._reward_safe_discard
+                max_danger = float(np.max(ow_3d[:, engine_action]))
+                reward += self._reward_safe_discard * (1.0 - max_danger)
 
         # Rank bonus at game end: encourages maximizing relative ranking, not just
         # absolute score. Applied once when the game fully terminates.

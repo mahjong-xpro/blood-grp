@@ -22,9 +22,9 @@ _DEFAULTS = {
     "NUM_TILE_TYPES": 27,
     "NUM_PLAYERS": 4,
     "ACTION_SPACE": 34,
-    "NUM_STUDENT_CHANNELS": 470,  # 464 + 6 (Section 14: 对手手牌数 + 副露来源)
+    "NUM_STUDENT_CHANNELS": 473,  # 470 + 3 (Section 15: 現物/genbutsu safe tiles)
     "NUM_ORACLE_EXTRA_CHANNELS": 52,
-    "NUM_ORACLE_CHANNELS": 522,  # 470 + 52
+    "NUM_ORACLE_CHANNELS": 525,  # 473 + 52
     "INITIAL_SCORE": 100_000,
     "REWARD_NORM": 32_000,
     "MAX_FAN": 6,
@@ -56,6 +56,7 @@ _DEFAULTS = {
     "CH_SP_TABLE_BASE": 358,
     "CH_FAN_CONFIG_BASE": 457,
     "CH_OPP_HAND_INFO_BASE": 464,
+    "CH_GENBUTSU_BASE": 470,
 }
 
 # ── Import from Rust engine ──────────────────────────────────────────────────
@@ -98,6 +99,7 @@ try:
         CH_SP_TABLE_BASE,
         CH_FAN_CONFIG_BASE,
         CH_OPP_HAND_INFO_BASE,
+        CH_GENBUTSU_BASE,
     )
 except ImportError:
     log.warning(
@@ -140,6 +142,7 @@ except ImportError:
     CH_SP_TABLE_BASE = _DEFAULTS["CH_SP_TABLE_BASE"]
     CH_FAN_CONFIG_BASE = _DEFAULTS["CH_FAN_CONFIG_BASE"]
     CH_OPP_HAND_INFO_BASE = _DEFAULTS["CH_OPP_HAND_INFO_BASE"]
+    CH_GENBUTSU_BASE = _DEFAULTS["CH_GENBUTSU_BASE"]
 
 # ── Derived constants ────────────────────────────────────────────────────────
 

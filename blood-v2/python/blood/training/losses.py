@@ -117,6 +117,14 @@ class BloodLossComputer:
         # --- Logprob metrics (legal actions only) ---
         self._logprob_metrics(action_dist, obs, summaries)
 
+        # --- Opponent hand prediction loss (A3) ---
+        if getattr(ac, "opponent_predictor_enabled", False):
+            opp_loss = self._opponent_hand_loss(ac, obs)
+            if opp_loss is not None:
+                opp_weight = getattr(ac, "opponent_predictor_weight", 0.1)
+                extra_loss = extra_loss + opp_weight * opp_loss
+                summaries["opponent_pred_loss"] = opp_loss.detach()
+
         return extra_loss, summaries
 
     # ------------------------------------------------------------------
@@ -185,6 +193,100 @@ class BloodLossComputer:
             )
             return None
         return F.mse_loss(sv, ov)
+
+    def _opponent_hand_loss(self, ac, obs) -> Tensor | None:
+        """BCE loss for opponent hand prediction using Oracle obs as labels.
+
+        Extracts opponent hand ground truth from Oracle observation channels
+        (first 12 channels of oracle_extra = 3 opponents × 4 one-hot hand counts).
+        Constructs input features from student obs (opponent kawa + melds + visible + context).
+        """
+        oracle_obs = obs.get("oracle_obs")
+        if oracle_obs is None:
+            return None
+
+        predictor = getattr(ac, "opponent_predictor", None)
+        if predictor is None:
+            return None
+
+        student_obs = obs.get("obs")
+        if student_obs is None:
+            return None
+
+        # Extract opponent hand ground truth from oracle extra channels.
+        # Oracle obs shape: (B, oracle_channels * 27)
+        # The first 12 extra channels (after student channels) encode opponent hands
+        # as 4 one-hot layers per opponent (3 opponents × 4 = 12 channels).
+        from blood.consts import (
+            NUM_STUDENT_CHANNELS, NUM_TILE_TYPES,
+            CH_OPP_KAWA_BASE, CH_OPP_KAWA_STRIDE,
+            CH_VISIBLE_TILES_BASE, CH_WALL_REMAINING, CH_TURN_PROGRESS,
+            CH_OPP_DING_QUE_BASE, CH_OPP_MELD_BASE, CH_OPP_HAND_INFO_BASE,
+            CH_GENBUTSU_BASE,
+        )
+        B = oracle_obs.shape[0]
+        oracle_2d = oracle_obs.view(B, -1, NUM_TILE_TYPES)  # (B, oracle_ch, 27)
+        student_2d = student_obs.view(B, -1, NUM_TILE_TYPES)
+        student_ch = NUM_STUDENT_CHANNELS
+
+        # Section 7 fuuro layout: kawa_overview(3×4=12) + fuuro(4×8=32) + ankan(1) + ...
+        # Fuuro starts at CH_VISIBLE_TILES_BASE + 12; self=8ch then 3 opponents×8ch each
+        fuuro_base = CH_VISIBLE_TILES_BASE + 12  # skip 3×4 kawa overview
+        opp_fuuro_base = fuuro_base + 8  # skip self fuuro (8ch)
+
+        # Ground truth: sum of 4 one-hot channels per opponent → tile count [0,4]
+        # Normalize to [0,1] by dividing by 4
+        total_loss = torch.zeros(1, device=oracle_obs.device)
+        for opp_idx in range(3):
+            opp_hand_gt = oracle_2d[:, student_ch + opp_idx * 4 : student_ch + (opp_idx + 1) * 4, :].sum(dim=1)
+            opp_hand_gt = (opp_hand_gt / 4.0).clamp(0, 1)  # (B, 27)
+
+            # Build 75ch input: kawa(58) + visible(4) + fuuro(8) + context(5)
+            opp_features = torch.zeros(B, 75, NUM_TILE_TYPES, device=oracle_obs.device)
+            ch = 0
+
+            # [0:58] Opponent kawa (58 ch) from Section 6
+            kawa_start = CH_OPP_KAWA_BASE + opp_idx * CH_OPP_KAWA_STRIDE
+            kawa_end = kawa_start + CH_OPP_KAWA_STRIDE
+            if kawa_end <= student_2d.shape[1]:
+                opp_features[:, ch:ch + CH_OPP_KAWA_STRIDE, :] = student_2d[:, kawa_start:kawa_end, :]
+            ch += CH_OPP_KAWA_STRIDE  # 58
+
+            # [58:62] Visible tiles / kawa overview (4 ch) from Section 7
+            vis_start = CH_VISIBLE_TILES_BASE + opp_idx * 4
+            vis_end = vis_start + 4
+            if vis_end <= student_2d.shape[1]:
+                opp_features[:, ch:ch + 4, :] = student_2d[:, vis_start:vis_end, :]
+            ch += 4  # 62
+
+            # [62:70] Opponent fuuro (8 ch) from Section 7: 4 melds × 2ch (tile + type)
+            meld_start = opp_fuuro_base + opp_idx * 8
+            meld_end = meld_start + 8
+            if meld_end <= student_2d.shape[1]:
+                opp_features[:, ch:ch + 8, :] = student_2d[:, meld_start:meld_end, :]
+            ch += 8  # 70
+
+            # [70] Wall remaining (1 ch) from Section 4
+            if CH_WALL_REMAINING < student_2d.shape[1]:
+                opp_features[:, ch, :] = student_2d[:, CH_WALL_REMAINING, :]
+            ch += 1  # 71
+
+            # [71] Turn progress (1 ch) from Section 2
+            if CH_TURN_PROGRESS < student_2d.shape[1]:
+                opp_features[:, ch, :] = student_2d[:, CH_TURN_PROGRESS, :]
+            ch += 1  # 72
+
+            # [72:75] Opponent ding-que (3 ch) from Section 3
+            dq_start = CH_OPP_DING_QUE_BASE + opp_idx * 3
+            dq_end = dq_start + 3
+            if dq_end <= student_2d.shape[1]:
+                opp_features[:, ch:ch + 3, :] = student_2d[:, dq_start:dq_end, :]
+            ch += 3  # 75
+
+            pred = predictor(opp_features)
+            total_loss = total_loss + predictor.loss(pred, opp_hand_gt)
+
+        return total_loss / 3.0  # average over 3 opponents
 
     def _logprob_metrics(self, action_dist, obs, summaries) -> None:
         """Monitor logprob extremes over legal actions only.
