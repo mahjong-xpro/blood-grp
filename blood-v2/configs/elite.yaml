@@ -80,10 +80,10 @@ warmup_reward_shaping: false
 # Data augmentation
 suit_augment_prob: 0.5
 
-# Structured reward shaping — 向听奖励在 elite 阶段通过衰减调度自动衰减
-# 模型已成熟，过高的向听奖励会导致贪心追求听牌而忽略番数
-reward_tsumo_bonus: 0.1
-reward_deal_in_penalty: 0.05
+# Structured reward shaping — 全部 score-weighted: intensity=clamp(sqrt(|Δ|/32000), 0.25, 1.0)
+# 配置值为最大值，低番事件自动衰减
+reward_tsumo_bonus: 0.1             # score-weighted: 1番自摸→0.031, 6番自摸→0.100
+reward_deal_in_penalty: 0.05        # score-weighted: 1番放铳→0.014, 6番放铳→0.050
 reward_shanten_progress: 0.003      # 基础值与 competitive 一致，通过衰减调度自动降低
 reward_shanten_regress: 0.001       # 基础值与 competitive 一致，通过衰减调度自动降低
 
@@ -96,11 +96,11 @@ shanten_fan_max: 8.0
 shanten_reward_decay_steps: 30000000
 shanten_reward_min_ratio: 0.3
 
-# 排名奖励 — elite 阶段提升排名奖励权重，强化最终排名目标
-reward_rank_bonus: 0.2              # 比 competitive(0.15) 更高，排名是最终目标
+# 排名奖励 — score-weighted: sqrt(|Δscore|/32000) 加权，低番局自动衰减
+reward_rank_bonus: 0.2              # 最大值；实际通过 intensity=sqrt(|Δ|/32000) ∈ [0.25,1.0] 加权
 
-# 安全弃牌奖励 — 保持与 competitive 一致
-reward_safe_discard: 0.015          # 维持防守信号
+# 安全弃牌奖励 — 降低至 0.01 减少累积过度防守倾向
+reward_safe_discard: 0.01           # 从 0.015 降到 0.01，缓解 entropy 下降
 
 # Auxiliary tasks — reduced weight as model matures
 aux_shanten_weight: 0.5

@@ -398,21 +398,26 @@ class SelfPlayEnv(BloodMahjongEnv):
         # --- Structured reward shaping (all phases) ---
         # When warmup shaping is active, skip structured tsumo/deal-in bonuses
         # to prevent double-counting with warmup win/deal-in rewards (Issue #47).
+        #
+        # Score-weighted intensity: shaping bonuses scale with sqrt(|Δ|/32000)
+        # so low-fan events get proportionally smaller shaping signals.
+        # Same philosophy as rank_bonus: config value is the maximum.
         if not self._warmup_reward_shaping:
             # Tsumo bonus: agent won and multiple opponents paid.
-            # Use >= 2 (not >= 3) so late-game tsumo (when 1 opponent already won)
-            # still triggers the bonus. Tsumo always has ≥2 payers unless 2 opponents
-            # have already won, which is a rare terminal edge case.
+            # Score-weighted: 1-fan tsumo(Δ3000)→0.031, 6-fan tsumo(Δ96000)→0.100
             if self._reward_tsumo_bonus > 0 and self._env.player_has_won(0) and agent_delta > 0:
                 if int(np.sum(opp_deltas < -100)) >= 2:
-                    reward += self._reward_tsumo_bonus
+                    t_intensity = min(1.0, float(np.sqrt(agent_delta / 32000.0)))
+                    t_intensity = max(0.25, t_intensity)
+                    reward += self._reward_tsumo_bonus * t_intensity
 
-            # Deal-in penalty: agent score down, at least one opponent up, no others down.
-            # Use >= 1 (not == 1) to catch multi-ron deal-ins where 2 opponents win
-            # simultaneously on the same discard.
+            # Deal-in penalty: agent score down, at least one opponent up.
+            # Score-weighted: 1-fan deal-in(Δ1000)→0.014, 6-fan deal-in(Δ32000)→0.050
             elif self._reward_deal_in_penalty > 0 and agent_delta < -100:
                 if int(np.sum(opp_deltas > 100)) >= 1 and int(np.sum(opp_deltas < -100)) == 0:
-                    reward -= self._reward_deal_in_penalty
+                    d_intensity = min(1.0, float(np.sqrt(abs(agent_delta) / 32000.0)))
+                    d_intensity = max(0.25, d_intensity)
+                    reward -= self._reward_deal_in_penalty * d_intensity
 
         # 向听进退奖励（带衰减调度 + 番数加权）
         # Guard against game-end: when terminated, shanten may be -1 (complete hand)
@@ -448,7 +453,12 @@ class SelfPlayEnv(BloodMahjongEnv):
 
         # Rank bonus at game end: encourages maximizing relative ranking, not just
         # absolute score. Applied once when the game fully terminates.
-        # Bonus schedule (rank_bonus=0.3): 1st=+0.3, 2nd=+0.09, 3rd=-0.09, 4th=-0.3
+        #
+        # Score-weighted intensity: rank bonus scales with sqrt(|score_delta|/32000)
+        # so that rank matters more in high-stakes games and less in quiet ones.
+        # Without this, a fixed rank_bonus=0.2 dominates 1-fan games (53% of signal).
+        # With weighting: 1-fan(Δ1000) → intensity=0.25 → effective=0.05,
+        #                 6-fan(Δ32000) → intensity=1.0 → effective=0.20.
         if self._reward_rank_bonus > 0 and terminated and self._env.is_done():
             final_scores = self._env.get_scores()
             # Tie-aware ranking: average rank for tied players (Issue #46)
@@ -458,7 +468,11 @@ class SelfPlayEnv(BloodMahjongEnv):
             avg_rank = above + (equal + 1) / 2.0  # 1-indexed average rank
             rank_idx = min(int(avg_rank - 0.5), 3)  # Map 1.0→0, 1.5→1, 2.0→1, etc.
             rank_multipliers = [1.0, 0.3, -0.3, -1.0]
-            reward += self._reward_rank_bonus * rank_multipliers[rank_idx]
+            # Scale by game intensity: sqrt-compressed score magnitude
+            score_delta = abs(float(player_score - self._initial_score))
+            intensity = min(1.0, float(np.sqrt(score_delta / 32000.0)))
+            intensity = max(0.25, intensity)  # floor: rank always has some weight
+            reward += self._reward_rank_bonus * rank_multipliers[rank_idx] * intensity
 
         # Warmup shaping (phase 1 only)
         if self._warmup_reward_shaping:

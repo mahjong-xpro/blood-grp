@@ -86,16 +86,16 @@ warmup_dangerous_discard_penalty: 0.03
 # 数据增强
 suit_augment_prob: 0.5
 
-# 结构化奖励 — 与 warmup 一致
-reward_tsumo_bonus: 0.0
-reward_deal_in_penalty: 0.0
+# 结构化奖励 — score-weighted (competitive 阶段启用后生效)
+reward_tsumo_bonus: 0.0             # 过渡阶段禁用
+reward_deal_in_penalty: 0.0         # 过渡阶段禁用
 reward_shanten_progress: 0.003
 reward_shanten_regress: 0.001
 
 # 向听番数加权 — 过渡阶段禁用，与 warmup 保持一致
 shanten_fan_bonus_scale: 0.0
 
-# 排名奖励和安全弃牌奖励 — 过渡阶段暂不启用，competitive 阶段再开启
+# 排名奖励和安全弃牌奖励 — 过渡阶段暂不启用（score-weighted，competitive 阶段再开启）
 reward_rank_bonus: 0.0
 reward_safe_discard: 0.0
 

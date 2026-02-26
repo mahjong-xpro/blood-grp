@@ -43,12 +43,12 @@ league_enabled: false
 
 # Reward shaping — all disabled
 warmup_reward_shaping: false
-reward_tsumo_bonus: 0.0
-reward_deal_in_penalty: 0.0
+reward_tsumo_bonus: 0.0             # score-weighted; disabled for smoke test
+reward_deal_in_penalty: 0.0         # score-weighted; disabled for smoke test
 reward_shanten_progress: 0.0
 reward_shanten_regress: 0.0
 shanten_fan_bonus_scale: 0.0
-reward_rank_bonus: 0.0
+reward_rank_bonus: 0.0              # score-weighted; disabled for smoke test
 reward_safe_discard: 0.0
 
 # Data augmentation — disabled for determinism

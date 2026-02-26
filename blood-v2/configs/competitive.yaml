@@ -84,9 +84,9 @@ warmup_reward_shaping: false
 # Data augmentation
 suit_augment_prob: 0.5
 
-# Structured reward shaping (REWARD_NORM=32000: 6-fan cap; tsumo max=+1.732, ron max=+1.0 sqrt-compressed)
-reward_tsumo_bonus: 0.1
-reward_deal_in_penalty: 0.05
+# Structured reward shaping — score-weighted: intensity=clamp(sqrt(|delta|/32000), 0.25, 1.0)
+reward_tsumo_bonus: 0.1             # score-weighted: 1番自摸→0.031, 6番自摸→0.100
+reward_deal_in_penalty: 0.05        # score-weighted: 1番放铳→0.014, 6番放铳→0.050
 reward_shanten_progress: 0.003
 reward_shanten_regress: 0.001
 
@@ -96,11 +96,11 @@ shanten_fan_max: 8.0
 
 # 排名奖励 — 血战麻将的核心目标是排名而非单局得分
 # 鼓励模型学习全局排名策略（如：领先时保守、落后时激进）
-reward_rank_bonus: 0.15             # 启用排名奖励 (建议范围 0.1-0.2)
+reward_rank_bonus: 0.15             # score-weighted: effective ∈ [0.04, 0.15]
 
 # 安全弃牌奖励 — 补充防守信号，鼓励安全打牌
 # 仅靠 deal_in_penalty 不足以学会主动防守，需要正向激励安全弃牌
-reward_safe_discard: 0.015          # 启用安全弃牌奖励 (建议范围 0.01-0.02)
+reward_safe_discard: 0.015          # score-weighted shaping 会自动调节实际影响
 
 # Auxiliary tasks — standard weight
 aux_shanten_weight: 1.0

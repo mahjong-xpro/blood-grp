@@ -78,9 +78,9 @@ warmup_dangerous_discard_penalty: 0.03
 # Data augmentation — full strength
 suit_augment_prob: 0.5
 
-# Structured reward shaping — tsumo/deal-in disabled (warmup_reward_shaping covers this phase)
-reward_tsumo_bonus: 0.0
-reward_deal_in_penalty: 0.0
+# Structured reward shaping — score-weighted (competitive 阶段启用后生效)
+reward_tsumo_bonus: 0.0             # warmup 阶段禁用 (warmup_reward_shaping 覆盖)
+reward_deal_in_penalty: 0.0         # warmup 阶段禁用
 reward_shanten_progress: 0.003
 reward_shanten_regress: 0.001
 
