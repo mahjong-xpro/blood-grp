@@ -105,6 +105,10 @@ impl PlayerState {
         for m in &self.melds {
             if let MeldType::Pon(t) = m {
                 if self.hand[*t as usize] > 0 {
+                    // Skip ding-que suit tiles: kakan with ding-que tile is illegal
+                    if let Some(suit) = self.ding_que {
+                        if Suit::from_tile(*t) == suit { continue; }
+                    }
                     tiles.push(*t);
                 }
             }

@@ -45,14 +45,14 @@ class PolicyModel(nn.Module):
         obs_channels: int = DEFAULT_OBS_CHANNELS,
         conv_ch: int = 256,
         num_blocks: int = 20,
-        rnn_size: int = 1024,
+        rnn_size: int = 512,
         action_dim: int = ACTION_DIM,
         enc_out_dim: int = 1024,
         head_dim: int = 512,
         enc_proj_layers: int = 3,
         num_tile_attn_layers: int = 4,
         tile_attn_heads: int = 4,
-        rnn_num_layers: int = 1,
+        rnn_num_layers: int = 2,
         turn_attention_enabled: bool = False,
         turn_attention_heads: int = 4,
         turn_attention_max_turns: int = 32,
@@ -200,7 +200,7 @@ class PolicyModel(nn.Module):
 
         obs_channels = DEFAULT_OBS_CHANNELS
         conv_ch = 256
-        rnn_size = 1024
+        rnn_size = 512
         enc_out_dim = 1024
 
         first_conv_key = "stem.0.conv.weight"
@@ -297,8 +297,8 @@ class PolicyModel(nn.Module):
             log.warning("Could not detect num_blocks; defaulting to 20")
             num_blocks = 20
         if num_tile_attn_layers == 0:
-            log.warning("Could not detect num_tile_attn_layers; defaulting to 2")
-            num_tile_attn_layers = 2
+            log.warning("Could not detect num_tile_attn_layers; defaulting to 4")
+            num_tile_attn_layers = 4
 
         # 检测 TileAttention heads 数: 从 tile_attns.0.attn.in_proj_weight 推断
         tile_attn_heads = 4
@@ -383,7 +383,19 @@ class PolicyModel(nn.Module):
         if action_bias is not None:
             partial_sd["action_head.bias"] = action_bias
 
-        model.load_state_dict(partial_sd, strict=False)
+        missing, unexpected = model.load_state_dict(partial_sd, strict=False)
+        if missing:
+            log.warning(
+                "Opponent model load: %d missing keys (not in checkpoint)",
+                len(missing),
+            )
+            for k in missing[:5]:
+                log.warning("  missing: %s", k)
+        if unexpected:
+            log.warning(
+                "Opponent model load: %d unexpected keys (ignored)",
+                len(unexpected),
+            )
         model.eval()
         log.info(
             "Loaded opponent model from %s (%d keys, rnn_size=%d, rnn_layers=%d, "
@@ -505,6 +517,7 @@ class OpponentModelPool:
         self._temperature = temperature
         # Per-opponent hidden states: {player_id: (h, c)}
         self._hidden_states: Dict[int, HiddenState] = {}
+        self._memory_buffers: Dict[int, list] = {}
 
     @property
     def ready(self) -> bool:
@@ -564,6 +577,6 @@ class OpponentModelPool:
     def _fallback_action(mask: Tensor) -> int:
         legal = (mask > 0.5).nonzero(as_tuple=True)[0]
         if len(legal) == 0:
-            return 30  # Pass
+            return 0  # Discard tile 0 as last resort (should never happen)
         idx = torch.randint(0, len(legal), (1,)).item()
         return int(legal[idx].item())

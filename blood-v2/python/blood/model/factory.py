@@ -120,7 +120,11 @@ class BloodActorCritic(ActorCriticSharedWeights):
         # Pre-LSTM placement caused the encoder to be optimized for aux tasks rather
         # than LSTM temporal modeling. Post-LSTM placement incentivizes the LSTM to
         # maintain opponent state in its hidden state, which is the correct inductive bias.
-        self.aux_head = AuxHead(in_dim=core_out, hidden=512)
+        self.aux_head = AuxHead(
+            in_dim=core_out, hidden=512,
+            focal_alpha=getattr(cfg, "aux_focal_alpha", 0.25),
+            focal_gamma=getattr(cfg, "aux_focal_gamma", 2.0),
+        )
         self._aux_enabled = getattr(cfg, "aux_shanten_weight", 1.0) > 0
         self.shanten_weight = getattr(cfg, "aux_shanten_weight", 1.0)
         self.ow_weight = getattr(cfg, "aux_opp_waits_weight", 0.1)
@@ -129,7 +133,7 @@ class BloodActorCritic(ActorCriticSharedWeights):
         if self.oracle_enabled:
             oracle_obs_ch = NUM_ORACLE_CHANNELS
             oracle_blocks = getattr(cfg, "oracle_num_blocks", 20)
-            oracle_attn_layers = getattr(cfg, "oracle_num_tile_attn_layers", 2)
+            oracle_attn_layers = getattr(cfg, "oracle_num_tile_attn_layers", 4)
             oracle_attn_heads = getattr(cfg, "oracle_tile_attn_heads", 4)
             self.oracle_encoder = OracleEncoder(
                 obs_channels=oracle_obs_ch,

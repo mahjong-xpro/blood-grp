@@ -272,10 +272,9 @@ impl SPCalculator {
 
                 this_outs += wt_avail;
 
-                // 用实际番型计算得分，而非硬编码
-                let mut win_hand = hh;
-                add_tile(&mut win_hand, wt);
-                let score = self.get_win_score(&win_hand, wt, false);
+                // 用实际番型计算得分：hh 已是 14 张（13+eff_t），直接作为和牌手牌
+                // 不再 add_tile(wt)，否则变成 15 张导致 calc_fan 返回 None (Issue #R7-C1)
+                let score = self.get_win_score(&hh, wt, false);
                 this_weighted_score += score as f64 * wt_avail as f64;
             }
 

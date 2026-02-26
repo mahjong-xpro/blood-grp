@@ -48,7 +48,8 @@ pub const CH_HAND_COUNT: usize = 5;
 
 // === Section 2: Game Context ===
 pub const CH_GAME_CONTEXT_BASE: usize = 5;
-pub const CH_TURN_PROGRESS: usize = 17;
+// turn_progress is at ch=14: 5(hand) + 4(scores) + 4(ranks) + 1(is_dealer) = 14
+pub const CH_TURN_PROGRESS: usize = 14;
 
 // === Section 3: Ding Que ===
 pub const CH_DING_QUE_BASE: usize = 18;

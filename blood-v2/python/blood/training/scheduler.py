@@ -106,6 +106,12 @@ class HyperparamScheduler:
         elif stype == "step":
             milestones = [int(x) for x in parts[1::2]]
             values = [float(x) for x in parts[2::2]]
+            if len(milestones) != len(values):
+                raise ValueError(
+                    f"Step schedule for '{param_name}' has {len(milestones)} "
+                    f"milestones but {len(values)} values. Each milestone needs "
+                    f"a corresponding value: 'step,M1,V1,M2,V2,...'"
+                )
             return ScheduleConfig(
                 param_name=param_name,
                 schedule_type="step",

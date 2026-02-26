@@ -183,7 +183,7 @@ pub fn calc_fan(ctx: &WinContext) -> Option<FanResult> {
         fan += 1;
     }
 
-    // Tianhu/Dihu overrides to 5
+    // Tianhu/Dihu: set to MAX_FAN (6)
     if (ctx.is_tianhu || ctx.is_dihu) && ctx.fan_config.tianhu_dihu {
         result.tianhu_dihu = true;
         fan = MAX_FAN;
@@ -335,10 +335,27 @@ fn check_jiaxinwu(ctx: &WinContext, div: &Division) -> bool {
     let wt = ctx.winning_tile;
     let rank = Suit::rank(wt);
     if rank != 5 { return false; }
-    // Must be part of 456 sequence (kanchan wait on 5 via 4-6)
+    // Must be part of 456 sequence as a kanchan (middle) wait.
+    // Verify the winning tile actually completed the 456 shuntsu:
+    // the hand before winning must NOT have had a complete 456 shuntsu
+    // at this suit. If it did, the 5 completed something else (e.g. tanki).
     let suit_start = Suit::from_tile(wt).start();
     let seq_start = (suit_start + 3) as Tile; // 456 starts at rank 4
-    div.shuntsu.contains(&seq_start)
+    if !div.shuntsu.contains(&seq_start) { return false; }
+    // Check that removing the winning tile breaks the 456 shuntsu,
+    // confirming the 5 was the kanchan draw (not a tanki or other wait).
+    // Before winning: hand had tiles 4 and 6 but not 5 for this shuntsu.
+    // After winning on 5: hand has 4,5,6. If hand already had 5 before
+    // (count >= 2 after adding winning tile), the 5 might have completed
+    // a different group. We check: count of tile 5 in tehai == 1 means
+    // the only 5 is the winning tile itself → confirmed kanchan.
+    // count >= 2 means there was already a 5 → could be tanki or other.
+    let tile5_count = ctx.tehai[wt as usize];
+    // If there's only one copy of the 5 in the final hand, it must be
+    // the winning tile that completed the 456 kanchan.
+    // With 2+ copies, the 5 could have been part of a pair (tanki wait)
+    // or another group, so we can't confirm kanchan.
+    tile5_count == 1
 }
 
 fn check_daiyaojiu(div: &Division, melds: &[MeldType]) -> bool {

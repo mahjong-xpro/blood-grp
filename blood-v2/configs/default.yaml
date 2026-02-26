@@ -88,8 +88,7 @@ aux_shanten_weight: 1.0
 aux_opp_waits_weight: 0.3
 
 # LSTM — temporal modeling across turns
-# 注意: rnn_size 在此为基础默认值 1024，但 competitive/elite 阶段覆盖为 512。
-# 各阶段 yaml 会覆盖此值，实际训练以阶段配置为准。
+# rnn_size=512 across all stages (warmup/competitive/elite).
 use_rnn: true
 rnn_type: lstm
 rnn_size: 512

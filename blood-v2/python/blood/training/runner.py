@@ -428,6 +428,12 @@ def run_training():
     # Serial mode runs the Learner in the main process where patches are active.
     cfg.serial_mode = True
     cfg.async_rl = False
+    # Runtime guard: if someone removes the above lines, fail loudly rather than
+    # silently losing all custom losses (Issue #R7-C4).
+    assert cfg.serial_mode, (
+        "Blood training requires serial_mode=True. Monkey-patched losses "
+        "are not inherited by SF2 subprocess workers."
+    )
 
     cfg, runner = make_runner(cfg)
 

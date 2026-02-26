@@ -209,8 +209,11 @@ class BloodObserver(AlgoObserver):
             elapsed = time.time() - t0
 
             # Store result for TensorBoard logging in extra_summaries
-            self._arena_result = result
-            self._arena_result_step = env_steps
+            # Use lock to ensure _arena_result and _arena_result_step are
+            # read atomically by extra_summaries (Issue #R7-H4).
+            with self._arena_eval_lock:
+                self._arena_result = result
+                self._arena_result_step = env_steps
 
             log.info(
                 "[Arena] Step %d: win_rate=%.3f, avg_rank=%.2f, avg_score=%.0f, "
@@ -334,7 +337,8 @@ class BloodObserver(AlgoObserver):
                 tb.add_scalar("blood/elo_pool_mean", mean_elo, env_steps)
 
         # Arena evaluation metrics (from latest background eval)
-        result = self._arena_result
+        with self._arena_eval_lock:
+            result = self._arena_result
         if result is not None and result.num_games > 0:
             tb.add_scalar("blood/arena_win_rate", result.win_rate, env_steps)
             tb.add_scalar("blood/arena_avg_rank", result.avg_rank, env_steps)

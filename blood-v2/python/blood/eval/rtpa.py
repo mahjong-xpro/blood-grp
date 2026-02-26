@@ -88,7 +88,10 @@ class RTPA:
         )
 
         adjusted = logits.copy()
-        adjusted[mask < 0.5] = -1e9
+        # Use dtype-safe minimum instead of hardcoded -1e9 to avoid
+        # overflow when logits are float16 (max ~65504) (Issue #R6-M3).
+        mask_value = float(np.finfo(logits.dtype).min)
+        adjusted[mask < 0.5] = mask_value
 
         if danger_scores is not None and not is_tenpai and opponents_likely_tenpai > 0:
             for i in range(NUM_TILE_TYPES):

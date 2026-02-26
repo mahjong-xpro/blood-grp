@@ -88,11 +88,11 @@ fn test_sp_discard_candidates() {
     // Should have some discard candidates
     assert!(!candidates.is_empty());
 
-    // Candidates should be sorted by max EV (descending)
+    // Candidates should be sorted by total EV (descending) — matches calc.rs sort order
     for i in 1..candidates.len() {
         assert!(
-            candidates[i - 1].max_ev() >= candidates[i].max_ev(),
-            "candidates should be sorted by EV descending"
+            candidates[i - 1].total_ev() >= candidates[i].total_ev(),
+            "candidates should be sorted by total EV descending"
         );
     }
 }

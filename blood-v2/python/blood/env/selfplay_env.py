@@ -182,7 +182,9 @@ class SelfPlayEnv(BloodMahjongEnv):
         if self._league is None:
             return
 
-        path = self._league.sample_opponent()
+        path = self._league.sample_opponent(
+            current_elo=getattr(self, "_current_elo", None),
+        )
         if path is not None:
             try:
                 ok = self._opp_pool.load(str(path))

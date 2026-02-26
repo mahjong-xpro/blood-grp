@@ -302,7 +302,7 @@ class SuitAwareResNetEncoder(Encoder):
         -> [B, enc_out_dim]
 
     The number of TileAttention layers (= segments) is controlled by
-    blood_num_tile_attn_layers (default 2, supports 2-6+). Residual blocks
+    blood_num_tile_attn_layers (default 4, supports 2-6+). Residual blocks
     are distributed evenly across segments with remainder blocks allocated
     to earlier segments.
 

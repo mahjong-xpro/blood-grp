@@ -61,6 +61,7 @@ oracle_num_tile_attn_layers: 4
 oracle_tile_attn_heads: 4
 oracle_distill_weight: 0.1
 oracle_distill_temperature: 3.0
+oracle_ce_weight: 0.05                  # Oracle CE loss weight (same as competitive)
 oracle_value_distill_weight: 0.0
 oracle_value_head_loss_weight: 1.0
 oracle_value_warmup_steps: 0
