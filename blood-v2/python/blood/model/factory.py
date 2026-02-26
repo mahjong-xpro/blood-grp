@@ -212,11 +212,12 @@ class BloodActorCritic(ActorCriticSharedWeights):
                 T = recurrence
                 seq = core_output.view(B, T, dim)
                 core_output = self.turn_attention.forward_causal(seq).reshape(total, dim)
-            elif total == 1 or (total > 1 and total % recurrence != 0):
-                # Inference mode or non-aligned batch: apply with self as memory
+            elif total == 1:
+                # Single-sample inference: self-attend (identity due to zero-init)
                 core_output = self.turn_attention(
                     core_output.unsqueeze(1), core_output.unsqueeze(1)
                 ).squeeze(1)
+            # else: non-aligned batch — skip TurnAttention to avoid cross-contamination
 
         actor_features = self.actor_head(core_output)
         critic_features = self.critic_head(core_output)

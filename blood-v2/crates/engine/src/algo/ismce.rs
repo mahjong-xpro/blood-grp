@@ -155,7 +155,8 @@ fn sample_world_constrained(
 /// 信息引导的世界采样：使用对手手牌概率分布加权分配
 ///
 /// 当 OpponentHandPredictor 提供了每个对手持有每种牌的概率时，
-/// 在 Fisher-Yates 采样中优先将高概率的牌分配给对应对手。
+/// 优先将高概率的牌分配给对应对手。
+/// 对手处理顺序随机化以避免系统性偏向 opponent 0。
 pub fn sample_world_informed(
     info: &PlayerInfo,
     opponents: &[OpponentInfo],
@@ -180,12 +181,20 @@ pub fn sample_world_informed(
         pool.swap(i, j);
     }
 
+    let num_opp = opponents.len().min(3);
     let mut opp_hands: Vec<Vec<Tile>> = opponents.iter().map(|_| Vec::new()).collect();
     let mut used = vec![false; pool.len()];
 
-    // For each opponent, assign tiles weighted by predicted probability
-    for (opp_idx, opp) in opponents.iter().enumerate() {
-        if opp_idx >= 3 { break; }
+    // Randomize opponent processing order to avoid systematic bias
+    let mut opp_order: Vec<usize> = (0..num_opp).collect();
+    for i in (1..opp_order.len()).rev() {
+        let j = rng.usize(..=i);
+        opp_order.swap(i, j);
+    }
+
+    // For each opponent (in random order), assign tiles weighted by predicted probability
+    for &opp_idx in &opp_order {
+        let opp = &opponents[opp_idx];
         let needed = opp.hand_count as usize;
         let probs = &opponent_hand_probs[opp_idx];
 
@@ -204,15 +213,26 @@ pub fn sample_world_informed(
             })
             .collect();
 
-        // Sort by probability descending, with randomization for ties
+        // Sort by probability descending
         candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         let mut assigned = 0usize;
-        for (pool_idx, _prob) in candidates {
+        for (pool_idx, _prob) in &candidates {
             if assigned >= needed { break; }
-            used[pool_idx] = true;
-            opp_hands[opp_idx].push(pool[pool_idx]);
+            used[*pool_idx] = true;
+            opp_hands[opp_idx].push(pool[*pool_idx]);
             assigned += 1;
+        }
+
+        // Fallback: if ding-que constraint left insufficient tiles, relax and fill from remaining
+        if assigned < needed {
+            for (pool_idx, &tile) in pool.iter().enumerate() {
+                if assigned >= needed { break; }
+                if used[pool_idx] { continue; }
+                used[pool_idx] = true;
+                opp_hands[opp_idx].push(tile);
+                assigned += 1;
+            }
         }
     }
 
@@ -680,8 +700,11 @@ fn simulate_draws_with_opponents(
         }
 
         // 弃牌：优先弃定缺花色的牌，然后综合向听数+危险度选择最优弃牌
+        // 初始化：默认弃摸到的牌，计算弃掉摸牌后的向听数作为基准
         let mut best_discard = drawn;
-        let mut best_s = calc_shanten(&h, melds);
+        let mut init_h = h;
+        remove_tile(&mut init_h, drawn);
+        let mut best_s = calc_shanten(&init_h, melds);
         let mut best_danger = danger_tiles.map_or(0.0f32, |d| d[drawn as usize]);
 
         // 阶段1：如果还有定缺花色的牌，必须弃其中一张
@@ -697,10 +720,7 @@ fn simulate_draws_with_opponents(
                 let s = calc_shanten(&hh, melds);
                 let d = danger_tiles.map_or(0.0f32, |dt| dt[t]);
                 // 优先选择向听数更低的；向听数相同时选危险度更低的
-                if s < best_s
-                    || (s == best_s && d < best_danger)
-                    || (s == best_s && Suit::from_tile(best_discard) != suit)
-                {
+                if s < best_s || (s == best_s && d < best_danger) {
                     best_s = s;
                     best_discard = t as Tile;
                     best_danger = d;
@@ -730,8 +750,14 @@ fn simulate_draws_with_opponents(
         // A4: 简化对手行为模型 — 弃牌后检查对手是否可能荣和
         let ron_prob = estimate_ron_probability(best_discard, danger_tiles, opponent_danger_info);
         if ron_prob > 0.0 && rng.f32() < ron_prob {
-            // 对手荣和：我方放铳，返回负分（估计 2 番放铳）
-            let penalty_score = -(calc_score(2) as f64);
+            // 对手荣和：放铳惩罚。番数按危险度缩放：
+            // 低危险(0.2) → 1番(1000), 中危险(0.5) → 2番(2000), 高危险(0.8+) → 3-4番(4000-8000)
+            let danger_val = danger_tiles.map_or(0.5f32, |d| d[best_discard as usize]);
+            let est_fan = if danger_val >= 0.8 { 4u8 }
+                          else if danger_val >= 0.6 { 3 }
+                          else if danger_val >= 0.4 { 2 }
+                          else { 1 };
+            let penalty_score = -(calc_score(est_fan) as f64);
             return RolloutResult { won: false, tenpai: false, score: penalty_score, tenpai_waits: 0 };
         }
     }

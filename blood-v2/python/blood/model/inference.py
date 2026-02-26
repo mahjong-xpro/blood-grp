@@ -139,25 +139,29 @@ class PolicyModel(nn.Module):
         self,
         obs_flat: Tensor,
         hidden_state: Optional[HiddenState] = None,
-    ) -> Tuple[Tensor, HiddenState]:
-        """obs_flat: (B, C*27) → (logits (B, action_dim), new_hidden_state)"""
+        memory_buffer: Optional[list] = None,
+    ) -> Tuple[Tensor, HiddenState, Optional[list]]:
+        """obs_flat: (B, C*27) → (logits, new_hidden_state, new_memory_buffer)"""
         enc = self._encode(obs_flat)
         lstm_out, new_hidden = self.lstm(enc.unsqueeze(1), hidden_state)
         features = lstm_out.squeeze(1)  # (B, rnn_size)
 
-        # B1: TurnAttention with memory buffer
+        new_memory = memory_buffer
+        # B1: TurnAttention with per-caller memory buffer
         if self._turn_attn_enabled and hasattr(self, "turn_attention"):
-            if not hasattr(self, "_memory_buffer"):
-                self._memory_buffer = []
-            self._memory_buffer.append(features.detach())
-            if len(self._memory_buffer) > self._turn_attn_max_turns:
-                self._memory_buffer = self._memory_buffer[-self._turn_attn_max_turns:]
-            memory = torch.stack(self._memory_buffer, dim=1)  # (B, K, dim)
+            if memory_buffer is None:
+                memory_buffer = []
+            buf = list(memory_buffer)
+            buf.append(features.detach())
+            if len(buf) > self._turn_attn_max_turns:
+                buf = buf[-self._turn_attn_max_turns:]
+            new_memory = buf
+            memory = torch.stack(buf, dim=1)  # (B, K, dim)
             current = features.unsqueeze(1)  # (B, 1, dim)
             features = self.turn_attention(current, memory).squeeze(1)
 
         features = self.actor_head(features)
-        return self.action_head(features), new_hidden
+        return self.action_head(features), new_hidden, new_memory
 
     @torch.no_grad()
     def get_action(
@@ -166,24 +170,24 @@ class PolicyModel(nn.Module):
         mask: Tensor,
         hidden_state: Optional[HiddenState] = None,
         temperature: float = 0.5,
-    ) -> Tuple[int, HiddenState]:
-        """Returns (action, new_hidden_state)."""
-        logits, new_hidden = self.forward(obs_flat.unsqueeze(0), hidden_state)
+        memory_buffer: Optional[list] = None,
+    ) -> Tuple[int, HiddenState, Optional[list]]:
+        """Returns (action, new_hidden_state, new_memory_buffer)."""
+        logits, new_hidden, new_memory = self.forward(
+            obs_flat.unsqueeze(0), hidden_state, memory_buffer,
+        )
         logits = logits.squeeze(0)
         # Use dtype-safe minimum instead of -1e9 to avoid overflow in float16
         logits[mask < 0.5] = torch.finfo(logits.dtype).min
         if temperature <= 0.01:
-            return int(logits.argmax().item()), new_hidden
+            return int(logits.argmax().item()), new_hidden, new_memory
         probs = F.softmax(logits / temperature, dim=-1)
-        return int(torch.multinomial(probs, 1).item()), new_hidden
+        return int(torch.multinomial(probs, 1).item()), new_hidden, new_memory
 
     def init_hidden(self, device: str = "cpu") -> HiddenState:
         # 多层 LSTM: hidden state shape = (num_layers, batch, rnn_size)
         h = torch.zeros(self._rnn_num_layers, 1, self._rnn_size, device=device)
         c = torch.zeros(self._rnn_num_layers, 1, self._rnn_size, device=device)
-        # Reset TurnAttention memory buffer
-        if self._turn_attn_enabled:
-            self._memory_buffer = []
         return (h, c)
 
     @classmethod
@@ -527,11 +531,9 @@ class OpponentModelPool:
             return False
 
     def reset_hidden_states(self) -> None:
-        """Reset all opponent hidden states at episode boundaries."""
+        """Reset all opponent hidden states and memory buffers at episode boundaries."""
         self._hidden_states.clear()
-        # Reset TurnAttention memory buffers if model has them
-        if self._model is not None and hasattr(self._model, "_memory_buffer"):
-            self._model._memory_buffer = []
+        self._memory_buffers: Dict[int, list] = {}
 
     @torch.no_grad()
     def get_action(
@@ -547,8 +549,15 @@ class OpponentModelPool:
             return self._fallback_action(mask)
         temp = temperature if temperature is not None else self._temperature
         hidden = self._hidden_states.get(opponent_id)
-        action, new_hidden = self._model.get_action(obs, mask, hidden, temperature=temp)
+        mem_buf = getattr(self, "_memory_buffers", {}).get(opponent_id)
+        action, new_hidden, new_memory = self._model.get_action(
+            obs, mask, hidden, temperature=temp, memory_buffer=mem_buf,
+        )
         self._hidden_states[opponent_id] = new_hidden
+        if new_memory is not None:
+            if not hasattr(self, "_memory_buffers"):
+                self._memory_buffers = {}
+            self._memory_buffers[opponent_id] = new_memory
         return action
 
     @staticmethod

@@ -32,8 +32,8 @@ def add_blood_args(parser: ArgumentParser):
     p.add_argument("--no_oracle", dest="oracle_enabled", action="store_false")
     # 修复: 默认值从 25 改为 20，与所有阶段 yaml 配置保持一致
     p.add_argument("--oracle_num_blocks", type=int, default=20)
-    p.add_argument("--oracle_num_tile_attn_layers", type=int, default=2,
-                    help="Oracle TileAttention segment count (default 2, must match across stages)")
+    p.add_argument("--oracle_num_tile_attn_layers", type=int, default=4,
+                    help="Oracle TileAttention segment count (default 4, must match across stages)")
     p.add_argument("--oracle_tile_attn_heads", type=int, default=4,
                     help="Oracle TileAttention attention heads (default 4)")
     p.add_argument("--oracle_distill_weight", type=float, default=0.05)
