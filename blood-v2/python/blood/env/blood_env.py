@@ -290,6 +290,11 @@ class BloodMahjongEnv(gym.Env):
             obs_dict, reward, terminated, truncated, info = result
             # 成功调用，重置连续超时计数
             _rust_engine_on_success()
+
+            # Apply sqrt compression to match SelfPlayEnv reward scale (Issue #R9-C3).
+            # Rust returns linear: delta / REWARD_NORM. Sqrt compression reduces the
+            # 32:1 ratio between 1-fan and 6-fan to ~5.6:1, stabilizing value learning.
+            reward = float(np.sign(reward) * np.sqrt(abs(reward)))
         except TimeoutError as e:
             log.error("FATAL: %s — Rust engine hung in step(). Entering cooldown.", e)
             _rust_engine_on_timeout()

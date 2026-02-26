@@ -122,13 +122,12 @@ class DistillationLoss(nn.Module):
         T = self.temperature
 
         if action_mask is not None:
-            # Use -1e4 for float16 (safe under division by T >= 1.0) or -1e9 for float32.
-            # torch.finfo(dtype).min is dangerous: dividing by T < 1.0 overflows float16,
-            # and if all actions are masked, softmax produces 0/0 = NaN.
-            if student_logits.dtype == torch.float16:
-                large_neg = -1e4
-            else:
-                large_neg = -1e9
+            # Use dtype-aware minimum value for masking, consistent with factory.py
+            # and losses.py (Issue #R9-M3). Clamp to -1e4 for float16 safety:
+            # finfo.min / T could overflow when T < 1.0, and -1e4 / 0.5 = -2e4
+            # is still well within float16 range (~65504).
+            raw_min = torch.finfo(student_logits.dtype).min
+            large_neg = max(raw_min, -1e4) if student_logits.dtype == torch.float16 else raw_min
             student_logits = student_logits.masked_fill(~action_mask, large_neg)
             oracle_logits = oracle_logits.masked_fill(~action_mask, large_neg)
 

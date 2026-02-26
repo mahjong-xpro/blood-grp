@@ -280,9 +280,11 @@ def _patch_learner_load_state():
     _original_load_state = Learner._load_state
 
     def _patched_load_state(self, checkpoint_dict, load_progress=True):
-        # Check if this is a cross-phase checkpoint (has init_checkpoint marker)
-        init_ckpt = getattr(self.cfg, "init_checkpoint_path", "")
-        if init_ckpt:
+        # Check if this is a cross-phase seed checkpoint (has marker key).
+        # Using a marker key instead of checking init_checkpoint_path ensures
+        # that normal --resume loads use strict=True (Issue #R9-H4).
+        is_cross_phase = checkpoint_dict.get("_cross_phase_seed", False)
+        if is_cross_phase:
             # Use strict=False for cross-phase loading
             model_sd = checkpoint_dict.get("model", {})
             if model_sd:
@@ -300,11 +302,22 @@ def _patch_learner_load_state():
                 loaded = len(model_sd) - len(unexpected)
                 log.info("Cross-phase load: transferred %d/%d weights", loaded, len(model_sd))
 
-                # Load non-model state (env_steps, etc.) if present
+                # Load optimizer state so momentum buffers and LR reset from
+                # _seed_init_checkpoint are preserved (Issue #R9-C2).
+                opt_state = checkpoint_dict.get("optimizer")
+                if opt_state is not None:
+                    try:
+                        self.optimizer.load_state_dict(opt_state)
+                        log.info("Cross-phase load: optimizer state loaded (LR reset preserved)")
+                    except Exception as e:
+                        log.warning("Cross-phase load: optimizer load failed (%s), using fresh optimizer", e)
+
+                # Reset counters so the new phase starts from step 0
                 if load_progress:
-                    if "env_steps" in checkpoint_dict:
-                        self.train_step = checkpoint_dict.get("train_steps", 0)
-                        log.info("Loaded training progress: env_steps=%s", checkpoint_dict.get("env_steps", 0))
+                    self.train_step = checkpoint_dict.get("train_step", 0)
+                    self.env_steps = checkpoint_dict.get("env_steps", 0)
+                    log.info("Loaded training progress: train_step=%d, env_steps=%d",
+                             self.train_step, self.env_steps)
                 return
         # Default: use original strict loading
         return _original_load_state(self, checkpoint_dict, load_progress)
@@ -361,9 +374,12 @@ def _seed_init_checkpoint(cfg):
     # We keep the optimizer state because SF2's _load_state unconditionally
     # loads it (KeyError if missing).
     seed_ckpt = dict(source_ckpt)  # shallow copy
+    # Mark as a cross-phase seed so _patched_load_state can distinguish it
+    # from a normal resume checkpoint (Issue #R9-H4).
+    seed_ckpt["_cross_phase_seed"] = True
     # Reset training counters so the new phase starts from step 0
     seed_ckpt["env_steps"] = 0
-    seed_ckpt["train_steps"] = 0
+    seed_ckpt["train_step"] = 0
 
     # Reset optimizer LR to the new phase's configured learning_rate.
     # Without this, the inherited LR (potentially inflated to 0.01 by

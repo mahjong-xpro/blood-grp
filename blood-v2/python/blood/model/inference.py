@@ -546,7 +546,7 @@ class OpponentModelPool:
     def reset_hidden_states(self) -> None:
         """Reset all opponent hidden states and memory buffers at episode boundaries."""
         self._hidden_states.clear()
-        self._memory_buffers: Dict[int, list] = {}
+        self._memory_buffers.clear()
 
     @torch.no_grad()
     def get_action(
@@ -554,7 +554,7 @@ class OpponentModelPool:
         obs: Tensor,
         mask: Tensor,
         opponent_id: int = 0,
-        temperature: float = None,
+        temperature: Optional[float] = None,
     ) -> int:
         # Fallback: no model loaded yet (league pool empty at training start)
         # → uniform random over legal actions, equivalent to a random policy.

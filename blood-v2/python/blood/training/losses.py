@@ -199,7 +199,7 @@ class BloodLossComputer:
         if student_values is None:
             return None
         sv = student_values.view(-1)
-        ov = oracle_values.squeeze().detach().view(-1)
+        ov = oracle_values.squeeze(-1).detach().view(-1)
         if sv.shape != ov.shape:
             log.warning(
                 "oracle_value_distill_loss skipped: shape mismatch student=%s oracle=%s",

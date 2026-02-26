@@ -111,8 +111,12 @@ class BloodObserver(AlgoObserver):
             and self.elo_tracker is not None
             and env_steps - self._last_arena_eval_step >= self._arena_eval_every
         ):
-            self._maybe_start_arena_eval(runner, policy_id, env_steps)
-            self._last_arena_eval_step = env_steps
+            started = self._maybe_start_arena_eval(runner, policy_id, env_steps)
+            # Only advance the step counter if eval actually started (Issue #R9-H2).
+            # Otherwise a missing checkpoint causes the slot to be silently skipped,
+            # delaying the first eval by up to _arena_eval_every extra steps.
+            if started:
+                self._last_arena_eval_step = env_steps
 
         if not self.league_enabled:
             return
@@ -159,12 +163,15 @@ class BloodObserver(AlgoObserver):
         latest = checkpoints[-1]
         return latest if os.path.exists(latest) else None
 
-    def _maybe_start_arena_eval(self, runner: Runner, policy_id: int, env_steps: int) -> None:
-        """Launch a background arena evaluation if one isn't already running."""
+    def _maybe_start_arena_eval(self, runner: Runner, policy_id: int, env_steps: int) -> bool:
+        """Launch a background arena evaluation if one isn't already running.
+
+        Returns True if the evaluation was actually started, False otherwise.
+        """
         with self._arena_eval_lock:
             if self._arena_eval_running:
                 log.debug("[Arena] Skipping eval at step %d — previous eval still running", env_steps)
-                return
+                return False
             self._arena_eval_running = True
 
         ckpt_path = self._find_latest_checkpoint(runner, policy_id)
@@ -172,7 +179,7 @@ class BloodObserver(AlgoObserver):
             log.debug("[Arena] No checkpoint available yet; skipping eval at step %d", env_steps)
             with self._arena_eval_lock:
                 self._arena_eval_running = False
-            return
+            return False
 
         log.info("[Arena] Starting evaluation at step %d (%d games vs RuleBot)", env_steps, self._arena_eval_games)
         t = threading.Thread(
@@ -182,6 +189,7 @@ class BloodObserver(AlgoObserver):
             name=f"arena-eval-{env_steps}",
         )
         t.start()
+        return True
 
     def _run_arena_eval(self, ckpt_path: str, env_steps: int) -> None:
         """Run arena evaluation in a background thread. Updates EloTracker."""
