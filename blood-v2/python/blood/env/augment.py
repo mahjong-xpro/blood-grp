@@ -36,15 +36,28 @@ def augment_action(action: int, perm) -> int:
     """Permute a discard action according to suit permutation.
 
     Actions 0-26 are tile indices; 27+ are non-tile actions.
+    
+    For dingque actions (31-33):
+    - action 31 = Man (suit 0)
+    - action 32 = Pin (suit 1)
+    - action 33 = Sou (suit 2)
+    
+    perm maps: old_suit_index -> new_suit_index
+    So if perm=(2,0,1), it means: Man->Sou, Pin->Man, Sou->Pin
+    
+    Example: action=31 (Man), perm=(2,0,1)
+    - old_suit = 0 (Man)
+    - new_suit = perm[0] = 2 (Sou)
+    - return 33 (Sou)
     """
     if action >= 27:
         if 31 <= action <= 33:
             old_suit = action - 31
-            new_suit = perm.index(old_suit)
+            new_suit = perm[old_suit]  # Fix: use perm[old_suit] not perm.index(old_suit)
             return 31 + new_suit
         return action
 
     old_suit = action // 9
     rank = action % 9
-    new_suit = perm.index(old_suit)
+    new_suit = perm[old_suit]  # Fix: use perm[old_suit] not perm.index(old_suit)
     return new_suit * 9 + rank
