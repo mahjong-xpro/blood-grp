@@ -76,7 +76,6 @@ league_self_play_prob: 0.0             # warmup 阶段不自博弈（对手是 R
 
 # Reward shaping — extra signals to accelerate early learning
 warmup_reward_shaping: true
-warmup_dq_bonus: 0.05
 warmup_win_bonus: 0.1
 warmup_dangerous_discard_penalty: 0.03
 

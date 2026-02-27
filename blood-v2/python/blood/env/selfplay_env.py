@@ -88,13 +88,11 @@ class SelfPlayEnv(BloodMahjongEnv):
             self._refresh_every = getattr(cfg, "opponent_refresh_every", 20)
 
         self._warmup_reward_shaping = False
-        self._warmup_dq_bonus = 0.0
         self._warmup_win_bonus = 0.0
         self._warmup_deal_in_penalty = 0.0
         self._warmup_dangerous_discard_penalty = 0.0
         if cfg is not None:
             self._warmup_reward_shaping = getattr(cfg, "warmup_reward_shaping", False)
-            self._warmup_dq_bonus = getattr(cfg, "warmup_dq_bonus", 0.0)
             self._warmup_win_bonus = getattr(cfg, "warmup_win_bonus", 0.0)
             self._warmup_deal_in_penalty = getattr(cfg, "warmup_deal_in_penalty", 0.0)
             self._warmup_dangerous_discard_penalty = getattr(cfg, "warmup_dangerous_discard_penalty", 0.03)
@@ -546,15 +544,17 @@ class SelfPlayEnv(BloodMahjongEnv):
         """Extra reward signals during warmup phase."""
         bonus = 0.0
 
-        # DingQue bonus: reward choosing the suit with fewest tiles in hand.
-        # get_agent_suit_counts() reads hand *after* apply_ding_que(), but that
-        # method only sets the ding_que flag — it never modifies the hand array,
-        # so the counts still reflect the pre-dingque hand.
-        if self._warmup_dq_bonus > 0 and 31 <= action <= 33:
-            chosen_suit = action - 31  # 0=Man, 1=Pin, 2=Sou
-            counts = self._env.get_agent_suit_counts()  # [man, pin, sou]
-            if counts[chosen_suit] == min(counts):
-                bonus += self._warmup_dq_bonus
+        # DingQue: No explicit reward shaping for dingque choice.
+        # Let the agent learn the optimal strategy through downstream rewards
+        # (winning, shanten progress, etc.). Forcing "choose minimum count" is
+        # suboptimal — it ignores hand structure, tile quality, and fan potential.
+        # The agent should learn to balance:
+        #   - Discarding fewer tiles (efficiency)
+        #   - Preserving good tile combinations (hand structure)
+        #   - Maximizing fan potential (qingyise, etc.)
+        #
+        # Warmup phase still benefits from basic reward signals (win bonus,
+        # shanten progress) which indirectly guide dingque learning.
 
         if self._env.player_has_won(0) and self._warmup_win_bonus > 0:
             bonus += self._warmup_win_bonus

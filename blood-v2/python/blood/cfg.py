@@ -110,8 +110,6 @@ def add_blood_args(parser: ArgumentParser):
 
     # Warmup reward shaping
     p.add_argument("--warmup_reward_shaping", default=False, action="store_true")
-    p.add_argument("--warmup_dq_bonus", type=float, default=0.05,
-                    help="Bonus for correct dingque selection during warmup")
     p.add_argument("--warmup_win_bonus", type=float, default=0.1,
                     help="Bonus for winning during warmup")
     p.add_argument("--warmup_deal_in_penalty", type=float, default=0.0,
