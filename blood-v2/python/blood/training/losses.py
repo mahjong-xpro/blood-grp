@@ -157,7 +157,7 @@ class BloodLossComputer:
             oracle_logits_masked = oracle_logits.masked_fill(
                 ~action_mask.bool(), mask_value
             )
-        ce_raw = F.cross_entropy(oracle_logits_masked, actions.long(), reduction="none")
+        ce_raw = F.cross_entropy(oracle_logits_masked, actions.long().squeeze(-1), reduction="none")
         if advantages is not None:
             # Use softmax weighting instead of clamp(min=0) to ensure non-zero
             # weights even when all advantages are negative (Issue #45).
