@@ -24,31 +24,61 @@ entropy_bonus = 0.01 × ln(3) ≈ 0.011
 
 ## 优化方案
 
-### 统一提升所有阶段的基础 exploration coefficient
+### 根据各阶段业务特点差异化优化
 
-| 配置文件 | 原始值 | 优化值 | 变化 |
-|---------|--------|--------|------|
-| `warmup.yaml` | 0.01 | **0.03** | +200% |
-| `warmup_transition.yaml` | 0.01 | **0.03** | +200% |
-| `competitive.yaml` | 0.01 | **0.03** | +200% |
-| `competitive_distill.yaml` | 0.05 | 0.05 | 保持不变 |
-| `elite.yaml` | 0.02 | **0.03** | +50% |
+| 配置文件 | 原始值 | 优化值 | 业务理由 |
+|---------|--------|--------|----------|
+| `warmup.yaml` | 0.01 | **0.03** | 基础学习阶段，需要充分探索防止 dingque 锁定 |
+| `warmup_transition.yaml` | 0.01 | **0.03** | 过渡阶段，保持与 warmup 一致的探索水平 |
+| `competitive.yaml` | 0.01 | **0.05** | 自博弈阶段，需要高探索发现多样化策略 |
+| `competitive_distill.yaml` | 0.05 | **0.05** | 蒸馏阶段，保持高探索学习 Oracle 知识 |
+| `elite.yaml` | 0.02 | **0.02** | 精英阶段，从中等探索逐步收敛到精细策略 |
 
-### 调整动态调度起始值
+### 各阶段探索策略设计
 
-**competitive.yaml**:
+**1. Warmup (0→2.5M steps) - 基础探索**
 ```yaml
-# 原始: linear,0.01,0.05,0,500000
-# 优化: linear,0.03,0.05,0,500000
-blood_schedule_entropy: "linear,0.03,0.05,0,500000"
+exploration_loss_coeff: 0.03  # 固定值，防止早期锁定
+# 无调度，保持稳定探索
 ```
+- 对抗 RuleBot，环境简单
+- 重点：学习基础规则，避免 dingque 锁定
+- 熵奖励：0.03 × ln(3) ≈ 0.033
 
-**elite.yaml**:
+**2. Warmup Transition (2.5M→3M steps) - 平滑过渡**
 ```yaml
-# 原始: cosine,0.02,0.01,0,200000000
-# 优化: cosine,0.03,0.01,0,200000000
-blood_schedule_entropy: "cosine,0.03,0.01,0,200000000"
+exploration_loss_coeff: 0.03  # 与 warmup 保持一致
+# 无调度，稳定过渡
 ```
+- 仍对抗 RuleBot
+- 重点：适应新的 gamma/lr，不改变探索强度
+
+**3. Competitive (3M→4M steps) - 高探索自博弈**
+```yaml
+exploration_loss_coeff: 0.05  # 直接高探索，无需 warmup
+# 移除 linear schedule，保持固定 0.05
+```
+- 切换到自博弈，策略空间爆炸
+- 重点：发现多样化策略，建立 League pool
+- 熵奖励：0.05 × ln(3) ≈ 0.055（最高）
+
+**4. Competitive Distill (4M→8M steps) - 保持高探索**
+```yaml
+exploration_loss_coeff: 0.05  # 保持不变
+blood_schedule_entropy: "cosine,0.05,0.02,0,4000000"
+```
+- Oracle 蒸馏阶段
+- 重点：学习 Oracle 的完美信息价值估计
+- 保持高探索避免过拟合 Oracle
+
+**5. Elite (8M→208M steps) - 逐步收敛**
+```yaml
+exploration_loss_coeff: 0.02  # 中等起始值
+blood_schedule_entropy: "cosine,0.02,0.01,0,200000000"
+```
+- 长期精细化训练
+- 重点：策略收敛到超人水平
+- 从中等探索（0.02）逐步降到低探索（0.01）
 
 ## 优化效果预期
 
@@ -63,28 +93,28 @@ entropy_bonus = 0.03 × ln(3) ≈ 0.033
 - 防止过早收敛到单一策略
 - 保持与主要奖励信号的合理比例
 
-### 各阶段探索强度
+### 探索强度时间线
 
-1. **Warmup (0→2.5M steps)**
-   - 固定 0.03，确保基础探索
-   - 防止 dingque 锁定问题
+```
+Exploration Coefficient Timeline:
+                                                                    
+Warmup          Transition    Competitive    Distill         Elite
+0.03 ────────── 0.03 ──────── 0.05 ──────── 0.05→0.02 ───── 0.02→0.01
+│               │             │             │               │
+│               │             │             │               │
+0              2.5M          3M            4M              8M        208M
+                                                                    
+Legend:
+─────  固定值
+────→  调度衰减
+```
 
-2. **Warmup Transition (2.5M→3M steps)**
-   - 固定 0.03，平滑过渡
-   - 保持与 warmup 一致的探索水平
-
-3. **Competitive (3M→4M steps)**
-   - 0.03 → 0.05 线性增长（前 500K 步）
-   - 然后保持 0.05
-   - 自博弈阶段需要更强探索
-
-4. **Competitive Distill (4M→8M steps)**
-   - 固定 0.05
-   - 蒸馏阶段保持高探索
-
-5. **Elite (8M→208M steps)**
-   - 0.03 → 0.01 余弦衰减（全程 200M 步）
-   - 长期训练逐步收敛到精细策略
+**设计原则**:
+1. **Warmup**: 中等固定探索（0.03），学习基础 + 防止锁定
+2. **Transition**: 保持 warmup 水平（0.03），稳定过渡
+3. **Competitive**: 高探索（0.05），自博弈需要发现多样策略
+4. **Distill**: 高→中探索（0.05→0.02），学习 Oracle 同时避免过拟合
+5. **Elite**: 中→低探索（0.02→0.01），长期收敛到精细策略
 
 ## 理论依据
 
