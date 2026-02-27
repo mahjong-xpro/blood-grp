@@ -204,6 +204,13 @@ def add_blood_args(parser: ArgumentParser):
     p.add_argument("--blood_entropy_floor", type=float, default=0.0,
                     help="Entropy coefficient 下限保护。调度器输出低于此值时强制使用 floor。"
                          "设为 0 禁用。建议 0.008")
+    
+    # Performance optimization
+    p.add_argument("--use_mixed_precision", default=False, action="store_true",
+                    help="Enable mixed precision training (FP16) for 1.5-2x speedup on GPU. "
+                         "Requires CUDA-capable GPU with Tensor Cores (Volta/Turing/Ampere+)")
+    p.add_argument("--compile_model", default=False, action="store_true",
+                    help="Compile model with torch.compile for 1.2-1.5x speedup (PyTorch 2.0+)")
 
 
 def blood_override_defaults(parser: ArgumentParser):
