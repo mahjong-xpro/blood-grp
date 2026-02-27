@@ -256,6 +256,20 @@ class BloodActorCritic(ActorCriticSharedWeights):
                 illegal = ~mask.bool()
                 mask_value = torch.finfo(action_distribution_params.dtype).min
                 action_distribution_params = action_distribution_params.masked_fill(illegal, mask_value)
+                
+                # DingQue uniform prior: 强制定缺动作(31/32/33)的logits趋向均值
+                # 解决模型架构初始化偏差导致的100%索子问题
+                # 仅在定缺阶段生效（mask中31/32/33都为True时）
+                dq_mask = mask[:, 31:34]  # (B, 3)
+                if dq_mask.all():  # 所有样本都在定缺阶段
+                    dq_logits = action_distribution_params[:, 31:34]  # (B, 3)
+                    dq_mean = dq_logits.mean(dim=-1, keepdim=True)  # (B, 1)
+                    prior_strength = 0.3  # 先验强度：30%拉向均值，70%保留模型输出
+                    action_distribution_params[:, 31:34] = (
+                        dq_logits * (1.0 - prior_strength) +
+                        dq_mean * prior_strength
+                    )
+                
                 # Sync raw_logits so SF2's entropy/log_prob use the masked distribution.
                 self.last_action_distribution.raw_logits = action_distribution_params
 
