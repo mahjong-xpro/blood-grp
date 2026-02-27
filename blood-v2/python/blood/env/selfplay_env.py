@@ -544,29 +544,17 @@ class SelfPlayEnv(BloodMahjongEnv):
         """Extra reward signals during warmup phase."""
         bonus = 0.0
 
-        # DingQue reward shaping: guide the agent to choose the suit with fewest tiles.
-        # This provides explicit learning signal during warmup to bootstrap dingque learning.
-        # The agent can later refine this strategy based on hand structure and fan potential.
-        if 31 <= action <= 33 and hasattr(self._env, 'get_agent_hand'):
-            try:
-                hand = self._env.get_agent_hand()
-                suit_counts = [
-                    sum(1 for t in hand if 0 <= t < 9),   # Man
-                    sum(1 for t in hand if 9 <= t < 18),  # Pin
-                    sum(1 for t in hand if 18 <= t < 27), # Sou
-                ]
-                chosen_suit = action - 31
-                min_count = min(suit_counts)
-                max_count = max(suit_counts)
-                
-                # Reward choosing the suit with fewest tiles (most efficient)
-                if suit_counts[chosen_suit] == min_count:
-                    bonus += 0.05
-                # Penalize choosing the suit with most tiles (least efficient)
-                elif suit_counts[chosen_suit] == max_count:
-                    bonus -= 0.02
-            except Exception:
-                pass  # Silently ignore if get_agent_hand is not available
+        # DingQue reward shaping: DISABLED to avoid conflicting with optimal strategy.
+        # The uniform prior (factory.py) and observation encoding (student.rs) provide
+        # sufficient guidance. Explicit reward shaping for "fewest tiles" can conflict
+        # with hand structure and fan potential considerations.
+        #
+        # Previous implementation rewarded choosing the suit with fewest tiles, but this
+        # is not always optimal (e.g., a suit with 5 tiles containing multiple melds
+        # may be better to keep than a suit with 3 isolated tiles).
+        #
+        # If re-enabling, consider rewarding "most isolated tiles" instead of "fewest tiles".
+        pass
 
         if self._env.player_has_won(0) and self._warmup_win_bonus > 0:
             bonus += self._warmup_win_bonus

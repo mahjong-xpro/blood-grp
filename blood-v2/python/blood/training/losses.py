@@ -81,27 +81,35 @@ class BloodLossComputer:
             if oracle_obs is not None:
                 oracle_logits, oracle_values = ac.oracle_encoder(oracle_obs)
 
-                # KL distillation: student → oracle
-                student_logits = getattr(action_dist, "raw_logits", None)
-                if student_logits is None:
-                    log.warning(
-                        "Cannot find 'raw_logits' on action_dist; skipping distillation"
-                    )
-                else:
-                    mask_bool = action_mask.bool() if action_mask is not None else None
-                    distill = self._oracle_distill_loss(
-                        ac, student_logits, oracle_logits, mask_bool
-                    )
-                    extra_loss = extra_loss + ac.distill_weight * distill
-                    summaries["distill_loss"] = distill.detach()
+                # Check if in DingQue phase (actions 31-33 are all legal)
+                # Use per-sample detection to handle mixed batches correctly
+                dq_mask = action_mask[:, 31:34] if action_mask is not None else None
+                is_dingque = dq_mask.all(dim=-1) if dq_mask is not None else torch.zeros(action_mask.shape[0], dtype=torch.bool, device=action_mask.device)
+                has_non_dingque = (~is_dingque).any() if dq_mask is not None else True
 
-                # Oracle CE (advantage-weighted)
-                oracle_ce = self._oracle_ce_loss(
-                    oracle_logits, mb.actions, getattr(mb, "advantages", None), action_mask
-                )
-                oracle_ce_weight = getattr(ac, "oracle_ce_weight", 0.1)
-                extra_loss = extra_loss + oracle_ce_weight * oracle_ce
-                summaries["oracle_ce"] = oracle_ce.detach()
+                # KL distillation: student → oracle (skip for DingQue samples)
+                if has_non_dingque:
+                    student_logits = getattr(action_dist, "raw_logits", None)
+                    if student_logits is None:
+                        log.warning(
+                            "Cannot find 'raw_logits' on action_dist; skipping distillation"
+                        )
+                    else:
+                        mask_bool = action_mask.bool() if action_mask is not None else None
+                        distill = self._oracle_distill_loss(
+                            ac, student_logits, oracle_logits, mask_bool
+                        )
+                        extra_loss = extra_loss + ac.distill_weight * distill
+                        summaries["distill_loss"] = distill.detach()
+
+                # Oracle CE (advantage-weighted) - skip for DingQue samples
+                if has_non_dingque:
+                    oracle_ce = self._oracle_ce_loss(
+                        oracle_logits, mb.actions, getattr(mb, "advantages", None), action_mask
+                    )
+                    oracle_ce_weight = getattr(ac, "oracle_ce_weight", 0.1)
+                    extra_loss = extra_loss + oracle_ce_weight * oracle_ce
+                    summaries["oracle_ce"] = oracle_ce.detach()
 
                 # Oracle value head supervised loss
                 oracle_value_head_weight = getattr(ac, "oracle_value_head_loss_weight", 1.0)

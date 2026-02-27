@@ -138,8 +138,11 @@ blood_schedule_entropy: "cosine,0.02,0.01,0,200000000"
 # Adv clip: linear tighten from 5.0 → 3.0 starting at 10M steps
 blood_schedule_adv_clip: "linear,5.0,3.0,10000000,160000000"
 
-# Entropy floor safety net — 低于 cosine 终值(0.01)，捕获意外下降
-blood_entropy_floor: 0.009
+# Entropy floor safety net — 提升到 0.012 防止过早收敛
+# 当前观察：entropy 从 0.70 持续下降到 0.47 (4.24M步)
+# cosine schedule 终值 0.01，但实际可能继续下降
+# 0.012 floor 确保策略保持足够探索性，防止陷入局部最优
+blood_entropy_floor: 0.012
 
 # Opponent hand predictor — 从 Phase 2b 继承已训练权重
 # 集成到 ISMCE informed sampling: 用预测概率引导对手手牌采样
