@@ -21,7 +21,7 @@ lr_schedule: kl_adaptive_minibatch
 lr_schedule_kl_threshold: 0.002    # Fix @Phase2b: 0.0002 远低于实际 KL(0.0015~0.002)，LR 100% 锁死下限
 lr_adaptive_max: 2e-4              # 保持不变
 lr_adaptive_min: 5e-5              # Fix @Phase2b: 2e-5 导致学习停滞（Phase 2b 旧 run 76.6% 锁死）
-exploration_loss_coeff: 0.02           # 与 cosine 调度起始值一致
+exploration_loss_coeff: 0.03           # Fix: 提升基础值，确保充分探索（调度会降到 0.02→0.01）
 value_loss_coeff: 1.0
 train_for_env_steps: 200000000      # 50M → 200M for deeper exploration
 save_every_sec: 300                 # Performance: 30→300 (reduce I/O overhead)
@@ -132,8 +132,8 @@ ismce_num_worlds: 96            # 64 → 96 (more samples to compensate deeper r
 ismce_rollout_depth: 8          # 4 → 8 (deeper lookahead)
 
 # Dynamic hyperparameter schedules (within this stage)
-# Entropy: cosine anneal from 0.02 → 0.01 over full 200M steps
-blood_schedule_entropy: "cosine,0.02,0.01,0,200000000"
+# Entropy: cosine anneal from 0.03 → 0.01 over full 200M steps
+blood_schedule_entropy: "cosine,0.03,0.01,0,200000000"
 # Adv clip: linear tighten from 5.0 → 3.0 starting at 10M steps
 blood_schedule_adv_clip: "linear,5.0,3.0,10000000,160000000"
 

@@ -34,7 +34,7 @@ lr_schedule: kl_adaptive_minibatch
 lr_schedule_kl_threshold: 0.003   # Fix R12-M10: intermediate between warmup(0.004) and competitive(0.001)
 lr_adaptive_max: 3e-4              # Fix: 限制 LR 上限，防止继承 warmup 的 LR=0.01
 lr_adaptive_min: 1e-4              # Fix R12-M9: match warmup (SF2 default 1e-6 allows LR collapse)
-exploration_loss_coeff: 0.01        # 保持与 warmup 一致，competitive 阶段再提升到 0.05
+exploration_loss_coeff: 0.03        # Fix: 与 warmup 保持一致，防止 dingque 锁定问题
 value_loss_coeff: 1.0
 train_for_env_steps: 500000         # 过渡阶段 500K 步，足够 LSTM 适应
 save_every_sec: 300                 # Performance: 30→300 (reduce I/O overhead)

@@ -22,7 +22,7 @@ lr_schedule: kl_adaptive_minibatch
 lr_schedule_kl_threshold: 0.001   # Fix 3: recalibrated for masked action space (was SF2 default 0.008)
 lr_adaptive_max: 3e-4              # Fix 3: hard LR ceiling (was SF2 default 0.01)
 lr_adaptive_min: 2e-5              # Fix: 从 1e-6 提升到 2e-5，防止 LR 降到接近零
-exploration_loss_coeff: 0.01           # 与 linear 调度起始值一致
+exploration_loss_coeff: 0.03           # Fix: 提升基础值，防止早期 dingque 锁定（调度会进一步提升到 0.05）
 value_loss_coeff: 1.0
 train_for_env_steps: 1000000
 
@@ -123,8 +123,8 @@ recurrence: 32
 adv_clip: 2.0
 
 # Dynamic hyperparameter schedules (within this stage)
-# Entropy: linear warmup from 0.01 → 0.05 over first 500k steps
-blood_schedule_entropy: "linear,0.01,0.05,0,500000"
+# Entropy: linear warmup from 0.03 → 0.05 over first 500k steps
+blood_schedule_entropy: "linear,0.03,0.05,0,500000"
 
 # ============================================================================
 # PERFORMANCE OPTIMIZATION (15-30x speedup)
