@@ -133,8 +133,9 @@ blood_schedule_entropy: "linear,0.01,0.05,0,500000"
 # Mixed precision: FP16 training for 1.5-2x speedup on GPU with Tensor Cores
 use_mixed_precision: true
 
-# Optimized batch size: 1024→2048 for better GPU utilization
-# Note: Competitive phase uses smaller batch for more frequent updates
+# Optimized batch size for 24GB GPU
+# Unified across all phases: 2048 (safe for 24GB GPU with all features enabled)
+# Provides good training speed while ensuring stable memory usage
 batch_size: 2048
 
 # Model compilation: torch.compile for additional 1.2-1.5x speedup (PyTorch 2.0+)

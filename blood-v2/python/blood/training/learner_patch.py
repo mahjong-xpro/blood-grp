@@ -24,6 +24,7 @@ log = logging.getLogger(__name__)
 # Store original methods before patching
 _original_calculate_losses = Learner._calculate_losses
 _original_load_state = Learner._load_state
+_original_train = Learner.train
 
 # Lazy-initialized state (per-process)
 _loss_computer = None
@@ -59,7 +60,7 @@ def _get_grad_scaler(cfg):
     global _grad_scaler
     if _grad_scaler is None and getattr(cfg, "use_mixed_precision", False):
         if torch.cuda.is_available():
-            _grad_scaler = torch.cuda.amp.GradScaler()
+            _grad_scaler = torch.amp.GradScaler('cuda')
             log.info("[LearnerPatch] Mixed precision training enabled (FP16)")
         else:
             log.warning("[LearnerPatch] Mixed precision requested but CUDA not available, using FP32")
@@ -75,7 +76,7 @@ def _patched_calculate_losses(self, mb, num_invalids):
     
     # Mixed precision context
     use_amp = grad_scaler is not None
-    autocast_ctx = torch.cuda.amp.autocast() if use_amp else torch.nullcontext()
+    autocast_ctx = torch.amp.autocast('cuda') if use_amp else torch.nullcontext()
     
     # Apply scheduled hyperparameter updates
     env_steps = getattr(self, "env_steps", 0)
@@ -161,8 +162,25 @@ def _patched_load_state(self, checkpoint_dict, load_progress=True):
     return _original_load_state(self, checkpoint_dict, load_progress)
 
 
+def _patched_train(self, batch):
+    """Patched version of Learner.train that fixes tensor.detach() warning."""
+    # Call original train method
+    train_stats = _original_train(self, batch)
+    
+    # Fix: SF2's learner.py line 739 converts tensor with grad to float
+    # We patch the epoch_actor_losses to use .detach() before float conversion
+    if hasattr(self, 'epoch_actor_losses') and len(self.epoch_actor_losses) > 0:
+        # Convert any tensors with grad to detached scalars
+        for i, loss in enumerate(self.epoch_actor_losses):
+            if isinstance(loss, torch.Tensor) and loss.requires_grad:
+                self.epoch_actor_losses[i] = float(loss.detach())
+    
+    return train_stats
+
+
 # Apply patches at module import time (runs in every process)
 Learner._calculate_losses = _patched_calculate_losses
 Learner._load_state = _patched_load_state
+Learner.train = _patched_train
 log.info("[LearnerPatch] Learner methods patched at import time (pid=%d)",
          __import__('os').getpid())

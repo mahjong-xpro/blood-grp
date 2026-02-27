@@ -122,9 +122,10 @@ turn_attention_enabled: false
 # Mixed precision: FP16 training for 1.5-2x speedup on GPU with Tensor Cores
 use_mixed_precision: true
 
-# Optimized batch size: 2048→4096 for better GPU utilization
-# Note: May need to reduce if GPU memory is limited
-batch_size: 4096
+# Optimized batch size for 24GB GPU
+# Unified across all phases: 2048 (safe for 24GB GPU with all features enabled)
+# Provides good training speed while ensuring stable memory usage
+batch_size: 2048
 
 # Model compilation: torch.compile for additional 1.2-1.5x speedup (PyTorch 2.0+)
 # Note: Experimental, may cause issues. Disable if training fails.
