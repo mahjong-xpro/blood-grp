@@ -66,24 +66,24 @@ def test_model_dingque_behavior():
     try:
         from blood.model.factory import make_blood_actor_critic
         from blood.consts import OBS_SIZE, ACTION_SPACE
-        from sample_factory.utils.typing import Config
         import gymnasium as gym
+        from argparse import Namespace
         
         # 创建最小配置
-        cfg = Config({
-            'blood_obs_channels': 473,
-            'blood_conv_channels': 256,
-            'blood_num_res_blocks': 20,
-            'blood_encoder_out_dim': 1024,
-            'blood_enc_proj_layers': 3,
-            'blood_num_tile_attn_layers': 4,
-            'blood_tile_attn_heads': 4,
-            'use_rnn': False,
-            'aux_shanten_weight': 0.0,
-            'oracle_enabled': False,
-            'opponent_predictor_enabled': False,
-            'turn_attention_enabled': False,
-        })
+        cfg = Namespace(
+            blood_obs_channels=473,
+            blood_conv_channels=256,
+            blood_num_res_blocks=20,
+            blood_encoder_out_dim=1024,
+            blood_enc_proj_layers=3,
+            blood_num_tile_attn_layers=4,
+            blood_tile_attn_heads=4,
+            use_rnn=False,
+            aux_shanten_weight=0.0,
+            oracle_enabled=False,
+            opponent_predictor_enabled=False,
+            turn_attention_enabled=False,
+        )
         
         obs_space = gym.spaces.Dict({
             'obs': gym.spaces.Box(low=0, high=1, shape=(OBS_SIZE,), dtype=np.float32),
