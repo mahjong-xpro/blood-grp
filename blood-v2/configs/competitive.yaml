@@ -67,7 +67,7 @@ oracle_value_warmup_steps: 0           # Fix R10-M9: explicit (default 500k woul
 
 # Arena evaluation — periodic strength measurement via RuleBot games
 # Updates Elo ratings during training so TensorBoard shows real progress
-blood_arena_eval_every: 250000         # Performance: 100k→250k (reduce eval overhead)
+blood_arena_eval_every: 500000         # Performance: 100k→500k (reduce eval overhead, aligned with warmup)
 blood_arena_eval_games: 50             # 50 games per eval (fast, ~30s on CPU)
 blood_arena_eval_temperature: 0.1
 
