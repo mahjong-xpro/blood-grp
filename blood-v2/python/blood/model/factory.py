@@ -257,23 +257,20 @@ class BloodActorCritic(ActorCriticSharedWeights):
                 mask_value = torch.finfo(action_distribution_params.dtype).min
                 action_distribution_params = action_distribution_params.masked_fill(illegal, mask_value)
                 
-                # DingQue uniform prior: 强制定缺动作(31/32/33)的logits趋向均值
+                # DingQue uniform prior: 强制定缺动作(31/32/33)完全均匀分布
                 # 解决模型架构初始化偏差导致的100%索子问题
-                # 使用逐样本检测以正确处理混合batch
+                # 策略：定缺阶段直接覆盖logits为0（均匀分布），而非混合
                 dq_mask = mask[:, 31:34]  # (B, 3)
-                # Fix: 检查是否有任何定缺动作合法（any而非all）
-                # all()永远为True因为定缺阶段3个动作都合法，导致先验永不触发
+                # 检查是否有任何定缺动作合法（定缺阶段3个都合法）
                 is_dingque = dq_mask.any(dim=-1)  # (B,) 每个样本是否在定缺阶段
                 if is_dingque.any():  # 只要有样本在定缺阶段
-                    dq_logits = action_distribution_params[:, 31:34]  # (B, 3)
-                    dq_mean = dq_logits.mean(dim=-1, keepdim=True)  # (B, 1)
-                    prior_strength = 0.5  # 先验强度：50%拉向均值（提高到0.5以更强制均匀）
-                    mixed = dq_logits * (1.0 - prior_strength) + dq_mean * prior_strength
-                    # 仅对定缺样本应用先验，非定缺样本保持原值
+                    # 直接设置为0（softmax后为均匀分布1/3）
+                    # 不使用混合策略，因为模型初始化偏差会被保留并自强化
+                    uniform_logits = torch.zeros_like(action_distribution_params[:, 31:34])
                     action_distribution_params[:, 31:34] = torch.where(
                         is_dingque.unsqueeze(-1),  # (B, 1) 广播到 (B, 3)
-                        mixed,
-                        dq_logits
+                        uniform_logits,
+                        action_distribution_params[:, 31:34]
                     )
                 
                 # Sync raw_logits so SF2's entropy/log_prob use the masked distribution.
