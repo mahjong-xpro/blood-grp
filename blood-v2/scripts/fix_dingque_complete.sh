@@ -57,11 +57,14 @@ echo ""
 
 echo "Step 5: Compiling Rust engine with fixes..."
 echo "This may take 2-5 minutes..."
+cd crates/pybind
 maturin develop --release
 if [ $? -eq 0 ]; then
     echo "✓ Rust engine compiled successfully"
+    cd ../..
 else
     echo "ERROR: Compilation failed"
+    cd ../..
     exit 1
 fi
 echo ""
