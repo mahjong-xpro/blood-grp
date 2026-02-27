@@ -55,8 +55,8 @@ opponent_refresh_every: 20
 # oracle_value_head_loss_weight: 1.0 — supervised MSE loss trains oracle value head
 # oracle_value_warmup_steps: not used (distill_weight=0.0 means gate never fires)
 oracle_enabled: true
-oracle_num_blocks: 20
-oracle_num_tile_attn_layers: 4
+oracle_num_blocks: 10
+oracle_num_tile_attn_layers: 2
 oracle_tile_attn_heads: 4
 oracle_distill_weight: 0.01
 oracle_distill_temperature: 2.0

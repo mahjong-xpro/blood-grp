@@ -52,8 +52,8 @@ opponent_refresh_every: 20
 # oracle_value_head_loss_weight: 0.5 — reduced (head already converged in Phase 2a)
 # oracle_value_warmup_steps: 0 — no gate needed; we're already past warmup
 oracle_enabled: true
-oracle_num_blocks: 20
-oracle_num_tile_attn_layers: 4
+oracle_num_blocks: 10
+oracle_num_tile_attn_layers: 2
 oracle_tile_attn_heads: 4
 oracle_distill_weight: 0.01
 oracle_distill_temperature: 2.0

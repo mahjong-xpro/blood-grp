@@ -45,17 +45,17 @@ blood_tile_attn_heads: 4
 # Opponents: RuleBot during warmup
 opponent_mode: rulebot
 
-# Oracle distillation — policy distillation enabled from the start
-# oracle_value_distill_weight: 0.0 — disabled; oracle value head trains here as a head start
-# oracle_value_head_loss_weight: 1.0 — oracle value head trains on GAE returns during warmup
-# oracle_value_warmup_steps: 0 — no gate needed (distill_weight=0.0 means it never fires)
-oracle_enabled: true
-oracle_num_blocks: 20
-oracle_num_tile_attn_layers: 4
+# Oracle distillation — DISABLED during warmup for speed
+# RuleBot opponents have fixed patterns; oracle distillation adds no value here.
+# Re-enable in competitive_distill phase when self-play begins.
+# Smaller oracle (10 blocks) is sufficient as teacher sees perfect info.
+oracle_enabled: false
+oracle_num_blocks: 10
+oracle_num_tile_attn_layers: 2
 oracle_tile_attn_heads: 4
 oracle_distill_weight: 0.1
 oracle_distill_temperature: 3.0
-oracle_ce_weight: 0.05                  # Oracle CE loss weight (same as competitive)
+oracle_ce_weight: 0.05
 oracle_value_distill_weight: 0.0
 oracle_value_head_loss_weight: 1.0
 oracle_value_warmup_steps: 0
@@ -107,5 +107,10 @@ use_rnn: true
 rnn_type: lstm
 rnn_size: 512
 rnn_num_layers: 2
-rollout: 32
-recurrence: 32
+rollout: 16                             # Reduced from 32: warmup doesn't need long BPTT
+recurrence: 16                           # Reduced from 32: halves BPTT compute cost
+
+# TurnAttention — DISABLED during warmup for speed
+# RuleBot opponents are stateless; cross-turn attention adds no value here.
+# Re-enable in elite phase.
+turn_attention_enabled: false

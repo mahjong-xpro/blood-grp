@@ -53,8 +53,8 @@ opponent_refresh_every: 10
 # oracle_value_head_loss_weight: 0.5 — keep oracle value head calibrated
 # oracle_value_warmup_steps: 0 — no gate needed
 oracle_enabled: true
-oracle_num_blocks: 20
-oracle_num_tile_attn_layers: 4
+oracle_num_blocks: 10
+oracle_num_tile_attn_layers: 2
 oracle_tile_attn_heads: 4
 oracle_distill_weight: 0.01
 oracle_distill_temperature: 1.5

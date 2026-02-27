@@ -38,9 +38,8 @@ blood_tile_attn_heads: 4
 
 # Oracle
 oracle_enabled: true
-# 修复: 从 25 改为 20，与所有阶段 yaml 配置 (warmup/competitive/elite) 保持一致
-oracle_num_blocks: 20
-oracle_num_tile_attn_layers: 4
+# 修复: 从 20 改为 10，teacher 看完美信息不需要与 student 同等容量\noracle_num_blocks: 10
+oracle_num_tile_attn_layers: 2
 oracle_tile_attn_heads: 4
 oracle_distill_weight: 0.05
 oracle_distill_temperature: 2.0

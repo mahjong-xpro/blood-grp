@@ -59,8 +59,8 @@ opponent_mode: rulebot
 
 # Oracle 蒸馏 — 与 warmup 保持一致
 oracle_enabled: true
-oracle_num_blocks: 20
-oracle_num_tile_attn_layers: 4
+oracle_num_blocks: 10
+oracle_num_tile_attn_layers: 2
 oracle_tile_attn_heads: 4
 oracle_distill_weight: 0.1
 oracle_distill_temperature: 3.0
