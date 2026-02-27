@@ -230,9 +230,9 @@ class TestForwardPass:
             enc_out_dim=SMOKE_ENC_OUT,
         )
         obs = _random_obs()
-        logits, values = model(obs)
+        logits, hidden_state, _ = model(obs)
         assert logits.shape == (SMOKE_BATCH, 34)
-        assert values.shape == (SMOKE_BATCH, 1)
+        assert isinstance(hidden_state, tuple)  # (h, c) LSTM state
 
     def test_aux_head_forward(self):
         """AuxHead should produce shanten logits (B,3,5) and ow logits (B,81)."""
@@ -259,7 +259,7 @@ class TestLossComputation:
             enc_out_dim=SMOKE_ENC_OUT,
         )
         obs = _random_obs()
-        logits, _ = model(obs)
+        logits, _, _ = model(obs)
 
         # Simulate policy loss: CE against random target actions
         targets = torch.randint(0, 34, (SMOKE_BATCH,))
@@ -276,10 +276,13 @@ class TestLossComputation:
             enc_out_dim=SMOKE_ENC_OUT,
         )
         obs = _random_obs()
-        _, values = model(obs)
+        _, hidden_state, _ = model(obs)
 
+        # hidden_state is (h, c) tuple from LSTM, not critic values
         targets = torch.randn(SMOKE_BATCH, 1)
-        loss = nn.functional.mse_loss(values, targets)
+        # Use h[0] as a proxy value for loss testing
+        values_proxy = hidden_state[0][:, -1:].detach()
+        loss = nn.functional.mse_loss(values_proxy, targets)
         assert loss.isfinite(), f"Value loss is not finite: {loss.item()}"
 
     def test_aux_loss(self):
@@ -307,15 +310,16 @@ class TestLossComputation:
         aux_head = AuxHead(in_dim=SMOKE_ENC_OUT, hidden=64)
 
         obs = _random_obs()
-        logits, values = model(obs)
+        logits, hidden_state, _ = model(obs)
 
         # Policy loss
         targets = torch.randint(0, 34, (SMOKE_BATCH,))
         policy_loss = nn.functional.cross_entropy(logits, targets)
 
-        # Value loss
+        # Use h[0] last layer as proxy value
+        values_proxy = hidden_state[0][:, -1:]
         value_targets = torch.randn(SMOKE_BATCH, 1)
-        value_loss = nn.functional.mse_loss(values, value_targets)
+        value_loss = nn.functional.mse_loss(values_proxy, value_targets)
 
         # Aux loss — use encoder features (simulate post-encoder features)
         enc = _make_smoke_encoder()
@@ -356,7 +360,7 @@ class TestGradientUpdate:
 
         # Forward
         obs = _random_obs()
-        logits, values = model(obs)
+        logits, values, _ = model(obs)
         targets = torch.randint(0, 34, (SMOKE_BATCH,))
         loss = nn.functional.cross_entropy(logits, targets)
 
@@ -384,7 +388,7 @@ class TestGradientUpdate:
         )
 
         obs = _random_obs()
-        logits, values = model(obs)
+        logits, values, _ = model(obs)
         targets = torch.randint(0, 34, (SMOKE_BATCH,))
         loss = nn.functional.cross_entropy(logits, targets)
         loss.backward()
@@ -416,15 +420,16 @@ class TestTrainingLoop:
         losses = []
         for step in range(10):
             obs = _random_obs()
-            logits, values = model(obs)
+            logits, hidden_state, _ = model(obs)
 
             # Policy loss
             targets = torch.randint(0, 34, (SMOKE_BATCH,))
             policy_loss = nn.functional.cross_entropy(logits, targets)
 
-            # Value loss
+            # Value loss (using LSTM hidden state as proxy since PolicyModel has no critic)
             value_targets = torch.randn(SMOKE_BATCH, 1)
-            value_loss = nn.functional.mse_loss(values, value_targets)
+            values_proxy = hidden_state[0][:, -1:]
+            value_loss = nn.functional.mse_loss(values_proxy, value_targets)
 
             total_loss = policy_loss + value_loss
 
@@ -458,7 +463,7 @@ class TestTrainingLoop:
 
         for step in range(10):
             obs = _random_obs()
-            logits, values = model(obs)
+            logits, values, _ = model(obs)
             targets = torch.randint(0, 34, (SMOKE_BATCH,))
             loss = nn.functional.cross_entropy(logits, targets)
 
@@ -495,7 +500,7 @@ class TestTrainingLoop:
             obs_t = torch.as_tensor(obs_dict["obs"], dtype=torch.float32).unsqueeze(0)
             mask_t = torch.as_tensor(obs_dict["action_mask"], dtype=torch.float32).unsqueeze(0)
 
-            logits, values = model(obs_t)
+            logits, values, _ = model(obs_t)
 
             # Mask illegal actions for loss computation
             masked_logits = logits.clone()

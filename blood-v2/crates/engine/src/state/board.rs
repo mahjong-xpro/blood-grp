@@ -382,6 +382,12 @@ impl BoardState {
         let p = &mut self.players[player_id];
 
         if is_ankan {
+            // AnKan — guard: need 4 copies in hand
+            if p.hand[tile as usize] < 4 {
+                // Stale action: hand no longer has 4 copies. Fall back to discard phase.
+                self.phase = Phase::Discard;
+                return;
+            }
             // AnKan
             remove_tile(&mut p.hand, tile);
             remove_tile(&mut p.hand, tile);
@@ -409,7 +415,12 @@ impl BoardState {
                 }
             }
         } else {
-            // KaKan
+            // KaKan — guard: need at least 1 copy in hand + matching Pon meld
+            if p.hand[tile as usize] < 1 || !p.melds.iter().any(|m| matches!(m, MeldType::Pon(t) if *t == tile)) {
+                self.phase = Phase::Discard;
+                return;
+            }
+
             let drawn = p.last_drawn_tile;
             let is_jishiyu = drawn == Some(tile);
 
@@ -545,6 +556,18 @@ impl BoardState {
     }
 
     fn do_discard(&mut self, player_id: usize, tile: Tile) {
+        // Guard: validate tile is in hand before removing (prevents panic from stale action)
+        if self.players[player_id].hand[tile as usize] == 0 {
+            // Tile not in hand — fall back to first legal candidate
+            let candidates = self.players[player_id].discard_candidates();
+            if let Some(&fallback) = candidates.first() {
+                if fallback != tile {
+                    self.do_discard(player_id, fallback);
+                }
+            }
+            return;
+        }
+
         let p = &mut self.players[player_id];
         let was_rinshan = p.is_rinshan;
         let is_tsumogiri = p.last_drawn_tile == Some(tile);
@@ -684,6 +707,12 @@ impl BoardState {
     }
 
     fn execute_pon(&mut self, player_id: usize, from: usize, tile: Tile) {
+        // Guard: need at least 2 copies in hand to pon
+        if self.players[player_id].hand[tile as usize] < 2 {
+            // Stale action: hand no longer has 2 copies. Treat as Pass.
+            self.advance_to_next_draw();
+            return;
+        }
         let p = &mut self.players[player_id];
         remove_tile(&mut p.hand, tile);
         remove_tile(&mut p.hand, tile);
@@ -708,6 +737,12 @@ impl BoardState {
     }
 
     fn execute_minkan(&mut self, player_id: usize, from: usize, tile: Tile) {
+        // Guard: need at least 3 copies in hand to minkan
+        if self.players[player_id].hand[tile as usize] < 3 {
+            // Stale action: hand no longer has 3 copies. Treat as Pass.
+            self.advance_to_next_draw();
+            return;
+        }
         let p = &mut self.players[player_id];
         remove_tile(&mut p.hand, tile);
         remove_tile(&mut p.hand, tile);

@@ -1,335 +1,231 @@
-# Blood-V2 训练步骤指南
+# Blood-V2 训练流程指南
 
-> 基于 DEEP_REVIEW_2026_02_24 评审后的架构重构，需从头训练。
-> 目标环境：Ubuntu 22.04 · CUDA 12.1 · RTX 4090
+## 总览
+
+```
+Phase 1 ──→ Phase 1.5 ──→ Phase 2a ──→ Phase 2b ──→ Phase 3
+warmup      transition     competitive   distill      elite
+2M steps    500K steps     1M steps      4M steps     200M steps
+RuleBot     RuleBot        Self-play     Self-play    Self-play
+LSTM ON     gamma/LR ramp  + League      + Oracle KD  + OpponentPredictor
+                                         + OppPredictor  + TurnAttention
+                                                      + ISMCE(推理)
+─────────────────────────────────────────────────────────────
+总计: ~207.5M env steps
+```
 
 ---
 
-## 前置条件
-
-训练前必须完成以下准备工作：
+## 前置准备
 
 ```bash
-# 1. 激活 conda 环境
-conda activate blood
+cd /Users/twosson/Mahjong/blood/blood-v2
 
-# 2. 进入项目目录
-cd ~/Mahjong/blood/blood-v2
-
-# 3. 重新编译 Rust 引擎（架构变更后必须）
+# 1. 编译 Rust 引擎
 ./scripts/manage.sh build
 
-# 4. 安装 Python 包（editable 模式）
-pip install -e python/
+# 2. 确认环境
+source .venv/bin/activate
+python -c "import blood._engine; print('Rust engine OK')"
+python -c "from blood.model.factory import register_blood_model; print('Model OK')"
 
-# 5. 验证引擎和模块导入
-export PYTHONPATH="$(pwd)/python:${PYTHONPATH:-}"
-python -c "
-from blood._engine import RustMahjongEnv
-from blood.training.runner import register_blood_components
-register_blood_components()
-print('All imports OK')
-"
-
-# 6. 验证 GPU
-python -c "import torch; print('GPU:', torch.cuda.device_count(), torch.cuda.get_device_name(0))"
+# 3. 启动 TensorBoard (另开终端)
+./scripts/manage.sh monitor
 ```
-
-> ⚠️ 由于 TileAttention 4层 + LSTM 2层 架构变更，旧 checkpoint 不兼容，必须从头训练。
 
 ---
 
-## 五阶段训练流水线
+## Phase 1: Warmup (2M steps)
 
-总计约 57.5M 环境步数，分 5 个阶段递进训练。
-
-### 一键运行（推荐）
-
-```bash
-tmux new -s blood_train
-./scripts/manage.sh train pipeline
-```
-
-pipeline 模式会自动按顺序执行全部 5 个阶段，阶段间自动传递 checkpoint。
-
-### 分阶段手动运行
-
-如需逐阶段控制，按以下顺序执行。
-
----
-
-### 阶段 1：Warmup（基础策略学习）
+**目标:** 从零学习基本打牌规则，建立 LSTM 时序记忆
 
 | 参数 | 值 |
 |------|-----|
-| 步数 | 2M |
-| 对手 | RuleBot |
-| LSTM | ❌ 禁用 |
-| 学习率 | 5e-4 |
-| 熵系数 | 0.01 |
-| 目标 | 学会定缺、基本出牌、简单胡牌模式 |
+| 对手 | RuleBot (Rust 规则引擎) |
+| LSTM | 2 层 × 512 |
+| 向听奖励 | 0.01 (强引导) |
+| 熵系数 | 0.05 |
+| 编码器 | SpatialPoolingProj (3层) |
 
 ```bash
 ./scripts/manage.sh train warmup
 ```
 
-关键配置（`configs/warmup.yaml`）：
-- `warmup_reward_shaping: true` — 启用定缺奖励、胡牌奖励、危险牌惩罚
-- `oracle_distill_weight: 0.1` — Oracle 策略蒸馏从第一步开始
-- `aux_shanten_weight: 2.0` — 高权重辅助任务加速向听学习
-- LSTM 架构已定义（`rnn_num_layers: 2`）但 `use_rnn: false`，确保 checkpoint 结构兼容
+### 监控指标
 
-监控指标：
-- `reward` 应稳步上升
-- `aux_loss` 应持续下降
-- 预期 warmup 结束时 reward ≈ 5~8
+| 指标 | 健康范围 | 说明 |
+|------|---------|------|
+| `policy_loss` | 下降趋势 | PPO 策略损失 |
+| `entropy` | 0.8 → 0.5 | 自然过渡，不应骤降 |
+| `value_loss` | 下降趋势 | 价值函数收敛 |
+| `shanten_progress` | > 0 | 模型学会减少向听 |
+
+### 过渡标准
+- ✅ `policy_loss` 稳定
+- ✅ `value_loss < 0.5`
+- ✅ 能稳定和牌（从 TensorBoard 观察 win_rate）
 
 ---
 
-### 阶段 1.5：Warmup Transition（LSTM 稳定化）
+## Phase 1.5: Warmup Transition (500K steps)
 
-| 参数 | 值 |
-|------|-----|
-| 步数 | 500K |
-| 对手 | RuleBot（保持不变） |
-| LSTM | ✅ 启用（2层 512-dim） |
-| 学习率 | 2e-4（中间值） |
-| gamma | 0.995（中间值） |
-| 目标 | LSTM 在稳定环境中学会时序建模 |
+**目标:** 平滑过渡到竞技参数 (gamma 0.995→0.999, LR 渐变)
 
 ```bash
 ./scripts/manage.sh train warmup_transition
+# 自动加载 Phase 1 best checkpoint
 ```
 
-过渡策略：
-- 只改变 2 个变量（LSTM 启用 + gamma/lr 渐变），避免同时变更 6 个超参数导致崩溃
-- 对手保持 RuleBot，让 LSTM 先在稳定环境中适应
-- 辅助任务权重渐降：`aux_shanten_weight: 1.5`（从 2.0 降低）
-
-监控指标：
-- reward 短暂下降后应快速恢复（LSTM 初始化冲击）
-- 若 reward 持续下降超过 200K 步，检查 LSTM 梯度是否爆炸
+### 过渡标准
+- ✅ `value_loss` 无剧烈跳升
+- ✅ 指标曲线平滑
 
 ---
 
-### 阶段 2a：Competitive（自博弈 + Oracle 价值头训练）
+## Phase 2a: Competitive (1M steps)
+
+**目标:** 切换到自对弈，建立联赛对手池
 
 | 参数 | 值 |
 |------|-----|
-| 步数 | 1M |
-| 对手 | 自博弈（联赛） |
-| LSTM | ✅ |
-| 学习率 | 1e-4 |
-| 熵系数 | 0.01→0.05（线性预热） |
-| 目标 | Oracle 价值头收敛（loss < 0.1） |
+| 对手 | 自对弈 (LeagueManager) |
+| 联赛池 | 最大 200 个 checkpoint |
+| 冻结窗口 | 最近 3 个 checkpoint 不采样 |
+| 熵系数 | cosine 0.05 → 0.03 |
+| 向听奖励 | 衰减中 |
 
 ```bash
 ./scripts/manage.sh train competitive
 ```
 
-关键变化：
-- 对手从 RuleBot 切换为自博弈联赛（`opponent_mode: selfplay`）
-- `warmup_reward_shaping: false` — 移除辅助奖励塑形
-- 启用排名奖励（`reward_rank_bonus: 0.15`）和安全弃牌奖励（`reward_safe_discard: 0.015`）
-- 启用向听番数加权（`shanten_fan_bonus_scale: 0.15`）
-- `oracle_value_distill_weight: 0.0` — 价值蒸馏暂不启用，先让 Oracle 价值头自行收敛
-- `oracle_value_head_loss_weight: 1.0` — 监督 MSE 损失训练 Oracle 价值头
-- 联赛每 50K 步添加快照，20% 概率自对弈
+### 监控指标
 
-监控指标：
-- `blood/oracle_value_head_loss` 应降至 < 0.1（进入下一阶段的前提）
-- `reward` 可能因对手变强而波动，属正常现象
-- 熵系数从 0.01 线性预热到 0.05，防止策略过早收敛
+| 指标 | 健康范围 | 说明 |
+|------|---------|------|
+| `elo` | 上升趋势 | 联赛 Elo 评分 |
+| `entropy` | 0.5 → 0.4 | 逐渐收敛 |
+| `fraction_clipped` | < 10% | PPO clip 比例 |
+| `league_pool_size` | 增长中 | 对手多样性 |
+
+### 过渡标准
+- ✅ `elo` 稳定上升
+- ✅ `entropy` > 0.35
+- ✅ 联赛池 ≥ 20 个 checkpoint
 
 ---
 
-### 阶段 2b：Competitive Distill（Oracle 价值蒸馏）
+## Phase 2b: Competitive Distill (4M steps)
+
+**目标:** 启用 Oracle 知识蒸馏 + OpponentPredictor 训练
 
 | 参数 | 值 |
 |------|-----|
-| 步数 | 4M |
-| 对手 | 自博弈（联赛） |
-| LSTM | ✅ |
-| 学习率 | 1e-4 |
-| 熵系数 | 0.05 |
-| 目标 | 学生 Critic 从 Oracle 完美信息价值估计中学习 |
+| Oracle 蒸馏 | KD(0.05) + CE(0.1) |
+| OpponentPredictor | ✅ 启用 (weight=0.1) |
+| 熵系数 | cosine 0.05 → 0.02 |
 
 ```bash
-./scripts/manage.sh train competitive_distill
+./scripts/manage.sh train distill
 ```
 
-关键变化：
-- `oracle_value_distill_weight: 0.1` — 启用价值蒸馏（核心变化）
-- `oracle_value_head_loss_weight: 0.5` — 降低（Oracle 价值头已收敛）
-- 其余参数与 competitive 保持一致
+### 新增监控指标
 
-监控指标：
-- `distill_loss` 应持续下降
-- `reward` 应稳步提升（Critic 质量改善 → 更好的优势估计 → 更好的策略）
-- `blood/oracle_value_head_loss` 应保持在低位
+| 指标 | 健康范围 | 说明 |
+|------|---------|------|
+| `distill_loss` | 下降趋势 | Oracle KD 损失 |
+| `oracle_ce_loss` | 下降趋势 | 优势加权 CE |
+| `opponent_hand_loss` | < 0.5 | OpponentPredictor BCE |
+
+### 过渡标准
+- ✅ `distill_loss` 收敛
+- ✅ `opponent_hand_loss < 0.4`
+- ✅ `elo` 持续上升
 
 ---
 
-### 阶段 3：Elite（精英训练）
+## Phase 3: Elite (200M steps)
+
+**目标:** 超人类精英训练 — 所有功能全开
 
 | 参数 | 值 |
 |------|-----|
-| 步数 | 50M |
-| 对手 | 自博弈（联赛） |
-| LSTM | ✅ |
-| 学习率 | 1e-4（KL 自适应） |
-| 熵系数 | 0.02→0.005（余弦退火） |
-| 目标 | 最大化 Elo，冲击超人类水平 |
+| OpponentPredictor | ✅ weight=0.05 |
+| TurnAttention | ✅ 4 heads |
+| 熵系数 | cosine 0.02 → 0.01 (200M) |
+| 熵下限 | 0.009 |
+| 向听衰减 | 120M 步到 30% |
+| 排名奖励 | 0.2 (score-weighted) |
+| ISMCE (推理) | 96 worlds × depth 8 |
+| RTPA (推理) | 攻击 0.8 / 防守 1.5 |
 
 ```bash
 ./scripts/manage.sh train elite
 ```
 
-关键特性：
-- 训练规模大幅提升（50M 步，占总训练量 87%）
-- 启用 RTPA（运行时策略适应）和 ISMCE（信息集蒙特卡洛评估）
-- 超参数动态调度：
-  - 熵系数：余弦退火 0.02→0.005（40M 步内）
-  - 优势裁剪：线性收紧 5.0→3.0（10M~40M 步）
-- 向听奖励衰减：前 30M 步从 100% 线性衰减到 30%
-- 排名奖励提升至 0.2（最终目标是排名）
-- 联赛每 25K 步添加快照（更细粒度的对手多样性）
+### 关键监控指标
 
-监控指标：
-- `blood/elo_current` — 当前模型 Elo（核心指标）
-- `blood/elo_best` — 历史最佳 Elo
-- `blood/elo_pool_mean` — 联赛池平均 Elo
-- `ppo_policy_loss` 应稳定下降
-- `reward` 在自博弈中可能趋于零和，关注 Elo 而非 reward 绝对值
+| 指标 | 健康范围 | 警告阈值 | 说明 |
+|------|---------|---------|------|
+| `entropy` | 0.02 → 0.01 | < 0.009 触发 floor | 不应过早收敛 |
+| `elo` | 持续上升 | 连续 5M 步停滞 | 核心能力指标 |
+| `grad_norm` | < 3.0 | > 10.0 | 梯度爆炸预警 |
+| `fraction_clipped` | < 8% | > 15% | PPO 健康度 |
+| `kl_divergence` | ~0.002 | > 0.01 | 策略更新幅度 |
+| `lr` | 自适应 | 锁死下限 | KL adaptive |
 
----
-
-## 监控与调试
-
-### 启动 TensorBoard
-
+### PBT 超参搜索 (可选)
 ```bash
-# 另开 tmux 窗口
-tmux new -s blood_monitor
-./scripts/manage.sh monitor
-# 浏览器访问: http://<服务器IP>:6006
-```
-
-### 关键 TensorBoard 指标一览
-
-| 指标 | 含义 | 健康范围 |
-|------|------|---------|
-| `reward` | 每步平均奖励 | 逐步上升 |
-| `ppo_policy_loss` | PPO 策略损失 | 稳定下降 |
-| `extra_loss_total` | 辅助损失总和 | 逐步下降 |
-| `aux_loss` | 向听/听牌辅助任务 | 逐步下降 |
-| `distill_loss` | Oracle 蒸馏损失 | 逐步下降 |
-| `blood/oracle_value_head_loss` | Oracle 价值头损失 | < 0.1 后进入 distill |
-| `blood/elo_current` | 当前 Elo | 持续上升 |
-| `exploration_loss` | 策略熵 | 不应归零 |
-
-### GPU 监控
-
-```bash
-watch -n 1 nvidia-smi
-htop
+./scripts/run_pbt.sh --population 4 --elite-config configs/elite.yaml
 ```
 
 ---
 
-## 显存不足 (OOM) 处理
-
-如果训练时出现 `CUDA out of memory` 错误：
+## 一键全流程
 
 ```bash
-# 方法 1：设置 PYTORCH_ALLOC_CONF 减少碎片（manage.sh 已自动设置）
-export PYTORCH_ALLOC_CONF=expandable_segments:True
+# 全自动 5 阶段流水线（每阶段结束自动传递 checkpoint）
+./scripts/manage.sh train pipeline
 
-# 方法 2：进一步减小 batch_size（修改对应阶段的 yaml）
-# warmup/transition: batch_size 2048 → 1024
-# competitive/distill/elite: batch_size 1024 → 512
-
-# 方法 3：减少 num_envs_per_worker（当前已降至 16）
-# 可进一步降至 8，但会降低数据吞吐量
-
-# 方法 4：确认无其他进程占用 GPU
-nvidia-smi
-# 如有其他进程，kill 掉或指定空闲 GPU：
-# CUDA_VISIBLE_DEVICES=1 ./scripts/manage.sh train <phase>
-```
-
-当前默认配置已针对单张 24GB GPU（RTX 4090）优化：
-- warmup / warmup_transition: `batch_size=2048`, `num_envs_per_worker=16`
-- competitive / competitive_distill / elite: `batch_size=1024`, `num_envs_per_worker=16`
-
----
-
-## 训练中断与恢复
-
-SF2 自动保存 checkpoint，中断后直接恢复：
-
-```bash
-# 恢复当前阶段（自动加载最新 checkpoint）
-./scripts/manage.sh train <phase> --resume
-
-# 示例：恢复 elite 训练
-./scripts/manage.sh train elite --resume
+# 多 GPU
+./scripts/manage.sh train pipeline --num-policies 4
 ```
 
 ---
 
-## 查看训练状态
+## 常用操作
 
 ```bash
+# 查看状态
 ./scripts/manage.sh status
-```
 
-输出各阶段 checkpoint 数量、联赛池大小、TensorBoard 日志等信息。
+# 中断后恢复
+./scripts/manage.sh train elite --resume
 
----
+# 评估
+./scripts/manage.sh eval
 
-## 训练完成后
-
-### 录制回放验证
-
-```bash
-# 录制 50 局回放
+# 录制回放
 ./scripts/manage.sh record --games 50
 
-# 启动回放查看器
+# 查看回放
 ./scripts/manage.sh replay
-# 浏览器访问: http://<服务器IP>:5001
-```
 
-### 导出 ONNX 模型
-
-```bash
-./scripts/manage.sh export \
-    --checkpoint checkpoints/blood_v2_elite/checkpoint_best.pth \
-    --quantize
-```
-
-### 运行评估
-
-```bash
-./scripts/manage.sh eval
+# 导出模型
+./scripts/manage.sh export --checkpoint train_dir/blood_v2_elite/checkpoint_p0/checkpoint_best.pth
 ```
 
 ---
 
-## 阶段总览
+## 预估资源与时间
 
-```
-warmup (2M)  →  warmup_transition (500K)  →  competitive (1M)  →  competitive_distill (4M)  →  elite (50M)
-  RuleBot         RuleBot+LSTM               自博弈+Oracle头       Oracle价值蒸馏              RTPA+ISMCE精调
-  基础策略         LSTM稳定化                  价值头收敛             Critic蒸馏                  冲击超人类
-```
+| 阶段 | Steps | 预估时间 (单GPU) |
+|------|-------|-----------------|
+| warmup | 2M | ~2 小时 |
+| transition | 500K | ~30 分钟 |
+| competitive | 1M | ~1 小时 |
+| distill | 4M | ~4 小时 |
+| elite | 200M | ~5-7 天 |
+| **总计** | **207.5M** | **~6-8 天** |
 
-跨阶段一致参数（不可修改）：
-- `blood_num_tile_attn_layers: 4`
-- `blood_tile_attn_heads: 4`
-- `rnn_num_layers: 2`
-- `rnn_size: 512`
-- `blood_obs_channels: 470`
-- `blood_conv_channels: 256`
-- `blood_num_res_blocks: 20`
+> [!TIP]
+> 使用 `--num-policies 4` 可将 elite 阶段缩短到 2-3 天 (4 GPU)。

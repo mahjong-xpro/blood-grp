@@ -132,6 +132,16 @@ pub fn remove_tile(hand: &mut HandCounts, t: Tile) {
     hand[idx] -= 1;
 }
 
+/// Safe version of remove_tile: returns false if tile not in hand instead of panicking.
+pub fn try_remove_tile(hand: &mut HandCounts, t: Tile) -> bool {
+    let idx = t as usize;
+    if idx >= NUM_TILE_TYPES || hand[idx] == 0 {
+        return false;
+    }
+    hand[idx] -= 1;
+    true
+}
+
 pub fn total_tiles(hand: &HandCounts) -> u8 {
     hand.iter().sum()
 }
