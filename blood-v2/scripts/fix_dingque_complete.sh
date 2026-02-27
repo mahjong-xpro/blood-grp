@@ -36,11 +36,11 @@ echo "✓ Python environment ready"
 echo ""
 
 echo "Step 3: Verifying observation fix is in place..."
-if grep -q "for suit in 0..3" crates/engine/src/obs/student.rs; then
+if grep -q "DingQue阶段：提供花色统计信息" crates/engine/src/obs/student.rs; then
     echo "✓ Observation encoding fix found in student.rs"
 else
     echo "ERROR: Observation fix not found in student.rs"
-    echo "Please ensure the fix at line 94-113 is applied"
+    echo "Please ensure the fix at line 100-112 is applied"
     exit 1
 fi
 echo ""
