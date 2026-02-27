@@ -81,6 +81,10 @@ def _patched_calculate_losses(self, mb, num_invalids):
     # Apply scheduled hyperparameter updates
     env_steps = getattr(self, "env_steps", 0)
     sched_updates = scheduler.step(env_steps)
+    
+    # Update DingQue progressive prior global step counter
+    if hasattr(self.actor_critic, "_dingque_global_steps"):
+        self.actor_critic._dingque_global_steps.fill_(env_steps)
     entropy_floor = getattr(self.cfg, "blood_entropy_floor", 0.0)
     if entropy_floor > 0 and "exploration_loss_coeff" in sched_updates:
         if sched_updates["exploration_loss_coeff"] < entropy_floor:

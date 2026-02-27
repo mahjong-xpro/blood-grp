@@ -87,6 +87,12 @@ class BloodActorCritic(ActorCriticSharedWeights):
         core_out = self.core.get_out_size()     # 1024 with LSTM, 6912 with Identity core
         head_dim = 512
 
+        # DingQue progressive prior: linearly decay uniform prior over training
+        self.dingque_prior_warmup_steps = getattr(cfg, "dingque_prior_warmup_steps", 100000)
+        self.dingque_prior_enabled = getattr(cfg, "dingque_prior_enabled", True)
+        # Global step counter for prior decay (updated externally by trainer)
+        self.register_buffer("_dingque_global_steps", torch.tensor(0, dtype=torch.long), persistent=False)
+
         # Pre-norm 2-layer heads: LayerNorm before each Linear for training stability.
         # Pre-norm (LN → Linear → Mish) is more stable than Post-norm (Linear → Mish → LN)
         # because gradients are normalized before entering each linear layer.
@@ -246,6 +252,29 @@ class BloodActorCritic(ActorCriticSharedWeights):
 
         action_distribution_params, self.last_action_distribution = self.action_parameterization(actor_features)
 
+        # DingQue progressive prior: mix model output with uniform prior
+        if self.dingque_prior_enabled and self._cached_obs is not None:
+            mask = self._cached_obs.get("action_mask")
+            if mask is not None:
+                # Detect DingQue phase: actions 31-33 are valid
+                dingque_mask = (mask[:, 31:34].sum(dim=1) > 0.5)
+                
+                if dingque_mask.any():
+                    # Compute prior strength: linearly decay from 1.0 to 0.0
+                    global_steps = float(self._dingque_global_steps.item())
+                    prior_strength = max(0.0, 1.0 - global_steps / self.dingque_prior_warmup_steps)
+                    
+                    if prior_strength > 0.0:
+                        # Uniform prior logits for DingQue actions (31-33)
+                        uniform_logits = torch.zeros(3, dtype=action_distribution_params.dtype, device=action_distribution_params.device)
+                        
+                        # Mix model output with uniform prior
+                        # logits_mixed = (1 - α) * logits_model + α * logits_uniform
+                        action_distribution_params[dingque_mask, 31:34] = (
+                            (1.0 - prior_strength) * action_distribution_params[dingque_mask, 31:34] +
+                            prior_strength * uniform_logits
+                        )
+
         # 对非法动作施加掩码，使其永远不会被采样，且在 PPO loss 中贡献近零概率。
         # 使用 dtype.min 替代硬编码 -1e9，避免 float16 下溢出为 -inf
         # （float16 最大值约 65504，-1e9 会溢出），确保混合精度训练数值稳定。
@@ -256,35 +285,6 @@ class BloodActorCritic(ActorCriticSharedWeights):
                 illegal = ~mask.bool()
                 mask_value = torch.finfo(action_distribution_params.dtype).min
                 action_distribution_params = action_distribution_params.masked_fill(illegal, mask_value)
-                
-                # DingQue uniform prior: 强制定缺动作(31/32/33)完全均匀分布
-                # 解决模型架构初始化偏差导致的100%索子问题
-                # 策略：定缺阶段直接覆盖logits为0（均匀分布），而非混合
-                dq_mask = mask[:, 31:34]  # (B, 3)
-                other_mask = mask[:, :31]  # (B, 31) - 所有非定缺动作
-                
-                # 正确的定缺检测：31/32/33全部合法 AND 其他动作全部非法
-                is_dingque = dq_mask.all(dim=-1) & (~other_mask.any(dim=-1))  # (B,)
-                
-                # DEBUG: 添加日志确认先验是否触发
-                if is_dingque.any():
-                    import logging
-                    log = logging.getLogger(__name__)
-                    dq_count = is_dingque.sum().item()
-                    log.info(f"DingQue prior triggered: {dq_count}/{len(is_dingque)} samples")
-                    
-                    # 直接设置为0（softmax后为均匀分布1/3）
-                    # 不使用混合策略，因为模型初始化偏差会被保留并自强化
-                    uniform_logits = torch.zeros_like(action_distribution_params[:, 31:34])
-                    action_distribution_params[:, 31:34] = torch.where(
-                        is_dingque.unsqueeze(-1),  # (B, 1) 广播到 (B, 3)
-                        uniform_logits,
-                        action_distribution_params[:, 31:34]
-                    )
-                    
-                    # DEBUG: 验证修改后的logits
-                    dq_logits_after = action_distribution_params[:, 31:34]
-                    log.info(f"DingQue logits after prior: mean={dq_logits_after.mean().item():.4f}, std={dq_logits_after.std().item():.4f}")
                 
                 # Sync raw_logits so SF2's entropy/log_prob use the masked distribution.
                 self.last_action_distribution.raw_logits = action_distribution_params

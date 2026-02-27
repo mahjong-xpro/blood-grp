@@ -86,6 +86,12 @@ reward_safe_discard: 0.0
 aux_shanten_weight: 1.0
 aux_opp_waits_weight: 0.3
 
+# DingQue system — progressive prior + Oracle uniformization
+dingque_prior_enabled: true           # Enable progressive prior mechanism
+dingque_prior_warmup_steps: 100000    # Prior decays from 1.0 to 0.0 over 100K steps
+oracle_dingque_uniform: true          # Force Oracle to output uniform distribution during DingQue
+dingque_reward_shaping: false         # Reward shaping based on hand structure (disabled by default)
+
 # LSTM — temporal modeling across turns
 # rnn_size=512 across all stages (warmup/competitive/elite).
 use_rnn: true

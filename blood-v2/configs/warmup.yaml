@@ -95,6 +95,12 @@ shanten_fan_bonus_scale: 0.0
 aux_shanten_weight: 2.0
 aux_opp_waits_weight: 0.6
 
+# DingQue system — progressive prior + Oracle uniformization
+dingque_prior_enabled: true           # Enable progressive prior mechanism
+dingque_prior_warmup_steps: 100000    # Prior decays from 1.0 to 0.0 over 100K steps
+oracle_dingque_uniform: true          # Force Oracle to output uniform distribution during DingQue
+dingque_reward_shaping: false         # Reward shaping based on hand structure (disabled by default)
+
 # LSTM — enabled during warmup to ensure checkpoint architecture matches all stages.
 # Although RuleBot opponents have fixed patterns, enabling LSTM here means:
 #   1. Checkpoint weights (including LSTM) transfer cleanly to warmup_transition
