@@ -261,11 +261,13 @@ class BloodActorCritic(ActorCriticSharedWeights):
                 # 解决模型架构初始化偏差导致的100%索子问题
                 # 使用逐样本检测以正确处理混合batch
                 dq_mask = mask[:, 31:34]  # (B, 3)
-                is_dingque = dq_mask.all(dim=-1)  # (B,) 每个样本是否在定缺阶段
+                # Fix: 检查是否有任何定缺动作合法（any而非all）
+                # all()永远为True因为定缺阶段3个动作都合法，导致先验永不触发
+                is_dingque = dq_mask.any(dim=-1)  # (B,) 每个样本是否在定缺阶段
                 if is_dingque.any():  # 只要有样本在定缺阶段
                     dq_logits = action_distribution_params[:, 31:34]  # (B, 3)
                     dq_mean = dq_logits.mean(dim=-1, keepdim=True)  # (B, 1)
-                    prior_strength = 0.3  # 先验强度：30%拉向均值，70%保留模型输出
+                    prior_strength = 0.5  # 先验强度：50%拉向均值（提高到0.5以更强制均匀）
                     mixed = dq_logits * (1.0 - prior_strength) + dq_mean * prior_strength
                     # 仅对定缺样本应用先验，非定缺样本保持原值
                     action_distribution_params[:, 31:34] = torch.where(

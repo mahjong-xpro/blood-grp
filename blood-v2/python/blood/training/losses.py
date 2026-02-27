@@ -81,10 +81,11 @@ class BloodLossComputer:
             if oracle_obs is not None:
                 oracle_logits, oracle_values = ac.oracle_encoder(oracle_obs)
 
-                # Check if in DingQue phase (actions 31-33 are all legal)
+                # Check if in DingQue phase (actions 31-33 have any legal action)
                 # Use per-sample detection to handle mixed batches correctly
+                # Fix: use any() instead of all() - all() is always True during DingQue
                 dq_mask = action_mask[:, 31:34] if action_mask is not None else None
-                is_dingque = dq_mask.all(dim=-1) if dq_mask is not None else torch.zeros(action_mask.shape[0], dtype=torch.bool, device=action_mask.device)
+                is_dingque = dq_mask.any(dim=-1) if dq_mask is not None else torch.zeros(action_mask.shape[0], dtype=torch.bool, device=action_mask.device)
                 has_non_dingque = (~is_dingque).any() if dq_mask is not None else True
 
                 # KL distillation: student → oracle (skip for DingQue samples)
