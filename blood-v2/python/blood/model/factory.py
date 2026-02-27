@@ -261,9 +261,18 @@ class BloodActorCritic(ActorCriticSharedWeights):
                 # 解决模型架构初始化偏差导致的100%索子问题
                 # 策略：定缺阶段直接覆盖logits为0（均匀分布），而非混合
                 dq_mask = mask[:, 31:34]  # (B, 3)
-                # 检查是否有任何定缺动作合法（定缺阶段3个都合法）
-                is_dingque = dq_mask.any(dim=-1)  # (B,) 每个样本是否在定缺阶段
-                if is_dingque.any():  # 只要有样本在定缺阶段
+                other_mask = mask[:, :31]  # (B, 31) - 所有非定缺动作
+                
+                # 正确的定缺检测：31/32/33全部合法 AND 其他动作全部非法
+                is_dingque = dq_mask.all(dim=-1) & (~other_mask.any(dim=-1))  # (B,)
+                
+                # DEBUG: 添加日志确认先验是否触发
+                if is_dingque.any():
+                    import logging
+                    log = logging.getLogger(__name__)
+                    dq_count = is_dingque.sum().item()
+                    log.info(f"DingQue prior triggered: {dq_count}/{len(is_dingque)} samples")
+                    
                     # 直接设置为0（softmax后为均匀分布1/3）
                     # 不使用混合策略，因为模型初始化偏差会被保留并自强化
                     uniform_logits = torch.zeros_like(action_distribution_params[:, 31:34])
@@ -272,6 +281,10 @@ class BloodActorCritic(ActorCriticSharedWeights):
                         uniform_logits,
                         action_distribution_params[:, 31:34]
                     )
+                    
+                    # DEBUG: 验证修改后的logits
+                    dq_logits_after = action_distribution_params[:, 31:34]
+                    log.info(f"DingQue logits after prior: mean={dq_logits_after.mean().item():.4f}, std={dq_logits_after.std().item():.4f}")
                 
                 # Sync raw_logits so SF2's entropy/log_prob use the masked distribution.
                 self.last_action_distribution.raw_logits = action_distribution_params
