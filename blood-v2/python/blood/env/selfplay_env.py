@@ -544,17 +544,29 @@ class SelfPlayEnv(BloodMahjongEnv):
         """Extra reward signals during warmup phase."""
         bonus = 0.0
 
-        # DingQue: No explicit reward shaping for dingque choice.
-        # Let the agent learn the optimal strategy through downstream rewards
-        # (winning, shanten progress, etc.). Forcing "choose minimum count" is
-        # suboptimal — it ignores hand structure, tile quality, and fan potential.
-        # The agent should learn to balance:
-        #   - Discarding fewer tiles (efficiency)
-        #   - Preserving good tile combinations (hand structure)
-        #   - Maximizing fan potential (qingyise, etc.)
-        #
-        # Warmup phase still benefits from basic reward signals (win bonus,
-        # shanten progress) which indirectly guide dingque learning.
+        # DingQue reward shaping: guide the agent to choose the suit with fewest tiles.
+        # This provides explicit learning signal during warmup to bootstrap dingque learning.
+        # The agent can later refine this strategy based on hand structure and fan potential.
+        if 31 <= action <= 33 and hasattr(self._env, 'get_agent_hand'):
+            try:
+                hand = self._env.get_agent_hand()
+                suit_counts = [
+                    sum(1 for t in hand if 0 <= t < 9),   # Man
+                    sum(1 for t in hand if 9 <= t < 18),  # Pin
+                    sum(1 for t in hand if 18 <= t < 27), # Sou
+                ]
+                chosen_suit = action - 31
+                min_count = min(suit_counts)
+                max_count = max(suit_counts)
+                
+                # Reward choosing the suit with fewest tiles (most efficient)
+                if suit_counts[chosen_suit] == min_count:
+                    bonus += 0.05
+                # Penalize choosing the suit with most tiles (least efficient)
+                elif suit_counts[chosen_suit] == max_count:
+                    bonus -= 0.02
+            except Exception:
+                pass  # Silently ignore if get_agent_hand is not available
 
         if self._env.player_has_won(0) and self._warmup_win_bonus > 0:
             bonus += self._warmup_win_bonus
