@@ -105,14 +105,16 @@ def add_blood_args(parser: ArgumentParser):
     p.add_argument("--aux_opp_waits_weight", type=float, default=0.3)
     
     # DingQue system — progressive prior + Oracle uniformization
-    p.add_argument("--dingque_prior_enabled", default=True,
-                    type=lambda x: str(x).lower() != "false",
+    p.add_argument("--dingque_prior_enabled", default=True, action="store_true",
                     help="Enable progressive prior mechanism for DingQue phase")
+    p.add_argument("--no_dingque_prior", dest="dingque_prior_enabled", action="store_false",
+                    help="Disable progressive prior mechanism")
     p.add_argument("--dingque_prior_warmup_steps", type=int, default=100000,
                     help="Number of env steps for prior to decay from 1.0 to 0.0")
-    p.add_argument("--oracle_dingque_uniform", default=True,
-                    type=lambda x: str(x).lower() != "false",
+    p.add_argument("--oracle_dingque_uniform", default=True, action="store_true",
                     help="Force Oracle to output uniform distribution during DingQue phase")
+    p.add_argument("--no_oracle_dingque_uniform", dest="oracle_dingque_uniform", action="store_false",
+                    help="Disable Oracle uniformization during DingQue")
     p.add_argument("--dingque_reward_shaping", default=False, action="store_true",
                     help="Enable reward shaping based on hand structure during DingQue")
     p.add_argument("--aux_focal_alpha", type=float, default=0.25,
