@@ -74,11 +74,13 @@ impl OpponentPolicy {
                         let s_before = calc_shanten(&p.hand, p.melds.len());
                         let mut h_after = p.hand;
                         if let Some((_, tile)) = board.last_discard {
-                            remove_tile(&mut h_after, tile);
-                            remove_tile(&mut h_after, tile);
-                            let s_after = calc_shanten(&h_after, p.melds.len() + 1);
-                            if s_after < s_before {
-                                return Action::Pon;
+                            // Use try_remove_tile: if hand miraculously lacks 2 copies
+                            // despite can_pon=true, fall through to Pass instead of panicking.
+                            if try_remove_tile(&mut h_after, tile) && try_remove_tile(&mut h_after, tile) {
+                                let s_after = calc_shanten(&h_after, p.melds.len() + 1);
+                                if s_after < s_before {
+                                    return Action::Pon;
+                                }
                             }
                         }
                     }
