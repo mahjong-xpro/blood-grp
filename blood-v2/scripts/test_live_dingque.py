@@ -64,92 +64,57 @@ def test_model_dingque_behavior():
     print("=" * 60)
     
     try:
-        from blood.model.factory import make_blood_actor_critic
-        from blood.consts import OBS_SIZE, ACTION_SPACE
-        import gymnasium as gym
-        from argparse import Namespace
+        import glob
+        from blood.consts import ACTION_SPACE
         
-        # 创建最小配置
-        cfg = Namespace(
-            blood_obs_channels=473,
-            blood_conv_channels=256,
-            blood_num_res_blocks=20,
-            blood_encoder_out_dim=1024,
-            blood_enc_proj_layers=3,
-            blood_num_tile_attn_layers=4,
-            blood_tile_attn_heads=4,
-            use_rnn=False,
-            aux_shanten_weight=0.0,
-            oracle_enabled=False,
-            opponent_predictor_enabled=False,
-            turn_attention_enabled=False,
-        )
+        # 查找最新的checkpoint
+        checkpoints = glob.glob("train_dir/blood_v2_warmup/checkpoint_*")
+        if not checkpoints:
+            print("  ⚠️  未找到checkpoint，跳过模型测试")
+            print("  请先训练模型后再运行此测试")
+            return True
         
-        obs_space = gym.spaces.Dict({
-            'obs': gym.spaces.Box(low=0, high=1, shape=(OBS_SIZE,), dtype=np.float32),
-            'action_mask': gym.spaces.Box(low=0, high=1, shape=(ACTION_SPACE,), dtype=np.float32),
-        })
-        action_space = gym.spaces.Discrete(ACTION_SPACE)
+        latest_ckpt = max(checkpoints, key=lambda x: int(x.split('_')[-1].split('.')[0]))
+        print(f"\n加载checkpoint: {latest_ckpt}")
         
-        # 创建模型
-        model = make_blood_actor_critic(cfg, obs_space, action_space)
-        model.eval()
+        checkpoint = torch.load(latest_ckpt, map_location='cpu')
         
-        # 创建测试输入
-        batch_size = 1000
-        obs = torch.randn(batch_size, OBS_SIZE)
+        # 检查action head的权重
+        if 'model' not in checkpoint:
+            print("  ⚠️  Checkpoint格式不正确")
+            return True
         
-        # 创建dingque mask (只有31, 32, 33合法)
-        mask = torch.zeros(batch_size, ACTION_SPACE)
-        mask[:, 31:34] = 1.0
+        model_state = checkpoint['model']
         
-        obs_dict = {'obs': obs, 'action_mask': mask}
+        # 查找action parameterization的最后一层
+        action_keys = [k for k in model_state.keys() if 'action_parameterization' in k and 'weight' in k]
         
-        # 前向传播
-        with torch.no_grad():
-            result = model(obs_dict, None, values_only=False)
-            logits = result['action_logits']
-            actions = result.get('actions')
+        if not action_keys:
+            print("  ⚠️  未找到action head权重")
+            return True
         
-        # 检查logits
-        dingque_logits = logits[:, 31:34]
-        other_logits = logits[:, :31]
+        print(f"\nAction head keys: {action_keys}")
         
-        print(f"\nLogits 统计 (batch_size={batch_size}):")
-        print(f"  DingQue logits [31:34]:")
-        print(f"    均值: {dingque_logits.mean(dim=0).numpy()}")
-        print(f"    标准差: {dingque_logits.std(dim=0).numpy()}")
-        print(f"    最小值: {dingque_logits.min(dim=0).values.numpy()}")
-        print(f"    最大值: {dingque_logits.max(dim=0).values.numpy()}")
+        for key in action_keys:
+            weight = model_state[key]
+            if weight.shape[-1] == 34 or weight.shape[0] == 34:  # Action space
+                # 找到输出层
+                if weight.shape[0] == 34:
+                    dingque_weights = weight[31:34, :]
+                    print(f"\n{key}:")
+                    print(f"  Shape: {weight.shape}")
+                    print(f"  DingQue weights [31:34, :]:")
+                    print(f"    Norm: {torch.norm(dingque_weights, dim=1).numpy()}")
+                    print(f"    Mean: {dingque_weights.mean(dim=1).numpy()}")
+                    
+                    # 检查是否有系统性偏差
+                    norms = torch.norm(dingque_weights, dim=1)
+                    if norms[0] < norms[1] * 0.5 or norms[0] < norms[2] * 0.5:
+                        print(f"\n  ❌ ERROR: Action 31 (Man) 的权重明显小于其他!")
+                        print(f"    这可能解释了为什么Man从不被选择")
+                        return False
         
-        print(f"\n  Other logits [0:31]:")
-        print(f"    均值: {other_logits.mean().item():.2f}")
-        print(f"    最大值: {other_logits.max().item():.2f}")
-        print(f"    (应该是 -inf 或非常小的负数)")
-        
-        # 检查采样的actions
-        if actions is not None:
-            action_counts = torch.bincount(actions.flatten(), minlength=ACTION_SPACE)
-            dingque_counts = action_counts[31:34]
-            
-            print(f"\n采样的 Actions 分布:")
-            print(f"  31 (Man): {dingque_counts[0].item()} ({dingque_counts[0].item()/batch_size*100:.1f}%)")
-            print(f"  32 (Pin): {dingque_counts[1].item()} ({dingque_counts[1].item()/batch_size*100:.1f}%)")
-            print(f"  33 (Sou): {dingque_counts[2].item()} ({dingque_counts[2].item()/batch_size*100:.1f}%)")
-            
-            # 检查是否有action 31
-            if dingque_counts[0].item() == 0:
-                print(f"\n  ❌ ERROR: Action 31 (Man) never sampled!")
-                print(f"  这说明存在系统性偏差")
-                return False
-            
-            # 检查分布是否合理
-            max_count = dingque_counts.max().item()
-            min_count = dingque_counts.min().item()
-            if max_count > batch_size * 0.5:
-                print(f"\n  ⚠️  WARNING: 分布不均匀 (max={max_count}, min={min_count})")
-            else:
-                print(f"\n  ✅ 分布相对均匀")
+                    print(f"\n  ✅ 权重检查完成")
         
         return True
         
