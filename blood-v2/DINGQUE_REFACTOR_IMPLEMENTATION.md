@@ -92,9 +92,28 @@ class BloodLossComputer:
 
 ### 4. 配置参数 ✅
 
-**文件**: [`blood-v2/configs/default.yaml`](blood-v2/configs/default.yaml)
+**文件**:
+- [`blood-v2/python/blood/cfg.py`](blood-v2/python/blood/cfg.py:106-118) - 参数注册
+- [`blood-v2/configs/default.yaml`](blood-v2/configs/default.yaml:88-92) - 默认配置
+- [`blood-v2/configs/warmup.yaml`](blood-v2/configs/warmup.yaml:97-101) - Warmup阶段
+- [`blood-v2/configs/competitive.yaml`](blood-v2/configs/competitive.yaml:113-117) - Competitive阶段
+- [`blood-v2/configs/elite.yaml`](blood-v2/configs/elite.yaml:113-117) - Elite阶段
 
-#### 新增参数
+#### 参数注册 (cfg.py)
+```python
+p.add_argument("--dingque_prior_enabled", default=True,
+                type=lambda x: str(x).lower() != "false",
+                help="Enable progressive prior mechanism for DingQue phase")
+p.add_argument("--dingque_prior_warmup_steps", type=int, default=100000,
+                help="Number of env steps for prior to decay from 1.0 to 0.0")
+p.add_argument("--oracle_dingque_uniform", default=True,
+                type=lambda x: str(x).lower() != "false",
+                help="Force Oracle to output uniform distribution during DingQue phase")
+p.add_argument("--dingque_reward_shaping", default=False, action="store_true",
+                help="Enable reward shaping based on hand structure during DingQue")
+```
+
+#### YAML配置
 ```yaml
 # DingQue system — progressive prior + Oracle uniformization
 dingque_prior_enabled: true           # Enable progressive prior mechanism
