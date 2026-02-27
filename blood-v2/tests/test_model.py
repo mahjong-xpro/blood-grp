@@ -254,7 +254,7 @@ class TestPolicyModel:
     def test_forward(self):
         model = PolicyModel(obs_channels=DEFAULT_OBS_CHANNELS, conv_ch=32, num_blocks=2, enc_out_dim=128)
         obs = torch.randn(2, DEFAULT_OBS_CHANNELS * NUM_TILES)
-        logits, _ = model(obs)
+        logits, _, _ = model(obs)
         assert logits.shape == (2, ACTION_DIM)
 
     def test_forward_2layer(self):
@@ -262,7 +262,7 @@ class TestPolicyModel:
         model = PolicyModel(obs_channels=DEFAULT_OBS_CHANNELS, conv_ch=32, num_blocks=2,
                             enc_out_dim=128, enc_proj_layers=2)
         obs = torch.randn(2, DEFAULT_OBS_CHANNELS * NUM_TILES)
-        logits, _ = model(obs)
+        logits, _, _ = model(obs)
         assert logits.shape == (2, ACTION_DIM)
 
     def test_get_action(self):
@@ -272,7 +272,7 @@ class TestPolicyModel:
         mask[0] = 1.0
         mask[5] = 1.0
         mask[30] = 1.0
-        action, _ = model.get_action(obs, mask)
+        action, _, _ = model.get_action(obs, mask)
         assert action in [0, 5, 30]
 
     def _build_fake_checkpoint(self, tmp_path, conv_ch, num_blocks, enc_out, enc_proj_layers=1):

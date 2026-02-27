@@ -140,14 +140,17 @@ blood_schedule_adv_clip: "linear,5.0,3.0,10000000,160000000"
 # Entropy floor safety net — 低于 cosine 终值(0.01)，捕获意外下降
 blood_entropy_floor: 0.009
 
-# --- Phase A/B new features ---
-
-# Opponent hand predictor (A3)
-opponent_predictor_enabled: false       # enable after competitive_distill provides Oracle labels
+# Opponent hand predictor — 从 Phase 2b 继承已训练权重
+# 集成到 ISMCE informed sampling: 用预测概率引导对手手牌采样
+opponent_predictor_enabled: true
 opponent_predictor_conv_ch: 128
 opponent_predictor_num_blocks: 6
-opponent_predictor_weight: 0.1
+opponent_predictor_weight: 0.05          # elite 阶段降低，避免干扰主策略
 
-# TurnAttention (B1) — cross-attention over LSTM history
-turn_attention_enabled: false           # enable for Phase B training
+# TurnAttention — LSTM 之上的跨回合注意力
+# 零初始化 residual 确保训练初期等价于纯 LSTM，逐渐学习跨回合模式
+turn_attention_enabled: true
 turn_attention_heads: 4
+
+
+

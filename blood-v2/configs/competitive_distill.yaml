@@ -121,3 +121,10 @@ adv_clip: 2.0
 # Entropy: cosine decay from 0.05 → 0.02 over 4M steps
 # Phase 2a ended at 0.05 (schedule completed); gradually tighten as value distill stabilizes
 blood_schedule_entropy: "cosine,0.05,0.02,0,4000000"
+
+# Opponent hand predictor — 从 Phase 2b 开始训练 (需 Oracle 标签)
+# 在 elite 阶段集成到 ISMCE informed sampling
+opponent_predictor_enabled: true
+opponent_predictor_conv_ch: 128
+opponent_predictor_num_blocks: 6
+opponent_predictor_weight: 0.1
