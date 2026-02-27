@@ -68,13 +68,22 @@ def test_model_dingque_behavior():
         from blood.consts import ACTION_SPACE
         
         # 查找最新的checkpoint
-        checkpoints = glob.glob("train_dir/blood_v2_warmup/checkpoint_*")
+        checkpoints = glob.glob("train_dir/blood_v2_warmup/checkpoint_*/*.pth")
         if not checkpoints:
             print("  ⚠️  未找到checkpoint，跳过模型测试")
             print("  请先训练模型后再运行此测试")
             return True
         
-        latest_ckpt = max(checkpoints, key=lambda x: int(x.split('_')[-1].split('.')[0]))
+        # 从路径中提取步数: checkpoint_000123456/checkpoint_p0_000123456.pth
+        def extract_step(path):
+            try:
+                # 从目录名提取
+                dir_name = path.split('/')[-2]  # checkpoint_000123456
+                return int(dir_name.split('_')[-1])
+            except:
+                return 0
+        
+        latest_ckpt = max(checkpoints, key=extract_step)
         print(f"\n加载checkpoint: {latest_ckpt}")
         
         checkpoint = torch.load(latest_ckpt, map_location='cpu')
