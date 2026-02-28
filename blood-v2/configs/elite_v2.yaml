@@ -9,10 +9,11 @@
 # Oracle: 低权重蒸馏 + RTPA + ISMCE
 # TurnAttention: 启用
 
-# --- 硬件 ---
-num_workers: 32
-num_envs_per_worker: 16
-batch_size: 4096
+# --- 硬件 (8×4090 24GB + 128 核 CPU) ---
+# SF2 learner 单卡训练，batch_size 受单卡 24GB 限制
+num_workers: 48
+num_envs_per_worker: 8
+batch_size: 2048                   # 单卡 24GB 上限
 num_batches_per_epoch: 8
 
 # --- PPO ---

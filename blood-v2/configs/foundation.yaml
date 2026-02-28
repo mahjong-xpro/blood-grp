@@ -9,11 +9,13 @@
 # Oracle: 启用（从一开始就训练 Oracle value head）
 # 合并原 warmup + warmup_transition + competitive Phase 2a
 
-# --- 硬件利用 (8×4090) ---
-num_workers: 32                    # 8 GPU × 4 workers/GPU
-num_envs_per_worker: 16
-batch_size: 4096                   # 大 batch 稳定训练
-num_batches_per_epoch: 4
+# --- 硬件利用 (8×4090 24GB + 128 核 CPU) ---
+# SF2 learner 单卡训练，batch_size 受单卡 24GB 限制
+# 其余 GPU 用于 worker 推理和自博弈对手推理
+num_workers: 48                    # 128 核 CPU 拉满采样吞吐
+num_envs_per_worker: 8             # 每 worker 8 env，总计 384 并行环境
+batch_size: 2048                   # 单卡 24GB 上限
+num_batches_per_epoch: 8           # 补偿较小 batch，每轮更多梯度更新
 
 # --- PPO ---
 ppo_clip_ratio: 0.2               # 初期允许较大更新

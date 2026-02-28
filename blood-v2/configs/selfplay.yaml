@@ -9,11 +9,12 @@
 # Oracle: 完整蒸馏（policy + value）
 # 合并原 competitive + competitive_distill
 
-# --- 硬件 ---
-num_workers: 32
-num_envs_per_worker: 16
-batch_size: 4096
-num_batches_per_epoch: 8           # 更多 epoch 提高样本效率
+# --- 硬件 (8×4090 24GB + 128 核 CPU) ---
+# SF2 learner 单卡训练，batch_size 受单卡 24GB 限制
+num_workers: 48
+num_envs_per_worker: 8
+batch_size: 2048                   # 单卡 24GB 上限
+num_batches_per_epoch: 8           # 更多梯度更新提高样本效率
 
 # --- PPO ---
 ppo_clip_ratio: 0.15               # 收紧，自博弈需要稳定
