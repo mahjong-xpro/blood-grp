@@ -64,7 +64,7 @@ oracle_value_head_loss_weight: 0.5
 oracle_value_warmup_steps: 0
 
 # Arena evaluation — periodic strength measurement via RuleBot games
-blood_arena_eval_every: 2000000        # Performance: 1M→2M (200M total, reduce eval overhead)
+blood_arena_eval_every: 100000        # Performance: 1M→2M (200M total, reduce eval overhead)
 blood_arena_eval_games: 100            # more games for stable Elo in elite phase
 blood_arena_eval_temperature: 0.1
 
