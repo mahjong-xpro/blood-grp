@@ -25,7 +25,7 @@ fn test_ding_que_phase() {
     assert_eq!(board.phase, Phase::DingQue);
 
     for i in 0..NUM_PLAYERS {
-        assert!(!board.ding_que_done[i]);
+        assert!(board.players[i].ding_que.is_none());
         // Choose suit with fewest tiles
         let hand = &board.players[i].hand;
         let mut best_suit = Suit::Man;
@@ -40,7 +40,7 @@ fn test_ding_que_phase() {
         board.apply_action(i, Action::DingQue(best_suit));
     }
 
-    assert!(board.ding_que_done.iter().all(|&d| d));
+    assert!(board.all_ding_que_done());
     // After all ding que, should move to self check (dealer has 14 tiles)
     assert!(board.phase == Phase::SelfCheck || board.phase == Phase::Discard,
         "after ding_que, phase should be SelfCheck or Discard, got {:?}", board.phase);

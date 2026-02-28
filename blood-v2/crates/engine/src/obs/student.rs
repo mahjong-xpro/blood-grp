@@ -5,6 +5,7 @@ use crate::algo::shanten::{calc_shanten, waiting_tiles};
 use crate::algo::sp::{SPCalculator, SPInitState};
 use crate::algo::agari::calc_gen_count;
 use crate::state::board::{BoardState, Phase};
+use crate::state::player::PlayerState;
 
 const OBS_SIZE: usize = NUM_STUDENT_CHANNELS * NUM_TILE_TYPES;
 
@@ -92,51 +93,7 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
     ch += 1;
 
     // === Section 3: DING QUE (17 ch) ===
-    if let Some(suit) = p.ding_que {
-        // DingQue已完成：标记选择的花色
-        for t in suit.start()..suit.end() {
-            w!(ch + suit as usize, t, 1.0);
-        }
-    } else if board.phase == Phase::DingQue {
-        // DingQue阶段：提供花色统计信息，帮助模型做出明智的选择
-        // 通道0: Man花色的牌数量（归一化到 [0,1]）
-        // 通道1: Pin花色的牌数量（归一化到 [0,1]）
-        // 通道2: Sou花色的牌数量（归一化到 [0,1]）
-        for suit in Suit::all() {
-            let count = (suit.start()..suit.end())
-                .filter(|&t| p.hand[t] > 0)
-                .map(|t| p.hand[t] as u32)
-                .sum::<u32>();
-            fill_ch!(ch + suit as usize, count as f32 / 13.0);
-        }
-    }
-    ch += 3;
-
-    // Ding que completed
-    fill_ch!(ch, p.ding_que_completed() as u8 as f32);
-    ch += 1;
-
-    // Ding que remaining
-    fill_ch!(ch, p.ding_que_remaining() as f32 / 13.0);
-    ch += 1;
-
-    // Opponent ding que (3 x 3)
-    for opp_off in 1..NUM_PLAYERS {
-        let opp_id = (player_id + opp_off) % NUM_PLAYERS;
-        if let Some(suit) = board.players[opp_id].ding_que {
-            for t in suit.start()..suit.end() {
-                w!(ch + suit as usize, t, 1.0);
-            }
-        }
-        ch += 3;
-    }
-
-    // Opponent agari status (3 ch)
-    for opp_off in 1..NUM_PLAYERS {
-        let opp_id = (player_id + opp_off) % NUM_PLAYERS;
-        fill_ch!(ch, board.players[opp_id].has_won as u8 as f32);
-        ch += 1;
-    }
+    ch += encode_ding_que_section(&mut obs, ch, board, p, player_id);
 
     // === Section 4: GAME STATE (5 ch) ===
     // Max initial wall = TOTAL_TILES - HAND_SIZE*NUM_PLAYERS - 1(dealer extra) = 108 - 52 - 1 = 55
@@ -609,4 +566,78 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
     assert_eq!(ch, NUM_STUDENT_CHANNELS, "used {} channels, expected {}", ch, NUM_STUDENT_CHANNELS);
 
     obs
+}
+
+/// Encode Section 3: DING QUE (17 channels).
+///
+/// Layout:
+///   3 ch — self ding_que one-hot (or suit counts during DingQue phase)
+///   1 ch — ding_que completed flag
+///   1 ch — ding_que remaining count (normalized)
+///   9 ch — opponent ding_que (3 opponents × 3 ch one-hot)
+///   3 ch — opponent agari status
+///
+/// Returns the number of channels written (always 17).
+fn encode_ding_que_section(
+    obs: &mut [f32],
+    base_ch: usize,
+    board: &BoardState,
+    p: &PlayerState,
+    player_id: usize,
+) -> usize {
+    let mut ch = base_ch;
+
+    // Helper closures matching the macros in the caller
+    let w = |obs: &mut [f32], channel: usize, tile: usize, val: f32| {
+        obs[channel * NUM_TILE_TYPES + tile] = val;
+    };
+    let fill_ch = |obs: &mut [f32], channel: usize, val: f32| {
+        for t in 0..NUM_TILE_TYPES {
+            obs[channel * NUM_TILE_TYPES + t] = val;
+        }
+    };
+
+    // Self ding_que (3 ch)
+    if let Some(suit) = p.ding_que {
+        for t in suit.start()..suit.end() {
+            w(obs, ch + suit as usize, t, 1.0);
+        }
+    } else if board.phase == Phase::DingQue {
+        for suit in Suit::all() {
+            let count = (suit.start()..suit.end())
+                .filter(|&t| p.hand[t] > 0)
+                .map(|t| p.hand[t] as u32)
+                .sum::<u32>();
+            fill_ch(obs, ch + suit as usize, count as f32 / 13.0);
+        }
+    }
+    ch += 3;
+
+    // Ding que completed (1 ch)
+    fill_ch(obs, ch, p.ding_que_completed() as u8 as f32);
+    ch += 1;
+
+    // Ding que remaining (1 ch)
+    fill_ch(obs, ch, p.ding_que_remaining() as f32 / 13.0);
+    ch += 1;
+
+    // Opponent ding que (3 × 3 ch)
+    for opp_off in 1..NUM_PLAYERS {
+        let opp_id = (player_id + opp_off) % NUM_PLAYERS;
+        if let Some(suit) = board.players[opp_id].ding_que {
+            for t in suit.start()..suit.end() {
+                w(obs, ch + suit as usize, t, 1.0);
+            }
+        }
+        ch += 3;
+    }
+
+    // Opponent agari status (3 ch)
+    for opp_off in 1..NUM_PLAYERS {
+        let opp_id = (player_id + opp_off) % NUM_PLAYERS;
+        fill_ch(obs, ch, board.players[opp_id].has_won as u8 as f32);
+        ch += 1;
+    }
+
+    ch - base_ch
 }

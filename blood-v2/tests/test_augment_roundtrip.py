@@ -1,76 +1,51 @@
-"""Test full augmentation round-trip: forward + inverse."""
+"""Test full augmentation round-trip: forward + inverse.
+
+After the fix, augment_action uses pull semantics (perm.index(old_suit)),
+and _inverse_action uses perm[new_suit] directly (not augment_action with inv_perm).
+"""
 
 import pytest
 from blood.env.augment import augment_action, SUIT_PERMUTATIONS
 
 
 def test_augmentation_roundtrip():
-    """Verify that forward + inverse augmentation is identity.
-    
-    Flow:
-    1. Engine produces action in original space
-    2. augment_action(action, perm) -> augmented action (model sees this)
-    3. Model outputs augmented action
-    4. inv_perm = tuple(perm.index(i) for i in range(3))
-    5. augment_action(augmented_action, inv_perm) -> original action (engine receives this)
+    """Verify that augment_action then _inverse_action logic is identity.
+
+    _inverse_action does: old_suit = perm[new_suit]
+    augment_action does:  new_suit = perm.index(old_suit)
+
+    Compose: old → new=perm.index(old) → recovered=perm[new]=perm[perm.index(old)]=old ✓
     """
-    
     for perm in SUIT_PERMUTATIONS:
-        # Compute inverse permutation
-        inv_perm = tuple(perm.index(i) for i in range(3))
-        
-        # Test all actions
         for original_action in range(34):
-            # Forward: engine -> model
+            # Forward: augment_action
             augmented = augment_action(original_action, perm)
-            
-            # Inverse: model -> engine
-            recovered = augment_action(augmented, inv_perm)
-            
+
+            # Inverse: perm[new_suit] (matching blood_env._inverse_action)
+            if augmented >= 27:
+                if 31 <= augmented <= 33:
+                    new_suit = augmented - 31
+                    recovered = 31 + perm[new_suit]
+                else:
+                    recovered = augmented
+            else:
+                new_suit = augmented // 9
+                rank = augmented % 9
+                recovered = perm[new_suit] * 9 + rank
+
             assert recovered == original_action, (
                 f"Round-trip failed for action {original_action} with perm {perm}:\n"
-                f"  original={original_action}\n"
-                f"  augmented={augmented}\n"
-                f"  recovered={recovered}\n"
-                f"  inv_perm={inv_perm}"
+                f"  augmented={augmented}, recovered={recovered}"
             )
 
 
 def test_inverse_permutation_correctness():
-    """Verify inverse permutation calculation."""
-    
+    """Verify perm[perm.index(i)] == i for all i (mathematical identity)."""
     for perm in SUIT_PERMUTATIONS:
-        inv_perm = tuple(perm.index(i) for i in range(3))
-        
-        # Check that perm[inv_perm[i]] == i for all i
         for i in range(3):
-            assert perm[inv_perm[i]] == i, (
-                f"Inverse permutation incorrect for perm {perm}:\n"
-                f"  inv_perm={inv_perm}\n"
-                f"  perm[inv_perm[{i}]] = perm[{inv_perm[i]}] = {perm[inv_perm[i]]} != {i}"
+            assert perm[perm.index(i)] == i, (
+                f"perm={perm}: perm[perm.index({i})] = {perm[perm.index(i)]} != {i}"
             )
-
-
-def test_specific_case():
-    """Test specific case that was failing."""
-    
-    # perm = (2, 0, 1): Man->Sou, Pin->Man, Sou->Pin
-    perm = (2, 0, 1)
-    inv_perm = tuple(perm.index(i) for i in range(3))
-    
-    print(f"\nperm = {perm}")
-    print(f"inv_perm = {inv_perm}")
-    
-    # Test dingque actions
-    for action in [31, 32, 33]:
-        augmented = augment_action(action, perm)
-        recovered = augment_action(augmented, inv_perm)
-        
-        print(f"\naction {action}:")
-        print(f"  augmented = {augmented}")
-        print(f"  recovered = {recovered}")
-        
-        assert recovered == action
 
 
 if __name__ == "__main__":

@@ -279,3 +279,67 @@ fn test_gen_sigui() {
     let result = calc_fan(&ctx).expect("should win");
     assert!(result.gen_count >= 1);
 }
+
+#[test]
+fn test_jiaxinwu_with_pair_of_fives() {
+    // P1 regression: 4m 6m 5m 5m 1p 2p 3p 7p 8p 9p 1s 2s 3s
+    // Wait: 5m (46 kanchan). After winning: 456m(shuntsu) + 55m(pair) + 1p2p3p + 7p8p9p + 1s2s3s
+    // tehai[5m] = 3 → old code rejected this as jiaxinwu
+    let hand = build_hand(&[
+        (3, 1), (4, 3), (5, 1),   // 4m(1) 5m(3) 6m(1) → 456m shuntsu + 55m pair
+        (9, 1), (10, 1), (11, 1), // 123p
+        (15, 1), (16, 1), (17, 1), // 789p
+        (18, 1), (19, 1), (20, 1), // 123s
+    ]);
+    let mut ctx = make_ctx(hand, vec![], 4, false); // tsumo 5m
+    ctx.ding_que = None; // no ding que restriction for this test
+    let result = calc_fan(&ctx).expect("should win");
+    assert!(result.jiaxinwu, "jiaxinwu should be detected with 55m pair + 456m shuntsu");
+}
+
+#[test]
+fn test_jiaxinwu_single_five() {
+    // Simple case: only one 5 in hand → always jiaxinwu
+    // 123m 456m 789m 123p 44p, win on 5m
+    let hand = build_hand(&[
+        (0, 1), (1, 1), (2, 1),   // 123m
+        (3, 1), (4, 1), (5, 1),   // 456m
+        (6, 1), (7, 1), (8, 1),   // 789m
+        (9, 1), (10, 1), (11, 1), // 123p
+        (12, 2),                   // 44p pair
+    ]);
+    let ctx = make_ctx(hand, vec![], 4, false); // tsumo 5m
+    let result = calc_fan(&ctx).expect("should win");
+    assert!(result.jiaxinwu);
+}
+
+#[test]
+fn test_jiaxinwu_rejected_no_456_shuntsu() {
+    // Win on 5m but no 456 shuntsu in division → not jiaxinwu
+    // 345m 567m 123p 789p + 55m pair, win on 5m
+    // Division: 345m + 567m + 123p + 789p + 55m pair
+    // 456m shuntsu does NOT exist → jiaxinwu check fails at shuntsu.contains
+    // tiles: 3m=1, 4m=1, 5m=3(345+567+pair), 6m=1, 7m=1, 1p=1, 2p=1, 3p=1, 7p=1, 8p=1, 9p=1
+    // Wait — 345m uses 5m, 567m uses 5m, pair uses 2×5m = 4 total
+    // 3m(1) 4m(1) 5m(4) 6m(1) 7m(1) + 123p(3) + 789p(3) = 14 ✓
+    let hand = build_hand(&[
+        (2, 1), (3, 1), (4, 4), (5, 1), (6, 1), // 3m 4m 5m×4 6m 7m
+        (9, 1), (10, 1), (11, 1),                 // 123p
+        (15, 1), (16, 1), (17, 1),                // 789p
+    ]);
+    let mut ctx = make_ctx(hand, vec![], 4, false); // tsumo 5m
+    ctx.ding_que = None;
+    let result = calc_fan(&ctx).expect("should win");
+    // Best division: 345m + 567m + 123p + 789p + 55m pair
+    // No 456m shuntsu → no jiaxinwu
+    // But wait — another division: 456m + 345m + ... hmm, 3m4m5m + 4m5m6m needs 3,4,4,5,5,6
+    // We have 3m=1, 4m=1, 5m=4, 6m=1, 7m=1
+    // 345m: 3,4,5 → remaining: 4m=0, 5m=3, 6m=1, 7m=1
+    // Can't make 456m (no 4m left). Can make 567m: 5,6,7 → remaining: 5m=2 → pair ✓
+    // So the only valid division is 345m + 567m + 123p + 789p + 55m
+    // No 456m → no jiaxinwu ✓
+    // But calc_fan picks the division with max fan. 345m+567m has no jiaxinwu.
+    // gen_count should be 1 (four 5m's)
+    assert!(!result.jiaxinwu, "no 456 shuntsu in division → no jiaxinwu");
+    assert!(result.gen_count >= 1);
+}

@@ -1,6 +1,7 @@
 use crate::consts::*;
 use crate::tile::{Tile, Suit};
 use crate::hand::*;
+use super::ding_que;
 
 /// Per-player game state
 #[derive(Debug, Clone)]
@@ -57,31 +58,21 @@ impl PlayerState {
     }
 
     pub fn ding_que_completed(&self) -> bool {
-        match self.ding_que {
-            Some(suit) => !has_suit_tiles(&self.hand, suit),
-            None => false,
-        }
+        ding_que::is_completed(&self.hand, self.ding_que)
     }
 
     pub fn ding_que_remaining(&self) -> u8 {
-        match self.ding_que {
-            Some(suit) => suit_tile_count(&self.hand, suit),
-            None => 0,
-        }
+        ding_que::remaining_count(&self.hand, self.ding_que)
     }
 
     /// Compute legal discard tiles (must discard ding que suit first if present)
     pub fn discard_candidates(&self) -> Vec<Tile> {
         let mut candidates = Vec::new();
-        let must_discard_dq = self.ding_que.map_or(false, |s| has_suit_tiles(&self.hand, s));
+        let must_dq = ding_que::must_discard_ding_que(&self.hand, self.ding_que);
 
         for t in 0..NUM_TILE_TYPES as u8 {
             if self.hand[t as usize] == 0 { continue; }
-            if must_discard_dq {
-                if let Some(suit) = self.ding_que {
-                    if Suit::from_tile(t) != suit { continue; }
-                }
-            }
+            if must_dq && !ding_que::is_ding_que_tile(self.ding_que, t) { continue; }
             candidates.push(t);
         }
         candidates
@@ -91,9 +82,7 @@ impl PlayerState {
         let mut tiles = Vec::new();
         for t in 0..NUM_TILE_TYPES as u8 {
             if self.hand[t as usize] >= 4 {
-                if let Some(suit) = self.ding_que {
-                    if Suit::from_tile(t) == suit { continue; }
-                }
+                if ding_que::is_ding_que_tile(self.ding_que, t) { continue; }
                 tiles.push(t);
             }
         }
@@ -105,10 +94,7 @@ impl PlayerState {
         for m in &self.melds {
             if let MeldType::Pon(t) = m {
                 if self.hand[*t as usize] > 0 {
-                    // Skip ding-que suit tiles: kakan with ding-que tile is illegal
-                    if let Some(suit) = self.ding_que {
-                        if Suit::from_tile(*t) == suit { continue; }
-                    }
+                    if ding_que::is_ding_que_tile(self.ding_que, *t) { continue; }
                     tiles.push(*t);
                 }
             }

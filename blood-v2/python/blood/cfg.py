@@ -226,13 +226,16 @@ def add_blood_args(parser: ArgumentParser):
 
 
 def blood_override_defaults(parser: ArgumentParser):
-    """Override Sample Factory defaults for Blood Mahjong."""
+    """Override Sample Factory defaults for Blood Mahjong.
+
+    Tuned for 8×4090 (192GB VRAM total, 24GB per GPU).
+    """
     parser.set_defaults(
         env="blood_mahjong",
         encoder_custom="blood_encoder",
-        num_workers=8,
-        num_envs_per_worker=32,
-        batch_size=8192,
+        num_workers=32,
+        num_envs_per_worker=16,
+        batch_size=4096,
         num_batches_per_epoch=4,
         ppo_clip_ratio=0.1,
         max_grad_norm=1.0,

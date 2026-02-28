@@ -1,0 +1,108 @@
+# ⚠️ Architecture params (blood_num_tile_attn_layers, oracle_num_tile_attn_layers,
+#    rnn_num_layers) MUST be identical across ALL training stages.
+#    Changing them between stages will cause checkpoint weight shape mismatches.
+
+# Phase 1: Foundation — 基础学习
+# Duration: ~5M env steps
+# Goal: 学会定缺、基本出牌、简单和牌模式、向听意识
+# Opponents: RuleBot
+# Oracle: 启用（从一开始就训练 Oracle value head）
+# 合并原 warmup + warmup_transition + competitive Phase 2a
+
+# --- 硬件利用 (8×4090) ---
+num_workers: 32                    # 8 GPU × 4 workers/GPU
+num_envs_per_worker: 16
+batch_size: 4096                   # 大 batch 稳定训练
+num_batches_per_epoch: 4
+
+# --- PPO ---
+ppo_clip_ratio: 0.2               # 初期允许较大更新
+max_grad_norm: 1.0
+gamma: 0.99                       # 短视野，先学即时奖励
+gae_lambda: 0.95
+learning_rate: 3e-4
+lr_schedule: kl_adaptive_minibatch
+lr_schedule_kl_threshold: 0.004
+lr_adaptive_max: 3e-4
+lr_adaptive_min: 5e-5
+exploration_loss_coeff: 0.03       # 高探索，鼓励定缺多样性
+value_loss_coeff: 1.0
+train_for_env_steps: 5000000
+
+# --- Environment ---
+initial_score: 100000
+env: blood_mahjong
+encoder_custom: blood_encoder
+experiment: blood_v2_foundation
+
+# --- Model (与所有阶段保持一致: 256ch/20blocks Bottleneck, obs=473) ---
+blood_obs_channels: 473
+blood_conv_channels: 256
+blood_num_res_blocks: 20
+blood_encoder_out_dim: 1024
+blood_enc_proj_layers: 3               # SpatialPoolingProj: 注意力池化保留牌位结构
+blood_num_tile_attn_layers: 4
+blood_tile_attn_heads: 4
+
+# --- 对手 ---
+opponent_mode: rulebot
+
+# --- Oracle（从一开始就训练） ---
+oracle_enabled: true
+oracle_num_blocks: 10
+oracle_num_tile_attn_layers: 2
+oracle_tile_attn_heads: 4
+oracle_distill_weight: 0.05            # 中等蒸馏，RuleBot 阶段 Oracle 也在学习
+oracle_distill_temperature: 3.0
+oracle_ce_weight: 0.05
+oracle_value_distill_weight: 0.0       # 先不蒸馏 value（Oracle value head 还没收敛）
+oracle_value_head_loss_weight: 1.0     # 训练 Oracle value head
+oracle_value_warmup_steps: 0
+
+# --- 奖励塑形 ---
+warmup_reward_shaping: true
+warmup_win_bonus: 0.1
+warmup_dangerous_discard_penalty: 0.03
+reward_shanten_progress: 0.005         # 比原来稍高，加速向听学习
+reward_shanten_regress: 0.001
+shanten_fan_bonus_scale: 0.0           # 先不加番数加权
+reward_tsumo_bonus: 0.0               # Foundation 阶段不用
+reward_deal_in_penalty: 0.0
+reward_safe_discard: 0.0
+reward_rank_bonus: 0.0
+
+# --- 辅助任务 ---
+aux_shanten_weight: 2.0
+aux_opp_waits_weight: 0.5
+
+# --- LSTM ---
+use_rnn: true
+rnn_type: lstm
+rnn_size: 512
+rnn_num_layers: 2
+rollout: 16
+recurrence: 16
+
+# --- 联赛（收集快照但不用于采样） ---
+league_enabled: true
+league_pool_dir: checkpoints/league/
+league_add_every: 200000
+league_self_play_prob: 0.0
+
+# --- 评估 ---
+blood_arena_eval_every: 1000000
+blood_arena_eval_games: 100
+blood_arena_eval_temperature: 0.1
+
+# --- 定缺 ---
+dingque_prior_enabled: true
+dingque_prior_warmup_steps: 200000     # 5M 步中前 200K 步有 prior 引导
+oracle_dingque_uniform: true
+dingque_reward_shaping: false
+
+# --- 数据增强 ---
+suit_augment_prob: 0.5
+
+# --- 性能 ---
+use_mixed_precision: true
+save_every_sec: 600

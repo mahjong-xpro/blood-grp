@@ -211,31 +211,26 @@ class BloodMahjongEnv(gym.Env):
 
     def _inverse_action(self, action):
         """Convert agent's augmented action back to engine's original space.
-        
-        The agent sees augmented obs and outputs augmented actions.
-        We need to convert back to original space for the engine.
-        
-        If perm=(2,0,1) means: position 0→suit 2, position 1→suit 0, position 2→suit 1
-        Then inverse is: suit 0 came from position 1, suit 1 from position 2, suit 2 from position 0
-        Inverse perm = (2,0,1) because: inv[0]=2, inv[1]=0, inv[2]=1
-        
-        Example: perm=(2,0,1), agent outputs action 33 (Sou in augmented space)
-        - In augmented space, position 2 (Sou) contains original suit perm[2]=1 (Pin)
-        - So action 33 in augmented = action 32 in original
-        - inv_perm[2] = perm.index(2) = 0, so we want suit 0 in original... WAIT this is wrong!
-        
-        Let me think differently:
-        - perm=(2,0,1) means: new[0]=old[2], new[1]=old[0], new[2]=old[1]
-        - Inverse: old[0]=new[1], old[1]=new[2], old[2]=new[0]
-        - inv_perm = (1,2,0) because: inv[0]=1, inv[1]=2, inv[2]=0
-        - But perm.index(i) gives: perm.index(0)=1, perm.index(1)=2, perm.index(2)=0
-        - So inv_perm = tuple(perm.index(i) for i in range(3)) is CORRECT!
+
+        augment_obs uses pull semantics: perm[new_suit] = old_suit.
+        augment_action maps old_suit → new_suit = perm.index(old_suit).
+
+        Inverse: given new_suit, recover old_suit = perm[new_suit].
+        This is a direct lookup, not perm.index().
         """
         if self._current_perm is None:
             return action
-        # Compute inverse permutation
-        inv_perm = tuple(self._current_perm.index(i) for i in range(3))
-        return augment_action(action, inv_perm)
+        perm = self._current_perm
+        if action >= 27:
+            if 31 <= action <= 33:
+                new_suit = action - 31
+                old_suit = perm[new_suit]
+                return 31 + old_suit
+            return action
+        new_suit = action // 9
+        rank = action % 9
+        old_suit = perm[new_suit]
+        return old_suit * 9 + rank
 
     def _dummy_obs(self):
         obs = np.zeros(OBS_SIZE, dtype=np.float32)

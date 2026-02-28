@@ -2,7 +2,7 @@ use pyo3::prelude::*;
 use numpy::{PyArray1, PyReadonlyArray1};
 
 use engine::consts::*;
-use engine::tile::Suit;
+use engine::state::ding_que;
 use engine::algo::ismce::{self, IsmceConfig, PlayerInfo, OpponentInfo, OpponentDangerInfo};
 
 /// Evaluate candidate discards using ISMCE.
@@ -60,12 +60,7 @@ pub fn ismce_evaluate(
     let mut s = [0u8; NUM_TILE_TYPES];
     s.copy_from_slice(&seen_slice[..NUM_TILE_TYPES]);
 
-    let dq = match ding_que {
-        0 => Some(Suit::Man),
-        1 => Some(Suit::Pin),
-        2 => Some(Suit::Sou),
-        _ => None,
-    };
+    let dq = ding_que::suit_from_i8(ding_que);
 
     let info = PlayerInfo {
         hand: h,
@@ -161,12 +156,7 @@ pub fn ismce_evaluate_full(
     let mut s = [0u8; NUM_TILE_TYPES];
     s.copy_from_slice(&seen_slice[..NUM_TILE_TYPES]);
 
-    let dq = match ding_que {
-        0 => Some(Suit::Man),
-        1 => Some(Suit::Pin),
-        2 => Some(Suit::Sou),
-        _ => None,
-    };
+    let dq = ding_que::suit_from_i8(ding_que);
 
     let info = PlayerInfo {
         hand: h,
@@ -185,12 +175,7 @@ pub fn ismce_evaluate_full(
     // Build OpponentInfo array for constrained sampling
     let mut opponents: Vec<OpponentInfo> = Vec::new();
     for i in 0..3.min(opponent_ding_que.len()) {
-        let opp_dq = match opponent_ding_que.get(i).copied().unwrap_or(-1) {
-            0 => Some(Suit::Man),
-            1 => Some(Suit::Pin),
-            2 => Some(Suit::Sou),
-            _ => None,
-        };
+        let opp_dq = ding_que::suit_from_i8(opponent_ding_que.get(i).copied().unwrap_or(-1));
         let discards_vec: Vec<u8> = opponent_discards.get(i).cloned().unwrap_or_default();
         let mc = opponent_meld_counts.get(i).copied().unwrap_or(0);
         // Fix R10-M2: estimate hand count more accurately for kans.
@@ -222,12 +207,7 @@ pub fn ismce_evaluate_full(
         OpponentDangerInfo { ding_que: None, melds_count: 0, discard_count: 0 },
     ];
     for i in 0..3 {
-        danger_infos[i].ding_que = match opponent_ding_que.get(i).copied().unwrap_or(-1) {
-            0 => Some(Suit::Man),
-            1 => Some(Suit::Pin),
-            2 => Some(Suit::Sou),
-            _ => None,
-        };
+        danger_infos[i].ding_que = ding_que::suit_from_i8(opponent_ding_que.get(i).copied().unwrap_or(-1));
         danger_infos[i].melds_count = opponent_meld_counts.get(i).copied().unwrap_or(0);
         danger_infos[i].discard_count = opponent_discard_counts.get(i).copied().unwrap_or(0);
     }
@@ -310,9 +290,7 @@ pub fn ismce_evaluate_informed(
     let mut s = [0u8; NUM_TILE_TYPES];
     s.copy_from_slice(&seen_slice[..NUM_TILE_TYPES]);
 
-    let dq = match ding_que {
-        0 => Some(Suit::Man), 1 => Some(Suit::Pin), 2 => Some(Suit::Sou), _ => None,
-    };
+    let dq = ding_que::suit_from_i8(ding_que);
 
     let info = PlayerInfo { hand: h, melds_count, ding_que: dq, tiles_seen: s, wall_remaining };
     let config = IsmceConfig { num_worlds, rollout_depth, base_seed };
@@ -320,9 +298,7 @@ pub fn ismce_evaluate_informed(
     // Build OpponentInfo
     let mut opponents: Vec<OpponentInfo> = Vec::new();
     for i in 0..3.min(opponent_ding_que.len()) {
-        let opp_dq = match opponent_ding_que.get(i).copied().unwrap_or(-1) {
-            0 => Some(Suit::Man), 1 => Some(Suit::Pin), 2 => Some(Suit::Sou), _ => None,
-        };
+        let opp_dq = ding_que::suit_from_i8(opponent_ding_que.get(i).copied().unwrap_or(-1));
         let discards_vec = opponent_discards.get(i).cloned().unwrap_or_default();
         let mc = opponent_meld_counts.get(i).copied().unwrap_or(0);
         // Fix R11-M1: match ismce_evaluate_full hand_count estimation
@@ -342,9 +318,7 @@ pub fn ismce_evaluate_informed(
         OpponentDangerInfo { ding_que: None, melds_count: 0, discard_count: 0 },
     ];
     for i in 0..3 {
-        danger_infos[i].ding_que = match opponent_ding_que.get(i).copied().unwrap_or(-1) {
-            0 => Some(Suit::Man), 1 => Some(Suit::Pin), 2 => Some(Suit::Sou), _ => None,
-        };
+        danger_infos[i].ding_que = ding_que::suit_from_i8(opponent_ding_que.get(i).copied().unwrap_or(-1));
         danger_infos[i].melds_count = opponent_meld_counts.get(i).copied().unwrap_or(0);
         danger_infos[i].discard_count = opponent_discard_counts.get(i).copied().unwrap_or(0);
     }
@@ -422,12 +396,7 @@ pub fn ismce_danger<'py>(
 
     if let Some(ref dqs) = opp_ding_que {
         for i in 0..3.min(dqs.len()) {
-            danger_infos[i].ding_que = match dqs[i] {
-                0 => Some(Suit::Man),
-                1 => Some(Suit::Pin),
-                2 => Some(Suit::Sou),
-                _ => None,
-            };
+            danger_infos[i].ding_que = ding_que::suit_from_i8(dqs[i]);
         }
     }
     if let Some(ref mcs) = opp_meld_counts {

@@ -1,6 +1,7 @@
 use crate::consts::*;
 use crate::tile::{Tile, Suit, is_terminal};
-use crate::hand::{HandCounts, MeldType, has_suit_tiles};
+use crate::hand::{HandCounts, MeldType};
+use crate::state::ding_que;
 
 /// Configurable fan rules
 #[derive(Debug, Clone, Copy)]
@@ -79,16 +80,9 @@ struct Division {
 
 /// Main agari calculation entry point
 pub fn calc_fan(ctx: &WinContext) -> Option<FanResult> {
-    // Cannot agari if ding que suit tiles remain
-    if let Some(suit) = ctx.ding_que {
-        if has_suit_tiles(&ctx.tehai, suit) {
-            return None;
-        }
-        for m in &ctx.melds {
-            if Suit::from_tile(m.tile()) == suit {
-                return None;
-            }
-        }
+    // Cannot agari if ding que suit tiles remain in hand or melds
+    if !ding_que::validate_win(&ctx.tehai, &ctx.melds, ctx.ding_que) {
+        return None;
     }
 
     let mut result = FanResult::default();
@@ -333,29 +327,46 @@ fn check_yitiaolong(div: &Division) -> bool {
 
 fn check_jiaxinwu(ctx: &WinContext, div: &Division) -> bool {
     let wt = ctx.winning_tile;
-    let rank = Suit::rank(wt);
-    if rank != 5 { return false; }
-    // Must be part of 456 sequence as a kanchan (middle) wait.
-    // Verify the winning tile actually completed the 456 shuntsu:
-    // the hand before winning must NOT have had a complete 456 shuntsu
-    // at this suit. If it did, the 5 completed something else (e.g. tanki).
+    if Suit::rank(wt) != 5 { return false; }
+
     let suit_start = Suit::from_tile(wt).start();
     let seq_start = (suit_start + 3) as Tile; // 456 starts at rank 4
     if !div.shuntsu.contains(&seq_start) { return false; }
-    // Check that removing the winning tile breaks the 456 shuntsu,
-    // confirming the 5 was the kanchan draw (not a tanki or other wait).
-    // Before winning: hand had tiles 4 and 6 but not 5 for this shuntsu.
-    // After winning on 5: hand has 4,5,6. If hand already had 5 before
-    // (count >= 2 after adding winning tile), the 5 might have completed
-    // a different group. We check: count of tile 5 in tehai == 1 means
-    // the only 5 is the winning tile itself → confirmed kanchan.
-    // count >= 2 means there was already a 5 → could be tanki or other.
-    let tile5_count = ctx.tehai[wt as usize];
-    // If there's only one copy of the 5 in the final hand, it must be
-    // the winning tile that completed the 456 kanchan.
-    // With 2+ copies, the 5 could have been part of a pair (tanki wait)
-    // or another group, so we can't confirm kanchan.
-    tile5_count == 1
+
+    // Count how many copies of tile5 are consumed by groups OTHER than
+    // the first 456 shuntsu in this division.
+    let tile5 = wt as usize;
+    let mut other_usage: u8 = 0;
+
+    // Pair
+    if div.pair_tile == wt { other_usage += 2; }
+
+    // Kotsu (triplets)
+    for &k in &div.kotsu {
+        if k == wt { other_usage += 3; }
+    }
+
+    // Shuntsu: tile5 appears in sequences starting at rank 3,4,5
+    // (i.e. 345, 456, 567) of the same suit.
+    let mut found_target_456 = false;
+    for &s in &div.shuntsu {
+        if s == seq_start && !found_target_456 {
+            found_target_456 = true;
+            continue; // skip the first 456 — that's the one we're checking
+        }
+        if Suit::from_tile(s).start() == suit_start {
+            let s_rank = Suit::rank(s);
+            // sequence [s_rank, s_rank+1, s_rank+2] contains rank 5
+            // when s_rank <= 5 && s_rank+2 >= 5, i.e. s_rank in {3,4,5}
+            if s_rank >= 3 && s_rank <= 5 {
+                other_usage += 1;
+            }
+        }
+    }
+
+    // If tehai[5] == other_usage + 1, the only remaining copy of tile5
+    // is the one used by the 456 shuntsu — confirmed kanchan wait.
+    ctx.tehai[tile5] == other_usage + 1
 }
 
 fn check_daiyaojiu(div: &Division, melds: &[MeldType]) -> bool {

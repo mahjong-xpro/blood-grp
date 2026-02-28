@@ -426,7 +426,12 @@ class SelfPlayEnv(BloodMahjongEnv):
         # 向听进退奖励（带衰减调度 + 番数加权）
         # Guard against game-end: when terminated, shanten may be -1 (complete hand)
         # which would produce a spurious large progress reward on top of the win reward.
+        # Skip during ding-que phase (actions 31-33): shanten is meaningless before
+        # suit elimination is decided, and the engine may recalculate shanten after
+        # ding-que completes (excluding the eliminated suit), producing spurious deltas.
+        is_dingque_action = 31 <= engine_action <= 33
         if (not terminated
+                and not is_dingque_action
                 and self._prev_agent_shanten is not None
                 and hasattr(self._env, "get_agent_shanten")):
             current_shanten = self._env.get_agent_shanten()
@@ -441,6 +446,11 @@ class SelfPlayEnv(BloodMahjongEnv):
             elif shanten_delta > 0 and self._reward_shanten_regress > 0:
                 reward -= self._reward_shanten_regress * shanten_delta * decay_factor
             self._prev_agent_shanten = current_shanten
+
+        # After ding-que, refresh shanten baseline so the next non-dingque step
+        # compares against the post-dingque shanten (which excludes eliminated suit).
+        if is_dingque_action and hasattr(self._env, "get_agent_shanten"):
+            self._prev_agent_shanten = self._env.get_agent_shanten()
 
         # Safe discard reward: gradient-based danger penalty.
         # Instead of binary safe/dangerous, reward scales with (1 - max_danger):

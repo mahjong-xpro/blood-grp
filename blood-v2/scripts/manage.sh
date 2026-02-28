@@ -5,8 +5,8 @@
 #   ./scripts/manage.sh <命令> [选项]
 #
 # 命令:
-#   train   <phase> [--device cuda] [--resume]   启动五阶段训练
-#   train   pipeline [--device gpu] [--num-policies 1]  运行完整五阶段流水线
+#   train   <phase> [--device cuda] [--resume]   启动训练
+#   train   pipeline [--device gpu] [--num-policies 1]  运行完整三阶段流水线
 #   stop    [phase]                               停止训练进程
 #   monitor [--port 6006]                         启动 TensorBoard 监控
 #   eval    [--checkpoint <path>] [...]           运行评估
@@ -17,24 +17,24 @@
 #   replay  [--log-dir <dir>] [--port 5001]       启动回放查看器
 #   help                                          显示此帮助
 #
-# 五阶段训练流水线:
-#   1. warmup              — RuleBot 对手, LSTM 开启 (2M steps)
-#   2. warmup_transition   — RuleBot 对手, gamma/lr 渐变 (500K steps)
-#   3. competitive         — Self-play (2.5M steps)
-#   4. competitive_distill — Oracle Value 蒸馏 (2.5M steps)
-#   5. elite               — RTPA+ISMCE 精英训练 (50M steps)
+# 三阶段训练流水线 (v2):
+#   1. foundation  — RuleBot 对手, Oracle 启用 (5M steps)
+#   2. selfplay    — 联赛自博弈, 完整蒸馏 (20M steps)
+#   3. elite       — RTPA+ISMCE 精英训练 (100M steps)
+#
+# 旧五阶段 (兼容):
+#   warmup | warmup_transition | competitive | competitive_distill | elite(旧)
 #
 # 示例:
-#   ./scripts/manage.sh train warmup
-#   ./scripts/manage.sh train warmup_transition --resume
-#   ./scripts/manage.sh train competitive --device cuda
-#   ./scripts/manage.sh train distill
+#   ./scripts/manage.sh train foundation
+#   ./scripts/manage.sh train selfplay --resume
+#   ./scripts/manage.sh train elite --device cuda
 #   ./scripts/manage.sh train pipeline
 #   ./scripts/manage.sh stop                    # 停止所有训练
-#   ./scripts/manage.sh stop competitive        # 停止指定阶段
+#   ./scripts/manage.sh stop selfplay           # 停止指定阶段
 #   ./scripts/manage.sh monitor
-#   ./scripts/manage.sh eval --checkpoint checkpoints/blood_v2_elite/best
-#   ./scripts/manage.sh export --checkpoint checkpoints/blood_v2_elite/best --quantize
+#   ./scripts/manage.sh eval --checkpoint checkpoints/blood_v2_elite_v2/best
+#   ./scripts/manage.sh export --checkpoint checkpoints/blood_v2_elite_v2/best --quantize
 #   ./scripts/manage.sh status
 #   ./scripts/manage.sh build
 #   ./scripts/manage.sh record --games 20
@@ -57,9 +57,15 @@ die()   { echo -e "${RED}[blood] ERROR:${NC} $*" >&2; exit 1; }
 # ── 阶段名称规范化 ────────────────────────────────────────────────────────────
 normalize_phase() {
     case "$1" in
+        # 新三阶段流水线
+        foundation) echo "foundation" ;;
+        selfplay|self-play|self_play) echo "selfplay" ;;
+        elite_v2|elite-v2|elitev2) echo "elite_v2" ;;
+        # 旧五阶段（兼容）
         transition|warmup_transition|warmup-transition) echo "warmup_transition" ;;
         distill|competitive_distill|competitive-distill) echo "competitive_distill" ;;
-        warmup|competitive|elite) echo "$1" ;;
+        warmup|competitive) echo "$1" ;;
+        elite) echo "elite" ;;
         *) echo "" ;;
     esac
 }
@@ -101,6 +107,11 @@ find_best_checkpoint() {
 # 获取前一阶段名称（用于 checkpoint 链式传递）
 get_prev_phase() {
     case "$1" in
+        # 新三阶段流水线
+        foundation) echo "" ;;
+        selfplay) echo "foundation" ;;
+        elite_v2) echo "selfplay" ;;
+        # 旧五阶段（兼容）
         warmup) echo "" ;;
         warmup_transition) echo "warmup" ;;
         competitive) echo "warmup_transition" ;;
@@ -119,9 +130,10 @@ Blood-v2 管理脚本
 
 命令:
   train <phase> [选项]
-      phase: warmup | warmup_transition (transition)
+      phase: foundation | selfplay | elite_v2
+             pipeline  — 运行完整三阶段流水线
+      旧阶段 (兼容): warmup | warmup_transition (transition)
              competitive | competitive_distill (distill) | elite
-             pipeline  — 运行完整五阶段流水线
       --device <gpu|cpu>    训练设备 (默认: gpu)
       --resume              从最新 checkpoint 恢复
       --num-policies <N>    多 GPU 策略数 (默认: 1, 每个 policy 占一张 GPU)
@@ -131,7 +143,7 @@ Blood-v2 管理脚本
       --bind <addr>         绑定地址 (默认: 0.0.0.0)
 
   eval [选项]
-      --checkpoint <path>   checkpoint 路径 (默认: 自动选最新 elite)
+      --checkpoint <path>   checkpoint 路径 (默认: 自动选最新)
       其余参数透传给 blood.eval.evaluate
 
   export [选项]
@@ -160,7 +172,12 @@ Blood-v2 管理脚本
   help
       显示此帮助
 
-五阶段训练流水线:
+三阶段训练流水线 (v2):
+  1. foundation  — RuleBot 对手, Oracle 启用 (5M steps)
+  2. selfplay    — 联赛自博弈, 完整蒸馏 (20M steps)
+  3. elite_v2    — RTPA+ISMCE 精英训练 (100M steps)
+
+旧五阶段 (兼容):
   1. warmup              — RuleBot 对手, LSTM 开启 (2M steps)
   2. warmup_transition   — RuleBot 对手, gamma/lr 渐变 (500K steps)
   3. competitive         — Self-play (1M steps)
@@ -170,16 +187,16 @@ Blood-v2 管理脚本
   阶段别名:
     transition  → warmup_transition
     distill     → competitive_distill
+    self-play   → selfplay
 
 示例:
-  $(basename "$0") train warmup
-  $(basename "$0") train transition --resume
-  $(basename "$0") train competitive --device cuda --num-policies 8
-  $(basename "$0") train distill
+  $(basename "$0") train foundation
+  $(basename "$0") train selfplay --resume
+  $(basename "$0") train elite_v2 --device cuda --num-policies 8
   $(basename "$0") train pipeline
   $(basename "$0") monitor --port 6007
-  $(basename "$0") eval --checkpoint checkpoints/blood_v2_elite/best
-  $(basename "$0") export --checkpoint checkpoints/blood_v2_elite/best --quantize
+  $(basename "$0") eval --checkpoint checkpoints/blood_v2_elite_v2/best
+  $(basename "$0") export --checkpoint checkpoints/blood_v2_elite_v2/best --quantize
   $(basename "$0") build
   $(basename "$0") record --games 50 --log-dir replays/
   $(basename "$0") replay --log-dir replays/ --port 5001
@@ -255,8 +272,8 @@ cmd_train() {
     local normalized
     normalized=$(normalize_phase "$phase")
     case "$normalized" in
-        warmup|warmup_transition|competitive|competitive_distill|elite) phase="$normalized" ;;
-        "") die "未知阶段: ${phase:-<空>} (可选: warmup | warmup_transition/transition | competitive | competitive_distill/distill | elite | pipeline)" ;;
+        foundation|selfplay|elite_v2|warmup|warmup_transition|competitive|competitive_distill|elite) phase="$normalized" ;;
+        "") die "未知阶段: ${phase:-<空>} (可选: foundation | selfplay | elite_v2 | warmup | competitive | elite | pipeline)" ;;
     esac
 
     while [[ $# -gt 0 ]]; do
@@ -286,18 +303,16 @@ train_pipeline() {
         esac
     done
 
-    local PHASES=("warmup" "warmup_transition" "competitive" "competitive_distill" "elite")
+    local PHASES=("foundation" "selfplay" "elite_v2")
     local PHASE_NAMES=(
-        "Phase 1: Warmup (RuleBot, LSTM ON)"
-        "Phase 1.5: Warmup Transition (RuleBot, gamma/lr ramp)"
-        "Phase 2a: Competitive (Self-play)"
-        "Phase 2b: Competitive Distill (Oracle Value)"
-        "Phase 3: Elite (RTPA+ISMCE, 50M steps)"
+        "Phase 1: Foundation (RuleBot, Oracle ON, 5M steps)"
+        "Phase 2: Self-Play (League, Full Distill, 20M steps)"
+        "Phase 3: Elite (RTPA+ISMCE, TurnAttention, 100M steps)"
     )
 
     info "=========================================="
     info "  Blood-V2 Full Training Pipeline"
-    info "  5 stages, ~57.5M total env steps"
+    info "  3 stages, ~125M total env steps"
     info "=========================================="
 
     for i in "${!PHASES[@]}"; do
@@ -328,7 +343,7 @@ train_pipeline() {
     info ""
     info "=========================================="
     ok   "  Pipeline Complete!"
-    info "  Best model: checkpoints/blood_v2_elite/"
+    info "  Best model: checkpoints/blood_v2_elite_v2/"
     info "=========================================="
 }
 
@@ -364,10 +379,10 @@ cmd_eval() {
         esac
     done
 
-    # 自动选最新 checkpoint (按五阶段优先级)
+    # 自动选最新 checkpoint (新三阶段优先，旧五阶段兼容)
     # Fix R12-M7: also search train_dir/ (SF2 default save location)
     if [[ -z "$checkpoint" ]]; then
-        for phase in elite competitive_distill competitive warmup_transition warmup; do
+        for phase in elite_v2 selfplay foundation elite competitive_distill competitive warmup_transition warmup; do
             for base_dir in "train_dir/blood_v2_${phase}/checkpoint_p0" "checkpoints/blood_v2_${phase}"; do
                 if [[ -d "$base_dir" ]]; then
                     checkpoint="$base_dir"
@@ -449,9 +464,9 @@ cmd_record() {
         esac
     done
 
-    # 自动选最新 checkpoint (按五阶段优先级)
+    # 自动选最新 checkpoint (新三阶段优先，旧五阶段兼容)
     if [[ -z "$checkpoint" ]]; then
-        for phase in elite competitive_distill competitive warmup_transition warmup; do
+        for phase in elite_v2 selfplay foundation elite competitive_distill competitive warmup_transition warmup; do
             local dir="train_dir/blood_v2_${phase}/checkpoint_p0"
             if [[ -d "$dir" ]]; then
                 # 选最新的 .pth 文件
@@ -517,7 +532,7 @@ cmd_replay() {
 cmd_status() {
     echo ""
     echo "── Checkpoint 状态 ──────────────────────────────────────"
-    for phase in warmup warmup_transition competitive competitive_distill elite; do
+    for phase in foundation selfplay elite_v2 warmup warmup_transition competitive competitive_distill elite; do
         local dir="checkpoints/blood_v2_${phase}"
         if [[ -d "$dir" ]]; then
             local count latest_step
@@ -537,7 +552,7 @@ cmd_status() {
     echo ""
     echo "── 训练进程 ─────────────────────────────────────────────"
     local found_running=0
-    for phase in warmup warmup_transition competitive competitive_distill elite; do
+    for phase in foundation selfplay elite_v2 warmup warmup_transition competitive competitive_distill elite; do
         if pgrep -f "blood.training.runner.*${phase}" &>/dev/null; then
             ok "  ${phase}: 运行中"
             found_running=1

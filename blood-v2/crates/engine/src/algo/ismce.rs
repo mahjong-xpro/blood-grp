@@ -10,6 +10,7 @@ use crate::tile::{Tile, Suit};
 use crate::hand::*;
 use crate::algo::shanten::calc_shanten;
 use crate::algo::point::calc_score;
+use crate::state::ding_que;
 
 /// Rollout 结果（替代原来的 (bool, bool) 元组）
 #[derive(Debug, Clone, Copy)]
@@ -129,10 +130,8 @@ fn sample_world_constrained(
             if used[pool_idx] { continue; }
 
             // 定缺约束：不分配定缺花色的牌给该对手
-            if let Some(dq_suit) = opp.ding_que {
-                if Suit::from_tile(tile) == dq_suit {
-                    continue;
-                }
+            if ding_que::is_ding_que_tile(opp.ding_que, tile) {
+                continue;
             }
 
             used[pool_idx] = true;
@@ -217,11 +216,7 @@ pub fn sample_world_informed(
             .map(|(idx, &tile)| {
                 let p = probs[tile as usize];
                 // Apply ding-que constraint: zero probability for ding-que suit
-                let p = if let Some(dq) = opp.ding_que {
-                    if Suit::from_tile(tile) == dq { 0.0 } else { p }
-                } else {
-                    p
-                };
+                let p = if ding_que::is_ding_que_tile(opp.ding_que, tile) { 0.0 } else { p };
                 // Gumbel-max trick: add Gumbel noise to log(p) for weighted sampling
                 // without replacement. For p=0, use -inf so these are never selected.
                 let gumbel_score = if p > 1e-8 {
@@ -343,6 +338,36 @@ fn estimate_fan_quick(hand: &HandCounts, melds_count: usize, is_tsumo: bool) -> 
         if hand[t] == 4 {
             fan += 1;
         }
+    }
+
+    // 断幺九 (+1): all tiles rank 2-8 (no terminals)
+    {
+        let mut all_inner = true;
+        for t in 0..NUM_TILE_TYPES {
+            if hand[t] > 0 {
+                let r = t % TILES_PER_SUIT + 1;
+                if r == 1 || r == 9 { all_inner = false; break; }
+            }
+        }
+        if all_inner { fan += 1; }
+    }
+
+    // 帯幺九 (+3): every group contains a terminal.
+    // Approximation from HandCounts: all tiles rank ∈ {1,2,3,7,8,9}.
+    // This is a necessary condition — sequences 123/789 only use ranks 1-3/7-9.
+    // Kotsu/pair of terminals are ranks 1/9. So no rank 4-6 tiles can appear.
+    // This misses nothing: any valid daiyaojiu hand has no rank 4-6 tiles.
+    {
+        let mut has_middle = false;
+        let mut has_terminal = false;
+        for t in 0..NUM_TILE_TYPES {
+            if hand[t] > 0 {
+                let r = t % TILES_PER_SUIT + 1;
+                if r >= 4 && r <= 6 { has_middle = true; break; }
+                if r == 1 || r == 9 { has_terminal = true; }
+            }
+        }
+        if !has_middle && has_terminal { fan += 3; }
     }
 
     // 对对和: all groups are triplets (no sequences), exactly one pair
@@ -742,10 +767,7 @@ fn simulate_draws_with_opponents(
         add_tile(&mut h, drawn);
 
         if is_complete(&h, melds) {
-            let complete_ok = match ding_que {
-                Some(s) => !has_suit_tiles(&h, s),
-                None => true,
-            };
+            let complete_ok = ding_que.is_none_or(|s| !has_suit_tiles(&h, s));
             if complete_ok {
                 let fan = estimate_fan_quick(&h, melds, true);
                 let score = calc_score(fan) as f64;
@@ -764,12 +786,10 @@ fn simulate_draws_with_opponents(
         // 阶段1：如果还有定缺花色的牌，必须弃其中一张
         let mut forced_dq = false;
         if let Some(suit) = ding_que {
-            let start = suit.start();
-            let end = suit.end();
-            // First check if any ding-que tiles exist in hand
-            let has_dq_tiles = (start..end).any(|t| h[t] > 0);
-            if has_dq_tiles {
+            if ding_que::must_discard_ding_que(&h, ding_que) {
                 forced_dq = true;
+                let start = suit.start();
+                let end = suit.end();
                 // Reset baseline: must pick from ding-que tiles only.
                 // Initialize to worst possible so any ding-que tile wins.
                 best_s = i8::MAX;
@@ -882,7 +902,6 @@ pub fn danger_scores_enhanced(
         let total_copies = COPIES_PER_TILE as u8;
         let seen = tiles_seen[t];
         let unseen = total_copies.saturating_sub(seen) as f32;
-        let tile_suit = Suit::from_tile(t as Tile);
 
         let mut max_opp_danger = 0.0f32;
 
@@ -890,11 +909,9 @@ pub fn danger_scores_enhanced(
             let opp_discards = &opponent_discards[opp_idx];
 
             // ── 定缺花色检查：该花色对此对手无危险 ──
-            if let Some(dq) = opp.ding_que {
-                if tile_suit == dq {
-                    // 对手定缺此花色，这张牌对该对手完全安全
-                    continue;
-                }
+            if ding_que::is_ding_que_tile(opp.ding_que, t as Tile) {
+                // 对手定缺此花色，这张牌对该对手完全安全
+                continue;
             }
 
             // ── 基础危险度：对手是否打过此牌 ──
@@ -958,4 +975,60 @@ pub fn danger_scores_enhanced(
     }
 
     danger
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn build_hand(tiles: &[(u8, u8)]) -> HandCounts {
+        let mut hand = [0u8; NUM_TILE_TYPES];
+        for &(t, c) in tiles {
+            hand[t as usize] = c;
+        }
+        hand
+    }
+
+    #[test]
+    fn test_estimate_fan_quick_duanyaojiu() {
+        // All tiles rank 2-8: 234m 567m 234p 567p + 55m
+        let hand = build_hand(&[
+            (1, 1), (2, 1), (3, 1),    // 234m
+            (4, 2), (5, 1), (6, 1),    // 55m + 67m
+            (10, 1), (11, 1), (12, 1), // 234p
+            (13, 1), (14, 1), (15, 1), // 567p
+        ]);
+        let fan = estimate_fan_quick(&hand, 0, true);
+        // pinghu(1) + tsumo(1) + menqing(1) + duanyaojiu(1) = 4
+        assert!(fan >= 4, "duanyaojiu should add +1 fan, got {}", fan);
+    }
+
+    #[test]
+    fn test_estimate_fan_quick_daiyaojiu() {
+        // 123m 789m 11p — with 2 melds of terminals
+        let hand = build_hand(&[
+            (0, 1), (1, 1), (2, 1),  // 123m
+            (6, 1), (7, 1), (8, 1),  // 789m
+            (9, 2),                   // 11p pair
+        ]);
+        // melds_count=2 (pon 111p, pon 999p)
+        let fan = estimate_fan_quick(&hand, 2, true);
+        // pinghu(1) + tsumo(1) + daiyaojiu(3) = 5 (no menqing because melds)
+        assert!(fan >= 5, "daiyaojiu should add +3 fan, got {}", fan);
+    }
+
+    #[test]
+    fn test_estimate_fan_quick_no_duanyaojiu_with_terminals() {
+        // Has terminal tiles → no duanyaojiu
+        let hand = build_hand(&[
+            (0, 1), (1, 1), (2, 1),   // 123m (has rank 1)
+            (3, 1), (4, 1), (5, 1),   // 456m
+            (6, 1), (7, 1), (8, 1),   // 789m (has rank 9)
+            (9, 1), (10, 1), (11, 1), // 123p
+            (12, 2),                   // 44p pair
+        ]);
+        let fan = estimate_fan_quick(&hand, 0, true);
+        // pinghu(1) + tsumo(1) + menqing(1) = 3, no duanyaojiu
+        assert_eq!(fan, 3, "should not have duanyaojiu with terminals, got {}", fan);
+    }
 }

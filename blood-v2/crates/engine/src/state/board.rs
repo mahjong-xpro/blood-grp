@@ -7,6 +7,7 @@ use crate::algo::shanten::{calc_shanten, waiting_tiles};
 use super::player::PlayerState;
 use super::action::{Action, ActionCandidate};
 use super::event::Event;
+use super::ding_que;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
@@ -30,7 +31,6 @@ pub struct BoardState {
     pub dealer: usize,
     pub current_player: usize,
     pub turn_count: u16,
-    pub ding_que_done: [bool; NUM_PLAYERS],
     pub win_count: u8,
 
     // Last discard tracking
@@ -75,7 +75,6 @@ impl BoardState {
             dealer,
             current_player: dealer,
             turn_count: 0,
-            ding_que_done: [false; NUM_PLAYERS],
             win_count: 0,
             last_discard: None,
             last_discard_is_kan: false,
@@ -143,11 +142,21 @@ impl BoardState {
         self.players.iter().filter(|p| !p.has_won).count()
     }
 
+    /// Whether all players have completed ding_que selection.
+    pub fn all_ding_que_done(&self) -> bool {
+        self.players.iter().all(|p| p.ding_que.is_some())
+    }
+
+    /// Per-player ding_que completion status, derived from `players[i].ding_que`.
+    pub fn ding_que_done(&self) -> [bool; NUM_PLAYERS] {
+        std::array::from_fn(|i| self.players[i].ding_que.is_some())
+    }
+
     /// Get the decision request for the current state
     pub fn get_decision_request(&self, player_id: usize) -> Option<ActionCandidate> {
         match self.phase {
             Phase::DingQue => {
-                if !self.ding_que_done[player_id] {
+                if self.players[player_id].ding_que.is_none() {
                     Some(ActionCandidate {
                         can_ding_que: true,
                         ..Default::default()
@@ -252,27 +261,14 @@ impl BoardState {
         }
 
         // Pon check
-        if p.hand[tile as usize] >= 2 {
-            if let Some(suit) = p.ding_que {
-                if Suit::from_tile(tile) != suit {
-                    candidate.can_pon = true;
-                }
-            } else {
-                candidate.can_pon = true;
-            }
+        if p.hand[tile as usize] >= 2 && !ding_que::is_ding_que_tile(p.ding_que, tile) {
+            candidate.can_pon = true;
         }
 
         // MinKan check
-        if p.hand[tile as usize] >= 3 {
-            if let Some(suit) = p.ding_que {
-                if Suit::from_tile(tile) != suit {
-                    candidate.can_kan = true;
-                    candidate.kan_tiles = vec![tile];
-                }
-            } else {
-                candidate.can_kan = true;
-                candidate.kan_tiles = vec![tile];
-            }
+        if p.hand[tile as usize] >= 3 && !ding_que::is_ding_que_tile(p.ding_que, tile) {
+            candidate.can_kan = true;
+            candidate.kan_tiles = vec![tile];
         }
 
         if candidate.can_agari || candidate.can_pon || candidate.can_kan {
@@ -297,12 +293,11 @@ impl BoardState {
     fn apply_ding_que(&mut self, player_id: usize, action: Action) {
         if let Action::DingQue(suit) = action {
             // Guard: ignore duplicate ding_que for the same player
-            if self.ding_que_done[player_id] { return; }
+            if self.players[player_id].ding_que.is_some() { return; }
             self.players[player_id].ding_que = Some(suit);
-            self.ding_que_done[player_id] = true;
             self.events.push(Event::DingQue { player: player_id, suit });
 
-            if self.ding_que_done.iter().all(|&d| d) {
+            if self.all_ding_que_done() {
                 self.current_player = self.dealer;
                 self.phase = Phase::SelfCheck;
                 if self.get_self_check_actions(self.dealer).is_none() {
@@ -365,7 +360,7 @@ impl BoardState {
             // AnKan: 4 copies in hand (ding_que suit excluded by can_ankan_tiles logic).
             // KaKan: has a Pon meld for this tile and ≥1 copy in hand.
             let is_ankan = p.hand[tile as usize] >= 4
-                && p.ding_que.map_or(true, |s| crate::tile::Suit::from_tile(tile) != s);
+                && !ding_que::is_ding_que_tile(p.ding_que, tile);
             let is_kakan = !is_ankan
                 && p.hand[tile as usize] >= 1
                 && p.melds.iter().any(|m| matches!(m, MeldType::Pon(t) if *t == tile));
@@ -891,9 +886,9 @@ impl BoardState {
             is_haidi: self.wall_remaining() == 0,
             is_tianhu: !is_ron && self.dahai_count == 0 && player_id == self.dealer,
             // 地胡：闲家在第一巡自摸（非荣和、该玩家尚未打过牌、非庄家）
-            // 使用 p.discards.is_empty() 而非 dahai_count==0，因为非庄家首次摸牌时
-            // 庄家已打过一张牌 (dahai_count >= 1)，dahai_count==0 永远不成立。
-            is_dihu: !is_ron && p.discards.is_empty() && player_id != self.dealer,
+            // 额外要求：第一巡无人鸣牌（碰/杠），否则摸牌顺序被打断，不算地胡。
+            is_dihu: !is_ron && p.discards.is_empty() && player_id != self.dealer
+                && self.players.iter().all(|pl| pl.melds.is_empty()),
             exclude_gen_tile: None,
             fan_config: self.fan_config,  // Copy
         }

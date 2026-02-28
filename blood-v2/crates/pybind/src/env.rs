@@ -201,7 +201,7 @@ impl RustMahjongEnv {
     }
 
     fn get_ding_que_done(&self) -> [bool; NUM_PLAYERS] {
-        self.state.ding_que_done
+        self.state.ding_que_done()
     }
 
     fn get_reaction_pending(&self) -> [bool; NUM_PLAYERS] {
@@ -402,15 +402,15 @@ impl RustMahjongEnv {
 
             match self.state.phase {
                 Phase::DingQue => {
-                    if !self.state.ding_que_done[self.player_id] {
+                    if self.state.players[self.player_id].ding_que.is_none() {
                         break;
                     }
                     for i in 0..NUM_PLAYERS {
-                        if i == self.player_id || self.state.ding_que_done[i] { continue; }
+                        if i == self.player_id || self.state.players[i].ding_que.is_some() { continue; }
                         let action = self.opponent_policy.choose_ding_que(&self.state, i);
                         self.state.apply_action(i, action);
                     }
-                    if !self.state.ding_que_done[self.player_id] {
+                    if self.state.players[self.player_id].ding_que.is_none() {
                         break;
                     }
                 }

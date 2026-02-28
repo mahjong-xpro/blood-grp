@@ -1,9 +1,10 @@
 use crate::consts::*;
 use crate::tile::{Tile, Suit};
-use crate::hand::{HandCounts, MeldType, remove_tile, add_tile, waiting_tiles, has_suit_tiles};
+use crate::hand::{HandCounts, MeldType, remove_tile, add_tile, waiting_tiles};
 use crate::algo::shanten::{calc_shanten, clear_shanten_cache};
 use crate::algo::agari::{WinContext, FanConfig, calc_fan};
 use crate::algo::point::calc_score;
+use crate::state::ding_que;
 use super::candidate::Candidate;
 use super::state::{SPInitState, SPState};
 
@@ -101,17 +102,14 @@ impl SPCalculator {
     fn calc_discard_candidates(&self, state: &SPState, shanten: i8) -> Vec<Candidate> {
         let mut candidates = Vec::new();
 
-        let must_discard_dq = self.ding_que
-            .map_or(false, |dq| has_suit_tiles(&state.tehai, dq));
+        let must_dq = ding_que::must_discard_ding_que(&state.tehai, self.ding_que);
 
         for t in 0..NUM_TILE_TYPES as u8 {
             if state.tehai[t as usize] == 0 { continue; }
 
-            if let Some(dq) = self.ding_que {
-                let is_dq_tile = Suit::from_tile(t) == dq;
-                if must_discard_dq && !is_dq_tile { continue; }
-                if !must_discard_dq && is_dq_tile { continue; }
-            }
+            let is_dq_tile = ding_que::is_ding_que_tile(self.ding_que, t);
+            if must_dq && !is_dq_tile { continue; }
+            if !must_dq && is_dq_tile { continue; }
 
             let mut h = state.tehai;
             remove_tile(&mut h, t);
@@ -200,7 +198,12 @@ impl SPCalculator {
             cand.tenpai_probs[turn] = tenpai_prob.min(1.0);
             let win_given_tenpai = (total_eff as f32 * 0.3 / (n_left - turn as f32).max(1.0)).min(0.5);
             cand.win_probs[turn] = tenpai_prob * win_given_tenpai;
-            let base_score = if self.num_melds == 0 { 2000.0 } else { 1000.0 };
+            let mut base_score = if self.num_melds == 0 { 2000.0 } else { 1000.0 };
+            // Qingyise direction: all hand tiles in one suit → ~2.5x score boost
+            let suits_used = (0..3).filter(|&s| {
+                (s * TILES_PER_SUIT..(s + 1) * TILES_PER_SUIT).any(|t| hand[t] > 0)
+            }).count();
+            if suits_used == 1 { base_score *= 2.5; }
             cand.exp_values[turn] = cand.win_probs[turn] * base_score;
         }
     }
@@ -211,7 +214,7 @@ impl SPCalculator {
     /// - waiting_tiles() 每次调用 calc_shanten() 27次（遍历所有牌种）
     /// - calc_shanten() 有线程局部 FxHashMap 缓存（SHANTEN_CACHE），
     ///   同一次 SP 计算内的重复手牌状态会命中缓存
-    /// - 采样上限 MAX_SAMPLES=5，最多 5×27=135 次 calc_shanten 调用，
+    /// - 采样上限 MAX_SAMPLES=8，最多 8×27=216 次 calc_shanten 调用，
     ///   其中大量会命中缓存，实际开销远低于理论值
     /// - 按可用枚数降序排列有效牌，优先采样最常见的进牌以提高估计覆盖率
     fn fill_lookahead_candidate(
@@ -241,9 +244,9 @@ impl SPCalculator {
         // 这样能用最少的采样覆盖最大的概率质量
         eff_tiles.sort_by(|a, b| b.1.cmp(&a.1));
 
-        // 采样上限：5个有效牌 × 27次calc_shanten/个 = 最多135次调用
-        // 实际因缓存命中，开销约为50-80次未缓存调用
-        const MAX_SAMPLES: usize = 5;
+        // 采样上限：8个有效牌 × 27次calc_shanten/个 = 最多216次调用
+        // 实际因缓存命中，开销约为80-120次未缓存调用
+        const MAX_SAMPLES: usize = 8;
 
         let mut sample_outs_total = 0u32;    // 采样牌的总待牌枚数
         let mut sample_weighted_score = 0f64; // 按枚数加权的得分总和
