@@ -12,15 +12,15 @@ num_workers: 16
 num_envs_per_worker: 16
 batch_size: 1024
 num_batches_per_epoch: 8
-ppo_clip_ratio: 0.15                   # Fix @Phase2b: 0.1 导致 fraction_clipped 9.5%，0.15 降到 4.1%
+ppo_clip_ratio: 0.2                    # Fix: 基于Phase2b经验，从0.15提升到0.2
 max_grad_norm: 3.0                     # Fix @Phase2b: 0.5 会导致 >90% 梯度截断；2.0 时 69%，3.0 时 37%
 gamma: 0.999
 gae_lambda: 0.97
 learning_rate: 1e-4
 lr_schedule: kl_adaptive_minibatch
-lr_schedule_kl_threshold: 0.002    # Fix @Phase2b: 0.0002 远低于实际 KL(0.0015~0.002)，LR 100% 锁死下限
+lr_schedule_kl_threshold: 0.003    # Fix: 基于Phase2b经验，预防性放宽到0.003
 lr_adaptive_max: 2e-4              # 保持不变
-lr_adaptive_min: 5e-5              # Fix @Phase2b: 2e-5 导致学习停滞（Phase 2b 旧 run 76.6% 锁死）
+lr_adaptive_min: 1e-4              # Fix: 基于Phase2b经验，提升到1e-4防止锁死
 exploration_loss_coeff: 0.02           # Elite 阶段从中等探索开始，通过调度逐步降低到 0.01
 value_loss_coeff: 1.0
 train_for_env_steps: 200000000      # 50M → 200M for deeper exploration
@@ -71,10 +71,10 @@ blood_arena_eval_temperature: 0.1
 # League — very frequent snapshots for fine-grained progression
 league_enabled: true
 league_pool_dir: checkpoints/league/
-league_add_every: 100000                # 50000 → 100000, 200 pool covers 20M step history
+league_add_every: 50000                 # Fix: 基于Phase2b经验，从100000改回50000，保持对手多样性
 league_newest_weight: 2.0              # 与所有阶段保持一致
 league_uniform_floor: 0.1
-league_self_play_prob: 0.2
+league_self_play_prob: 0.1              # Fix: 基于Phase2b经验，从0.2降到0.1
 league_frozen_window: 3                # 最近3个checkpoint不参与采样，减少Elo振荡
 league_max_pool_size: 200              # 从50扩容到200，覆盖更长训练历史
 
@@ -86,10 +86,10 @@ suit_augment_prob: 0.5
 
 # Structured reward shaping — 全部 score-weighted: intensity=clamp(sqrt(|Δ|/32000), 0.25, 1.0)
 # 配置值为最大值，低番事件自动衰减
-reward_tsumo_bonus: 0.1             # score-weighted: 1番自摸→0.031, 6番自摸→0.100
-reward_deal_in_penalty: 0.05        # score-weighted: 1番放铳→0.014, 6番放铳→0.050
-reward_shanten_progress: 0.003      # 基础值与 competitive 一致，通过衰减调度自动降低
-reward_shanten_regress: 0.001       # 基础值与 competitive 一致，通过衰减调度自动降低
+reward_tsumo_bonus: 0.2             # Fix: 基于Phase2b经验，从0.1提升到0.2
+reward_deal_in_penalty: 0.1         # Fix: 基于Phase2b经验，从0.05提升到0.1
+reward_shanten_progress: 0.01       # Fix: 基于Phase2b经验，从0.003提升到0.01
+reward_shanten_regress: 0.001       # 保持不变
 
 # 向听番数加权 — elite 阶段完整引导，充分利用番数信号优化手牌方向
 shanten_fan_bonus_scale: 0.3
@@ -101,7 +101,7 @@ shanten_reward_decay_steps: 120000000
 shanten_reward_min_ratio: 0.3
 
 # 排名奖励 — score-weighted: sqrt(|Δscore|/32000) 加权，低番局自动衰减
-reward_rank_bonus: 0.2              # 最大值；实际通过 intensity=sqrt(|Δ|/32000) ∈ [0.25,1.0] 加权
+reward_rank_bonus: 0.3              # Fix: 基于Phase2b经验，从0.2提升到0.3
 
 # 安全弃牌奖励 — 降低至 0.01 减少累积过度防守倾向
 reward_safe_discard: 0.01           # 从 0.015 降到 0.01，缓解 entropy 下降
@@ -124,8 +124,9 @@ rnn_num_layers: 2
 rollout: 32
 recurrence: 32
 
-# Advantage clipping
-adv_clip: 5.0
+# Advantage clipping — 基于Phase2b经验调整
+adv_clip: 0.0                          # Fix: Phase2b优势标准差极低，Elite阶段初期禁用裁剪
+                                       # 如果后期优势标准差恢复到>2.0，可通过schedule逐步启用
 
 # RTPA — enable runtime policy adaptation during evaluation
 rtpa_enabled: true
@@ -141,8 +142,9 @@ ismce_rollout_depth: 8          # 4 → 8 (deeper lookahead)
 # Entropy: cosine anneal from 0.02 → 0.01 over full 200M steps
 # Elite 阶段策略已成熟，从中等探索逐步收敛到低探索
 blood_schedule_entropy: "cosine,0.02,0.01,0,200000000"
-# Adv clip: linear tighten from 5.0 → 3.0 starting at 10M steps
-blood_schedule_adv_clip: "linear,5.0,3.0,10000000,160000000"
+# Adv clip: 基于Phase2b经验重新设计
+# 初期禁用(0.0)，待优势标准差恢复后逐步启用
+blood_schedule_adv_clip: "linear,0.0,2.0,50000000,150000000"  # 50M-150M步从0逐步提升到2.0
 
 # Entropy floor safety net — 提升到 0.012 防止过早收敛
 # 当前观察：entropy 从 0.70 持续下降到 0.47 (4.24M步)

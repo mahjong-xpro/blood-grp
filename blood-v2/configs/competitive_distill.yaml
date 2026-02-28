@@ -14,18 +14,18 @@ num_workers: 16
 num_envs_per_worker: 16
 batch_size: 1024
 num_batches_per_epoch: 8
-ppo_clip_ratio: 0.15                   # Fix @688K: 从 0.1 提升到 0.15，旧值导致 fraction_clipped 均值 10.2%（峰值 39.7%）
+ppo_clip_ratio: 0.2                    # Fix @671K: 从 0.15 提升到 0.2，当前裁剪比例仅2.2%，需要更大更新空间
 max_grad_norm: 3.0                     # Fix @688K: 从 2.0 提升到 3.0，旧值导致 70.2% 步骤梯度被截断
 gamma: 0.998
 gae_lambda: 0.95
 learning_rate: 1e-4
 lr_schedule: kl_adaptive_minibatch
-lr_schedule_kl_threshold: 0.0005       # Fix @2.2M: 从 0.0002 提升到 0.0005，匹配实际 KL 均值（0.0004）
-                                       # 旧值 0.0002 导致 KL>threshold 的时间过多，LR 被持续压低
+lr_schedule_kl_threshold: 0.002        # Fix @671K: 从 0.0005 提升到 0.002，匹配实际 KL 均值（0.001-0.002）
+                                       # 旧值导致 LR 95% 时间锁死在下限，学习停滞
 lr_adaptive_max: 2e-4                  # 保持不变
-lr_adaptive_min: 5e-5                  # Fix @2.2M: 从 2e-5 提升到 5e-5，旧值导致 LR 76.6% 时间锁死在下限
+lr_adaptive_min: 1e-4                  # Fix @671K: 从 5e-5 提升到 1e-4，解锁学习率，恢复学习速度
 exploration_loss_coeff: 0.05
-value_loss_coeff: 1.0
+value_loss_coeff: 0.5                  # Fix @671K: 从 1.0 降到 0.5，Critic学习失败，降低错误影响
 train_for_env_steps: 4000000
 
 # Environment
@@ -63,19 +63,19 @@ oracle_value_head_loss_weight: 0.5
 oracle_value_warmup_steps: 0
 
 # Arena evaluation — periodic strength measurement via RuleBot games
-blood_arena_eval_every: 500000         # Performance: 200k→500k (reduce eval overhead)
+blood_arena_eval_every: 100000         # Fix @671K: 从 500000 改为 100000，更频繁评估监控进度
 blood_arena_eval_games: 100            # Fix @2.2M: 从 50 提升到 100，减少单次评估方差（95% CI 从 ±14% 缩小到 ±10%）
 blood_arena_eval_temperature: 0.1
 
 # League — same cadence as Phase 2a
 league_enabled: true
 league_pool_dir: checkpoints/league/
-league_add_every: 50000
-league_newest_weight: 2.0              # 与所有阶段保持一致
+league_add_every: 25000                # Fix @671K: 从 50000 改为 25000，更频繁添加对手
+league_newest_weight: 2.0              # 保持不变
 league_uniform_floor: 0.1
-league_self_play_prob: 0.2
+league_self_play_prob: 0.1             # Fix @671K: 从 0.2 降到 0.1，减少自博弈，增加对手多样性
 league_frozen_window: 3                # 最近3个checkpoint不参与采样
-league_max_pool_size: 200              # 与所有阶段保持一致
+league_max_pool_size: 200              # 保持不变
 save_every_sec: 300                 # Performance: 30→300 (reduce I/O overhead)
 
 # No reward shaping — pure score-based reward
@@ -85,9 +85,9 @@ warmup_reward_shaping: false
 suit_augment_prob: 0.5
 
 # Structured reward shaping — score-weighted: intensity=clamp(sqrt(|delta|/32000), 0.25, 1.0)
-reward_tsumo_bonus: 0.1             # score-weighted: 1番自摸→0.031, 6番自摸→0.100
-reward_deal_in_penalty: 0.05        # score-weighted: 1番放铳→0.014, 6番放铳→0.050
-reward_shanten_progress: 0.003
+reward_tsumo_bonus: 0.2             # Fix @671K: 从 0.1 提升到 0.2，增加奖励方差
+reward_deal_in_penalty: 0.1         # Fix @671K: 从 0.05 提升到 0.1，增加奖励方差
+reward_shanten_progress: 0.01       # Fix @671K: 从 0.003 提升到 0.01，增强学习信号
 reward_shanten_regress: 0.001
 
 # 向听番数加权 — 与 competitive 保持一致
@@ -96,7 +96,7 @@ shanten_fan_max: 8.0
 
 # 排名奖励 — 血战麻将的核心目标是排名而非单局得分
 # 与 competitive.yaml 保持一致，持续强化排名意识
-reward_rank_bonus: 0.15             # score-weighted: effective ∈ [0.04, 0.15]
+reward_rank_bonus: 0.3              # Fix @671K: 从 0.15 提升到 0.3，增加奖励方差和排名意识
 
 # 安全弃牌奖励 — 补充防守信号
 # 与 competitive.yaml 保持一致
@@ -114,8 +114,8 @@ rnn_num_layers: 2
 rollout: 32
 recurrence: 32
 
-# Advantage clipping — same as Phase 2a
-adv_clip: 2.0
+# Advantage clipping — DISABLED to restore learning signal
+adv_clip: 0.0                          # Fix @671K: 从 2.0 改为 0.0，优势标准差已极低(0.30)，移除裁剪恢复信号
 
 # Dynamic hyperparameter schedules
 # Entropy: cosine decay from 0.05 → 0.02 over 4M steps
