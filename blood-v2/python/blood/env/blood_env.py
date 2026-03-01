@@ -113,6 +113,7 @@ from blood.consts import (
     NUM_STUDENT_CHANNELS, NUM_ORACLE_CHANNELS,
     OBS_SIZE, ORACLE_OBS_SIZE,
     INITIAL_SCORE,
+    sqrt_compress_reward,
 )
 
 
@@ -270,11 +271,11 @@ class BloodMahjongEnv(gym.Env):
                 obs_dict = None
 
         if obs_dict is not None:
-            obs = np.array(obs_dict["obs"], dtype=np.float32)
-            oracle = np.array(obs_dict["oracle_obs"], dtype=np.float32)
-            mask = np.array(obs_dict["action_mask"], dtype=np.float32)
-            shanten = np.array(obs_dict["shanten_labels"], dtype=np.float32)
-            ow = np.array(obs_dict["ow_labels"], dtype=np.float32)
+            obs = np.asarray(obs_dict["obs"], dtype=np.float32)
+            oracle = np.asarray(obs_dict["oracle_obs"], dtype=np.float32)
+            mask = np.asarray(obs_dict["action_mask"], dtype=np.float32)
+            shanten = np.asarray(obs_dict["shanten_labels"], dtype=np.float32)
+            ow = np.asarray(obs_dict["ow_labels"], dtype=np.float32)
         else:
             obs, oracle, mask, shanten, ow = self._dummy_obs()
             mask[31:34] = 1.0
@@ -310,7 +311,7 @@ class BloodMahjongEnv(gym.Env):
             # Apply sqrt compression to match SelfPlayEnv reward scale (Issue #R9-C3).
             # Rust returns linear: delta / REWARD_NORM. Sqrt compression reduces the
             # 32:1 ratio between 1-fan and 6-fan to ~5.6:1, stabilizing value learning.
-            reward = float(np.sign(reward) * np.sqrt(abs(reward)))
+            reward = sqrt_compress_reward(float(reward))
         except TimeoutError as e:
             log.error("FATAL: %s — Rust engine hung in step(). Entering cooldown.", e)
             _rust_engine_on_timeout()
@@ -323,11 +324,11 @@ class BloodMahjongEnv(gym.Env):
             obs, oracle, mask, shanten, ow = self._dummy_obs()
             return {"obs": obs, "oracle_obs": oracle, "action_mask": mask, "shanten_labels": shanten, "ow_labels": ow}, 0.0, True, False, {}
 
-        obs = np.array(obs_dict["obs"], dtype=np.float32)
-        oracle = np.array(obs_dict["oracle_obs"], dtype=np.float32)
-        mask = np.array(obs_dict["action_mask"], dtype=np.float32)
-        shanten = np.array(obs_dict["shanten_labels"], dtype=np.float32)
-        ow = np.array(obs_dict["ow_labels"], dtype=np.float32)
+        obs = np.asarray(obs_dict["obs"], dtype=np.float32)
+        oracle = np.asarray(obs_dict["oracle_obs"], dtype=np.float32)
+        mask = np.asarray(obs_dict["action_mask"], dtype=np.float32)
+        shanten = np.asarray(obs_dict["shanten_labels"], dtype=np.float32)
+        ow = np.asarray(obs_dict["ow_labels"], dtype=np.float32)
 
         return {
             "obs": self._apply_augment_obs(obs),

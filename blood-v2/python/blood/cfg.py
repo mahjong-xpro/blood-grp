@@ -167,7 +167,7 @@ def add_blood_args(parser: ArgumentParser):
 
     # ISMCE
     p.add_argument("--ismce_enabled", default=False, action="store_true")
-    p.add_argument("--ismce_num_worlds", type=int, default=64,
+    p.add_argument("--ismce_num_worlds", type=int, default=96,
                     help="Number of world samples for ISMCE")
     p.add_argument("--ismce_rollout_depth", type=int, default=4,
                     help="Rollout depth for ISMCE playout")

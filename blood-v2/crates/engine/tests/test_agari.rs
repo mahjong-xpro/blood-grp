@@ -106,7 +106,7 @@ fn test_qingyise() {
 #[test]
 fn test_daiyaojiu() {
     // 123m 789m 111p 999p + 11m
-    let hand = build_hand(&[
+    let _hand = build_hand(&[
         (0, 3), (1, 1), (2, 1),  // 111m + part of 123m
         (6, 1), (7, 1), (8, 1),  // 789m
         (9, 3),                   // 111p
@@ -254,7 +254,7 @@ fn test_max_fan_cap() {
 #[test]
 fn test_ding_que_violation() {
     // Has sou tiles but ding_que is sou → cannot win
-    let mut hand = build_hand(&[
+    let hand = build_hand(&[
         (0, 1), (1, 1), (2, 1),
         (3, 1), (4, 1), (5, 1),
         (6, 1), (7, 1), (8, 1),
@@ -342,4 +342,91 @@ fn test_jiaxinwu_rejected_no_456_shuntsu() {
     // gen_count should be 1 (four 5m's)
     assert!(!result.jiaxinwu, "no 456 shuntsu in division → no jiaxinwu");
     assert!(result.gen_count >= 1);
+}
+
+// --- Test: Jingoudiao (M2) ---
+
+#[test]
+fn test_jingoudiao() {
+    // Jingoudiao (金钩钓): 4 melds + single tile pair in hand.
+    // Hand: just a pair (2 tiles), with 4 melds.
+    // Example: pon(111m) pon(222m) pon(333p) pon(444p) + 55m pair
+    let hand = build_hand(&[
+        (4, 2), // 55m pair
+    ]);
+    let melds = vec![
+        MeldType::Pon(0),  // 111m
+        MeldType::Pon(1),  // 222m
+        MeldType::Pon(11), // 333p
+        MeldType::Pon(12), // 444p
+    ];
+    let ctx = make_ctx(hand, melds, 4, true); // ron 5m
+    let result = calc_fan(&ctx).expect("jingoudiao should win");
+    assert!(result.jingoudiao, "should detect jingoudiao (4 melds + pair)");
+    assert!(result.toitoi, "jingoudiao should also be toitoi (all triplets)");
+    // Fan: pinghu(1) + toitoi(1) + jingoudiao(1) = 3 (no menqing since open melds)
+    assert!(
+        result.fan >= 3,
+        "jingoudiao + toitoi should be at least 3 fan, got {}",
+        result.fan
+    );
+}
+
+// --- Test: Combined yaku stacking (M3) ---
+
+#[test]
+fn test_combined_yaku_stacking() {
+    // Qingyise + toitoi + tsumo = 5 fan
+    // All man tiles, all triplets: 111m 222m 333m + pon(444m) + 55m pair
+    let hand = build_hand(&[
+        (0, 3), // 111m
+        (1, 3), // 222m
+        (2, 3), // 333m
+        (4, 2), // 55m pair
+    ]);
+    let melds = vec![
+        MeldType::Pon(3), // 444m (open pon)
+    ];
+    let mut ctx = make_ctx(hand, melds, 4, false); // tsumo 5m
+    ctx.ding_que = Some(Suit::Sou); // lack sou
+
+    let result = calc_fan(&ctx).expect("combined yaku should win");
+    assert!(result.qingyise, "should detect qingyise (all man)");
+    assert!(result.toitoi, "should detect toitoi (all triplets)");
+    assert!(result.tsumo, "should detect tsumo");
+    // Fan: pinghu(1) + tsumo(1) + qingyise(2) + toitoi(1) = 5
+    // No menqing because of open pon
+    assert_eq!(
+        result.fan, 5,
+        "qingyise(2) + toitoi(1) + tsumo(1) + pinghu(1) = 5 fan, got {}",
+        result.fan
+    );
+}
+
+// --- Test: Gangshangpao (M3) ---
+
+#[test]
+fn test_gangshangpao() {
+    // Gangshangpao (杠上炮): ron on a tile discarded after a kan draw.
+    // is_kan_discard=true + is_ron=true → gangshangpao
+    let hand = build_hand(&[
+        (0, 1), (1, 1), (2, 1),   // 123m
+        (3, 1), (4, 1), (5, 1),   // 456m
+        (6, 1), (7, 1), (8, 1),   // 789m
+        (9, 1), (10, 1), (11, 1), // 123p
+        (12, 2),                   // 44p pair
+    ]);
+    let mut ctx = make_ctx(hand, vec![], 0, true); // ron 1m
+    ctx.is_kan_discard = true; // the discard came after a kan draw
+    ctx.ding_que = Some(Suit::Sou);
+
+    let result = calc_fan(&ctx).expect("gangshangpao should win");
+    assert!(result.gangshangpao, "should detect gangshangpao");
+    assert!(!result.gangshanghua, "should not be gangshanghua (that's tsumo after kan)");
+    // Fan: pinghu(1) + menqing(1) + gangshangpao(1) = 3 (ron, no tsumo)
+    assert!(
+        result.fan >= 3,
+        "gangshangpao should add +1 fan, got total {}",
+        result.fan
+    );
 }

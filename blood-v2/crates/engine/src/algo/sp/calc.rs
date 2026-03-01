@@ -275,9 +275,23 @@ impl SPCalculator {
 
                 this_outs += wt_avail;
 
-                // 用实际番型计算得分：hh 已是 14 张（13+eff_t），直接作为和牌手牌
-                // 不再 add_tile(wt)，否则变成 15 张导致 calc_fan 返回 None (Issue #R7-C1)
-                let score = self.get_win_score(&hh, wt, false);
+                // Fix: hh is 14 tiles (tenpai), not complete. To score, we need
+                // a 14-tile complete hand. Strategy: remove eff_t, add wt.
+                // If that's complete, score it. Otherwise try all discards from hh.
+                let score = {
+                    let mut trial = *hand; // original 13-tile hand
+                    add_tile(&mut trial, wt);
+                    let s = self.get_win_score(&trial, wt, false);
+                    if s > 0 {
+                        s
+                    } else {
+                        // Fallback: try removing eff_t from hh, add wt
+                        let mut trial2 = hh;
+                        remove_tile(&mut trial2, eff_t);
+                        add_tile(&mut trial2, wt);
+                        self.get_win_score(&trial2, wt, false)
+                    }
+                };
                 this_weighted_score += score as f64 * wt_avail as f64;
             }
 

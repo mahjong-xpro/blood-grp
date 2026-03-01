@@ -21,7 +21,7 @@ use engine::algo::ismce::{self, IsmceConfig, PlayerInfo, OpponentInfo, OpponentD
 #[pyfunction]
 #[pyo3(signature = (hand, melds_count, ding_que, tiles_seen, candidates, wall_remaining, num_worlds=64, rollout_depth=4, base_seed=0))]
 pub fn ismce_evaluate(
-    _py: Python<'_>,
+    py: Python<'_>,
     hand: PyReadonlyArray1<u8>,
     melds_count: usize,
     ding_que: i8,
@@ -76,7 +76,9 @@ pub fn ismce_evaluate(
         base_seed,
     };
 
-    let results = ismce::evaluate_discards(&info, &candidates, &config);
+    let results = py.allow_threads(|| {
+        ismce::evaluate_discards(&info, &candidates, &config)
+    });
 
     Ok(results
         .iter()
@@ -113,7 +115,7 @@ pub fn ismce_evaluate(
                     opponent_ding_que, opponent_meld_counts, opponent_discard_counts,
                     opponent_discards, num_worlds=64, rollout_depth=4, base_seed=0))]
 pub fn ismce_evaluate_full(
-    _py: Python<'_>,
+    py: Python<'_>,
     hand: PyReadonlyArray1<u8>,
     melds_count: usize,
     ding_que: i8,
@@ -149,6 +151,28 @@ pub fn ismce_evaluate_full(
                 format!("candidate tile {} out of range [0, {})", c, NUM_TILE_TYPES)
             ));
         }
+    }
+
+    // Fix M12: validate opponent info vectors have exactly 3 elements
+    if opponent_ding_que.len() != 3 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            format!("opponent_ding_que must have exactly 3 elements, got {}", opponent_ding_que.len())
+        ));
+    }
+    if opponent_meld_counts.len() != 3 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            format!("opponent_meld_counts must have exactly 3 elements, got {}", opponent_meld_counts.len())
+        ));
+    }
+    if opponent_discard_counts.len() != 3 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            format!("opponent_discard_counts must have exactly 3 elements, got {}", opponent_discard_counts.len())
+        ));
+    }
+    if opponent_discards.len() != 3 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            format!("opponent_discards must have exactly 3 elements, got {}", opponent_discards.len())
+        ));
     }
 
     let mut h = [0u8; NUM_TILE_TYPES];
@@ -219,9 +243,11 @@ pub fn ismce_evaluate_full(
         opponent_discards.get(2).cloned().unwrap_or_default(),
     ];
 
-    let results = ismce::evaluate_discards_full(
-        &info, &candidates, &opponents, &opp_disc, &danger_infos, &config,
-    );
+    let results = py.allow_threads(|| {
+        ismce::evaluate_discards_full(
+            &info, &candidates, &opponents, &opp_disc, &danger_infos, &config,
+        )
+    });
 
     Ok(results
         .iter()
@@ -246,7 +272,7 @@ pub fn ismce_evaluate_full(
                     opponent_discards, opponent_hand_probs,
                     num_worlds=64, rollout_depth=4, base_seed=0))]
 pub fn ismce_evaluate_informed(
-    _py: Python<'_>,
+    py: Python<'_>,
     hand: PyReadonlyArray1<u8>,
     melds_count: usize,
     ding_que: i8,
@@ -283,6 +309,28 @@ pub fn ismce_evaluate_informed(
                 format!("candidate tile {} out of range [0, {})", c, NUM_TILE_TYPES)
             ));
         }
+    }
+
+    // Fix M12: validate opponent info vectors have exactly 3 elements
+    if opponent_ding_que.len() != 3 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            format!("opponent_ding_que must have exactly 3 elements, got {}", opponent_ding_que.len())
+        ));
+    }
+    if opponent_meld_counts.len() != 3 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            format!("opponent_meld_counts must have exactly 3 elements, got {}", opponent_meld_counts.len())
+        ));
+    }
+    if opponent_discard_counts.len() != 3 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            format!("opponent_discard_counts must have exactly 3 elements, got {}", opponent_discard_counts.len())
+        ));
+    }
+    if opponent_discards.len() != 3 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            format!("opponent_discards must have exactly 3 elements, got {}", opponent_discards.len())
+        ));
     }
 
     let mut h = [0u8; NUM_TILE_TYPES];
@@ -337,9 +385,11 @@ pub fn ismce_evaluate_informed(
         }
     }
 
-    let results = ismce::evaluate_discards_informed(
-        &info, &candidates, &opponents, &opp_disc, &danger_infos, &config, &probs,
-    );
+    let results = py.allow_threads(|| {
+        ismce::evaluate_discards_informed(
+            &info, &candidates, &opponents, &opp_disc, &danger_infos, &config, &probs,
+        )
+    });
 
     Ok(results
         .iter()
@@ -410,7 +460,9 @@ pub fn ismce_danger<'py>(
         }
     }
 
-    let danger = ismce::danger_scores_enhanced(&s, &opp_discards, wall_remaining, &danger_infos);
+    let danger = py.allow_threads(|| {
+        ismce::danger_scores_enhanced(&s, &opp_discards, wall_remaining, &danger_infos)
+    });
 
     Ok(PyArray1::from_vec_bound(py, danger.to_vec()))
 }

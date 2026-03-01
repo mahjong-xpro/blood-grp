@@ -8,16 +8,19 @@ use crate::state::board::BoardState;
 use super::student::encode_student_obs;
 
 /// Cache key for opponent SP results.
-/// Keyed on hand state + meld count + tiles_left.
-/// Intentionally omits `tiles_seen` — it changes on every discard but has
-/// minimal impact on SP results (±1 tile visibility). `tiles_left` captures
-/// the most impactful change. This is a deliberate trade-off: slightly stale
-/// SP results in exchange for ~50% reduction in SP computation.
+/// Keyed on hand state + meld count + tiles_left + tiles_seen.
+///
+/// Fix M8: include `tiles_seen` in the cache key. SP calculation uses
+/// tiles_seen to determine which tiles remain available for draws, so
+/// omitting it could return stale results when visibility changes but
+/// hand/melds/tiles_left stay the same (e.g. another player discards
+/// a tile the opponent needs).
 #[derive(Hash, Eq, PartialEq, Clone)]
 pub struct OppSpCacheKey {
     pub tehai: [u8; NUM_TILE_TYPES],
     pub num_melds: usize,
     pub tiles_left: usize,
+    pub tiles_seen: [u8; NUM_TILE_TYPES],
 }
 
 /// Cached SP result for one opponent.
@@ -92,6 +95,7 @@ pub fn encode_oracle_obs(
             tehai: opp.hand,
             num_melds: opp.melds.len(),
             tiles_left: board.wall_remaining(),
+            tiles_seen: opp.tiles_seen,
         };
 
         // Check cache first

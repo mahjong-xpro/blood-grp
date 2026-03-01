@@ -149,3 +149,15 @@ except ImportError:
 TILES_PER_SUIT = NUM_TILE_TYPES // 3  # 9
 OBS_SIZE = NUM_STUDENT_CHANNELS * NUM_TILE_TYPES
 ORACLE_OBS_SIZE = NUM_ORACLE_CHANNELS * NUM_TILE_TYPES
+
+
+# ── Reward utilities ─────────────────────────────────────────────────────────
+
+def sqrt_compress_reward(raw_reward: float) -> float:
+    """Apply sqrt compression to a normalized reward.
+
+    Reduces the 32:1 ratio between 1-fan and 6-fan to ~5.6:1,
+    stabilizing value learning. Input should already be divided by REWARD_NORM.
+    """
+    import math
+    return math.copysign(math.sqrt(abs(raw_reward)), raw_reward)

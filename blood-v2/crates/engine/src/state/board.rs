@@ -416,6 +416,24 @@ impl BoardState {
                 return;
             }
 
+            // Fix M17: Jishiyu (及时雨) detection for kakan.
+            //
+            // INVARIANT: `last_drawn_tile` must be `Some(tile)` iff the player
+            // drew `tile` this turn and is now adding it to an existing Pon.
+            // This is set by:
+            //   - advance_to_next_draw (normal draw)
+            //   - execute_kan → draw_from_back (rinshan draw after a prior kan)
+            //   - execute_minkan → draw_from_back (rinshan draw after minkan)
+            // It is cleared by:
+            //   - do_discard (sets to None after discarding)
+            //
+            // Edge case: after a Pon, last_drawn_tile is NOT set (Pon doesn't
+            // draw from wall), so a kakan immediately after Pon→Discard→SelfCheck
+            // cannot be jishiyu. This is correct: jishiyu requires the tile to
+            // come from the wall (自摸), not from a previous meld action.
+            //
+            // Defensive guard: if last_drawn_tile is None (shouldn't happen in
+            // normal flow since SelfCheck requires a draw), treat as non-jishiyu.
             let drawn = p.last_drawn_tile;
             let is_jishiyu = drawn == Some(tile);
 
@@ -543,7 +561,12 @@ impl BoardState {
                 let candidates = self.players[player_id].discard_candidates();
                 match candidates.first() {
                     Some(&t) => t,
-                    None => return,
+                    None => {
+                        // No legal discards — should never happen in a valid game state.
+                        // Force scoring to prevent infinite stall.
+                        self.phase = Phase::Scoring;
+                        return;
+                    }
                 }
             }
         };
@@ -559,6 +582,9 @@ impl BoardState {
                 if fallback != tile {
                     self.do_discard(player_id, fallback);
                 }
+            } else {
+                // No legal discards — force scoring to prevent infinite stall.
+                self.phase = Phase::Scoring;
             }
             return;
         }
@@ -895,6 +921,10 @@ impl BoardState {
     }
 
     /// End-of-game scoring: 查花猪 + 查大叫
+    ///
+    /// Callers MUST invoke this when `self.phase == Phase::Scoring` to transition
+    /// to `Phase::Done`. The engine does not auto-finalize because the Python
+    /// wrapper needs to capture the pre-scoring state for observations first.
     pub fn finalize_scoring(&mut self) {
         // 查花猪: players who haven't completed ding que pay max hand to each tenpai player
         let mut hua_zhu = Vec::new(); // players with ding que tiles remaining

@@ -233,12 +233,20 @@ class BloodActorCritic(ActorCriticSharedWeights):
                 T = recurrence
                 seq = core_output.view(B, T, dim)
                 core_output = self.turn_attention.forward_causal(seq).reshape(total, dim)
+            elif total > 1 and total % recurrence != 0:
+                # Non-aligned batch: pad to nearest multiple, apply, then trim
+                pad_len = recurrence - (total % recurrence)
+                padded = torch.nn.functional.pad(core_output, (0, 0, 0, pad_len))
+                B = padded.shape[0] // recurrence
+                T = recurrence
+                seq = padded.view(B, T, dim)
+                out = self.turn_attention.forward_causal(seq).reshape(padded.shape[0], dim)
+                core_output = out[:total]
             elif total == 1:
                 # Single-sample inference: self-attend (identity due to zero-init)
                 core_output = self.turn_attention(
                     core_output.unsqueeze(1), core_output.unsqueeze(1)
                 ).squeeze(1)
-            # else: non-aligned batch — skip TurnAttention to avoid cross-contamination
 
         self._cached_core_out = core_output  # post-TurnAttention features for AuxHead
         actor_features = self.actor_head(core_output)

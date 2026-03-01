@@ -45,7 +45,7 @@ pub struct IsmceConfig {
 impl Default for IsmceConfig {
     fn default() -> Self {
         Self {
-            num_worlds: 64,
+            num_worlds: 96,         // 96 worlds: 95% CI ≈ ±3% for 10% win rate
             rollout_depth: 8,       // v2: 4 → 8 for deeper lookahead
             base_seed: 0,
         }
@@ -79,6 +79,9 @@ pub struct OpponentInfo {
 /// - 对手已定缺的花色不分配给该对手（硬约束）
 /// - 对手已打出的牌不分配给该对手（隐含在 tiles_seen 中）
 /// - 剩余牌按约束分配给各对手和牌山
+/// - Fix M5: retry with different shuffles (up to 3 attempts) when ding_que
+///   constraints are too tight, to avoid creating illegal worlds where an
+///   opponent holds tiles of their ding_que suit.
 fn sample_world_constrained(
     info: &PlayerInfo,
     opponents: &[OpponentInfo],
@@ -97,68 +100,82 @@ fn sample_world_constrained(
         }
     }
 
-    // Fisher-Yates 洗牌
-    let n = pool.len();
-    for i in (1..n).rev() {
-        let j = rng.usize(..=i);
-        pool.swap(i, j);
-    }
-
-    // 为每个对手分配手牌（考虑定缺约束）
-    let mut opp_hands: Vec<Vec<Tile>> = opponents.iter().map(|_| Vec::new()).collect();
-    let mut remaining_pool: Vec<Tile> = Vec::new();
-
-    // 第一轮：为每个对手从池中挑选合法牌
-    let mut used = vec![false; pool.len()];
-
-    // Fix R10-M1: randomize opponent processing order to avoid systematic bias
-    // (opponent 2 previously always got leftover tiles after 0 and 1's ding-que filters)
     let num_opp = opponents.len();
-    let mut opp_order: Vec<usize> = (0..num_opp).collect();
-    for i in (1..opp_order.len()).rev() {
-        let j = rng.usize(..=i);
-        opp_order.swap(i, j);
-    }
+    const MAX_RETRIES: usize = 3;
 
-    for &opp_idx in &opp_order {
-        let opp = &opponents[opp_idx];
-        let needed = opp.hand_count as usize;
-        let mut assigned = 0usize;
+    for attempt in 0..MAX_RETRIES {
+        let is_last_attempt = attempt == MAX_RETRIES - 1;
 
-        for (pool_idx, &tile) in pool.iter().enumerate() {
-            if assigned >= needed { break; }
-            if used[pool_idx] { continue; }
-
-            // 定缺约束：不分配定缺花色的牌给该对手
-            if ding_que::is_ding_que_tile(opp.ding_que, tile) {
-                continue;
-            }
-
-            used[pool_idx] = true;
-            opp_hands[opp_idx].push(tile);
-            assigned += 1;
+        // Fisher-Yates 洗牌 (each attempt uses a different permutation)
+        let n = pool.len();
+        for i in (1..n).rev() {
+            let j = rng.usize(..=i);
+            pool.swap(i, j);
         }
 
-        // 如果约束过强导致无法分配足够的牌，放宽约束从剩余牌中补充
-        if assigned < needed {
+        // 为每个对手分配手牌（考虑定缺约束）
+        let mut opp_hands: Vec<Vec<Tile>> = opponents.iter().map(|_| Vec::new()).collect();
+        let mut used = vec![false; pool.len()];
+
+        // Fix R10-M1: randomize opponent processing order to avoid systematic bias
+        let mut opp_order: Vec<usize> = (0..num_opp).collect();
+        for i in (1..opp_order.len()).rev() {
+            let j = rng.usize(..=i);
+            opp_order.swap(i, j);
+        }
+
+        let mut any_violated = false;
+
+        for &opp_idx in &opp_order {
+            let opp = &opponents[opp_idx];
+            let needed = opp.hand_count as usize;
+            let mut assigned = 0usize;
+
+            // Constrained pass: only assign non-ding_que tiles
             for (pool_idx, &tile) in pool.iter().enumerate() {
                 if assigned >= needed { break; }
                 if used[pool_idx] { continue; }
+
+                if ding_que::is_ding_que_tile(opp.ding_que, tile) {
+                    continue;
+                }
+
                 used[pool_idx] = true;
                 opp_hands[opp_idx].push(tile);
                 assigned += 1;
             }
+
+            if assigned < needed {
+                if is_last_attempt {
+                    // Final attempt: fall back to assigning ding_que tiles
+                    // to avoid returning an incomplete hand.
+                    for (pool_idx, &tile) in pool.iter().enumerate() {
+                        if assigned >= needed { break; }
+                        if used[pool_idx] { continue; }
+                        used[pool_idx] = true;
+                        opp_hands[opp_idx].push(tile);
+                        assigned += 1;
+                    }
+                } else {
+                    any_violated = true;
+                    break;
+                }
+            }
         }
+
+        // If no opponent got ding_que tiles, we have a legal world
+        if !any_violated {
+            let remaining_pool: Vec<Tile> = pool.iter().enumerate()
+                .filter(|(idx, _)| !used[*idx])
+                .map(|(_, &tile)| tile)
+                .collect();
+            return (opp_hands, remaining_pool);
+        }
+        // Otherwise retry with a new shuffle
     }
 
-    // 剩余未分配的牌作为牌山
-    for (pool_idx, &tile) in pool.iter().enumerate() {
-        if !used[pool_idx] {
-            remaining_pool.push(tile);
-        }
-    }
-
-    (opp_hands, remaining_pool)
+    // Unreachable: the last attempt always succeeds (uses fallback)
+    unreachable!()
 }
 
 /// 信息引导的世界采样：使用对手手牌概率分布加权分配
@@ -389,6 +406,18 @@ fn estimate_fan_quick(hand: &HandCounts, melds_count: usize, is_tsumo: bool) -> 
         // Hand portion: triplets + 1 pair; total with melds: triplets + melds >= 4
         if is_toitoi && pairs == 1 && triplets + melds_count as u8 >= 4 {
             fan += 1;
+        }
+    }
+
+    // 一条龙 (+1): 123+456+789 of one suit (requires menqing)
+    if melds_count == 0 {
+        for suit in 0..3 {
+            let base = suit * TILES_PER_SUIT;
+            let has_dragon = (0..9).all(|r| hand[base + r] >= 1);
+            if has_dragon {
+                fan += 1;
+                break;
+            }
         }
     }
 
@@ -1028,7 +1057,7 @@ mod tests {
             (12, 2),                   // 44p pair
         ]);
         let fan = estimate_fan_quick(&hand, 0, true);
-        // pinghu(1) + tsumo(1) + menqing(1) = 3, no duanyaojiu
-        assert_eq!(fan, 3, "should not have duanyaojiu with terminals, got {}", fan);
+        // pinghu(1) + tsumo(1) + menqing(1) + yitiaolong(1) = 4, no duanyaojiu
+        assert_eq!(fan, 4, "should not have duanyaojiu with terminals, got {}", fan);
     }
 }

@@ -21,6 +21,16 @@ from sample_factory.algo.learning.learner import Learner
 
 log = logging.getLogger(__name__)
 
+# Verify SF2 API compatibility — the monkey-patch depends on internal signatures
+try:
+    import sample_factory
+    _sf2_ver = getattr(sample_factory, "__version__", "unknown")
+    if _sf2_ver != "unknown" and not _sf2_ver.startswith("2.0"):
+        log.warning("[LearnerPatch] sample-factory %s detected; patches tested with 2.0.x. "
+                    "Internal API changes may break training.", _sf2_ver)
+except Exception:
+    pass
+
 # Store original methods before patching
 _original_calculate_losses = Learner._calculate_losses
 _original_load_state = Learner._load_state
@@ -29,7 +39,6 @@ _original_train = Learner.train
 # Lazy-initialized state (per-process)
 _loss_computer = None
 _scheduler = None
-_grad_scaler = None  # For mixed precision training
 
 
 def _get_loss_computer(cfg):
@@ -55,27 +64,16 @@ def _get_scheduler(cfg):
     return _scheduler
 
 
-def _get_grad_scaler(cfg):
-    """Get or create GradScaler for mixed precision training."""
-    global _grad_scaler
-    if _grad_scaler is None and getattr(cfg, "use_mixed_precision", False):
-        if torch.cuda.is_available():
-            _grad_scaler = torch.amp.GradScaler('cuda')
-            log.info("[LearnerPatch] Mixed precision training enabled (FP16)")
-        else:
-            log.warning("[LearnerPatch] Mixed precision requested but CUDA not available, using FP32")
-    return _grad_scaler
-
-
 def _patched_calculate_losses(self, mb, num_invalids):
     """Patched version of Learner._calculate_losses with Blood custom losses and mixed precision."""
     # Get or create per-process singletons
     loss_computer = _get_loss_computer(self.cfg)
     scheduler = _get_scheduler(self.cfg)
-    grad_scaler = _get_grad_scaler(self.cfg)
-    
-    # Mixed precision context
-    use_amp = grad_scaler is not None
+
+    # Mixed precision: use autocast only (SF2's optimizer handles gradient scaling).
+    # GradScaler is NOT needed here — autocast alone provides FP16 speedup for
+    # forward/backward, and SF2's optimizer.step() works correctly with FP32 master weights.
+    use_amp = getattr(self.cfg, "use_mixed_precision", False) and torch.cuda.is_available()
     autocast_ctx = torch.amp.autocast('cuda') if use_amp else torch.nullcontext()
     
     # Apply scheduled hyperparameter updates
@@ -133,6 +131,19 @@ def _patched_load_state(self, checkpoint_dict, load_progress=True):
         model_sd = checkpoint_dict.get("model", {})
         if model_sd:
             missing, unexpected = self.actor_critic.load_state_dict(model_sd, strict=False)
+
+            # Sanity check: if less than 50% of keys matched, the checkpoint is
+            # likely from an incompatible architecture — warn loudly.
+            loaded = len(model_sd) - len(unexpected)
+            total_current = len(dict(self.actor_critic.named_parameters()))
+            overlap_ratio = loaded / max(len(model_sd), 1)
+            if overlap_ratio < 0.5:
+                log.warning(
+                    "Cross-phase load: only %.0f%% of checkpoint keys matched (%d/%d). "
+                    "This may indicate an incompatible architecture.",
+                    overlap_ratio * 100, loaded, len(model_sd),
+                )
+
             if missing:
                 log.info("Cross-phase load: %d missing keys (new layers, randomly initialized)", len(missing))
                 for k in missing[:5]:
@@ -143,8 +154,8 @@ def _patched_load_state(self, checkpoint_dict, load_progress=True):
                 log.info("Cross-phase load: %d unexpected keys (skipped)", len(unexpected))
                 for k in unexpected[:5]:
                     log.info("  unexpected: %s", k)
-            loaded = len(model_sd) - len(unexpected)
-            log.info("Cross-phase load: transferred %d/%d weights", loaded, len(model_sd))
+            log.info("Cross-phase load: transferred %d/%d weights (%.0f%% overlap)",
+                     loaded, len(model_sd), overlap_ratio * 100)
 
             # Load optimizer state
             opt_state = checkpoint_dict.get("optimizer")

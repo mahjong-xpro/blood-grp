@@ -181,10 +181,12 @@ def _extract_opponent_state(obs: np.ndarray) -> dict:
 class NeuralAgent:
     """Agent that uses a PolicyModel for action selection."""
 
-    def __init__(self, model: PolicyModel, device: str = "cpu", temperature: float = 0.1):
+    def __init__(self, model: PolicyModel, device: str = "cpu", temperature: float = 0.1,
+                 rng: np.random.Generator | None = None):
         self.model = model
         self.device = device
         self.temperature = temperature
+        self._rng = rng if rng is not None else np.random.default_rng()
         self._rtpa = None
         self._ismce = None
         self._env_ref = None
@@ -315,24 +317,27 @@ class NeuralAgent:
                 wall_remaining=ctx["wall_remaining"],
             )
             probs = _softmax(logits)
-            return int(np.random.choice(ACTION_SPACE, p=probs))
+            return int(self._rng.choice(ACTION_SPACE, p=probs))
 
         # ── 第四步：纯策略网络（无 RTPA 无 ISMCE）──
         logits[mask < 0.5] = -1e38  # safe for both float32 and float16
         logits /= max(self.temperature, 1e-8)
         probs = _softmax(logits)
-        return int(np.random.choice(ACTION_SPACE, p=probs))
+        return int(self._rng.choice(ACTION_SPACE, p=probs))
 
 
 class RandomAgent:
     """Uniform random legal action agent (for baseline comparison)."""
+
+    def __init__(self, rng: np.random.Generator | None = None):
+        self._rng = rng if rng is not None else np.random.default_rng()
 
     def __call__(self, obs_dict) -> int:
         mask = obs_dict["action_mask"]
         legal = np.where(mask > 0.5)[0]
         if len(legal) == 0:
             return 30  # Pass
-        return int(np.random.choice(legal))
+        return int(self._rng.choice(legal))
 
 
 
@@ -351,7 +356,8 @@ def run_evaluation(
 
     if checkpoint_path:
         model = PolicyModel.from_sf2_checkpoint(checkpoint_path)
-        agent = NeuralAgent(model, temperature=temperature)
+        agent_rng = np.random.default_rng(seed)
+        agent = NeuralAgent(model, temperature=temperature, rng=agent_rng)
         if use_rtpa:
             agent.enable_rtpa()
         if use_ismce:
@@ -359,7 +365,7 @@ def run_evaluation(
         agent_fn = agent
         agent_name = f"Neural({Path(checkpoint_path).stem})"
     else:
-        agent_fn = RandomAgent()
+        agent_fn = RandomAgent(rng=np.random.default_rng(seed))
         agent_name = "Random"
 
     log.info("Evaluating %s vs %s (%d games, seed=%d)", agent_name, baseline, num_games, seed)

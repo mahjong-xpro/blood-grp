@@ -129,6 +129,7 @@ pub fn calc_fan(ctx: &WinContext) -> Option<FanResult> {
         if is_valid_chitoi(&ctx.tehai) {
             let chitoi_fan = calc_chitoi_fan(ctx, gen_count);
             if chitoi_fan > best_fan {
+                best_fan = chitoi_fan;
                 result.qidui = true;
                 result.toitoi = false;
                 result.jingoudiao = false;

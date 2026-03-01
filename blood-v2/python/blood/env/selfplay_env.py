@@ -18,7 +18,7 @@ from .blood_env import (
     BloodMahjongEnv, NUM_TILE_TYPES, ACTION_SPACE,
     OBS_SIZE, NUM_STUDENT_CHANNELS,
 )
-from blood.consts import REWARD_NORM
+from blood.consts import REWARD_NORM, sqrt_compress_reward
 from blood.model.inference import OpponentModelPool
 from blood.training.league import LeagueManager
 
@@ -34,7 +34,7 @@ def _score_delta_to_fan(delta: float) -> int:
     calc_score(fan) = 1000 * 2^(fan-1), capped at 6 fan = 32000.
     Tsumo: delta = score_per_player * N_payers (3, 2, or 1 depending on win_count).
     Ron:   delta = score_per_player * 1 (1 payer).
-    Returns 0 if unclear.
+    Returns best-guess fan (1 if no exact match found).
     """
     if delta <= 0:
         return 0
@@ -46,7 +46,14 @@ def _score_delta_to_fan(delta: float) -> int:
             expected = 1000 * (1 << (fan - 1))
             if abs(per_payer - expected) < 50:
                 return fan
-    return 0
+    # Fallback: estimate fan from magnitude (log2 approximation)
+    import math
+    for divisor in (3, 2, 1):
+        per_payer = delta / divisor
+        if per_payer >= 500:  # minimum plausible payment
+            estimated = 1 + int(math.log2(per_payer / 1000))
+            return max(1, min(6, estimated))
+    return 1
 
 
 class SelfPlayEnv(BloodMahjongEnv):
@@ -197,16 +204,23 @@ class SelfPlayEnv(BloodMahjongEnv):
     def _opp_action(self, player_id: int) -> int:
         """Get an opponent's action using the neural model or fallback."""
         obs_dict = self._env.get_player_obs(player_id)
-        obs = torch.as_tensor(np.array(obs_dict["obs"], dtype=np.float32))
-        mask = torch.as_tensor(np.array(obs_dict["action_mask"], dtype=np.float32))
+        obs = torch.as_tensor(np.asarray(obs_dict["obs"], dtype=np.float32))
+        mask = torch.as_tensor(np.asarray(obs_dict["action_mask"], dtype=np.float32))
         return self._opp_pool.get_action(obs, mask, opponent_id=player_id)
 
     def _advance_external_opponents(self):
         """Drive the game forward through all opponent decision points."""
+        import time
         agent = 0
         prev_state = None
+        deadline = time.monotonic() + 10.0  # 10s wall-clock timeout
         for _ in range(MAX_LOOP_GUARD):
             if self._env.is_done():
+                break
+
+            if time.monotonic() > deadline:
+                log.warning("_advance_external_opponents: wall-clock timeout; forcing scoring")
+                self._env.finalize_scoring()
                 break
 
             phase = self._env.get_phase()
@@ -320,11 +334,11 @@ class SelfPlayEnv(BloodMahjongEnv):
             self._advance_external_opponents()
 
             obs_dict = self._env.get_player_obs(0)
-            obs = np.array(obs_dict["obs"], dtype=np.float32)
-            mask = np.array(obs_dict["action_mask"], dtype=np.float32)
-            oracle_obs = np.array(self._env.get_oracle_obs(), dtype=np.float32)
+            obs = np.asarray(obs_dict["obs"], dtype=np.float32)
+            mask = np.asarray(obs_dict["action_mask"], dtype=np.float32)
+            oracle_obs = np.asarray(self._env.get_oracle_obs(), dtype=np.float32)
             shanten, ow = self._compute_labels()
-            self._prev_scores = np.array(self._env.get_scores(), dtype=np.float32)
+            self._prev_scores = np.asarray(self._env.get_scores(), dtype=np.float32)
             if hasattr(self._env, "get_agent_shanten"):
                 self._prev_agent_shanten = self._env.get_agent_shanten()
             else:
@@ -378,7 +392,7 @@ class SelfPlayEnv(BloodMahjongEnv):
         if self._env.get_phase() in ("scoring", "done"):
             self._env.finalize_scoring()
 
-        scores = np.array(self._env.get_scores(), dtype=np.float32)
+        scores = np.asarray(self._env.get_scores(), dtype=np.float32)
         agent_delta = scores[0] - self._prev_scores[0]
         opp_deltas = scores[1:] - self._prev_scores[1:]
 
@@ -397,7 +411,7 @@ class SelfPlayEnv(BloodMahjongEnv):
         #   1-fan ron  → 0.177,  6-fan ron  → 1.000
         #   1-fan tsumo→ 0.306,  6-fan tsumo→ 1.732
         _r = float(agent_delta) / float(REWARD_NORM)
-        reward = float(np.sign(_r) * np.sqrt(abs(_r)))
+        reward = sqrt_compress_reward(_r)
 
         # --- Structured reward shaping (all phases) ---
         # When warmup shaping is active, skip structured tsumo/deal-in bonuses
@@ -513,9 +527,9 @@ class SelfPlayEnv(BloodMahjongEnv):
         truncated = self._step_count >= self._max_steps and not terminated
 
         obs_dict = self._env.get_player_obs(0)
-        obs = np.array(obs_dict["obs"], dtype=np.float32)
-        mask = np.array(obs_dict["action_mask"], dtype=np.float32)
-        oracle_obs = np.array(self._env.get_oracle_obs(), dtype=np.float32)
+        obs = np.asarray(obs_dict["obs"], dtype=np.float32)
+        mask = np.asarray(obs_dict["action_mask"], dtype=np.float32)
+        oracle_obs = np.asarray(self._env.get_oracle_obs(), dtype=np.float32)
         shanten, ow = self._compute_labels()
 
         info = {
@@ -541,8 +555,8 @@ class SelfPlayEnv(BloodMahjongEnv):
         try:
             if self._env is not None and hasattr(self._env, "get_aux_labels"):
                 labels = self._env.get_aux_labels(0)
-                shanten = np.array(labels["shanten_labels"], dtype=np.float32)
-                ow = np.array(labels["ow_labels"], dtype=np.float32)
+                shanten = np.asarray(labels["shanten_labels"], dtype=np.float32)
+                ow = np.asarray(labels["ow_labels"], dtype=np.float32)
                 return shanten, ow
         except Exception:
             pass

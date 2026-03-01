@@ -441,7 +441,7 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
         // ch+3: Best discard marker (per-tile)
         for c in &candidates {
             let ti = c.tile as usize;
-            w!(ch, ti, c.total_ev() / 32000.0);
+            w!(ch, ti, c.total_ev() / REWARD_NORM as f32);
             w!(ch + 1, ti, c.total_win_prob().min(1.0));
             if c.shanten_diff <= 0 {
                 w!(ch + 2, ti, 1.0);
@@ -459,14 +459,14 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
             for t in 0..MAX_TURNS {
                 fill_ch!(ch + t, best.tenpai_probs[t]);
                 fill_ch!(ch + MAX_TURNS + t, best.win_probs[t]);
-                fill_ch!(ch + 2 * MAX_TURNS + t, best.exp_values[t] / 32000.0);
+                fill_ch!(ch + 2 * MAX_TURNS + t, best.exp_values[t] / REWARD_NORM as f32);
             }
         }
         ch += 3 * MAX_TURNS; // 84
 
         // ch+88..ch+98: Summary features (11 ch)
         if let Some(best) = candidates.first() {
-            fill_ch!(ch, best.total_ev() / 32000.0);
+            fill_ch!(ch, best.total_ev() / REWARD_NORM as f32);
             ch += 1;
             fill_ch!(ch, best.total_win_prob().min(1.0));
             ch += 1;
@@ -480,7 +480,7 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
         // EV spread: best - worst (how decisive the discard choice is)
         let best_ev = candidates.first().map_or(0.0, |c| c.total_ev());
         let worst_ev = candidates.last().map_or(0.0, |c| c.total_ev());
-        fill_ch!(ch, (best_ev - worst_ev).max(0.0) / 32000.0);
+        fill_ch!(ch, (best_ev - worst_ev).max(0.0) / REWARD_NORM as f32);
         ch += 1;
         // Win prob spread: best - worst
         let best_wp = candidates.first().map_or(0.0, |c| c.total_win_prob());
@@ -493,7 +493,7 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
         ch += 1;
         // Second-best candidate EV (for relative comparison)
         if let Some(second) = candidates.get(1) {
-            fill_ch!(ch, second.total_ev() / 32000.0);
+            fill_ch!(ch, second.total_ev() / REWARD_NORM as f32);
         }
         ch += 1;
         // Best candidate peak win prob (max over turns, vs cumulative)
@@ -529,7 +529,7 @@ pub fn encode_student_obs(board: &BoardState, player_id: usize) -> Vec<f32> {
         let opp_id = (player_id + opp_off) % NUM_PLAYERS;
         let opp = &board.players[opp_id];
         // 对手手牌数量：归一化到 [0, 1]，除以 13（初始手牌数）
-        fill_ch!(ch, opp.hand_count() as f32 / 13.0);
+        fill_ch!(ch, opp.hand_count() as f32 / HAND_SIZE as f32);
         ch += 1;
     }
     for opp_off in 1..NUM_PLAYERS {
@@ -608,7 +608,7 @@ fn encode_ding_que_section(
                 .filter(|&t| p.hand[t] > 0)
                 .map(|t| p.hand[t] as u32)
                 .sum::<u32>();
-            fill_ch(obs, ch + suit as usize, count as f32 / 13.0);
+            fill_ch(obs, ch + suit as usize, count as f32 / HAND_SIZE as f32);
         }
     }
     ch += 3;
